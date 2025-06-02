@@ -369,13 +369,13 @@ sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 ```
 
-### Debug Mode
-```bash
-python src/cyberautoagent.py \
-  --target "your-target" \
-  --objective "your-objective" \
-  --verbose  # Enable detailed logging
-```
+## 🗺️ Roadmap
+
+- **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
+- **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
+- **Multi-Target Orchestration** - Parallel assessment of multiple systems
+- **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
+- **Cloud-Native Deployment** - Containerized execution with scaling capabilities
 
 ## 🤝 Contributing
 
