@@ -23,14 +23,13 @@ import argparse
 import time
 from datetime import datetime
 
-# Simple warning suppression
-warnings.filterwarnings('ignore', category=DeprecationWarning)
-
-# Import modules
 from modules.utils import Colors, print_banner, print_section, print_status, analyze_objective_completion
 from modules.environment import auto_setup, setup_logging  
 from modules.agent_factory import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+
+# Simple warning suppression
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 def main():
     """Main execution function"""
@@ -102,10 +101,10 @@ def main():
     
     # Log operation start
     local_operation_id = f"OP-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    logger.info(f"Operation {local_operation_id} initiated")
-    logger.info(f"Objective: {args.objective}")
-    logger.info(f"Target: {args.target}")
-    logger.info(f"Max steps: {args.iterations}")
+    logger.info("Operation %s initiated", local_operation_id)
+    logger.info("Objective: %s", args.objective)
+    logger.info("Target: %s", args.target)
+    logger.info("Max steps: %d", args.iterations)
     
     # Display operation details
     print_section("MISSION PARAMETERS", f"""
@@ -138,7 +137,7 @@ def main():
         # Initial strategic prompt
         initial_prompt = get_initial_prompt(args.target, args.objective, args.iterations, available_tools)
         
-        print(f"\n{Colors.DIM}{'─'*80}{Colors.RESET}\n")
+        print("\n%s%s%s\n" % (Colors.DIM, '─'*80, Colors.RESET))
         
         # Execute autonomous operation
         try:
@@ -163,7 +162,7 @@ def main():
                         if callback_handler:
                             callback_handler.generate_final_report(agent, args.target, args.objective)
                     else:
-                        print_status(f"Agent error: {str(error)}", "ERROR")
+                        print_status("Agent error: %s" % str(error), "ERROR")
                         logger.exception("Unexpected agent error occurred")
                         if callback_handler:
                             callback_handler.generate_final_report(agent, args.target, args.objective)
@@ -174,9 +173,9 @@ def main():
                     print_status("Objective achieved through autonomous execution!", "SUCCESS")
                     if callback_handler:
                         summary = callback_handler.get_summary()
-                        print_status(f"Memory operations: {summary['memory_operations']}", "INFO")
-                        print_status(f"Capabilities created: {summary['tools_created']}", "INFO")
-                        print_status(f"Evidence collected: {summary['evidence_collected']} items", "INFO")
+                        print_status("Memory operations: %d" % summary['memory_operations'], "INFO")
+                        print_status("Capabilities created: %d" % summary['tools_created'], "INFO")
+                        print_status("Evidence collected: %d items" % summary['evidence_collected'], "INFO")
                         callback_handler.generate_final_report(agent, args.target, args.objective)
                     break
                 
@@ -187,16 +186,16 @@ def main():
                 time.sleep(0.3)  # Shorter delay for better responsiveness
             
             execution_time = time.time() - operation_start
-            logger.info(f"Operation completed in {execution_time:.2f} seconds")
+            logger.info("Operation completed in %.2f seconds", execution_time)
             
         except Exception as e:
-            logger.error(f"Operation error: {str(e)}")
+            logger.error("Operation error: %s", str(e))
             raise
         
         # Display comprehensive results
-        print(f"\n{'='*80}")
-        print(f"🧠 {Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
-        print(f"{'='*80}")
+        print("\n%s" % ('='*80))
+        print("🧠 %sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
+        print("%s" % ('='*80))
         
         # Operation summary
         if callback_handler:
@@ -205,45 +204,45 @@ def main():
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
             
-            print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
+            print("%sOperation ID:%s      %s" % (Colors.BOLD, Colors.RESET, local_operation_id))
             
             # Determine status based on completion
             if analyze_objective_completion(messages):
-                status_text = f"{Colors.GREEN}✅ Objective Achieved{Colors.RESET}"
+                status_text = "%s✅ Objective Achieved%s" % (Colors.GREEN, Colors.RESET)
             elif callback_handler.has_reached_limit():
-                status_text = f"{Colors.YELLOW}⚠️  Step Limit Reached - Final Report Generated{Colors.RESET}"
+                status_text = "%s⚠️  Step Limit Reached - Final Report Generated%s" % (Colors.YELLOW, Colors.RESET)
             else:
-                status_text = f"{Colors.BLUE}ℹ️  Operation Completed{Colors.RESET}"
+                status_text = "%sℹ️  Operation Completed%s" % (Colors.BLUE, Colors.RESET)
             
-            print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
-            print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
+            print("%sStatus:%s            %s" % (Colors.BOLD, Colors.RESET, status_text))
+            print("%sDuration:%s          %dm %ds" % (Colors.BOLD, Colors.RESET, minutes, seconds))
             
-            print(f"\n{Colors.BOLD}📊 Execution Metrics:{Colors.RESET}")
-            print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
-            print(f"  • Tools Created: {summary['tools_created']}")
-            print(f"  • Evidence Collected: {summary['evidence_collected']} items")
-            print(f"  • Memory Operations: {summary['memory_operations']} total")
+            print("\n%s📊 Execution Metrics:%s" % (Colors.BOLD, Colors.RESET))
+            print("  • Total Steps: %d/%d" % (summary['total_steps'], args.iterations))
+            print("  • Tools Created: %d" % summary['tools_created'])
+            print("  • Evidence Collected: %d items" % summary['evidence_collected'])
+            print("  • Memory Operations: %d total" % summary['memory_operations'])
             
             if summary['capability_expansion']:
-                print(f"\n{Colors.BOLD}🔧 Capabilities Created:{Colors.RESET}")
+                print("\n%s🔧 Capabilities Created:%s" % (Colors.BOLD, Colors.RESET))
                 for tool in summary['capability_expansion']:
-                    print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
+                    print("  • %s%s%s" % (Colors.GREEN, tool, Colors.RESET))
             
             # Show evidence summary if available
             if callback_handler:
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
-                    print(f"\n{Colors.BOLD}🎯 Key Evidence:{Colors.RESET}")
+                    print("\n%s🎯 Key Evidence:%s" % (Colors.BOLD, Colors.RESET))
                     if isinstance(evidence_summary[0], dict):
                         for ev in evidence_summary[:5]:
                             cat = ev.get('category', 'unknown')
                             content = ev.get('content', '')[:60]
-                            print(f"  • [{cat}] {content}...")
+                            print("  • [%s] %s..." % (cat, content))
                         if len(evidence_summary) > 5:
-                            print(f"  • ... and {len(evidence_summary) - 5} more items")
+                            print("  • ... and %d more items" % (len(evidence_summary) - 5))
             
-            print(f"\n{Colors.BOLD}💾 Evidence stored in:{Colors.RESET} ./evidence_{local_operation_id}.faiss")
-            print(f"{'='*80}")
+            print("\n%s💾 Evidence stored in:%s ./evidence_%s.faiss" % (Colors.BOLD, Colors.RESET, local_operation_id))
+            print("%s" % ('='*80))
         
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")
@@ -263,12 +262,12 @@ def main():
                 # Note: mem0 typically handles cleanup automatically
                 pass
             except Exception as cleanup_error:
-                logger.warning(f"Error during cleanup: {cleanup_error}")
+                logger.warning("Error during cleanup: %s", cleanup_error)
         
         # Log operation end
         end_time = time.time()
         total_time = end_time - start_time
-        logger.info(f"Operation {local_operation_id} ended after {total_time:.2f}s")
+        logger.info("Operation %s ended after %.2fs", local_operation_id, total_time)
 
 
 if __name__ == "__main__":

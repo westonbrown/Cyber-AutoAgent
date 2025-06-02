@@ -46,13 +46,13 @@ def print_banner():
     full_banner = "\n".join(banner_lines) + "\n" + centered_subtitle
 
     # Print the banner with color
-    print(f"{Colors.CYAN}{full_banner}{Colors.RESET}")
+    print("%s%s%s" % (Colors.CYAN, full_banner, Colors.RESET))
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
     """Print formatted section with optional emoji"""
-    print(f"\n{'─'*60}")
-    print(f"{emoji} {color}{Colors.BOLD}{title}{Colors.RESET}")
-    print(f"{'─'*60}")
+    print("\n%s" % ('─'*60))
+    print("%s %s%s%s%s" % (emoji, color, Colors.BOLD, title, Colors.RESET))
+    print("%s" % ('─'*60))
     print(content)
 
 def print_status(message, status="INFO"):
@@ -70,7 +70,7 @@ def print_status(message, status="INFO"):
     }
     color, emoji = status_config.get(status, (Colors.BLUE, "•"))
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"{Colors.DIM}[{timestamp}]{Colors.RESET} {emoji} {color}[{status}]{Colors.RESET} {message}")
+    print("%s[%s]%s %s %s[%s]%s %s" % (Colors.DIM, timestamp, Colors.RESET, emoji, color, status, Colors.RESET, message))
 
 #TODO improve objective completion logic. We should decompose sub goals from the plan and critic each sub step
 def analyze_objective_completion(messages: List[Dict]) -> bool:

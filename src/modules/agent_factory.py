@@ -2,11 +2,9 @@
 
 import os
 import logging
+import warnings
 from datetime import datetime
 from typing import Optional, List
-
-import warnings
-warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -14,10 +12,13 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, file_write, editor, load_tool
 from mem0 import Memory
 
+from . import memory_tools
 from .memory_tools import memory_store, memory_retrieve, memory_list
 from .system_prompts import get_system_prompt
 from .agent_handlers import ReasoningHandler
 from .utils import Colors
+
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 def create_agent(target: str, objective: str, max_steps: int = 100, available_tools: Optional[List[str]] = None, 
                 op_id: Optional[str] = None, model_id: str = "us.anthropic.claude-3-7-sonnet-20250219-v1:0", 
@@ -25,16 +26,13 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
     """Create autonomous agent"""
     
     logger = logging.getLogger('CyberAutoAgent')
-    logger.debug(f"Creating agent for target: {target}, objective: {objective}")
+    logger.debug("Creating agent for target: %s, objective: %s", target, objective)
     
     # Use provided operation_id or generate new one
     if not op_id:
         operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     else:
         operation_id = op_id
-    
-    # Initialize mem0 with local FAISS storage
-    from . import memory_tools
     
     # Set AWS region
     os.environ["AWS_REGION"] = region_name
@@ -69,7 +67,7 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
     memory_tools.mem0_instance = Memory.from_config(config)
     memory_tools.operation_id = operation_id
         
-    print(f"{Colors.GREEN}[+] Memory system initialized with AWS Bedrock & FAISS {Colors.RESET}")
+    print("%s[+] Memory system initialized with AWS Bedrock & FAISS %s" % (Colors.GREEN, Colors.RESET))
     
     tools_context = ""
     if available_tools:

@@ -3,10 +3,11 @@
 import warnings
 from datetime import datetime
 from typing import Optional, Dict
-warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 from strands import tool
 from .utils import Colors
+
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 # Constants for memory operations
 MEMORY_CONTENT_PREVIEW_LENGTH = 100
@@ -82,8 +83,8 @@ def memory_store(content: str, category: str = "general", metadata: Optional[Dic
     except Exception as e:
         # Log error for debugging but return user-friendly message
         import logging
-        logging.getLogger(__name__).error(f"Memory storage failed: {e}", exc_info=True)
-        return f"Memory storage failed. Please check logs for details."
+        logging.getLogger(__name__).error("Memory storage failed: %s", e, exc_info=True)
+        return "Memory storage failed. Please check logs for details."
 
 @tool
 def memory_retrieve(query: str, category: Optional[str] = None, limit: int = 10) -> str:
@@ -190,7 +191,7 @@ def memory_list(category: Optional[str] = None, limit: int = 50) -> dict:
                 "metadata": m.get("metadata", {})
             })
     except Exception as e:
-        print(f"{Colors.YELLOW}Warning: Error retrieving memories: {str(e)}{Colors.RESET}")
+        print("%sWarning: Error retrieving memories: %s%s" % (Colors.YELLOW, str(e), Colors.RESET))
         evidence = []
     
     # Group by category
@@ -202,31 +203,31 @@ def memory_list(category: Optional[str] = None, limit: int = 50) -> dict:
         categories[cat] += 1
     
     # Clean evidence summary with break lines
-    print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}")
-    print(f"📋 {Colors.CYAN}{Colors.BOLD}Evidence Summary{Colors.RESET}")
-    print(f"{Colors.DIM}{'─' * 80}{Colors.RESET}")
+    print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
+    print("📋 %s%sEvidence Summary%s" % (Colors.CYAN, Colors.BOLD, Colors.RESET))
+    print("%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
     
     # Show category breakdown
     if categories:
-        print(f"\nCategories:")
+        print("\nCategories:")
         for cat, count in categories.items():
-            print(f"   • {cat}: {count} items")
+            print("   • %s: %d items" % (cat, count))
     
     # Show recent evidence with clean formatting
     if evidence:
-        print(f"\nRecent Evidence:")
+        print("\nRecent Evidence:")
         for i, e in enumerate(evidence[:MAX_EVIDENCE_DISPLAY]):  # Show last 10
             preview = e["content"][:EVIDENCE_SUMMARY_PREVIEW_LENGTH] + "..." if len(e["content"]) > EVIDENCE_SUMMARY_PREVIEW_LENGTH else e["content"]
-            print(f"\n   [{i+1}] {Colors.GREEN}{e['category']}{Colors.RESET}")
-            print(f"       {Colors.DIM}{preview}{Colors.RESET}")
-            print(f"       {Colors.BLUE}ID: {e['id'][:8]}...{Colors.RESET}")
+            print("\n   [%d] %s%s%s" % (i+1, Colors.GREEN, e['category'], Colors.RESET))
+            print("       %s%s%s" % (Colors.DIM, preview, Colors.RESET))
+            print("       %sID: %s...%s" % (Colors.BLUE, e['id'][:8], Colors.RESET))
         
         if len(evidence) > MAX_EVIDENCE_DISPLAY:
-            print(f"\n   {Colors.DIM}... and {len(evidence) - MAX_EVIDENCE_DISPLAY} more items{Colors.RESET}")
+            print("\n   %s... and %d more items%s" % (Colors.DIM, len(evidence) - MAX_EVIDENCE_DISPLAY, Colors.RESET))
     else:
-        print(f"\n   {Colors.DIM}No evidence collected yet{Colors.RESET}")
+        print("\n   %sNo evidence collected yet%s" % (Colors.DIM, Colors.RESET))
     
-    print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}")
+    print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
     
     return {
         "status": "success",
