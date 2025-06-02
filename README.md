@@ -218,9 +218,9 @@ python src/cyberautoagent.py \
 
 # With custom model and region
 python src/cyberautoagent.py \
-  --target "192.168.1.100" \
+  --target "x.x.x.x" \
   --objective "Enumerate services and find potential entry points" \
-  --model "us.anthropic.claude-3-5-sonnet-20241022-v1:0" \
+  --model "us.anthropic.claude-opus-4-20250514-v1:0" \
   --region "us-west-2" \
   --verbose
 ```
