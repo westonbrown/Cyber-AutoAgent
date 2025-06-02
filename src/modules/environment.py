@@ -14,7 +14,7 @@ def auto_setup() -> List[str]:
     for dir_name in ['tools', 'logs']:
         Path(dir_name).mkdir(exist_ok=True)
     
-    print(f"{Colors.CYAN}[*] Discovering cyber security tools...{Colors.RESET}")
+    print("%s[*] Discovering cyber security tools...%s" % (Colors.CYAN, Colors.RESET))
     
     # Just check which tools are available
     cyber_tools = {
@@ -35,11 +35,11 @@ def auto_setup() -> List[str]:
         try:
             subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
             available_tools.append(tool_name)
-            print(f"  {Colors.GREEN}✓{Colors.RESET} {tool_name:<12} - {description}")
+            print("  %s✓%s %-12s - %s" % (Colors.GREEN, Colors.RESET, tool_name, description))
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            print(f"  {Colors.YELLOW}○{Colors.RESET} {tool_name:<12} - {description} {Colors.DIM}(not available){Colors.RESET}")
+            print("  %s○%s %-12s - %s %s(not available)%s" % (Colors.YELLOW, Colors.RESET, tool_name, description, Colors.DIM, Colors.RESET))
     
-    print(f"\n{Colors.GREEN}[+] Environment ready. {len(available_tools)} cyber tools available.{Colors.RESET}\n")
+    print("\n%s[+] Environment ready. %d cyber tools available.%s\n" % (Colors.GREEN, len(available_tools), Colors.RESET))
     
     return available_tools
 

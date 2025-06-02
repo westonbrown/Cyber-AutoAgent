@@ -39,11 +39,11 @@ class ReasoningHandler(PrintingCallbackHandler):
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         # Clean header with full-width break lines
-        print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}")
-        print(f"🔐 {Colors.CYAN}{Colors.BOLD}Cyber Security Assessment{Colors.RESET}")
-        print(f"   Operation: {Colors.DIM}{self.operation_id}{Colors.RESET}")
-        print(f"   Started:   {Colors.DIM}{timestamp}{Colors.RESET}")
-        print(f"{Colors.DIM}{'─' * 80}{Colors.RESET}")
+        print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
+        print("🔐 %s%sCyber Security Assessment%s" % (Colors.CYAN, Colors.BOLD, Colors.RESET))
+        print("   Operation: %s%s%s" % (Colors.DIM, self.operation_id, Colors.RESET))
+        print("   Started:   %s%s%s" % (Colors.DIM, timestamp, Colors.RESET))
+        print("%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
         print()
     
     def __call__(self, **kwargs):
@@ -186,7 +186,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         # Check step limit immediately after incrementing
         if self.has_reached_limit() and not self.step_limit_reached:
             self.step_limit_reached = True
-            print(f"\n{Colors.BLUE}✅ Step limit reached ({self.max_steps}). Assessment complete.{Colors.RESET}")
+            print("\n%s✅ Step limit reached (%d). Assessment complete.%s" % (Colors.BLUE, self.max_steps, Colors.RESET))
             # Stop all further processing by raising StopIteration
             raise StopIteration("Step limit reached - clean termination")
         
@@ -200,22 +200,22 @@ class ReasoningHandler(PrintingCallbackHandler):
             print()  # Add line after reasoning
         
         # Print step header with exact format from working version
-        print(f"{'─' * 80}")
-        print(f"Step {self.steps}/{self.max_steps}: {Colors.CYAN}{tool_name}{Colors.RESET}")
-        print(f"{'─' * 80}")
+        print("%s" % ('─' * 80))
+        print("Step %d/%d: %s%s%s" % (self.steps, self.max_steps, Colors.CYAN, tool_name, Colors.RESET))
+        print("%s" % ('─' * 80))
         
         # Show detailed tool information
         if tool_name == "shell":
             command = tool_input.get("command", "")
-            print(f"↳ Running: {Colors.GREEN}{command}{Colors.RESET}")
+            print("↳ Running: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
             self.tools_used.append(f"shell: {command}")
             
         elif tool_name == "file_write":
             path = tool_input.get("path", "")
             content_preview = str(tool_input.get("content", ""))[:50]
-            print(f"↳ Writing: {Colors.YELLOW}{path}{Colors.RESET}")
+            print("↳ Writing: %s%s%s" % (Colors.YELLOW, path, Colors.RESET))
             if content_preview:
-                print(f"  Content: {Colors.DIM}{content_preview}...{Colors.RESET}")
+                print("  Content: %s%s...%s" % (Colors.DIM, content_preview, Colors.RESET))
             
             # Track tool creation
             if path and path.startswith("tools/"):
@@ -228,34 +228,34 @@ class ReasoningHandler(PrintingCallbackHandler):
             path = tool_input.get("path", "")
             file_text = tool_input.get("file_text", "")
             
-            print(f"↳ Editor: {Colors.CYAN}{command}{Colors.RESET}")
-            print(f"  Path: {Colors.YELLOW}{path}{Colors.RESET}")
+            print("↳ Editor: %s%s%s" % (Colors.CYAN, command, Colors.RESET))
+            print("  Path: %s%s%s" % (Colors.YELLOW, path, Colors.RESET))
             
             # Store and show content if creating a tool
             if command == "create" and path and path.startswith("tools/") and file_text:
                 self.created_tools.append(path.replace("tools/", "").replace(".py", ""))
-                print(f"\n{'─' * 70}")
-                print(f"📄 {Colors.YELLOW}META-TOOL CODE:{Colors.RESET}")
-                print(f"{'─' * 70}")
+                print("\n%s" % ('─' * 70))
+                print("📄 %sMETA-TOOL CODE:%s" % (Colors.YELLOW, Colors.RESET))
+                print("%s" % ('─' * 70))
                 # Display the tool code with syntax highlighting
                 for line in file_text.split('\n')[:MAX_TOOL_CODE_LINES]:  # Show first 100 lines
                     if line.strip().startswith("@tool"):
-                        print(f"{Colors.GREEN}{line}{Colors.RESET}")
+                        print("%s%s%s" % (Colors.GREEN, line, Colors.RESET))
                     elif line.strip().startswith("def "):
-                        print(f"{Colors.CYAN}{line}{Colors.RESET}")
+                        print("%s%s%s" % (Colors.CYAN, line, Colors.RESET))
                     elif line.strip().startswith("#"):
-                        print(f"{Colors.DIM}{line}{Colors.RESET}")
+                        print("%s%s%s" % (Colors.DIM, line, Colors.RESET))
                     else:
                         print(line)
                 if len(file_text.split('\n')) > 20:
-                    print(f"{Colors.DIM}... ({len(file_text.split('\n')) - 20} more lines){Colors.RESET}")
-                print(f"{'─' * 70}")
+                    print("%s... (%d more lines)%s" % (Colors.DIM, len(file_text.split('\n')) - 20, Colors.RESET))
+                print("%s" % ('─' * 70))
             
             self.tools_used.append(f"editor: {command} {path}")
             
         elif tool_name == "load_tool":
             path = tool_input.get("path", "")
-            print(f"↳ Loading: {Colors.GREEN}{path}{Colors.RESET}")
+            print("↳ Loading: %s%s%s" % (Colors.GREEN, path, Colors.RESET))
             self.tools_used.append(f"load_tool: {path}")
             
         elif tool_name in ["memory_store", "memory_retrieve", "memory_list"]:
@@ -263,20 +263,20 @@ class ReasoningHandler(PrintingCallbackHandler):
                 category = tool_input.get("category", "general")
                 content = str(tool_input.get("content", ""))[:CONTENT_PREVIEW_LENGTH]
                 metadata = tool_input.get("metadata", {})
-                print(f"↳ Storing [{Colors.CYAN}{category}{Colors.RESET}]: {Colors.DIM}{content}{'...' if len(str(tool_input.get('content', ''))) > CONTENT_PREVIEW_LENGTH else ''}{Colors.RESET}")
+                print("↳ Storing [%s%s%s]: %s%s%s%s" % (Colors.CYAN, category, Colors.RESET, Colors.DIM, content, '...' if len(str(tool_input.get('content', ''))) > CONTENT_PREVIEW_LENGTH else '', Colors.RESET))
                 if metadata:
-                    print(f"  Metadata: {Colors.DIM}{str(metadata)[:METADATA_PREVIEW_LENGTH]}{'...' if len(str(metadata)) > METADATA_PREVIEW_LENGTH else ''}{Colors.RESET}")
+                    print("  Metadata: %s%s%s%s" % (Colors.DIM, str(metadata)[:METADATA_PREVIEW_LENGTH], '...' if len(str(metadata)) > METADATA_PREVIEW_LENGTH else '', Colors.RESET))
             elif tool_name == "memory_retrieve":
                 query = tool_input.get("query", "")
                 category = tool_input.get("category")
                 limit = tool_input.get("limit", 10)
-                print(f"↳ Searching: {Colors.CYAN}\"{query}\"{Colors.RESET}")
+                print("↳ Searching: %s\"%s\"%s" % (Colors.CYAN, query, Colors.RESET))
                 if category:
-                    print(f"  Category: {Colors.CYAN}{category}{Colors.RESET}, Limit: {limit}")
+                    print("  Category: %s%s%s, Limit: %d" % (Colors.CYAN, category, Colors.RESET, limit))
             elif tool_name == "memory_list":
                 category = tool_input.get("category", "all")
                 limit = tool_input.get("limit", 50)
-                print(f"↳ Listing evidence: {Colors.CYAN}{category}{Colors.RESET} (max: {limit})")
+                print("↳ Listing evidence: %s%s%s (max: %d)" % (Colors.CYAN, category, Colors.RESET, limit))
             
             self.tools_used.append(f"{tool_name}: executed")
             
@@ -287,11 +287,11 @@ class ReasoningHandler(PrintingCallbackHandler):
                 key_params = list(tool_input.keys())[:2]
                 if key_params:
                     params_str = ", ".join(f"{k}={str(tool_input[k])[:20]}{'...' if len(str(tool_input[k])) > 20 else ''}" for k in key_params)
-                    print(f"↳ Parameters: {Colors.DIM}{params_str}{Colors.RESET}")
+                    print("↳ Parameters: %s%s%s" % (Colors.DIM, params_str, Colors.RESET))
                 else:
-                    print(f"↳ Executing: {Colors.MAGENTA}{tool_name}{Colors.RESET}")
+                    print("↳ Executing: %s%s%s" % (Colors.MAGENTA, tool_name, Colors.RESET))
             else:
-                print(f"↳ Executing: {Colors.MAGENTA}{tool_name}{Colors.RESET}")
+                print("↳ Executing: %s%s%s" % (Colors.MAGENTA, tool_name, Colors.RESET))
             
             self.tools_used.append(f"{tool_name}: {list(tool_input.keys())}")
         
@@ -344,10 +344,10 @@ class ReasoningHandler(PrintingCallbackHandler):
                 if isinstance(content_block, dict) and "text" in content_block:
                     error_text = content_block.get("text", "").strip()
                     if error_text and error_text != "Error:":
-                        print(f"{Colors.RED}Error: {error_text}{Colors.RESET}")
+                        print("%sError: %s%s" % (Colors.RED, error_text, Colors.RESET))
         
         # Add separator line after tool result
-        print(f"{Colors.DIM}{'─' * 80}{Colors.RESET}")
+        print("%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
     
     def _track_tool_effectiveness(self, tool_id, tool_result):
         """Track tool effectiveness for analysis"""
@@ -420,7 +420,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                 for m in op_memories
             ]
         except Exception as e:
-            print(f"{Colors.YELLOW}Warning: Error in evidence summary: {str(e)}{Colors.RESET}")
+            print("%sWarning: Error in evidence summary: %s%s" % (Colors.YELLOW, str(e), Colors.RESET))
             return []
     
     def generate_final_report(self, agent, target: str, objective: str) -> None:
@@ -437,9 +437,9 @@ class ReasoningHandler(PrintingCallbackHandler):
             return
         self.report_generated = True
         
-        print(f"\n{Colors.DIM}{'═' * 80}{Colors.RESET}")
-        print(f"📊 {Colors.CYAN}{Colors.BOLD}Generating Final Assessment Report{Colors.RESET}")
-        print(f"{Colors.DIM}{'═' * 80}{Colors.RESET}")
+        print("\n%s%s%s" % (Colors.DIM, '═' * 80, Colors.RESET))
+        print("📊 %s%sGenerating Final Assessment Report%s" % (Colors.CYAN, Colors.BOLD, Colors.RESET))
+        print("%s%s%s" % (Colors.DIM, '═' * 80, Colors.RESET))
         
         # Retrieve evidence from memory system
         evidence = self._retrieve_evidence()
@@ -454,7 +454,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             self._display_final_report(report_content)
             
         except Exception as e:
-            print(f"{Colors.RED}Error generating final report: {str(e)}{Colors.RESET}")
+            print("%sError generating final report: %s%s" % (Colors.RED, str(e), Colors.RESET))
             self._display_fallback_evidence(evidence)
     
     def _retrieve_evidence(self) -> List[Dict]:
@@ -486,18 +486,18 @@ class ReasoningHandler(PrintingCallbackHandler):
                             "timestamp": memory.get("metadata", {}).get("timestamp", "")
                         })
                         
-                print(f"{Colors.DIM}Retrieved {len(evidence)} evidence items from memory{Colors.RESET}")
+                print("%sRetrieved %d evidence items from memory%s" % (Colors.DIM, len(evidence), Colors.RESET))
                         
             except Exception as e:
-                print(f"{Colors.YELLOW}Warning: Error retrieving memories: {str(e)}{Colors.RESET}")
+                print("%sWarning: Error retrieving memories: %s%s" % (Colors.YELLOW, str(e), Colors.RESET))
         
         return evidence
     
     def _display_no_evidence_message(self) -> None:
         """Display message when no evidence is available."""
-        print(f"{Colors.YELLOW}No evidence collected during operation{Colors.RESET}")
-        print(f"{Colors.DIM}Steps completed: {self.steps}/{self.max_steps}{Colors.RESET}")
-        print(f"{Colors.DIM}Memory operations: {self.memory_operations}{Colors.RESET}")
+        print("%sNo evidence collected during operation%s" % (Colors.YELLOW, Colors.RESET))
+        print("%sSteps completed: %d/%d%s" % (Colors.DIM, self.steps, self.max_steps, Colors.RESET))
+        print("%sMemory operations: %d%s" % (Colors.DIM, self.memory_operations, Colors.RESET))
     
     def _generate_llm_report(self, agent, target: str, objective: str, evidence: List[Dict]) -> str:
         """Generate assessment report using LLM analysis."""
@@ -522,7 +522,7 @@ Please provide:
 
 Format this as a professional penetration testing report."""
 
-        print(f"{Colors.DIM}Analyzing collected evidence and generating insights...{Colors.RESET}")
+        print("%sAnalyzing collected evidence and generating insights...%s" % (Colors.DIM, Colors.RESET))
         
         if not (agent and callable(agent)):
             raise ValueError("Agent not available for report generation")
@@ -578,18 +578,18 @@ Format this as a professional penetration testing report."""
     
     def _display_final_report(self, report_content: str) -> None:
         """Display the final assessment report."""
-        print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}")
-        print(f"📋 {Colors.GREEN}{Colors.BOLD}FINAL ASSESSMENT REPORT{Colors.RESET}")
-        print(f"{Colors.DIM}{'─' * 80}{Colors.RESET}")
-        print(f"\n{report_content}")
-        print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}")
+        print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
+        print("📋 %s%sFINAL ASSESSMENT REPORT%s" % (Colors.GREEN, Colors.BOLD, Colors.RESET))
+        print("%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
+        print("\n%s" % report_content)
+        print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
     
     def _display_fallback_evidence(self, evidence: List[Dict]) -> None:
         """Display evidence summary as fallback when LLM generation fails."""
-        print(f"\n{Colors.YELLOW}Displaying collected evidence instead:{Colors.RESET}")
+        print("\n%sDisplaying collected evidence instead:%s" % (Colors.YELLOW, Colors.RESET))
         for i, item in enumerate(evidence, 1):
-            print(f"\n{i}. {Colors.GREEN}[{item['category']}]{Colors.RESET}")
+            print("\n%d. %s[%s]%s" % (i, Colors.GREEN, item['category'], Colors.RESET))
             content_preview = item['content'][:FALLBACK_EVIDENCE_PREVIEW_LENGTH]
-            print(f"   {content_preview}{'...' if len(item['content']) > FALLBACK_EVIDENCE_PREVIEW_LENGTH else ''}")
+            print("   %s%s" % (content_preview, '...' if len(item['content']) > FALLBACK_EVIDENCE_PREVIEW_LENGTH else ''))
             if len(item['content']) > FALLBACK_EVIDENCE_PREVIEW_LENGTH:
-                print(f"   {Colors.DIM}(truncated){Colors.RESET}")
+                print("   %s(truncated)%s" % (Colors.DIM, Colors.RESET))

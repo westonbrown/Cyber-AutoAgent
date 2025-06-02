@@ -7,14 +7,17 @@ Pure meta-tooling with emphasis on strategic reasoning and adaptation
 import warnings
 import os
 import sys
+import argparse
+import time
+import logging
+from datetime import datetime
+from pathlib import Path
 
 # Suppress all deprecation warnings including botocore
 os.environ['PYTHONWARNINGS'] = 'ignore::DeprecationWarning'
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 warnings.filterwarnings('ignore', message='datetime.datetime.utcnow')
 warnings.filterwarnings('ignore', module='botocore')
-
-import logging
 
 # Configure logging to suppress INFO messages from AWS and other libraries
 for logger_name in ['botocore', 'boto3', 'urllib3', 'faiss', 'faiss.loader', 
@@ -25,11 +28,8 @@ for logger_name in ['botocore', 'boto3', 'urllib3', 'faiss', 'faiss.loader',
 # Suppress root logger to prevent any unhandled INFO messages
 logging.getLogger().setLevel(logging.WARNING)
 
-# Import other modules
-import argparse
-import time
-from datetime import datetime
-from pathlib import Path
+# Module-level logger (will be properly initialized in main)
+logger = logging.getLogger(__name__)
 
 # Strands SDK and mem0 imports (may trigger botocore warnings)
 with warnings.catch_warnings():
@@ -94,7 +94,7 @@ def memory_store(content: str, category: str = "general", metadata: dict = None)
     }
     
     # Concise output for production
-    print(f"{Colors.GREEN}✓{Colors.RESET} Memory stored [{category}]: {summary['preview']}")
+    print("%s✓%s Memory stored [%s]: %s" % (Colors.GREEN, Colors.RESET, category, summary['preview']))
     
     return summary
 
@@ -140,9 +140,9 @@ def memory_retrieve(query: str, category: str = None, limit: int = 10) -> dict:
     
     # Concise results for production
     if evidence:
-        print(f"{Colors.CYAN}Found {len(evidence)} matches{Colors.RESET}")
+        print("%sFound %d matches%s" % (Colors.CYAN, len(evidence), Colors.RESET))
     else:
-        print(f"{Colors.YELLOW}No matches found{Colors.RESET}")
+        print("%sNo matches found%s" % (Colors.YELLOW, Colors.RESET))
         
     return {
         "status": "success",
@@ -193,27 +193,27 @@ def memory_list(category: str = None, limit: int = 50) -> dict:
         categories[cat] += 1
     
     # Create formatted output
-    print(f"\n{Colors.BOLD}{'='*60}{Colors.RESET}")
-    print(f"{Colors.CYAN}📚 EVIDENCE SUMMARY{Colors.RESET}")
-    print(f"{Colors.BOLD}{'='*60}{Colors.RESET}")
+    print("\n%s%s%s" % (Colors.BOLD, '='*60, Colors.RESET))
+    print("%s📚 EVIDENCE SUMMARY%s" % (Colors.CYAN, Colors.RESET))
+    print("%s%s%s" % (Colors.BOLD, '='*60, Colors.RESET))
     
     # Show category breakdown
-    print(f"\n{Colors.YELLOW}Categories:{Colors.RESET}")
+    print("\n%sCategories:%s" % (Colors.YELLOW, Colors.RESET))
     for cat, count in categories.items():
-        print(f"  • {cat}: {count} items")
+        print("  • %s: %d items" % (cat, count))
     
     # Show recent evidence
-    print(f"\n{Colors.YELLOW}Recent Evidence:{Colors.RESET}")
+    print("\n%sRecent Evidence:%s" % (Colors.YELLOW, Colors.RESET))
     for i, e in enumerate(evidence[:10]):  # Show last 10
         preview = e["content"][:80] + "..." if len(e["content"]) > 80 else e["content"]
-        print(f"\n  [{i+1}] {Colors.GREEN}{e['category']}{Colors.RESET}")
-        print(f"      {Colors.DIM}{preview}{Colors.RESET}")
-        print(f"      {Colors.BLUE}ID: {e['id'][:8]}...{Colors.RESET}")
+        print("\n  [%d] %s%s%s" % (i+1, Colors.GREEN, e['category'], Colors.RESET))
+        print("      %s%s%s" % (Colors.DIM, preview, Colors.RESET))
+        print("      %sID: %s...%s" % (Colors.BLUE, e['id'][:8], Colors.RESET))
     
     if len(evidence) > 10:
-        print(f"\n  {Colors.DIM}... and {len(evidence) - 10} more items{Colors.RESET}")
+        print("\n  %s... and %d more items%s" % (Colors.DIM, len(evidence) - 10, Colors.RESET))
     
-    print(f"\n{Colors.BOLD}{'='*60}{Colors.RESET}")
+    print("\n%s%s%s" % (Colors.BOLD, '='*60, Colors.RESET))
     
     return {
         "status": "success",
@@ -241,7 +241,7 @@ def auto_setup():
     for dir_name in ['tools', 'logs', 'missions', 'knowledge']:
         Path(dir_name).mkdir(exist_ok=True)
     
-    print(f"{Colors.CYAN}[*] Discovering cyber security tools...{Colors.RESET}")
+    print("%s[*] Discovering cyber security tools...%s" % (Colors.CYAN, Colors.RESET))
     
     # Just check which tools are available
     cyber_tools = {
@@ -264,11 +264,11 @@ def auto_setup():
         result = os.system(f"{check_cmd} > /dev/null 2>&1")
         if result == 0:
             available_tools.append(tool_name)
-            print(f"  {Colors.GREEN}✓{Colors.RESET} {tool_name:<12} - {description}")
+            print("  %s✓%s %-12s - %s" % (Colors.GREEN, Colors.RESET, tool_name, description))
         else:
-            print(f"  {Colors.YELLOW}○{Colors.RESET} {tool_name:<12} - {description} {Colors.DIM}(not available){Colors.RESET}")
+            print("  %s○%s %-12s - %s %s(not available)%s" % (Colors.YELLOW, Colors.RESET, tool_name, description, Colors.DIM, Colors.RESET))
     
-    print(f"\n{Colors.GREEN}[+] Environment ready. {len(available_tools)} cyber tools available.{Colors.RESET}\n")
+    print("\n%s[+] Environment ready. %d cyber tools available.%s\n" % (Colors.GREEN, len(available_tools), Colors.RESET))
     
     return available_tools
 
@@ -311,13 +311,13 @@ def print_banner():
    ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
                         -- Autonomous GenAI-Powered Cyber Agent --
 """
-    print(f"{Colors.CYAN}{banner}{Colors.RESET}")
+    print("%s%s%s" % (Colors.CYAN, banner, Colors.RESET))
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
     """Print formatted section with optional emoji"""
-    print(f"\n{'─'*60}")
-    print(f"{emoji} {color}{Colors.BOLD}{title}{Colors.RESET}")
-    print(f"{'─'*60}")
+    print("\n%s" % ('─'*60))
+    print("%s %s%s%s%s" % (emoji, color, Colors.BOLD, title, Colors.RESET))
+    print("%s" % ('─'*60))
     print(content)
 
 def print_status(message, status="INFO"):
@@ -336,7 +336,7 @@ def print_status(message, status="INFO"):
     }
     color, emoji = status_config.get(status, (Colors.BLUE, "•"))
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"{Colors.DIM}[{timestamp}]{Colors.RESET} {emoji} {color}[{status}]{Colors.RESET} {message}")
+    print("%s[%s]%s %s %s[%s]%s %s" % (Colors.DIM, timestamp, Colors.RESET, emoji, color, status, Colors.RESET, message))
 
 class StrategicReasoningHandler(PrintingCallbackHandler):
     """Enhanced callback handler with clean output formatting"""
@@ -354,7 +354,7 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
         
         # Generate operation ID for evidence tracking
         self.operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        print(f"\n{Colors.GREEN}[+] Operation ID: {self.operation_id}{Colors.RESET}")
+        print("\n%s[+] Operation ID: %s%s" % (Colors.GREEN, self.operation_id, Colors.RESET))
     
     def __call__(self, **kwargs):
         """Process callback events with clean formatting and no duplication"""
@@ -389,7 +389,7 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
                             if self._is_valid_tool_use(tool_use.get("name", ""), tool_input):
                                 # Check limit BEFORE processing the tool
                                 if self.has_reached_limit():
-                                    print(f"\n{Colors.YELLOW}[!] Step limit reached ({self.max_steps}). Stopping further tools.{Colors.RESET}")
+                                    print("\n%s[!] Step limit reached (%d). Stopping further tools.%s" % (Colors.YELLOW, self.max_steps, Colors.RESET))
                                     return  # Stop processing more tools
                                 self.shown_tools.add(tool_id)
                                 self.tool_use_map[tool_id] = tool_use
@@ -426,7 +426,7 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
                 if tool_id not in self.shown_tools:
                     # Check limit BEFORE processing the tool
                     if self.has_reached_limit():
-                        print(f"\n{Colors.YELLOW}[!] Step limit reached ({self.max_steps}). Stopping further tools.{Colors.RESET}")
+                        print("\n%s[!] Step limit reached (%d). Stopping further tools.%s" % (Colors.YELLOW, self.max_steps, Colors.RESET))
                         return  # Stop processing more tools
                     self.shown_tools.add(tool_id)
                     self.tool_use_map[tool_id] = tool
@@ -484,78 +484,78 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
             tool_input = {}
         
         # Print separator and header
-        print(f"\n{'═' * 70}")
-        print(f"⚡ {Colors.YELLOW}STEP [{self.steps}/{self.max_steps}]{Colors.RESET}")
-        print(f"{'─' * 70}")
+        print("\n%s" % ('═' * 70))
+        print("⚡ %sSTEP [%d/%d]%s" % (Colors.YELLOW, self.steps, self.max_steps, Colors.RESET))
+        print("%s" % ('─' * 70))
         
         # Show tool details based on type
         if tool_name == "shell":
             command = tool_input.get("command", "")
-            print(f"🔧 Tool: {Colors.CYAN}{tool_name}{Colors.RESET}")
-            print(f"📍 Command: {Colors.GREEN}{command}{Colors.RESET}")
+            print("🔧 Tool: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
+            print("📍 Command: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
             
         elif tool_name == "editor":
             command = tool_input.get("command", "")
             path = tool_input.get("path", "")
             file_text = tool_input.get("file_text", "")
             
-            print(f"🔧 Tool: {Colors.CYAN}{tool_name}{Colors.RESET}")
-            print(f"📝 Action: {Colors.GREEN}{command}{Colors.RESET}")
-            print(f"📁 Path: {Colors.YELLOW}{path}{Colors.RESET}")
+            print("🔧 Tool: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
+            print("📝 Action: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
+            print("📁 Path: %s%s%s" % (Colors.YELLOW, path, Colors.RESET))
             
             # Track created tools
             if command == "create" and path and path.startswith("tools/"):
                 self.created_tools.append(path.replace("tools/", "").replace(".py", ""))
                 if file_text:
-                    print(f"\n{'─' * 70}")
-                    print(f"📄 {Colors.YELLOW}TOOL CODE:{Colors.RESET}")
-                    print(f"{'─' * 70}")
+                    print("\n%s" % ('─' * 70))
+                    print("📄 %sTOOL CODE:%s" % (Colors.YELLOW, Colors.RESET))
+                    print("%s" % ('─' * 70))
                     # Display the full tool code with syntax highlighting hints
                     for line in file_text.split('\n'):
                         if line.strip().startswith("@tool"):
-                            print(f"{Colors.GREEN}{line}{Colors.RESET}")
+                            print("%s%s%s" % (Colors.GREEN, line, Colors.RESET))
                         elif line.strip().startswith("def "):
-                            print(f"{Colors.CYAN}{line}{Colors.RESET}")
+                            print("%s%s%s" % (Colors.CYAN, line, Colors.RESET))
                         elif line.strip().startswith("#"):
-                            print(f"{Colors.DIM}{line}{Colors.RESET}")
+                            print("%s%s%s" % (Colors.DIM, line, Colors.RESET))
                         else:
                             print(line)
-                    print(f"{'─' * 70}")
+                    print("%s" % ('─' * 70))
             
             
         elif tool_name == "load_tool":
             path = tool_input.get("path", "")
-            print(f"🔧 Tool: {Colors.CYAN}{tool_name}{Colors.RESET}")
-            print(f"📦 Loading: {Colors.GREEN}{path}{Colors.RESET}")
+            print("🔧 Tool: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
+            print("📦 Loading: %s%s%s" % (Colors.GREEN, path, Colors.RESET))
             
         elif tool_name in ["memory_store", "memory_retrieve", "memory_list"]:
-            print(f"🔧 Tool: {Colors.CYAN}{tool_name}{Colors.RESET}")
+            print("🔧 Tool: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
             if tool_name == "memory_store":
                 category = tool_input.get("category", "general")
                 content = str(tool_input.get("content", ""))[:100]
-                print(f"💾 Category: {Colors.YELLOW}{category}{Colors.RESET}")
-                print(f"📝 Content: {content}{'...' if len(content) >= 100 else ''}")
+                print("💾 Category: %s%s%s" % (Colors.YELLOW, category, Colors.RESET))
+                print("📝 Content: %s%s" % (content, '...' if len(content) >= 100 else ''))
             elif tool_name == "memory_retrieve":
                 query = tool_input.get("query", "")
-                print(f"🔍 Query: {Colors.YELLOW}{query}{Colors.RESET}")
+                print("🔍 Query: %s%s%s" % (Colors.YELLOW, query, Colors.RESET))
             elif tool_name == "memory_list":
                 category = tool_input.get("category", "all")
-                print(f"📋 Category filter: {Colors.YELLOW}{category}{Colors.RESET}")
+                print("📋 Category filter: %s%s%s" % (Colors.YELLOW, category, Colors.RESET))
             
             
         else:
             # Custom tool
-            print(f"🔧 Tool: {Colors.CYAN}{tool_name}{Colors.RESET}")
+            print("🔧 Tool: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
             if tool_input:
-                print(f"📊 Parameters:")
+                print("📊 Parameters:")
                 for k, v in tool_input.items():
                     v_str = str(v)
                     if len(v_str) > 80:
-                        print(f"  • {k}: {v_str[:77]}...")
+                        print("  • %s: %s..." % (k, v_str[:77]))
                     else:
-                        print(f"  • {k}: {v_str}")
+                        print("  • %s: %s" % (k, v_str))
         
-        print(f"{'═' * 70}")
+        print("%s" % ('═' * 70))
     
     def _show_tool_result(self, tool_id, tool_result):
         """Display tool execution results"""
@@ -592,28 +592,28 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
                         
                         # Only show output if there's content after filtering
                         if filtered_lines and any(line.strip() for line in filtered_lines):
-                            print(f"\n{'─' * 70}")
-                            print(f"📤 {Colors.GREEN}OUTPUT:{Colors.RESET}")
-                            print(f"{'─' * 70}")
+                            print("\n%s" % ('─' * 70))
+                            print("📤 %sOUTPUT:%s" % (Colors.GREEN, Colors.RESET))
+                            print("%s" % ('─' * 70))
                             for line in filtered_lines[:50]:  # Show first 50 lines
-                                print(f"{Colors.DIM}{line}{Colors.RESET}")
+                                print("%s%s%s" % (Colors.DIM, line, Colors.RESET))
                             if len(filtered_lines) > 50:
-                                print(f"{Colors.DIM}... ({len(filtered_lines) - 50} more lines){Colors.RESET}")
-                            print(f"{'─' * 70}")
+                                print("%s... (%d more lines)%s" % (Colors.DIM, len(filtered_lines) - 50, Colors.RESET))
+                            print("%s" % ('─' * 70))
                     break
                     
         elif tool_name == "load_tool" and status == "success":
             # Tool loading success
-            print(f"\n{Colors.GREEN}✅ Tool loaded successfully{Colors.RESET}")
+            print("\n%s✅ Tool loaded successfully%s" % (Colors.GREEN, Colors.RESET))
             
         # Note: memory_store, memory_retrieve, and memory_list handle their own display
             
         elif status == "error":
             # Error output
-            print(f"\n{Colors.RED}❌ Error:{Colors.RESET}")
+            print("\n%s❌ Error:%s" % (Colors.RED, Colors.RESET))
             for content_block in result_content:
                 if isinstance(content_block, dict) and "text" in content_block:
-                    print(f"{Colors.RED}{content_block['text']}{Colors.RESET}")
+                    print("%s%s%s" % (Colors.RED, content_block['text'], Colors.RESET))
     
     def _handle_text_block(self, text):
         """Handle text blocks from agent output"""
@@ -621,9 +621,9 @@ class StrategicReasoningHandler(PrintingCallbackHandler):
             # Check if this looks like reasoning
             if any(phrase in text.lower() for phrase in ["i'll", "i need to", "let me", "analyzing", "considering", "think"]):
                 if not self.last_was_reasoning and self.last_was_tool:
-                    print(f"\n{'─' * 70}")
-                    print(f"🤔 {Colors.CYAN}REASONING{Colors.RESET}")
-                    print(f"{'─' * 70}")
+                    print("\n%s" % ('─' * 70))
+                    print("🤔 %sREASONING%s" % (Colors.CYAN, Colors.RESET))
+                    print("%s" % ('─' * 70))
                 self.last_was_reasoning = True
                 self.last_was_tool = False
             
@@ -1040,7 +1040,7 @@ def analyze_objective_completion(messages):
 def create_agent(target: str, objective: str, max_steps: int = 100, available_tools: list = None, operation_id: str = None):
     """Create strategic autonomous agent"""
     
-    logger.debug(f"Creating strategic agent for target: {target}, objective: {objective}")
+    logger.debug("Creating strategic agent for target: %s, objective: %s", target, objective)
     
     # Use provided operation_id or generate new one
     if not operation_id:
@@ -1090,7 +1090,7 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
     finally:
         sys.stderr = old_stderr
         
-    print(f"{Colors.GREEN}[+] Memory system initialized with AWS Bedrock{Colors.RESET}")
+    print("%s[+] Memory system initialized with AWS Bedrock%s" % (Colors.GREEN, Colors.RESET))
     
     # Include discovered tools in context
     tools_context = ""
@@ -1211,10 +1211,10 @@ def main():
     
     # Log operation start
     operation_id = f"OP-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    logger.info(f"Strategic operation {operation_id} initiated")
-    logger.info(f"Objective: {args.objective}")
-    logger.info(f"Target: {args.target}")
-    logger.info(f"Max steps: {args.iterations}")
+    logger.info("Strategic operation %s initiated", operation_id)
+    logger.info("Objective: %s", args.objective)
+    logger.info("Target: %s", args.target)
+    logger.info("Max steps: %d", args.iterations)
     
     # Display operation details
     print_section("MISSION PARAMETERS", f"""
@@ -1255,9 +1255,9 @@ Think strategically about how to approach this challenge. What information do yo
 
 Begin your autonomous operation."""
         
-        print_status(f"Commencing strategic operation...", "STRATEGIC")
+        print_status("Commencing strategic operation...", "STRATEGIC")
         print_section("AUTONOMOUS ACTIVITY", "Strategic reasoning in progress:", Colors.MAGENTA, "🧠")
-        print(f"\n{Colors.DIM}{'─'*80}{Colors.RESET}\n")
+        print("\n%s%s%s\n" % (Colors.DIM, '─'*80, Colors.RESET))
         
         # Execute autonomous operation
         try:
@@ -1299,16 +1299,16 @@ Reflect on what you've learned and adapt your strategy accordingly."""
                 time.sleep(0.5)
             
             execution_time = time.time() - operation_start
-            logger.info(f"Strategic operation completed in {execution_time:.2f} seconds")
+            logger.info("Strategic operation completed in %.2f seconds", execution_time)
             
         except Exception as e:
-            logger.error(f"Operation error: {str(e)}")
+            logger.error("Operation error: %s", str(e))
             raise
         
         # Display comprehensive results
-        print(f"\n{'='*80}")
-        print(f"🧠 {Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
-        print(f"{'='*80}")
+        print("\n%s" % ('='*80))
+        print("🧠 %sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
+        print("%s" % ('='*80))
         
         # Strategic summary
         if callback_handler:
@@ -1317,35 +1317,35 @@ Reflect on what you've learned and adapt your strategy accordingly."""
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
             
-            print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {operation_id}")
-            print(f"{Colors.BOLD}Status:{Colors.RESET}            {Colors.GREEN}✅ Objective Achieved{Colors.RESET}" if analyze_objective_completion(messages) else f"{Colors.YELLOW}⚠️  Execution Limit Reached{Colors.RESET}")
-            print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
+            print("%sOperation ID:%s      %s" % (Colors.BOLD, Colors.RESET, operation_id))
+            print("%sStatus:%s            %s✅ Objective Achieved%s" % (Colors.BOLD, Colors.RESET, Colors.GREEN, Colors.RESET) if analyze_objective_completion(messages) else "%sStatus:%s            %s⚠️  Execution Limit Reached%s" % (Colors.BOLD, Colors.RESET, Colors.YELLOW, Colors.RESET))
+            print("%sDuration:%s          %dm %ds" % (Colors.BOLD, Colors.RESET, minutes, seconds))
             
-            print(f"\n{Colors.BOLD}📊 Execution Metrics:{Colors.RESET}")
-            print(f"  • Total Steps: {strategic_summary['total_steps']}/{args.iterations}")
-            print(f"  • Tools Created: {strategic_summary['tools_created']}")
-            print(f"  • Evidence Collected: {strategic_summary['evidence_collected']} items")
-            print(f"  • Memory Operations: {strategic_summary['memory_operations']} total")
+            print("\n%s📊 Execution Metrics:%s" % (Colors.BOLD, Colors.RESET))
+            print("  • Total Steps: %d/%d" % (strategic_summary['total_steps'], args.iterations))
+            print("  • Tools Created: %d" % strategic_summary['tools_created'])
+            print("  • Evidence Collected: %d items" % strategic_summary['evidence_collected'])
+            print("  • Memory Operations: %d total" % strategic_summary['memory_operations'])
             
             if strategic_summary['capability_expansion']:
-                print(f"\n{Colors.BOLD}🔧 Capabilities Created:{Colors.RESET}")
+                print("\n%s🔧 Capabilities Created:%s" % (Colors.BOLD, Colors.RESET))
                 for tool in strategic_summary['capability_expansion']:
-                    print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
+                    print("  • %s%s%s" % (Colors.GREEN, tool, Colors.RESET))
             
             # Show evidence summary if available
             evidence_summary = callback_handler.get_evidence_summary()
             if isinstance(evidence_summary, list) and evidence_summary:
-                print(f"\n{Colors.BOLD}🎯 Key Evidence:{Colors.RESET}")
+                print("\n%s🎯 Key Evidence:%s" % (Colors.BOLD, Colors.RESET))
                 if isinstance(evidence_summary[0], dict):
                     for ev in evidence_summary[:5]:
                         cat = ev.get('category', 'unknown')
                         content = ev.get('content', '')[:60]
-                        print(f"  • [{cat}] {content}...")
+                        print("  • [%s] %s..." % (cat, content))
                     if len(evidence_summary) > 5:
-                        print(f"  • ... and {len(evidence_summary) - 5} more items")
+                        print("  • ... and %d more items" % (len(evidence_summary) - 5))
             
-            print(f"\n{Colors.BOLD}💾 Evidence stored in:{Colors.RESET} ./evidence_{operation_id}.faiss")
-            print(f"{'='*80}")
+            print("\n%s💾 Evidence stored in:%s ./evidence_%s.faiss" % (Colors.BOLD, Colors.RESET, operation_id))
+            print("%s" % ('='*80))
         
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")
@@ -1360,7 +1360,7 @@ Reflect on what you've learned and adapt your strategy accordingly."""
         # Log operation end
         end_time = time.time()
         total_time = end_time - start_time
-        logger.info(f"Strategic operation {operation_id} ended after {total_time:.2f}s")
+        logger.info("Strategic operation %s ended after %.2fs", operation_id, total_time)
         
 
 if __name__ == "__main__":

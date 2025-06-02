@@ -29,9 +29,9 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "strands,
-    "strands-tools", 
-    "mem0",
+    "strands-agents",
+    "strands-agents-tools", 
+    "mem0ai",
     "boto3",
     "botocore"
 ]
