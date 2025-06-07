@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Autonomous cybersecurity assessment tool powered by AWS Bedrock and Strands framework"
 readme = "README.md"
 authors = [
-    {name = "Cyber-AutoAgent Team", email = "contact@cyber-autoagent.com"}
+    {name = "Cyber-AutoAgent Team", email = "aaron.weston.brown@gmail.com"}
 ]
 license = {text = "MIT"}
 keywords = ["cybersecurity", "penetration-testing", "autonomous", "ai-agent", "security-assessment"]
@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Environment :: Console"
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "strands-agents",
     "strands-agents-tools", 
@@ -38,12 +38,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0"
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+    "mypy"
 ]
 
 [project.urls]
@@ -90,7 +90,7 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
