@@ -20,7 +20,7 @@
 
 An autonomous cybersecurity assessment tool powered by AWS Bedrock and the Strands framework. Conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection.
 
-![Demo GIF](docs/demo.gif)
+![Demo GIF](docs/agent_demo.gif)
 *Demo of Cyber-AutoAgent in action*
 
 ## 🚨 Important Disclaimer
@@ -224,6 +224,21 @@ python src/cyberautoagent.py \
   --region "us-west-2" \
   --verbose
 ```
+
+### Command-Line Arguments
+
+#### Required Arguments
+- `--objective`: Security assessment objective (what you want to achieve)
+- `--target`: Target system/network to assess (ensure you have permission!)
+
+#### Optional Arguments
+- `--iterations`: Maximum tool executions before stopping (default: 100)
+- `--verbose`: Enable verbose output with detailed debug logging
+- `--model`: Bedrock model ID to use (default: us.anthropic.claude-3-7-sonnet-20250219-v1:0)
+- `--region`: AWS region for Bedrock (default: us-east-1)
+- `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
+
+**Note**: By default, tool confirmations are disabled to allow autonomous operation. Use `--confirmations` if you want to approve each tool execution manually.
 
 ## 🧪 Setting Up DVWA Test Target
 
