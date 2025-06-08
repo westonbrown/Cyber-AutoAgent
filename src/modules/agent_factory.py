@@ -60,6 +60,7 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
                 "path": f"./evidence_{operation_id}"
             }
         },
+        "history_db_path": f"./evidence_{operation_id}/history.db",
         "version": "v1.1"
     }
     
