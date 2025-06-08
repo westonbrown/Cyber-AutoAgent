@@ -170,17 +170,47 @@ Critical vulnerabilities validated → Security impact demonstrated → "Objecti
 3. If impact meets objective, declare "Objective achieved: [accomplishment]"
 4. Only continue if additional critical targets identified
 
-Trust your professional judgment. If you've demonstrated security impact relevant to the objective, declare success."""
+Trust your professional judgment. If you've demonstrated security impact relevant to the objective, declare success.
 
-def get_initial_prompt(target: str, objective: str, iterations: int, available_tools: list) -> str:
-    """Generate the initial assessment prompt."""
+**SELF-EVALUATION FRAMEWORK:**
+
+Periodically ask yourself:
+1. What evidence have I collected so far?
+2. How does this evidence relate to my objective?
+3. Have I demonstrated meaningful impact?
+4. What's the most efficient path forward given my remaining budget?
+
+When you believe you've achieved the objective:
+- Clearly state: "Objective achieved: [specific technical evidence]"
+- Run memory_list() to show all collected evidence
+- Provide a brief summary of the attack path taken
+
+You are autonomous. Trust your expertise to determine when the objective is complete."""
+
+def get_initial_prompt(target: str, objective: str, iterations: int, available_tools: list, assessment_plan: Dict = None) -> str:
+    """Generate the initial assessment prompt with structured plan."""
+    
+    # Add assessment plan if available
+    plan_context = ""
+    if assessment_plan:
+        phases = assessment_plan.get('phases', [])
+        if phases:
+            plan_context = f"""
+
+**STRUCTURED ASSESSMENT PLAN:**
+The following phases have been identified for this assessment:
+"""
+            for i, phase in enumerate(phases[:3]):  # Show first 3 phases
+                plan_context += f"\n{i+1}. {phase['name']}:"
+                for goal in phase.get('sub_goals', [])[:2]:  # Show first 2 goals
+                    plan_context += f"\n   - {goal['description']} [Priority: {goal['priority']}]"
     
     return f"""🟢 ABUNDANT BUDGET - Begin autonomous security assessment.
 
 TARGET: {target}
 OBJECTIVE: {objective}
 EXECUTION BUDGET: {iterations} steps
-AVAILABLE TOOLS: {', '.join(available_tools) if available_tools else 'none'}
+AVAILABLE TOOLS: {', '.join(available_tools) if available_tools else 'none'}{plan_context}
 
 **ASSESSMENT APPROACH:**
 Analyze the target and plan your minimal reconnaissance approach to quickly identify exploitable vulnerabilities.
@@ -201,10 +231,12 @@ Have I demonstrated meaningful security impact?
 Evaluate: data extracted, access gained, vulnerabilities proven.
 Decision: Continue testing OR declare "Objective achieved: [specific accomplishment]"
 
-Begin your assessment by analyzing the target and planning your reconnaissance approach. Document all findings with memory_store()."""
+Begin your assessment by analyzing the target and planning your reconnaissance approach. Document all findings with memory_store().
 
-def get_continuation_prompt(remaining: int, total: int) -> str:
-    """Generate budget-aware continuation prompts."""
+**REMEMBER**: You are an autonomous agent. Create your own plan, adapt as you discover, and determine your own success criteria based on the objective."""
+
+def get_continuation_prompt(remaining: int, total: int, objective_status: Dict = None, next_task: str = None) -> str:
+    """Generate intelligent continuation prompts with objective awareness."""
     
     # Build dynamic prompt based on step budget psychology
     if remaining > 20:
@@ -216,9 +248,28 @@ def get_continuation_prompt(remaining: int, total: int) -> str:
     else:
         urgency_context = "🔴 EMERGENCY BUDGET: Single highest-impact exploitation attempt. Use most aggressive tool settings."
     
+    # Add objective progress if available
+    progress_context = ""
+    if objective_status:
+        progress_context = f"""
+
+**OBJECTIVE PROGRESS:**
+- Current Phase: {objective_status.get('current_phase', 'Unknown')}
+- Overall Progress: {objective_status.get('overall_progress', 0):.0%}
+- Critical Findings: {objective_status.get('critical_findings', 0)}
+- Next Priority: {objective_status.get('next_task', 'Assess situation')}"""
+    
+    # Add specific task guidance if available
+    task_context = ""
+    if next_task:
+        task_context = f"""
+
+**RECOMMENDED ACTION:**
+{next_task}"""
+    
     return f"""{urgency_context}
 
-You have {remaining} steps remaining out of {total} total.
+You have {remaining} steps remaining out of {total} total.{progress_context}{task_context}
 
 **SITUATION ANALYSIS:**
 Analyze current situation, evaluate findings, and assess budget constraints.
