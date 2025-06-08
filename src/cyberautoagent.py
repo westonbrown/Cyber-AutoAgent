@@ -34,7 +34,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 def main():
     """Main execution function"""
     
-    # Parse command line arguments
+    # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
         description="Cyber-AutoAgent - Autonomous Cybersecurity Assessment Tool",
         epilog="⚠️  Use only on authorized targets in safe environments ⚠️"
@@ -74,8 +74,23 @@ def main():
         default="us-east-1",
         help="AWS region for Bedrock (default: us-east-1)"
     )
+    parser.add_argument(
+        "--confirmations",
+        action="store_true",
+        help="Enable tool confirmation prompts (default: disabled)"
+    )
     
     args = parser.parse_args()
+    
+    # Set environment variables based on command line arguments
+    # By default, bypass tool confirmations (--confirmations flag enables them)
+    if not args.confirmations:
+        os.environ["BYPASS_TOOL_CONSENT"] = "true"
+    else:
+        # Remove the variable if confirmations are enabled
+        os.environ.pop("BYPASS_TOOL_CONSENT", None)
+    
+    os.environ["DEV"] = "true"
     
     # Initialize logger
     logger = setup_logging(verbose=args.verbose)
@@ -131,9 +146,6 @@ def main():
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
         
-        # Set environment variables
-        os.environ["DEV"] = "true"
-        
         # Initial strategic prompt
         initial_prompt = get_initial_prompt(args.target, args.objective, args.iterations, available_tools)
         
@@ -168,9 +180,14 @@ def main():
                             callback_handler.generate_final_report(agent, args.target, args.objective)
                     break
                 
-                # Check for successful objective completion
-                if analyze_objective_completion(messages):
-                    print_status("Objective achieved through autonomous execution!", "SUCCESS")
+                # Check if agent has determined objective completion
+                is_complete, completion_summary, metadata = analyze_objective_completion(messages)
+                
+                if is_complete:
+                    print_status(f"Objective achieved: {completion_summary}", "SUCCESS")
+                    if metadata.get('confidence'):
+                        print_status(f"Agent confidence: {metadata['confidence']}%", "INFO")
+                    
                     if callback_handler:
                         summary = callback_handler.get_summary()
                         print_status("Memory operations: %d" % summary['memory_operations'], "INFO")

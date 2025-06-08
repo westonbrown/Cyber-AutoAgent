@@ -21,21 +21,25 @@ operation_id = None
 
 @tool
 def memory_store(content: str, category: str = "general", metadata: Optional[Dict] = None) -> str:
-    """Store evidence or findings in local FAISS-backed memory.
+    """Store findings and track patterns in your security assessment.
     
-    Use this tool to permanently store important findings, vulnerabilities,
-    credentials, or other evidence discovered during security assessments.
+    Use this tool to document discoveries and track patterns in your testing.
+    This helps you learn from attempts and recognize when to change approaches.
     
     Args:
-        content: The evidence or finding to store
-        category: Category - vulnerability, credential, finding, access, enumeration
-        metadata: Optional metadata dict with additional context
+        content: The finding, attempt, or insight to store
+        category: Category - vulnerability, credential, finding, access, enumeration, plan, reflection
+        metadata: Optional context that helps you work efficiently. Consider:
+                  - patterns you're noticing in your testing
+                  - why this finding matters to your objective
+                  - what you learned that changes your strategy
     
     Returns:
         str: Success message with memory ID and preview
     
     Example:
-        memory_store("SQL injection in login form", "vulnerability", {"severity": "high"})
+        memory_store("Tested 5 XSS payloads, all filtered by input validation", "finding", 
+                    {"pattern": "repetitive_testing", "attempts": 5, "next_approach": "try_different_context"})
     """
     global mem0_instance, operation_id
     if mem0_instance is None:
@@ -46,8 +50,9 @@ def memory_store(content: str, category: str = "general", metadata: Optional[Dic
         if not content or not isinstance(content, str):
             return "Error: Content must be a non-empty string"
         
-        if category not in ["vulnerability", "credential", "finding", "access", "enumeration", "general"]:
-            return f"Error: Invalid category '{category}'. Use: vulnerability, credential, finding, access, enumeration, general"
+        valid_categories = ["vulnerability", "credential", "finding", "access", "enumeration", "general", "plan", "reflection"]
+        if category not in valid_categories:
+            return f"Error: Invalid category '{category}'. Use: {', '.join(valid_categories)}"
         
         # Prepare metadata
         if metadata is None:
@@ -88,10 +93,13 @@ def memory_store(content: str, category: str = "general", metadata: Optional[Dic
 
 @tool
 def memory_retrieve(query: str, category: Optional[str] = None, limit: int = 10) -> str:
-    """Retrieve evidence from memory based on semantic search.
+    """Search your stored findings and patterns.
+    
+    Use this to learn from previous attempts and identify patterns in your testing.
+    Particularly useful for recognizing when you're repeating approaches that haven't worked.
     
     Args:
-        query: Search query to find relevant evidence
+        query: Search for related findings, attempts, or patterns
         category: Optional category filter (vulnerability, credential, etc.)
         limit: Maximum number of results (default: 10)
     

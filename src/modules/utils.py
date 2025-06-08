@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from datetime import datetime
 
 # ANSI color codes for terminal output
@@ -72,39 +72,56 @@ def print_status(message, status="INFO"):
     timestamp = datetime.now().strftime("%H:%M:%S")
     print("%s[%s]%s %s %s[%s]%s %s" % (Colors.DIM, timestamp, Colors.RESET, emoji, color, status, Colors.RESET, message))
 
-#TODO improve objective completion logic. We should decompose sub goals from the plan and critic each sub step
-def analyze_objective_completion(messages: List[Dict]) -> bool:
-    """Check if agent explicitly declared objective achievement or demonstrated security impact"""
+def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]:
+    """Check if agent has declared objective completion through self-assessment.
+    
+    Returns:
+        (is_complete, summary, metadata)
+    """
     if not messages:
-        return False
+        return False, "", {}
     
-    # Look for explicit completion declaration
-    for msg in reversed(messages[-3:]):
+    import re
+    
+    # Look for explicit completion declaration - trust the agent's judgment
+    for msg in reversed(messages[-5:]):  # Check last 5 messages
         if msg.get("role") == "assistant":
-            content = str(msg.get("content", "")).lower()
-            if "objective achieved:" in content:
-                return True
+            content = str(msg.get("content", ""))
+            
+            # Check for explicit objective declaration
+            if "objective achieved:" in content.lower():
+                # Extract the agent's reasoning
+                match = re.search(r"objective achieved:(.+?)(?:\n|$)", content, re.IGNORECASE | re.DOTALL)
+                if match:
+                    summary = match.group(1).strip()
+                    
+                    # Extract any confidence or completion percentage mentioned
+                    confidence_match = re.search(r"(\d+)%", content)
+                    confidence = int(confidence_match.group(1)) if confidence_match else 100
+                    
+                    return True, summary, {"confidence": confidence, "agent_determined": True}
+                return True, "Agent declared objective complete", {"confidence": 100, "agent_determined": True}
+            
+            # Check for flag pattern (CTF-style flags)
+            flag_match = re.search(r'FLAG\{[^}]+\}', content)
+            if flag_match:
+                flag = flag_match.group(0)
+                # Also check for success indicators near the flag
+                if any(indicator in content.lower() for indicator in ["congratulations", "success", "correct", "flag obtained", "flag found"]):
+                    return True, f"Flag obtained: {flag}", {"confidence": 100, "flag_detected": True}
+            
+            # Check for other success indicators that might indicate completion
+            success_indicators = [
+                "successfully obtained flag",
+                "flag obtained",
+                "challenge complete",
+                "challenge solved",
+                "objective complete"
+            ]
+            
+            for indicator in success_indicators:
+                if indicator in content.lower():
+                    return True, f"Success indicator detected: {indicator}", {"confidence": 95, "success_indicator": True}
     
-    # Check for security impact indicators in recent messages
-    security_impact_indicators = [
-        "user credentials extracted",
-        "database compromised",
-        "command execution",
-        "shell access",
-        "data exfiltration",
-        "privilege escalation",
-        "administrative access",
-        "passwords dumped",
-        "database dump",
-        "credentials found"
-    ]
-    
-    # Look in last 2 messages for security impact
-    for msg in reversed(messages[-2:]):
-        if msg.get("role") == "assistant":
-            content = str(msg.get("content", "")).lower()
-            for indicator in security_impact_indicators:
-                if indicator in content:
-                    return True
-    
-    return False
+    # No explicit completion - let agent continue
+    return False, "", {}
