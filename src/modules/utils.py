@@ -72,7 +72,6 @@ def print_status(message, status="INFO"):
     timestamp = datetime.now().strftime("%H:%M:%S")
     print("%s[%s]%s %s %s[%s]%s %s" % (Colors.DIM, timestamp, Colors.RESET, emoji, color, status, Colors.RESET, message))
 
-<<<<<<< HEAD
 def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]:
     """Check if agent has declared objective completion through self-assessment.
     
@@ -85,33 +84,16 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
     import re
     
     # Look for explicit completion declaration - trust the agent's judgment
-=======
-def analyze_objective_completion(messages: List[Dict], objective: str = None) -> Tuple[bool, float, str]:
-    """Check if agent has achieved objective based on their own evaluation
-    
-    Returns:
-        (is_complete, confidence_score, completion_summary)
-    """
-    if not messages:
-        return False, 0.0, ""
-    
-    # Look for explicit completion declaration by the agent
->>>>>>> 161296d511c739b29b1fc287e25088975d1b9b81
     for msg in reversed(messages[-5:]):  # Check last 5 messages
         if msg.get("role") == "assistant":
             content = str(msg.get("content", ""))
             
-<<<<<<< HEAD
             # Check for explicit objective declaration
-=======
-            # Agent's explicit declaration takes precedence
->>>>>>> 161296d511c739b29b1fc287e25088975d1b9b81
             if "objective achieved:" in content.lower():
                 # Extract the agent's reasoning
                 match = re.search(r"objective achieved:(.+?)(?:\n|$)", content, re.IGNORECASE | re.DOTALL)
                 if match:
                     summary = match.group(1).strip()
-<<<<<<< HEAD
                     
                     # Extract any confidence or completion percentage mentioned
                     confidence_match = re.search(r"(\d+)%", content)
@@ -143,28 +125,3 @@ def analyze_objective_completion(messages: List[Dict], objective: str = None) ->
     
     # No explicit completion - let agent continue
     return False, "", {}
-=======
-                    return True, 1.0, summary
-                return True, 1.0, "Agent declared objective complete"
-    
-    # If objective provided, check for relevant evidence (as guidance only)
-    if objective:
-        from .objective_evaluator import ObjectiveEvaluator
-        evaluator = ObjectiveEvaluator(objective)
-        
-        # Gather evidence from recent messages
-        evidence = []
-        for msg in messages[-10:]:  # Last 10 messages
-            if msg.get("role") == "assistant":
-                content = str(msg.get("content", "")).lower()
-                if any(keyword in content for keyword in ['found', 'discovered', 'extracted', 'gained', 'compromised']):
-                    evidence.append({'content': content, 'category': 'finding'})
-        
-        relevance, matches = evaluator.evaluate_evidence(evidence)
-        
-        # High relevance might indicate completion (but agent decides)
-        if relevance > 0.7 and matches:
-            return False, relevance, f"High relevance ({relevance:.0%}) but agent hasn't declared completion"
-    
-    return False, 0.0, ""
->>>>>>> 161296d511c739b29b1fc287e25088975d1b9b81
