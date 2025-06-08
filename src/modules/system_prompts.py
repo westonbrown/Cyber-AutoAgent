@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from typing import Dict
+
 def get_system_prompt(target: str, objective: str, max_steps: int, operation_id: str, tools_context: str = "") -> str:
     """Generate the main system prompt for cyber security assessments."""
     

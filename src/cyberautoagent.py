@@ -160,12 +160,16 @@ def main():
             # Main autonomous execution loop
             while True:
                 try:
-                    # Execute agent step and get response
-                    result = agent(current_message, messages=messages)
+                    # For newer strands versions, pass the prompt directly without messages on first call
+                    if not messages:
+                        # First call - don't pass messages parameter
+                        result = agent(current_message)
+                    else:
+                        # Subsequent calls - pass messages
+                        result = agent(current_message, messages=messages)
                     
                     # Update conversation history
-                    if messages:
-                        messages.append({"role": "user", "content": current_message})
+                    messages.append({"role": "user", "content": current_message})
                     messages.append({"role": "assistant", "content": str(result)})
                     
                 except (StopIteration, Exception) as error:
