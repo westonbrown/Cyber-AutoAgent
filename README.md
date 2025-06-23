@@ -385,7 +385,101 @@ sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 ```
 
-## 9. Roadmap
+## 9. Docker Deployment
+
+The application is fully dockerized for easy deployment without local dependency management.
+
+### Prerequisites
+
+- Docker and Docker Compose installed
+- AWS credentials configured (see AWS Credentials section below)
+
+### Quick Start with Docker
+
+```bash
+# Build the Docker image
+docker build -t cyber-autoagent .
+
+# Run a basic assessment
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=us-east-1 \
+  -v $(pwd)/evidence:/app/evidence \
+  cyber-autoagent \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify and demonstrate exploitable vulnerabilities" \
+  --iterations 30
+```
+
+### Using Docker Compose (Recommended)
+
+```bash
+# Start with docker-compose
+docker-compose up --build
+
+# Or run a specific command
+docker-compose run --rm cyber-autoagent \
+  --target "your-target" \
+  --objective "your-objective"
+```
+
+### Evidence Management
+
+Evidence is automatically persisted in Docker volumes:
+
+```bash
+# List available evidence folders
+docker-compose run --rm evidence-viewer --list
+
+# Examine specific evidence
+docker-compose run --rm evidence-viewer --folder evidence_OP_123
+
+# View latest evidence
+docker-compose run --rm evidence-viewer --latest
+```
+
+### AWS Credentials
+
+Configure AWS credentials using one of these methods:
+
+#### Method 1: Environment Variables
+```bash
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_REGION=us-east-1
+```
+
+#### Method 2: AWS Credentials File
+Mount your local AWS credentials:
+```bash
+docker run --rm \
+  -v ~/.aws:/home/cyberagent/.aws:ro \
+  -v $(pwd)/evidence:/app/evidence \
+  cyber-autoagent --target "your-target" --objective "your-objective"
+```
+
+#### Method 3: Docker Compose
+Update the `.env` file:
+```bash
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=us-east-1
+```
+
+### Development Mode
+
+For development, mount the entire project:
+
+```bash
+docker run --rm -it \
+  -v $(pwd):/app \
+  -v ~/.aws:/home/cyberagent/.aws:ro \
+  --entrypoint bash \
+  cyber-autoagent
+```
+
+## 10. Roadmap
 
 - **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
 - **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
@@ -393,7 +487,7 @@ brew install nmap nikto sqlmap gobuster      # macOS
 - **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
 - **Cloud-Native Deployment** - Containerized execution with scaling capabilities
 
-## 10. Contributing
+## 11. Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -417,15 +511,15 @@ isort src/
 mypy src/
 ```
 
-## 11. License
+## 12. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 12. Legal Notice
+## 13. Legal Notice
 
 This tool is provided for educational and authorized security testing purposes only. Users are solely responsible for ensuring they have proper authorization before testing any systems. The authors assume no liability for misuse or any damages that may result from using this software.
 
-## 13. Acknowledgments
+## 14. Acknowledgments
 
 - [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access
