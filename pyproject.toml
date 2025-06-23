@@ -33,7 +33,8 @@ dependencies = [
     "strands-agents-tools>=0.1.4", 
     "mem0ai",
     "boto3",
-    "botocore"
+    "botocore",
+    "faiss-cpu"
 ]
 
 [project.optional-dependencies]
