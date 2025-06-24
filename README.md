@@ -409,7 +409,7 @@ docker run --rm \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify and demonstrate exploitable vulnerabilities" \
-  --iterations 30
+  --iterations 5
 ```
 
 ### Using Docker Compose (Recommended)
@@ -420,8 +420,9 @@ docker-compose up --build
 
 # Or run a specific command
 docker-compose run --rm cyber-autoagent \
-  --target "your-target" \
-  --objective "your-objective"
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify and demonstrate exploitable vulnerabilities" \
+  --iterations 5
 ```
 
 ### Evidence Management
@@ -437,34 +438,6 @@ docker-compose run --rm evidence-viewer --folder evidence_OP_123
 
 # View latest evidence
 docker-compose run --rm evidence-viewer --latest
-```
-
-### AWS Credentials
-
-Configure AWS credentials using one of these methods:
-
-#### Method 1: Environment Variables
-```bash
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_REGION=us-east-1
-```
-
-#### Method 2: AWS Credentials File
-Mount your local AWS credentials:
-```bash
-docker run --rm \
-  -v ~/.aws:/home/cyberagent/.aws:ro \
-  -v $(pwd)/evidence:/app/evidence \
-  cyber-autoagent --target "your-target" --objective "your-objective"
-```
-
-#### Method 3: Docker Compose
-Update the `.env` file:
-```bash
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_REGION=us-east-1
 ```
 
 ### Development Mode
