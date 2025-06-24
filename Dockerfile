@@ -1,7 +1,7 @@
 # Dockerfile for Cyber-AutoAgent
 # Multi-stage build for optimized container size
 
-FROM python:3.11-bullseye as builder
+FROM python:3.11-bullseye AS builder
 
 # Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -25,6 +25,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlmap \
     gobuster \
     curl \
+    netcat-traditional \
+    # Tools needed for nikto and metasploit installation
+    git \
+    perl \
+    gnupg2 \
+    wget \
     # Network tools
     iputils-ping \
     dnsutils \
@@ -32,6 +38,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/archives/*
+
+# Install nikto from source
+RUN git clone https://github.com/sullo/nikto.git /opt/nikto && \
+    ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto && \
+    chmod +x /opt/nikto/program/nikto.pl
+
+# Install metasploit framework
+RUN wget -q -O - https://apt.metasploit.com/metasploit-framework.gpg.key | apt-key add - && \
+    echo "deb https://apt.metasploit.com/ lucid main" > /etc/apt/sources.list.d/metasploit-framework.list && \
+    apt-get update && \
+    apt-get install -y metasploit-framework && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /var/cache/apt/archives/*
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -50,8 +70,9 @@ COPY --chown=cyberagent:cyberagent src/ ./src/
 COPY --chown=cyberagent:cyberagent scripts/ ./scripts/
 COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
-# Create directories for evidence storage and logs
+# Create directories for evidence storage and logs with proper permissions
 RUN mkdir -p /app/evidence /app/logs && \
+    chmod 755 /app/evidence /app/logs && \
     chown -R cyberagent:cyberagent /app
 
 # Switch to non-root user
