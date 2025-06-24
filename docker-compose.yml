@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   cyber-autoagent:
     build: .
@@ -8,9 +6,8 @@ services:
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_REGION=${AWS_REGION}
+      # - AWS_PROFILE=${AWS_PROFILE}
       
       # Python configuration
       - PYTHONPATH=/app/src
@@ -23,9 +20,6 @@ services:
       # Evidence persistence
       - ./evidence:/app/evidence
       - ./logs:/app/logs
-      
-      # AWS credentials (optional - alternative to env vars)
-      - ~/.aws:/home/cyberagent/.aws:ro
       
       # Mount entire project for development (uncomment for dev mode)
       # - .:/app
