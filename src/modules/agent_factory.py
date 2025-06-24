@@ -57,10 +57,10 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
             "provider": "faiss",
             "config": {
                 "embedding_model_dims": 1024,
-                "path": f"./evidence_{operation_id}"
+                "path": f"/app/evidence/evidence_{operation_id}"
             }
         },
-        "history_db_path": f"./evidence_{operation_id}/history.db",
+        "history_db_path": f"/app/evidence/evidence_{operation_id}/history.db",
         "version": "v1.1"
     }
     

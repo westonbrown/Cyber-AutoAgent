@@ -400,17 +400,27 @@ The application is fully dockerized for easy deployment without local dependency
 # Build the Docker image
 docker build -t cyber-autoagent .
 
-# Run a basic assessment
+# Run a basic assessment with persistent evidence and logs
 docker run --rm \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_REGION=us-east-1 \
   -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/logs:/app/logs \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify and demonstrate exploitable vulnerabilities" \
   --iterations 5
+
+# After execution, check the persisted data:
+# ./evidence/ - Contains operation evidence, memory database, and final reports
+# ./logs/ - Contains detailed operation logs
 ```
+
+**What Gets Persisted:**
+- **Evidence Directory**: Operation-specific evidence databases, memory stores, and final assessment reports (Markdown format)
+- **Logs Directory**: Detailed operation logs with timestamps and debug information
+- **Final Reports**: Comprehensive assessment reports saved as `final_report_TIMESTAMP.md` in the evidence directory
 
 ### Using Docker Compose (Recommended)
 
@@ -423,21 +433,6 @@ docker-compose run --rm cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify and demonstrate exploitable vulnerabilities" \
   --iterations 5
-```
-
-### Evidence Management
-
-Evidence is automatically persisted in Docker volumes:
-
-```bash
-# List available evidence folders
-docker-compose run --rm evidence-viewer --list
-
-# Examine specific evidence
-docker-compose run --rm evidence-viewer --folder evidence_OP_123
-
-# View latest evidence
-docker-compose run --rm evidence-viewer --latest
 ```
 
 ### Development Mode
