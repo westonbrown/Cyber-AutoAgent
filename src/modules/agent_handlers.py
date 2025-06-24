@@ -444,18 +444,25 @@ class ReasoningHandler(PrintingCallbackHandler):
         # Retrieve evidence from memory system
         evidence = self._retrieve_evidence()
         
+        # Always generate some form of report, even if no evidence or LLM fails
+        report_content = ""
+        
         if not evidence:
             self._display_no_evidence_message()
-            return
+            report_content = self._generate_no_evidence_report(target, objective)
+        else:
+            # Generate LLM-based assessment report
+            try:
+                report_content = self._generate_llm_report(agent, target, objective, evidence)
+                self._display_final_report(report_content)
+                
+            except Exception as e:
+                print("%sError generating final report: %s%s" % (Colors.RED, str(e), Colors.RESET))
+                self._display_fallback_evidence(evidence)
+                report_content = self._generate_fallback_report(target, objective, evidence)
         
-        # Generate LLM-based assessment report
-        try:
-            report_content = self._generate_llm_report(agent, target, objective, evidence)
-            self._display_final_report(report_content)
-            
-        except Exception as e:
-            print("%sError generating final report: %s%s" % (Colors.RED, str(e), Colors.RESET))
-            self._display_fallback_evidence(evidence)
+        # Always save report to file, regardless of content type
+        self._save_report_to_file(report_content, target, objective)
     
     def _retrieve_evidence(self) -> List[Dict]:
         """Retrieve all collected evidence from memory system."""
@@ -583,6 +590,99 @@ Format this as a professional penetration testing report."""
         print("%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
         print("\n%s" % report_content)
         print("\n%s%s%s" % (Colors.DIM, '─' * 80, Colors.RESET))
+    
+    def _save_report_to_file(self, report_content: str, target: str, objective: str) -> None:
+        """Save report to file in evidence directory."""
+        try:
+            import os
+            from datetime import datetime
+            
+            # Create evidence directory if it doesn't exist
+            evidence_dir = f"/app/evidence/evidence_{self.operation_id}"
+            os.makedirs(evidence_dir, exist_ok=True)
+            
+            # Save report with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"final_report_{timestamp}.md"
+            report_path = os.path.join(evidence_dir, report_filename)
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(f"# Cybersecurity Assessment Report\n\n")
+                f.write(f"**Operation ID:** {self.operation_id}\n")
+                f.write(f"**Target:** {target}\n")
+                f.write(f"**Objective:** {objective}\n")
+                f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                f.write("---\n\n")
+                f.write(report_content)
+            
+            print("\n%s📄 Report saved to: %s%s" % (Colors.GREEN, report_path, Colors.RESET))
+            
+        except Exception as e:
+            print("%sWarning: Could not save report to file: %s%s" % (Colors.YELLOW, str(e), Colors.RESET))
+    
+    def _generate_no_evidence_report(self, target: str, objective: str) -> str:
+        """Generate a report when no evidence was collected."""
+        summary = self.get_summary()
+        return f"""## Assessment Summary
+
+**Status:** No evidence collected during assessment
+
+### Operation Details
+- Steps completed: {summary['total_steps']}/{self.max_steps}
+- Tools created: {summary['tools_created']}
+- Memory operations: {summary['memory_operations']}
+
+### Possible Reasons
+- Target may not be reachable
+- No vulnerabilities found within step limit
+- Authentication or permission issues
+- Network connectivity problems
+
+### Recommendations
+- Verify target accessibility
+- Increase iteration limit if needed
+- Check network connectivity and permissions
+- Review target configuration and scope
+"""
+    
+    def _generate_fallback_report(self, target: str, objective: str, evidence: List[Dict]) -> str:
+        """Generate a fallback report when LLM generation fails."""
+        summary = self.get_summary()
+        evidence_summary = ""
+        
+        # Group evidence by category
+        categories = {}
+        for item in evidence:
+            cat = item.get('category', 'unknown')
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append(item.get('content', ''))
+        
+        # Format evidence by category
+        for category, items in categories.items():
+            evidence_summary += f"\n### {category.title()} Findings\n"
+            for i, item in enumerate(items[:5], 1):  # Limit to 5 items per category
+                evidence_summary += f"{i}. {item[:200]}{'...' if len(item) > 200 else ''}\n"
+            if len(items) > 5:
+                evidence_summary += f"... and {len(items) - 5} more items\n"
+        
+        return f"""## Assessment Summary
+
+**Status:** Evidence collected but LLM report generation failed
+
+### Operation Details
+- Steps completed: {summary['total_steps']}/{self.max_steps}
+- Tools created: {summary['tools_created']}
+- Evidence items: {len(evidence)}
+- Memory operations: {summary['memory_operations']}
+
+### Evidence Collected
+{evidence_summary}
+
+### Note
+This is a fallback report generated when AI analysis was unavailable. 
+Review the evidence items above for detailed findings.
+"""
     
     def _display_fallback_evidence(self, evidence: List[Dict]) -> None:
         """Display evidence summary as fallback when LLM generation fails."""
