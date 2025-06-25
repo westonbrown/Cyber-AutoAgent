@@ -6,13 +6,13 @@ import sys
 from pathlib import Path
 from typing import List
 
-from .utils import Colors
+from .utils import Colors, get_data_path
 
 def auto_setup() -> List[str]:
     """Setup directories and discover available cyber tools"""
     # Create necessary directories in proper locations
     Path('tools').mkdir(exist_ok=True)  # Local tools directory for custom tools
-    Path('/app/logs').mkdir(exist_ok=True)  # Volume logs directory
+    Path(get_data_path('logs')).mkdir(exist_ok=True)  # Logs directory
     
     print("%s[*] Discovering cyber security tools...%s" % (Colors.CYAN, Colors.RESET))
     

@@ -23,7 +23,7 @@ import argparse
 import time
 from datetime import datetime
 
-from modules.utils import Colors, print_banner, print_section, print_status, analyze_objective_completion
+from modules.utils import Colors, print_banner, print_section, print_status, analyze_objective_completion, get_data_path
 from modules.environment import auto_setup, setup_logging  
 from modules.agent_factory import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
@@ -93,7 +93,7 @@ def main():
     os.environ["DEV"] = "true"
     
     # Initialize logger with volume path
-    logger = setup_logging(log_file='/app/logs/cyber_operations.log', verbose=args.verbose)
+    logger = setup_logging(log_file=os.path.join(get_data_path('logs'), 'cyber_operations.log'), verbose=args.verbose)
     
     # Display banner
     print_banner()

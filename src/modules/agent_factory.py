@@ -16,7 +16,7 @@ from . import memory_tools
 from .memory_tools import memory_store, memory_retrieve, memory_list
 from .system_prompts import get_system_prompt
 from .agent_handlers import ReasoningHandler
-from .utils import Colors
+from .utils import Colors, get_data_path
 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
@@ -57,10 +57,10 @@ def create_agent(target: str, objective: str, max_steps: int = 100, available_to
             "provider": "faiss",
             "config": {
                 "embedding_model_dims": 1024,
-                "path": f"/app/evidence/evidence_{operation_id}"
+                "path": os.path.join(get_data_path('evidence'), f"evidence_{operation_id}")
             }
         },
-        "history_db_path": f"/app/evidence/evidence_{operation_id}/history.db",
+        "history_db_path": os.path.join(get_data_path('evidence'), f"evidence_{operation_id}", "history.db"),
         "version": "v1.1"
     }
     

@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 
+import os
 from typing import List, Dict, Tuple
 from datetime import datetime
+
+def get_data_path(subdir=''):
+    """Get the appropriate data path for current environment (Docker or local)"""
+    base = '/app' if os.path.exists('/app') else os.getcwd()
+    return os.path.join(base, subdir) if subdir else base
 
 # ANSI color codes for terminal output
 class Colors:
