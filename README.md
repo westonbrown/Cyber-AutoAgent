@@ -385,7 +385,69 @@ sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 ```
 
-## 9. Roadmap
+## 9. Docker Deployment
+
+The application is fully dockerized for easy deployment without local dependency management.
+
+### Prerequisites
+
+- Docker and Docker Compose installed
+- AWS credentials configured (see AWS Credentials section below)
+
+### Quick Start with Docker
+
+```bash
+# Build the Docker image
+docker build -t cyber-autoagent .
+
+# Run a basic assessment with persistent evidence and logs
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=us-east-1 \
+  -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/logs:/app/logs \
+  cyber-autoagent \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify and demonstrate exploitable vulnerabilities" \
+  --iterations 5
+
+# After execution, check the persisted data:
+# ./evidence/ - Contains operation evidence, memory database, and final reports
+# ./logs/ - Contains detailed operation logs
+```
+
+**What Gets Persisted:**
+- **Evidence Directory**: Operation-specific evidence databases, memory stores, and final assessment reports (Markdown format)
+- **Logs Directory**: Detailed operation logs with timestamps and debug information
+- **Final Reports**: Comprehensive assessment reports saved as `final_report_TIMESTAMP.md` in the evidence directory
+
+### Using Docker Compose (Recommended)
+
+```bash
+# Start with docker-compose
+docker-compose up --build
+
+# Or run a specific command
+docker-compose run --rm cyber-autoagent \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify and demonstrate exploitable vulnerabilities" \
+  --iterations 5
+```
+
+### Development Mode
+
+For development, mount the entire project:
+
+```bash
+docker run --rm -it \
+  -v $(pwd):/app \
+  -v ~/.aws:/home/cyberagent/.aws:ro \
+  --entrypoint bash \
+  cyber-autoagent
+```
+
+## 10. Roadmap
 
 - **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
 - **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
@@ -393,7 +455,7 @@ brew install nmap nikto sqlmap gobuster      # macOS
 - **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
 - **Cloud-Native Deployment** - Containerized execution with scaling capabilities
 
-## 10. Contributing
+## 11. Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -417,15 +479,15 @@ isort src/
 mypy src/
 ```
 
-## 11. License
+## 12. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 12. Legal Notice
+## 13. Legal Notice
 
 This tool is provided for educational and authorized security testing purposes only. Users are solely responsible for ensuring they have proper authorization before testing any systems. The authors assume no liability for misuse or any damages that may result from using this software.
 
-## 13. Acknowledgments
+## 14. Acknowledgments
 
 - [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access
