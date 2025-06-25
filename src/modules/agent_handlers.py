@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
-from .utils import Colors
+from .utils import Colors, get_data_path
 
 # Constants for display formatting
 CONTENT_PREVIEW_LENGTH = 60
@@ -598,7 +598,7 @@ Format this as a professional penetration testing report."""
             from datetime import datetime
             
             # Create evidence directory if it doesn't exist
-            evidence_dir = f"/app/evidence/evidence_{self.operation_id}"
+            evidence_dir = os.path.join(get_data_path('evidence'), f"evidence_{self.operation_id}")
             os.makedirs(evidence_dir, exist_ok=True)
             
             # Save report with timestamp
