@@ -1,0 +1,59 @@
+services:
+  cyber-autoagent:
+    build: .
+    container_name: cyber-autoagent
+    environment:
+      # AWS Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      # - AWS_PROFILE=${AWS_PROFILE}
+      
+      # Python configuration
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+      
+      # Application configuration
+      - DEV=true
+    
+    volumes:
+      # Evidence persistence
+      - ./evidence:/app/evidence
+      - ./logs:/app/logs
+      
+      # Mount entire project for development (uncomment for dev mode)
+      # - .:/app
+    
+    # Network configuration for security scanning
+    network_mode: "host"
+    
+    # Uncomment to run with additional privileges for certain scans
+    # privileged: true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    # Override default command for interactive use
+    # command: ["--target", "example.com", "--objective", "Basic reconnaissance"]
+    
+    # For interactive debugging
+    stdin_open: true
+    tty: true
+
+# Named volumes for better control
+volumes:
+  evidence_data:
+    driver: local
+  logs_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

@@ -92,8 +92,8 @@ def main():
     
     os.environ["DEV"] = "true"
     
-    # Initialize logger
-    logger = setup_logging(verbose=args.verbose)
+    # Initialize logger with volume path
+    logger = setup_logging(log_file='/app/logs/cyber_operations.log', verbose=args.verbose)
     
     # Display banner
     print_banner()
@@ -262,7 +262,7 @@ def main():
                         if len(evidence_summary) > 5:
                             print("  • ... and %d more items" % (len(evidence_summary) - 5))
             
-            print("\n%s💾 Evidence stored in:%s ./evidence_%s.faiss" % (Colors.BOLD, Colors.RESET, local_operation_id))
+            print("\n%s💾 Evidence stored in:%s /app/evidence/evidence_%s" % (Colors.BOLD, Colors.RESET, local_operation_id))
             print("%s" % ('='*80))
         
     except KeyboardInterrupt:
@@ -275,6 +275,13 @@ def main():
         sys.exit(1)
         
     finally:
+        # Ensure final report is generated if callback_handler exists and report not yet generated
+        if callback_handler and not getattr(callback_handler, 'report_generated', False):
+            try:
+                callback_handler.generate_final_report(agent, args.target, args.objective)
+            except Exception as report_error:
+                logger.warning("Error generating final report: %s", report_error)
+        
         # Clean up resources
         from modules.memory_tools import mem0_instance
         if mem0_instance:
