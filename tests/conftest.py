@@ -87,7 +87,7 @@ def mock_ollama_models_available():
         mock_client_instance = mock_client.return_value
         mock_client_instance.list.return_value = {
             "models": [
-                {"model": "MFDoom/deepseek-r1-tool-calling:8b"},
+                {"model": "MFDoom/deepseek-r1-tool-calling:1.5b"},
                 {"model": "mxbai-embed-large"},
                 {"model": "other-model:latest"},
             ]
