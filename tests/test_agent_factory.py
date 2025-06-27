@@ -25,7 +25,7 @@ class TestModelConfigs:
         """Test local model configuration defaults"""
         config = _get_default_model_configs("local")
 
-        assert config["llm_model"] == "deepseek-r1:8b"
+        assert config["llm_model"] == "MFDoom/deepseek-r1-tool-calling:8b"
         assert config["embedding_model"] == "mxbai-embed-large"
         assert config["embedding_dims"] == 1024
 
@@ -52,7 +52,7 @@ class TestMemoryConfig:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("modules.agent_factory.get_data_path", return_value=tmpdir):
                 defaults = {
-                    "llm_model": "deepseek-r1:8b",
+                    "llm_model": "MFDoom/deepseek-r1-tool-calling:8b",
                     "embedding_model": "mxbai-embed-large",
                     "embedding_dims": 1024,
                 }
@@ -60,7 +60,7 @@ class TestMemoryConfig:
 
                 assert config["llm"]["provider"] == "ollama"
                 assert config["embedder"]["provider"] == "ollama"
-                assert config["llm"]["config"]["model"] == "deepseek-r1:8b"
+                assert config["llm"]["config"]["model"] == "MFDoom/deepseek-r1-tool-calling:8b"
                 assert config["embedder"]["config"]["model"] == "mxbai-embed-large"
                 assert config["vector_store"]["provider"] == "faiss"
                 assert config["vector_store"]["config"]["embedding_model_dims"] == 1024
@@ -90,21 +90,25 @@ class TestServerValidation:
 
     @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
     @patch("modules.agent_factory.requests.get")
-    @patch("modules.agent_factory.ollama.list")
+    @patch("modules.agent_factory.ollama.Client")
     def test_validate_server_requirements_local_success(
-        self, mock_ollama_list, mock_requests
+        self, mock_ollama_client, mock_requests
     ):
         """Test successful local server validation"""
         # Mock Ollama server responding
         mock_requests.return_value.status_code = 200
 
-        # Mock required models available
-        mock_ollama_list.return_value = {
-            "models": [{"name": "deepseek-r1:8b"}, {"name": "mxbai-embed-large"}]
+        # Mock ollama client and list method
+        mock_client_instance = mock_ollama_client.return_value
+        mock_client_instance.list.return_value = {
+            "models": [{"model": "MFDoom/deepseek-r1-tool-calling:8b"}, {"model": "mxbai-embed-large"}]
         }
 
         # Should not raise any exception
         _validate_server_requirements("local")
+        
+        # Verify client was created with correct host
+        mock_ollama_client.assert_called_once_with(host="http://host.docker.internal:11434")
 
     @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
     @patch("modules.agent_factory.requests.get")
@@ -118,17 +122,18 @@ class TestServerValidation:
 
     @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
     @patch("modules.agent_factory.requests.get")
-    @patch("modules.agent_factory.ollama.list")
+    @patch("modules.agent_factory.ollama.Client")
     def test_validate_server_requirements_local_missing_models(
-        self, mock_ollama_list, mock_requests
+        self, mock_ollama_client, mock_requests
     ):
         """Test local server validation when models are missing"""
         # Mock Ollama server responding
         mock_requests.return_value.status_code = 200
 
-        # Mock missing models
-        mock_ollama_list.return_value = {
-            "models": [{"name": "some-other-model:latest"}]
+        # Mock ollama client and list method with missing models
+        mock_client_instance = mock_ollama_client.return_value
+        mock_client_instance.list.return_value = {
+            "models": [{"model": "some-other-model:latest"}]
         }
 
         with pytest.raises(ValueError, match="Required models not found"):

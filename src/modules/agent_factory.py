@@ -39,7 +39,7 @@ def _get_default_model_configs(server: str) -> Dict[str, Any]:
     """Get default model configurations based on server type"""
     if server == "local":
         return {
-            "llm_model": "deepseek-r1:8b",
+            "llm_model": "MFDoom/deepseek-r1-tool-calling:8b",
             "embedding_model": "mxbai-embed-large",
             "embedding_dims": 1024,
         }
@@ -70,7 +70,7 @@ def _create_remote_model(
 
 def _create_local_model(
     model_id: str,
-    host: str = "http://localhost:11434",
+    host: str = "http://host.docker.internal:11434",
     temperature: float = 0.95,
     max_tokens: int = 4096,
 ) -> Any:
@@ -99,14 +99,14 @@ def _create_memory_config(
                     "model": defaults["llm_model"],
                     "temperature": 0.1,
                     "max_tokens": 1024,
-                    "ollama_base_url": "http://localhost:11434",
+                    "ollama_base_url": "http://host.docker.internal:11434",
                 },
             },
             "embedder": {
                 "provider": "ollama",
                 "config": {
                     "model": defaults["embedding_model"],
-                    "ollama_base_url": "http://localhost:11434",
+                    "ollama_base_url": "http://host.docker.internal:11434",
                 },
             },
             "vector_store": {
@@ -154,12 +154,12 @@ def _validate_server_requirements(server: str) -> None:
             raise ImportError("Requests module not available")
         
         try:
-            response = requests.get("http://localhost:11434/api/version", timeout=5)
+            response = requests.get("http://host.docker.internal:11434/api/version", timeout=5)
             if response.status_code != 200:
                 raise ConnectionError("Ollama server not responding")
         except Exception:
             raise ConnectionError(
-                "Ollama server not accessible at http://localhost:11434. "
+                "Ollama server not accessible at http://host.docker.internal:11434. "
                 "Please ensure Ollama is installed and running."
             )
 
@@ -170,8 +170,10 @@ def _validate_server_requirements(server: str) -> None:
             )
 
         try:
-            available_models = [m["name"] for m in ollama.list()["models"]]
-            required_models = ["deepseek-r1:8b", "mxbai-embed-large"]
+            client = ollama.Client(host="http://host.docker.internal:11434")
+            models_response = client.list()
+            available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
+            required_models = ["MFDoom/deepseek-r1-tool-calling:8b", "mxbai-embed-large"]
             missing = [
                 m
                 for m in required_models
@@ -204,7 +206,7 @@ def _handle_model_creation_error(server: str, error: Exception) -> None:
         print("    1. Ensure Ollama is installed: https://ollama.ai")
         print("    2. Start Ollama: ollama serve")
         print("    3. Pull required models:")
-        print("       ollama pull deepseek-r1:8b")
+        print("       ollama pull MFDoom/deepseek-r1-tool-calling:8b")
         print("       ollama pull mxbai-embed-large")
     else:
         print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
