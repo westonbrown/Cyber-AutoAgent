@@ -2,9 +2,16 @@
 
 from typing import Dict
 
-def get_system_prompt(target: str, objective: str, max_steps: int, operation_id: str, tools_context: str = "") -> str:
+
+def get_system_prompt(
+    target: str,
+    objective: str,
+    max_steps: int,
+    operation_id: str,
+    tools_context: str = "",
+) -> str:
     """Generate the main system prompt for cyber security assessments."""
-    
+
     return f"""You are an elite cybersecurity operator conducting authorized penetration testing with access to cyber tools and the ability to create custom tools using meta-tooling.
 
 ## AUTONOMOUS CYBER ASSESSMENT FRAMEWORK
@@ -39,9 +46,9 @@ CRITICAL: Avoid manual curl testing when professional tools exist.
 - Command injection → Direct shell commands or metasploit modules (NOT curl with encoded payloads)
 
 **Anti-Pattern Recognition:**
-❌ curl "http://target/sqli?id=1'" (use sqlmap instead)  
-❌ Multiple curl login attempts (establish session once, then exploit)
-❌ Manual payload crafting in curl (use specialized injection tools)
+AVOID: curl "http://target/sqli?id=1'" (use sqlmap instead)  
+AVOID: Multiple curl login attempts (establish session once, then exploit)
+AVOID: Manual payload crafting in curl (use specialized injection tools)
 
 **BUDGET-AWARE DECISION FRAMEWORK:**
 
@@ -51,7 +58,7 @@ Execute nmap + nikto OR single comprehensive scanner.
 Evaluate each finding for immediate exploitation potential.
 
 **Exploitation Decision Points:**
-🚨 CRITICAL EXPLOITATION TRIGGERS:
+CRITICAL EXPLOITATION TRIGGERS:
 - Database credentials found → Can I access the database immediately? → Direct database access or sqlmap
 - Config files exposed → What credentials can I extract now? → Download and analyze immediately  
 - SQL injection detected → What's the fastest data extraction method? → sqlmap with aggressive settings
@@ -161,10 +168,10 @@ Sensitive data accessed → Data exfiltration proven → "Objective achieved: Se
 Critical vulnerabilities validated → Security impact demonstrated → "Objective achieved: Critical security weaknesses exploited"
 
 **SUCCESS EVALUATION CRITERIA:**
-✅ Did I extract credentials or data? → Demonstrates unauthorized access
-✅ Did I achieve code execution? → Proves system compromise
-✅ Did I gain privileged access? → Shows escalation capability
-✅ Did I demonstrate exploitable vulnerabilities? → Validates security risk
+CHECK: Did I extract credentials or data? → Demonstrates unauthorized access
+CHECK: Did I achieve code execution? → Proves system compromise
+CHECK: Did I gain privileged access? → Shows escalation capability
+CHECK: Did I demonstrate exploitable vulnerabilities? → Validates security risk
 
 **COMPLETION DECISION PROCESS:**
 1. Evaluate current evidence against objective requirements
@@ -189,30 +196,39 @@ When you believe you've achieved the objective:
 
 You are autonomous. Trust your expertise to determine when the objective is complete."""
 
-def get_initial_prompt(target: str, objective: str, iterations: int, available_tools: list, assessment_plan: Dict = None) -> str:
+
+def get_initial_prompt(
+    target: str,
+    objective: str,
+    iterations: int,
+    available_tools: list,
+    assessment_plan: Dict = None,
+) -> str:
     """Generate the initial assessment prompt with structured plan."""
-    
+
     # Add assessment plan if available
     plan_context = ""
     if assessment_plan:
-        phases = assessment_plan.get('phases', [])
+        phases = assessment_plan.get("phases", [])
         if phases:
-            plan_context = f"""
+            plan_context = """
 
 **STRUCTURED ASSESSMENT PLAN:**
 The following phases have been identified for this assessment:
 """
             for i, phase in enumerate(phases[:3]):  # Show first 3 phases
-                plan_context += f"\n{i+1}. {phase['name']}:"
-                for goal in phase.get('sub_goals', [])[:2]:  # Show first 2 goals
-                    plan_context += f"\n   - {goal['description']} [Priority: {goal['priority']}]"
-    
+                plan_context += f"\n{i + 1}. {phase['name']}:"
+                for goal in phase.get("sub_goals", [])[:2]:  # Show first 2 goals
+                    plan_context += (
+                        f"\n   - {goal['description']} [Priority: {goal['priority']}]"
+                    )
+
     return f"""🟢 ABUNDANT BUDGET - Begin autonomous security assessment.
 
 TARGET: {target}
 OBJECTIVE: {objective}
 EXECUTION BUDGET: {iterations} steps
-AVAILABLE TOOLS: {', '.join(available_tools) if available_tools else 'none'}{plan_context}
+AVAILABLE TOOLS: {", ".join(available_tools) if available_tools else "none"}{plan_context}
 
 **ASSESSMENT APPROACH:**
 Analyze the target and plan your minimal reconnaissance approach to quickly identify exploitable vulnerabilities.
@@ -237,9 +253,12 @@ Begin your assessment by analyzing the target and planning your reconnaissance a
 
 **REMEMBER**: You are an autonomous agent. Create your own plan, adapt as you discover, and determine your own success criteria based on the objective."""
 
-def get_continuation_prompt(remaining: int, total: int, objective_status: Dict = None, next_task: str = None) -> str:
+
+def get_continuation_prompt(
+    remaining: int, total: int, objective_status: Dict = None, next_task: str = None
+) -> str:
     """Generate intelligent continuation prompts with objective awareness."""
-    
+
     # Build dynamic prompt based on step budget psychology
     if remaining > 20:
         urgency_context = "🟢 ABUNDANT BUDGET: Standard methodology, but prioritize exploitation over extensive enumeration."
@@ -249,18 +268,18 @@ def get_continuation_prompt(remaining: int, total: int, objective_status: Dict =
         urgency_context = "🟠 CRITICAL BUDGET: EXPLOITATION-ONLY MODE. No new reconnaissance. Focus on maximum impact with discovered vulnerabilities."
     else:
         urgency_context = "🔴 EMERGENCY BUDGET: Single highest-impact exploitation attempt. Use most aggressive tool settings."
-    
+
     # Add objective progress if available
     progress_context = ""
     if objective_status:
         progress_context = f"""
 
 **OBJECTIVE PROGRESS:**
-- Current Phase: {objective_status.get('current_phase', 'Unknown')}
-- Overall Progress: {objective_status.get('overall_progress', 0):.0%}
-- Critical Findings: {objective_status.get('critical_findings', 0)}
-- Next Priority: {objective_status.get('next_task', 'Assess situation')}"""
-    
+- Current Phase: {objective_status.get("current_phase", "Unknown")}
+- Overall Progress: {objective_status.get("overall_progress", 0):.0%}
+- Critical Findings: {objective_status.get("critical_findings", 0)}
+- Next Priority: {objective_status.get("next_task", "Assess situation")}"""
+
     # Add specific task guidance if available
     task_context = ""
     if next_task:
@@ -268,7 +287,7 @@ def get_continuation_prompt(remaining: int, total: int, objective_status: Dict =
 
 **RECOMMENDED ACTION:**
 {next_task}"""
-    
+
     return f"""{urgency_context}
 
 You have {remaining} steps remaining out of {total} total.{progress_context}{task_context}
