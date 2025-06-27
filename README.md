@@ -179,7 +179,7 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 ### 🏠 Local Mode (Ollama)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
-- **Default Models**: `MFDoom/deepseek-r1-tool-calling:8b` (LLM), `mxbai-embed-large` (embeddings)
+- **Default Models**: `MFDoom/deepseek-r1-tool-calling:1.5b` (LLM), `mxbai-embed-large` (embeddings)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### Comparison
@@ -225,7 +225,7 @@ Cyber-AutoAgent can be deployed in two ways: **locally** or using **Docker** (re
    ollama serve
    
    # Pull LLM and embedding models
-   ollama pull MFDoom/deepseek-r1-tool-calling:8b
+   ollama pull MFDoom/deepseek-r1-tool-calling:1.5b
    ollama pull mxbai-embed-large
    ```
 
@@ -389,7 +389,7 @@ python src/cyberautoagent.py \
 - `--server`: Model provider - `remote` for AWS Bedrock, `local` for Ollama (default: remote)
 - `--iterations`: Maximum tool executions before stopping (default: 100)
 - `--verbose`: Enable verbose output with detailed debug logging
-- `--model`: Model ID to use (default: remote=claude-sonnet, local=MFDoom/deepseek-r1-tool-calling:8b)
+- `--model`: Model ID to use (default: remote=claude-sonnet, local=MFDoom/deepseek-r1-tool-calling:1.5b)
 - `--region`: AWS region for Bedrock (default: us-east-1)
 - `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
 
@@ -573,7 +573,7 @@ curl http://localhost:11434/api/version
 **Required Models Missing**
 ```bash
 # Pull required models
-ollama pull MFDoom/deepseek-r1-tool-calling:8b
+ollama pull MFDoom/deepseek-r1-tool-calling:1.5b
 ollama pull mxbai-embed-large
 
 # List available models
@@ -585,7 +585,7 @@ ollama list
 # Check Ollama is accessible
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"model": "MFDoom/deepseek-r1-tool-calling:8b", "prompt": "test", "stream": false}'
+  -d '{"model": "MFDoom/deepseek-r1-tool-calling:1.5b", "prompt": "test", "stream": false}'
 ```
 
 **Docker Networking Issues (Local Mode)**
