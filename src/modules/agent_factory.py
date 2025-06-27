@@ -4,7 +4,7 @@ import os
 import logging
 import warnings
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple, Dict, Any
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -12,101 +12,310 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, file_write, editor, load_tool
 from mem0 import Memory
 
+# Conditional imports with graceful fallback
+try:
+    from strands.models.ollama import OllamaModel
+    import ollama
+    import requests
+
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
+    # Define placeholder types for when imports are not available
+    OllamaModel = None  # type: ignore
+    ollama = None  # type: ignore
+    requests = None  # type: ignore
+
 from . import memory_tools
 from .memory_tools import memory_store, memory_retrieve, memory_list
 from .system_prompts import get_system_prompt
 from .agent_handlers import ReasoningHandler
 from .utils import Colors, get_data_path
 
-warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-def create_agent(target: str, objective: str, max_steps: int = 100, available_tools: Optional[List[str]] = None, 
-                op_id: Optional[str] = None, model_id: str = "us.anthropic.claude-3-7-sonnet-20250219-v1:0", 
-                region_name: str = "us-east-1"):
+
+def _get_default_model_configs(server: str) -> Dict[str, Any]:
+    """Get default model configurations based on server type"""
+    if server == "local":
+        return {
+            "llm_model": "deepseek-r1:8b",
+            "embedding_model": "mxbai-embed-large",
+            "embedding_dims": 1024,
+        }
+    else:  # remote
+        return {
+            "llm_model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "embedding_model": "amazon.titan-embed-text-v2:0",
+            "embedding_dims": 1024,
+        }
+
+
+def _create_remote_model(
+    model_id: str,
+    region_name: str,
+    temperature: float = 0.95,
+    max_tokens: int = 4096,
+    top_p: float = 0.95,
+) -> BedrockModel:
+    """Create AWS Bedrock model instance"""
+    return BedrockModel(
+        model_id=model_id,
+        region_name=region_name,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+    )
+
+
+def _create_local_model(
+    model_id: str,
+    host: str = "http://localhost:11434",
+    temperature: float = 0.95,
+    max_tokens: int = 4096,
+) -> Any:
+    """Create Ollama model instance"""
+    if not OLLAMA_AVAILABLE or OllamaModel is None:
+        raise ImportError(
+            "Ollama not available. Install with: uv add ollama && uv add 'strands-agents[ollama]'"
+        )
+
+    return OllamaModel(
+        host=host, model_id=model_id, temperature=temperature, max_tokens=max_tokens
+    )
+
+
+def _create_memory_config(
+    server: str, operation_id: str, defaults: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Create mem0 configuration based on server type"""
+    base_path = os.path.join(get_data_path("evidence"), f"evidence_{operation_id}")
+
+    if server == "local":
+        return {
+            "llm": {
+                "provider": "ollama",
+                "config": {
+                    "model": defaults["llm_model"],
+                    "temperature": 0.1,
+                    "max_tokens": 1024,
+                    "ollama_base_url": "http://localhost:11434",
+                },
+            },
+            "embedder": {
+                "provider": "ollama",
+                "config": {
+                    "model": defaults["embedding_model"],
+                    "ollama_base_url": "http://localhost:11434",
+                },
+            },
+            "vector_store": {
+                "provider": "faiss",
+                "config": {
+                    "embedding_model_dims": defaults["embedding_dims"],
+                    "path": base_path,
+                },
+            },
+            "history_db_path": os.path.join(base_path, "history.db"),
+            "version": "v1.1",
+        }
+    else:  # remote
+        return {
+            "llm": {
+                "provider": "aws_bedrock",
+                "config": {
+                    "model": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                    "temperature": 0.1,
+                    "max_tokens": 1024,
+                    "top_p": 0.9,
+                },
+            },
+            "embedder": {
+                "provider": "aws_bedrock",
+                "config": {"model": defaults["embedding_model"]},
+            },
+            "vector_store": {
+                "provider": "faiss",
+                "config": {
+                    "embedding_model_dims": defaults["embedding_dims"],
+                    "path": base_path,
+                },
+            },
+            "history_db_path": os.path.join(base_path, "history.db"),
+            "version": "v1.1",
+        }
+
+
+def _validate_server_requirements(server: str) -> None:
+    """Validate server requirements before creating agent"""
+    if server == "local":
+        # Check if Ollama is running
+        if requests is None:
+            raise ImportError("Requests module not available")
+        
+        try:
+            response = requests.get("http://localhost:11434/api/version", timeout=5)
+            if response.status_code != 200:
+                raise ConnectionError("Ollama server not responding")
+        except Exception:
+            raise ConnectionError(
+                "Ollama server not accessible at http://localhost:11434. "
+                "Please ensure Ollama is installed and running."
+            )
+
+        # Check if required models are available
+        if not OLLAMA_AVAILABLE or ollama is None:
+            raise ImportError(
+                "Ollama client not available. Install with: uv add ollama"
+            )
+
+        try:
+            available_models = [m["name"] for m in ollama.list()["models"]]
+            required_models = ["deepseek-r1:8b", "mxbai-embed-large"]
+            missing = [
+                m
+                for m in required_models
+                if not any(m in model for model in available_models)
+            ]
+            if missing:
+                raise ValueError(
+                    f"Required models not found: {missing}. "
+                    f"Pull them with: ollama pull {' && ollama pull '.join(missing)}"
+                )
+        except Exception as e:
+            if "Required models not found" in str(e):
+                raise e
+            raise ConnectionError(f"Could not verify Ollama models: {e}")
+
+    elif server == "remote":
+        # Validate AWS credentials exist
+        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+            raise EnvironmentError(
+                "AWS credentials not configured for remote mode. "
+                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
+            )
+
+
+def _handle_model_creation_error(server: str, error: Exception) -> None:
+    """Provide helpful error messages based on server type"""
+    if server == "local":
+        print(f"{Colors.RED}[!] Local model creation failed: {error}{Colors.RESET}")
+        print(f"{Colors.YELLOW}[?] Troubleshooting steps:{Colors.RESET}")
+        print("    1. Ensure Ollama is installed: https://ollama.ai")
+        print("    2. Start Ollama: ollama serve")
+        print("    3. Pull required models:")
+        print("       ollama pull deepseek-r1:8b")
+        print("       ollama pull mxbai-embed-large")
+    else:
+        print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
+        print(
+            f"{Colors.YELLOW}[?] Check AWS credentials and region settings{Colors.RESET}"
+        )
+
+
+def create_agent(
+    target: str,
+    objective: str,
+    max_steps: int = 100,
+    available_tools: Optional[List[str]] = None,
+    op_id: Optional[str] = None,
+    model_id: Optional[str] = None,
+    region_name: str = "us-east-1",
+    server: str = "remote",
+) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
-    
-    logger = logging.getLogger('CyberAutoAgent')
-    logger.debug("Creating agent for target: %s, objective: %s", target, objective)
-    
+
+    logger = logging.getLogger("CyberAutoAgent")
+    logger.debug(
+        "Creating agent for target: %s, objective: %s, server: %s",
+        target,
+        objective,
+        server,
+    )
+
+    # Pre-flight validation
+    _validate_server_requirements(server)
+
+    # Get default configurations
+    defaults = _get_default_model_configs(server)
+
+    # Use provided model_id or default
+    if model_id is None:
+        model_id = str(defaults["llm_model"])
+
     # Use provided operation_id or generate new one
     if not op_id:
         operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     else:
         operation_id = op_id
-    
-    # Set AWS region
-    os.environ["AWS_REGION"] = region_name
-    
-    config = {
-        "llm": {
-            "provider": "aws_bedrock",
-            "config": {
-                "model": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-                "temperature": 0.1,
-                "max_tokens": 1024,
-                "top_p": 0.9
-            }
-        },
-        "embedder": {
-            "provider": "aws_bedrock",
-            "config": {
-                "model": "amazon.titan-embed-text-v2:0"
-            }
-        },
-        "vector_store": {
-            "provider": "faiss",
-            "config": {
-                "embedding_model_dims": 1024,
-                "path": os.path.join(get_data_path('evidence'), f"evidence_{operation_id}")
-            }
-        },
-        "history_db_path": os.path.join(get_data_path('evidence'), f"evidence_{operation_id}", "history.db"),
-        "version": "v1.1"
-    }
-    
-    # Initialize mem0 with configuration and set it in the memory_tools module
-    memory_tools.mem0_instance = Memory.from_config(config)
+
+    # Create memory configuration
+    memory_config = _create_memory_config(server, operation_id, defaults)
+
+    # Initialize memory system
+    memory_tools.mem0_instance = Memory.from_config(memory_config)
     memory_tools.operation_id = operation_id
-        
-    print("%s[+] Memory system initialized with AWS Bedrock & FAISS %s" % (Colors.GREEN, Colors.RESET))
-    
+
+    print(f"{Colors.GREEN}[+] Memory system initialized ({server} mode){Colors.RESET}")
+
     tools_context = ""
     if available_tools:
         tools_context = f"""
 ## ENVIRONMENTAL CONTEXT
 
 Professional tools discovered in your environment:
-{', '.join(available_tools)}
+{", ".join(available_tools)}
 
 Leverage these tools directly via shell. 
 """
-    
+
     # Get system prompt
-    system_prompt = get_system_prompt(target, objective, max_steps, operation_id, tools_context)
-    
+    system_prompt = get_system_prompt(
+        target, objective, max_steps, operation_id, tools_context
+    )
+
     # Create callback handler
     callback_handler = ReasoningHandler(max_steps=max_steps)
-    
-    # Configure model
-    logger.debug("Configuring BedrockModel")
-    model = BedrockModel(
-        model_id=model_id,
-        region_name=region_name,
-        temperature=0.95, 
-        max_tokens=4096,
-        top_p=0.95
-    )
-    
+
+    # Create model based on server type
+    try:
+        if server == "local":
+            logger.debug("Configuring OllamaModel")
+            model = _create_local_model(model_id)
+            print(
+                f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
+            )
+        else:
+            # Set AWS region for remote mode
+            os.environ["AWS_REGION"] = region_name
+            logger.debug("Configuring BedrockModel")
+            model = _create_remote_model(model_id, region_name)
+            print(
+                f"{Colors.GREEN}[+] Remote model initialized: {model_id}{Colors.RESET}"
+            )
+
+    except Exception as e:
+        _handle_model_creation_error(server, e)
+        raise
+
     logger.debug("Creating autonomous agent")
     agent = Agent(
         model=model,
-        tools=[shell, file_write, editor, load_tool, memory_store, memory_retrieve, memory_list],
+        tools=[
+            shell,
+            file_write,
+            editor,
+            load_tool,
+            memory_store,
+            memory_retrieve,
+            memory_list,
+        ],
         system_prompt=system_prompt,
         callback_handler=callback_handler,
         conversation_manager=SlidingWindowConversationManager(window_size=120),
-        load_tools_from_directory=True,  
-        max_parallel_tools=8  
+        load_tools_from_directory=True,
+        max_parallel_tools=8,
     )
-    
+
     logger.debug("Agent initialized successfully")
     return agent, callback_handler
