@@ -34,6 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Network tools
     iputils-ping \
     dnsutils \
+    iproute2 \
+    net-tools \
     # Clean up to reduce layer size
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
