@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 from typing import List, Dict, Tuple
 from datetime import datetime
 
@@ -9,6 +10,58 @@ def get_data_path(subdir=""):
     """Get the appropriate data path for current environment (Docker or local)"""
     base = "/app" if os.path.exists("/app") else os.getcwd()
     return os.path.join(base, subdir) if subdir else base
+
+
+def sanitize_for_model(content: str) -> str:
+    """Remove emojis and other non-ASCII characters that may cause model issues.
+    
+    This function sanitizes content before it's passed to the model while preserving
+    the semantic meaning of the text.
+    
+    Args:
+        content: Text content that may contain emojis
+        
+    Returns:
+        Sanitized text with emojis removed/replaced
+    """
+    if not isinstance(content, str):
+        return str(content)
+    
+    # Replace emojis with text equivalents for common ones used in the system
+    replacements = {
+        "🟢": "ABUNDANT BUDGET",
+        "🟡": "CONSTRAINED BUDGET", 
+        "🟠": "CRITICAL BUDGET",
+        "🔴": "EMERGENCY BUDGET",
+        "🚨": "CRITICAL",
+        "✅": "SUCCESS",
+        "❌": "ERROR",
+        "⚠️": "WARNING",
+        "🎯": "FOUND",
+        "🔄": "EVOLVING",
+        "🛠️": "CREATING",
+        "🤔": "THINKING",
+        "⚡": "EXECUTING",
+        "ℹ️": "INFO",
+        "→": "->",
+        "←": "<-",
+        "↑": "UP",
+        "↓": "DOWN",
+    }
+    
+    # Apply specific replacements first
+    sanitized = content
+    for emoji, replacement in replacements.items():
+        sanitized = sanitized.replace(emoji, replacement)
+    
+    # More aggressive approach - keep only ASCII printable characters
+    # This will remove ALL non-ASCII characters that could cause issues
+    sanitized = re.sub(r'[^\x20-\x7E\n\r\t]', '', sanitized)
+    
+    # Clean up any double spaces created by character removal
+    sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+    
+    return sanitized
 
 
 # ANSI color codes for terminal output
@@ -110,7 +163,18 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
     # Look for explicit completion declaration - trust the agent's judgment
     for msg in reversed(messages[-5:]):  # Check last 5 messages
         if msg.get("role") == "assistant":
-            content = str(msg.get("content", ""))
+            # Handle both old string format and new structured format
+            content_raw = msg.get("content", "")
+            if isinstance(content_raw, list) and len(content_raw) > 0:
+                # New format: content is a list of content blocks
+                content = ""
+                for block in content_raw:
+                    if isinstance(block, dict) and "text" in block:
+                        content += block["text"] + " "
+                content = content.strip()
+            else:
+                # Old format: content is a string
+                content = str(content_raw)
 
             # Check for explicit objective declaration
             if "objective achieved:" in content.lower():

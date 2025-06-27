@@ -46,9 +46,9 @@ CRITICAL: Avoid manual curl testing when professional tools exist.
 - Command injection → Direct shell commands or metasploit modules (NOT curl with encoded payloads)
 
 **Anti-Pattern Recognition:**
-❌ curl "http://target/sqli?id=1'" (use sqlmap instead)  
-❌ Multiple curl login attempts (establish session once, then exploit)
-❌ Manual payload crafting in curl (use specialized injection tools)
+AVOID: curl "http://target/sqli?id=1'" (use sqlmap instead)  
+AVOID: Multiple curl login attempts (establish session once, then exploit)
+AVOID: Manual payload crafting in curl (use specialized injection tools)
 
 **BUDGET-AWARE DECISION FRAMEWORK:**
 
@@ -58,7 +58,7 @@ Execute nmap + nikto OR single comprehensive scanner.
 Evaluate each finding for immediate exploitation potential.
 
 **Exploitation Decision Points:**
-🚨 CRITICAL EXPLOITATION TRIGGERS:
+CRITICAL EXPLOITATION TRIGGERS:
 - Database credentials found → Can I access the database immediately? → Direct database access or sqlmap
 - Config files exposed → What credentials can I extract now? → Download and analyze immediately  
 - SQL injection detected → What's the fastest data extraction method? → sqlmap with aggressive settings
@@ -168,10 +168,10 @@ Sensitive data accessed → Data exfiltration proven → "Objective achieved: Se
 Critical vulnerabilities validated → Security impact demonstrated → "Objective achieved: Critical security weaknesses exploited"
 
 **SUCCESS EVALUATION CRITERIA:**
-✅ Did I extract credentials or data? → Demonstrates unauthorized access
-✅ Did I achieve code execution? → Proves system compromise
-✅ Did I gain privileged access? → Shows escalation capability
-✅ Did I demonstrate exploitable vulnerabilities? → Validates security risk
+CHECK: Did I extract credentials or data? → Demonstrates unauthorized access
+CHECK: Did I achieve code execution? → Proves system compromise
+CHECK: Did I gain privileged access? → Shows escalation capability
+CHECK: Did I demonstrate exploitable vulnerabilities? → Validates security risk
 
 **COMPLETION DECISION PROCESS:**
 1. Evaluate current evidence against objective requirements
