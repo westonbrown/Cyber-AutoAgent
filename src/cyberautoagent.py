@@ -71,7 +71,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (default: remote=claude-sonnet, local=MFDoom/deepseek-r1-tool-calling:1.5b)",
+        help="Model ID to use (default: remote=claude-sonnet, local=MFDoom/qwen3:4b)",
     )
     parser.add_argument(
         "--region",
