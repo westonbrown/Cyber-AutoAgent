@@ -30,6 +30,7 @@ from modules.utils import (
     print_status,
     analyze_objective_completion,
     get_data_path,
+    sanitize_for_model,
 )
 from modules.environment import auto_setup, setup_logging
 from modules.agent_factory import create_agent
@@ -70,7 +71,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (default: remote=claude-sonnet, local=deepseek-r1:8b)",
+        help="Model ID to use (default: remote=claude-sonnet, local=MFDoom/deepseek-r1-tool-calling:1.5b)",
     )
     parser.add_argument(
         "--region",
@@ -189,15 +190,26 @@ def main():
                 try:
                     # For newer strands versions, pass the prompt directly without messages on first call
                     if not messages:
-                        # First call - don't pass messages parameter
-                        result = agent(current_message)
+                        # First call - don't pass messages parameter (sanitize for model)
+                        result = agent(sanitize_for_model(current_message))
                     else:
-                        # Subsequent calls - pass messages
-                        result = agent(current_message, messages=messages)
+                        # Subsequent calls - pass messages (sanitize for model)
+                        result = agent(sanitize_for_model(current_message), messages=messages)
 
-                    # Update conversation history
-                    messages.append({"role": "user", "content": current_message})
-                    messages.append({"role": "assistant", "content": str(result)})
+                    # Update conversation history (sanitize content for model input)
+                    # Structure content properly for Strands/Ollama integration
+                    sanitized_user_content = sanitize_for_model(current_message)
+                    sanitized_assistant_content = sanitize_for_model(str(result))
+                    
+                    # Structure messages with proper content format expected by Strands
+                    messages.append({
+                        "role": "user", 
+                        "content": [{"text": sanitized_user_content}]
+                    })
+                    messages.append({
+                        "role": "assistant", 
+                        "content": [{"text": sanitized_assistant_content}]
+                    })
 
                 except (StopIteration, Exception) as error:
                     # Handle termination scenarios
