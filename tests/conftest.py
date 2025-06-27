@@ -83,15 +83,16 @@ def mock_ollama_server_down():
 @pytest.fixture
 def mock_ollama_models_available():
     """Mock Ollama models being available"""
-    with patch("modules.agent_factory.ollama.list") as mock_list:
-        mock_list.return_value = {
+    with patch("modules.agent_factory.ollama.Client") as mock_client:
+        mock_client_instance = mock_client.return_value
+        mock_client_instance.list.return_value = {
             "models": [
-                {"name": "deepseek-r1:8b"},
-                {"name": "mxbai-embed-large"},
-                {"name": "other-model:latest"},
+                {"model": "MFDoom/deepseek-r1-tool-calling:8b"},
+                {"model": "mxbai-embed-large"},
+                {"model": "other-model:latest"},
             ]
         }
-        yield mock_list
+        yield mock_client
 
 
 @pytest.fixture
