@@ -25,7 +25,7 @@ class TestModelConfigs:
         """Test local model configuration defaults"""
         config = _get_default_model_configs("local")
 
-        assert config["llm_model"] == "MFDoom/deepseek-r1-tool-calling:8b"
+        assert config["llm_model"] == "MFDoom/deepseek-r1-tool-calling:1.5b"
         assert config["embedding_model"] == "mxbai-embed-large"
         assert config["embedding_dims"] == 1024
 
@@ -52,7 +52,7 @@ class TestMemoryConfig:
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("modules.agent_factory.get_data_path", return_value=tmpdir):
                 defaults = {
-                    "llm_model": "MFDoom/deepseek-r1-tool-calling:8b",
+                    "llm_model": "MFDoom/deepseek-r1-tool-calling:1.5b",
                     "embedding_model": "mxbai-embed-large",
                     "embedding_dims": 1024,
                 }
@@ -60,7 +60,7 @@ class TestMemoryConfig:
 
                 assert config["llm"]["provider"] == "ollama"
                 assert config["embedder"]["provider"] == "ollama"
-                assert config["llm"]["config"]["model"] == "MFDoom/deepseek-r1-tool-calling:8b"
+                assert config["llm"]["config"]["model"] == "MFDoom/deepseek-r1-tool-calling:1.5b"
                 assert config["embedder"]["config"]["model"] == "mxbai-embed-large"
                 assert config["vector_store"]["provider"] == "faiss"
                 assert config["vector_store"]["config"]["embedding_model_dims"] == 1024
@@ -101,7 +101,7 @@ class TestServerValidation:
         # Mock ollama client and list method
         mock_client_instance = mock_ollama_client.return_value
         mock_client_instance.list.return_value = {
-            "models": [{"model": "MFDoom/deepseek-r1-tool-calling:8b"}, {"model": "mxbai-embed-large"}]
+            "models": [{"model": "MFDoom/deepseek-r1-tool-calling:1.5b"}, {"model": "mxbai-embed-large"}]
         }
 
         # Should not raise any exception
