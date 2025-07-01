@@ -229,6 +229,14 @@ Cyber-AutoAgent can be deployed in two ways: **locally** or using **Docker** (re
    ollama pull mxbai-embed-large
    ```
 
+3. **Configure Ollama Connection (Optional)**
+   ```bash
+   # Override Ollama host (auto-detected by default)
+   export OLLAMA_HOST=http://your-ollama-host:11434
+   ```
+
+   **Note**: Cyber-AutoAgent automatically detects the correct Ollama host by testing connectivity. If auto-detection fails, set `OLLAMA_HOST` manually. See section '### Environment Variables' for further information.
+
 #### For Both Modes
 **Clone the Repository**
 ```bash
@@ -497,13 +505,49 @@ Recent Evidence:
 
 
 ### Environment Variables
+
+#### AWS Configuration (Remote Mode)
 ```bash
 export AWS_REGION=us-east-1
 export AWS_PROFILE=default
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
 export DEV=true  # Set by agent automatically
 ```
 
-## 7. Project Structure
+#### Ollama Configuration (Local Mode)
+```bash
+# Ollama connection settings (optional - auto-detected by default)
+export OLLAMA_HOST=http://localhost:11434     # Manual override if auto-detection fails
+```
+
+**Automatic Host Detection**: Cyber-AutoAgent tests connectivity to find the correct Ollama host:
+- **Native execution**: Uses `localhost:11434`
+- **Docker on Linux**: Tests and uses `localhost:11434` 
+- **Docker on macOS/Windows**: Tests and uses `host.docker.internal:11434`
+- **Fallback**: Uses `host.docker.internal:11434` if testing fails
+
+## 7. Development & Testing
+
+### Running Tests
+
+This project uses `uv` for dependency management and testing:
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_agent_factory.py
+
+# Run tests with verbose output
+uv run pytest -v
+
+# Run tests with coverage
+uv run pytest --cov=src
+```
+
+## 8. Project Structure
 
 ```
 cyber-autoagent/
@@ -522,7 +566,7 @@ cyber-autoagent/
 |- LICENSE                     # MIT License
 ```
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Common Issues
 
@@ -588,8 +632,8 @@ curl -X POST http://localhost:11434/api/generate \
   -d '{"model": "MFDoom/qwen3:4b", "prompt": "test", "stream": false}'
 ```
 
-**Docker Networking Issues (Local Mode)**
-When using Docker with local Ollama, the container needs to access your host machine's Ollama instance:
+**Docker Networking (Local Mode)**
+Cyber-AutoAgent automatically detects the correct Ollama host for your environment:
 
 ```bash
 # Ensure Ollama is running on your host
@@ -597,12 +641,8 @@ ollama serve
 
 # Test connection from host
 curl http://localhost:11434/api/version
-
-# The Docker container is configured to use host.docker.internal:11434
-# This is automatically handled in the docker-compose.yml with network_mode: "host"
 ```
 
-**Note**: On macOS/Windows, Docker containers cannot access `localhost` services directly. The application is configured to use `host.docker.internal:11434` to connect to your host machine's Ollama instance.
 
 **Performance Issues**
 ```bash
@@ -615,14 +655,14 @@ htop  # Check CPU/Memory during execution
 # - Using GPU acceleration if available
 ```
 
-## 9. Roadmap
+## 10. Roadmap
 
 - **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
 - **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
 - **Multi-Target Orchestration** - Parallel assessment of multiple systems
 - **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
 
-## 10. Contributing
+## 11. Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -630,15 +670,15 @@ htop  # Check CPU/Memory during execution
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 11. License
+## 12. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 12. Legal Notice
+## 13. Legal Notice
 
 This tool is provided for educational and authorized security testing purposes only. Users are solely responsible for ensuring they have proper authorization before testing any systems. The authors assume no liability for misuse or any damages that may result from using this software.
 
-## 13. Acknowledgments
+## 14. Acknowledgments
 
 - [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access
