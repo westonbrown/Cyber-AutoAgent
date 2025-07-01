@@ -35,22 +35,41 @@ from .utils import Colors, get_data_path
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+def _test_ollama_connection(host: str, timeout: int = 2) -> bool:
+    """Test if Ollama server is accessible at the given host"""
+    if requests is None:
+        return False
+    
+    try:
+        response = requests.get(f"{host}/api/version", timeout=timeout)
+        return response.status_code == 200
+    except Exception:
+        return False
+
+
 
 def _get_ollama_host() -> str:
     """
     Determine appropriate Ollama host based on environment.
-    Checks OLLAMA_HOST env var, then detects Docker context.
+    Tests actual connectivity to find working host in Docker environments.
     """
-    # Environment variable override
+    # Environment variable override from e.g. .env for full control
     env_host = os.getenv("OLLAMA_HOST")
     if env_host:
         return env_host
     
-    # Auto-detect based on Docker environment
-    if os.getenv('DOCKER_NETWORK_MODE') == 'host' or not (os.path.exists('/.dockerenv') or os.path.exists('/app')):
-        return "http://localhost:11434"
-    else:
+    # Check if running in Docker
+    if os.path.exists('/.dockerenv'):
+        # In Docker - test both options to find what works
+        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
+        for host in candidates:
+            if _test_ollama_connection(host):
+                return host
+        # Fallback to host.docker.internal if no connection works (Docker on Windows/ Macos)
         return "http://host.docker.internal:11434"
+    else:
+        # Native execution - use localhost (Docker on Linux & non-docker)
+        return "http://localhost:11434"
 
 
 def _get_default_model_configs(server: str) -> Dict[str, Any]:
