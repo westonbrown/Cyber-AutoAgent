@@ -87,7 +87,7 @@ def mock_ollama_models_available():
         mock_client_instance = mock_client.return_value
         mock_client_instance.list.return_value = {
             "models": [
-                {"model": "MFDoom/qwen3:4b"},
+                {"model": "llama3.2:3b"},
                 {"model": "mxbai-embed-large"},
                 {"model": "other-model:latest"},
             ]

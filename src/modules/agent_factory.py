@@ -76,7 +76,7 @@ def _get_default_model_configs(server: str) -> Dict[str, Any]:
     """Get default model configurations based on server type"""
     if server == "local":
         return {
-            "llm_model": "MFDoom/qwen3:4b",
+            "llm_model": "llama3.2:3b",
             "embedding_model": "mxbai-embed-large",
             "embedding_dims": 1024,
         }
@@ -217,7 +217,7 @@ def _validate_server_requirements(server: str) -> None:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
             available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
-            required_models = ["MFDoom/qwen3:4b", "mxbai-embed-large"]
+            required_models = ["llama3.2:3b", "mxbai-embed-large"]
             missing = [
                 m
                 for m in required_models
@@ -250,7 +250,7 @@ def _handle_model_creation_error(server: str, error: Exception) -> None:
         print("    1. Ensure Ollama is installed: https://ollama.ai")
         print("    2. Start Ollama: ollama serve")
         print("    3. Pull required models:")
-        print("       ollama pull MFDoom/qwen3:4b")
+        print("       ollama pull llama3.2:3b")
         print("       ollama pull mxbai-embed-large")
     else:
         print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
