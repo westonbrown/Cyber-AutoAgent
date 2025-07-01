@@ -180,6 +180,9 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
 - **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
+- **Alternative Models** (while also providing same response structure and tools integration)
+    - "llama3.1:8b" (better reasoning)
+    - "qwen2.5:7b" (more efficient)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### Comparison
