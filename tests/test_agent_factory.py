@@ -15,6 +15,7 @@ from modules.agent_factory import (
     _create_memory_config,
     _validate_server_requirements,
     _get_ollama_host,
+    _test_ollama_connection,
     create_agent,
 )
 
@@ -62,34 +63,74 @@ class TestOllamaHostDetection:
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
-    def test_get_ollama_host_docker_bridge(self, mock_exists):
-        """Test Docker bridge network detection"""
-        # Mock Docker environment (/.dockerenv exists, /app doesn't)
-        mock_exists.side_effect = lambda path: path == "/.dockerenv"
+    def test_get_ollama_host_native_execution(self, mock_exists):
+        """Test host detection for native execution (not in Docker)"""
+        mock_exists.return_value = False  # /.dockerenv doesn't exist
         
         host = _get_ollama_host()
-        # Should use host.docker.internal in Docker bridge mode
-        assert host == "http://host.docker.internal:11434"
-
-    @patch.dict(os.environ, {"DOCKER_NETWORK_MODE": "host"}, clear=True)
-    @patch("os.path.exists")
-    def test_get_ollama_host_host_network(self, mock_exists):
-        """Test host network mode detection"""
-        mock_exists.return_value = True  # In Docker
-        
-        host = _get_ollama_host()
-        # Should use localhost with host network
+        # Should use localhost for native execution
         assert host == "http://localhost:11434"
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
-    def test_get_ollama_host_no_docker(self, mock_exists):
-        """Test non-Docker environment detection"""
-        mock_exists.return_value = False  # Not in Docker
+    @patch("modules.agent_factory._test_ollama_connection")
+    def test_get_ollama_host_docker_localhost_works(self, mock_test, mock_exists):
+        """Test Docker environment where localhost works (Linux host networking)"""
+        mock_exists.return_value = True  # /.dockerenv exists
+        # Mock localhost works, host.docker.internal doesn't
+        mock_test.side_effect = lambda host: host == "http://localhost:11434"
         
         host = _get_ollama_host()
-        # Should use localhost when not in Docker
         assert host == "http://localhost:11434"
+        
+        # Verify it tested localhost first and found it working
+        assert mock_test.call_count >= 1
+        mock_test.assert_any_call("http://localhost:11434")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("os.path.exists")
+    @patch("modules.agent_factory._test_ollama_connection")
+    def test_get_ollama_host_docker_host_internal_works(self, mock_test, mock_exists):
+        """Test Docker environment where host.docker.internal works (macOS/Windows)"""
+        mock_exists.return_value = True  # /.dockerenv exists
+        # Mock localhost fails, host.docker.internal works
+        mock_test.side_effect = lambda host: host == "http://host.docker.internal:11434"
+        
+        host = _get_ollama_host()
+        assert host == "http://host.docker.internal:11434"
+        
+        # Verify it tested both options
+        assert mock_test.call_count >= 2
+        mock_test.assert_any_call("http://localhost:11434")
+        mock_test.assert_any_call("http://host.docker.internal:11434")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("os.path.exists")
+    @patch("modules.agent_factory._test_ollama_connection")
+    def test_get_ollama_host_docker_no_connection(self, mock_test, mock_exists):
+        """Test Docker environment where neither option works"""
+        mock_exists.return_value = True  # /.dockerenv exists
+        mock_test.return_value = False  # Neither option works
+        
+        host = _get_ollama_host()
+        # Should fallback to host.docker.internal
+        assert host == "http://host.docker.internal:11434"
+
+    @patch("modules.agent_factory.requests.get")
+    def test_test_ollama_connection_success(self, mock_get):
+        """Test successful Ollama connection test"""
+        mock_get.return_value.status_code = 200
+        
+        result = _test_ollama_connection("http://localhost:11434")
+        assert result is True
+
+    @patch("modules.agent_factory.requests.get")
+    def test_test_ollama_connection_failure(self, mock_get):
+        """Test failed Ollama connection test"""
+        mock_get.side_effect = Exception("Connection failed")
+        
+        result = _test_ollama_connection("http://localhost:11434")
+        assert result is False
 
 
 
