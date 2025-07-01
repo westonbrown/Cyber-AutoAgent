@@ -71,7 +71,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (default: remote=claude-sonnet, local=MFDoom/qwen3:4b)",
+        help="Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)",
     )
     parser.add_argument(
         "--region",
