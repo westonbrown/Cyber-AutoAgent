@@ -59,7 +59,7 @@ def _get_ollama_host() -> str:
         return env_host
     
     # Check if running in Docker
-    if os.path.exists('/.dockerenv'):
+    if os.path.exists('/app'): # WORKDIR created in Dockerfile
         # In Docker - test both options to find what works
         candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
         for host in candidates:
