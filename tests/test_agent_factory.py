@@ -14,6 +14,7 @@ from modules.agent_factory import (
     _get_default_model_configs,
     _create_memory_config,
     _validate_server_requirements,
+    _get_ollama_host,
     create_agent,
 )
 
@@ -42,6 +43,54 @@ class TestModelConfigs:
         config = _get_default_model_configs("invalid")
         # Should default to remote
         assert "us.anthropic.claude" in config["llm_model"]
+
+
+class TestOllamaHostDetection:
+    """Test Ollama host detection functionality"""
+
+    @patch.dict(os.environ, {"OLLAMA_HOST": "http://custom-host:8080"}, clear=True)
+    def test_get_ollama_host_env_override(self):
+        """Test OLLAMA_HOST environment variable override"""
+        host = _get_ollama_host()
+        assert host == "http://custom-host:8080"
+
+    @patch.dict(os.environ, {"OLLAMA_HOST": "http://localhost:9999"}, clear=True)
+    def test_get_ollama_host_custom_port(self):
+        """Test OLLAMA_HOST with custom port"""
+        host = _get_ollama_host()
+        assert host == "http://localhost:9999"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("os.path.exists")
+    def test_get_ollama_host_docker_bridge(self, mock_exists):
+        """Test Docker bridge network detection"""
+        # Mock Docker environment (/.dockerenv exists, /app doesn't)
+        mock_exists.side_effect = lambda path: path == "/.dockerenv"
+        
+        host = _get_ollama_host()
+        # Should use host.docker.internal in Docker bridge mode
+        assert host == "http://host.docker.internal:11434"
+
+    @patch.dict(os.environ, {"DOCKER_NETWORK_MODE": "host"}, clear=True)
+    @patch("os.path.exists")
+    def test_get_ollama_host_host_network(self, mock_exists):
+        """Test host network mode detection"""
+        mock_exists.return_value = True  # In Docker
+        
+        host = _get_ollama_host()
+        # Should use localhost with host network
+        assert host == "http://localhost:11434"
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("os.path.exists")
+    def test_get_ollama_host_no_docker(self, mock_exists):
+        """Test non-Docker environment detection"""
+        mock_exists.return_value = False  # Not in Docker
+        
+        host = _get_ollama_host()
+        # Should use localhost when not in Docker
+        assert host == "http://localhost:11434"
+
 
 
 class TestMemoryConfig:
@@ -107,8 +156,8 @@ class TestServerValidation:
         # Should not raise any exception
         _validate_server_requirements("local")
         
-        # Verify client was created with correct host
-        mock_ollama_client.assert_called_once_with(host="http://host.docker.internal:11434")
+        # Verify client was created (host is now dynamic)
+        mock_ollama_client.assert_called_once()
 
     @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
     @patch("modules.agent_factory.requests.get")
