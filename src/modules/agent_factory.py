@@ -35,6 +35,24 @@ from .utils import Colors, get_data_path
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
+
+def _get_ollama_host() -> str:
+    """
+    Determine appropriate Ollama host based on environment.
+    Checks OLLAMA_HOST env var, then detects Docker context.
+    """
+    # Environment variable override
+    env_host = os.getenv("OLLAMA_HOST")
+    if env_host:
+        return env_host
+    
+    # Auto-detect based on Docker environment
+    if os.getenv('DOCKER_NETWORK_MODE') == 'host' or not (os.path.exists('/.dockerenv') or os.path.exists('/app')):
+        return "http://localhost:11434"
+    else:
+        return "http://host.docker.internal:11434"
+
+
 def _get_default_model_configs(server: str) -> Dict[str, Any]:
     """Get default model configurations based on server type"""
     if server == "local":
@@ -70,7 +88,7 @@ def _create_remote_model(
 
 def _create_local_model(
     model_id: str,
-    host: str = "http://host.docker.internal:11434",
+    host: Optional[str] = None,
     temperature: float = 0.95,
     max_tokens: int = 4096,
 ) -> Any:
@@ -79,6 +97,9 @@ def _create_local_model(
         raise ImportError(
             "Ollama not available. Install with: uv add ollama && uv add 'strands-agents[ollama]'"
         )
+
+    if host is None:
+        host = _get_ollama_host()
 
     return OllamaModel(
         host=host, model_id=model_id, temperature=temperature, max_tokens=max_tokens
@@ -92,6 +113,7 @@ def _create_memory_config(
     base_path = os.path.join(get_data_path("evidence"), f"evidence_{operation_id}")
 
     if server == "local":
+        ollama_host = _get_ollama_host()
         return {
             "llm": {
                 "provider": "ollama",
@@ -99,14 +121,14 @@ def _create_memory_config(
                     "model": defaults["llm_model"],
                     "temperature": 0.1,
                     "max_tokens": 1024,
-                    "ollama_base_url": "http://host.docker.internal:11434",
+                    "ollama_base_url": ollama_host,
                 },
             },
             "embedder": {
                 "provider": "ollama",
                 "config": {
                     "model": defaults["embedding_model"],
-                    "ollama_base_url": "http://host.docker.internal:11434",
+                    "ollama_base_url": ollama_host,
                 },
             },
             "vector_store": {
@@ -149,17 +171,20 @@ def _create_memory_config(
 def _validate_server_requirements(server: str) -> None:
     """Validate server requirements before creating agent"""
     if server == "local":
+        # Get dynamic host configuration
+        ollama_host = _get_ollama_host()
+        
         # Check if Ollama is running
         if requests is None:
             raise ImportError("Requests module not available")
         
         try:
-            response = requests.get("http://host.docker.internal:11434/api/version", timeout=5)
+            response = requests.get(f"{ollama_host}/api/version", timeout=5)
             if response.status_code != 200:
                 raise ConnectionError("Ollama server not responding")
         except Exception:
             raise ConnectionError(
-                "Ollama server not accessible at http://host.docker.internal:11434. "
+                f"Ollama server not accessible at {ollama_host}. "
                 "Please ensure Ollama is installed and running."
             )
 
@@ -170,7 +195,7 @@ def _validate_server_requirements(server: str) -> None:
             )
 
         try:
-            client = ollama.Client(host="http://host.docker.internal:11434")
+            client = ollama.Client(host=ollama_host)
             models_response = client.list()
             available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
             required_models = ["MFDoom/qwen3:4b", "mxbai-embed-large"]
