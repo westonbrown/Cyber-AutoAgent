@@ -24,7 +24,9 @@ def auto_setup() -> List[str]:
         'gobuster': 'Directory/file brute-forcer',
         'netcat': 'Network utility for reading/writing data',
         'curl': 'HTTP client for web requests',
-        'metasploit': 'Penetration testing framework'
+        'metasploit': 'Penetration testing framework',
+        'iproute2': 'Provides modern networking tools (ip, ss, tc, etc.)',
+        'net-tools': 'Provides classic networking utilities (netstat, ifconfig, route, etc.)',
     }
     
     available_tools = []
