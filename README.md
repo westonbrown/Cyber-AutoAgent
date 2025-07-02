@@ -18,7 +18,7 @@
 
 **[!] EXPERIMENTAL SOFTWARE - USE ONLY IN AUTHORIZED, SAFE, SANDBOXED ENVIRONMENTS [!]**
 
-An autonomous cybersecurity assessment tool powered by AWS Bedrock and the Strands framework. Conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection.
+An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or local Ollama) and the Strands framework. Conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection.
 
 ![Demo GIF](docs/agent_demo.gif)
 
@@ -166,12 +166,43 @@ flowchart TD
 2. Professional security tools for specialized operations
 3. Custom meta-tool creation for complex scenarios requiring multiple chained operations
 
-## 4. Installation & Deployment
+## 4. Model Providers
+
+Cyber-AutoAgent supports two model providers for maximum flexibility:
+
+### 🌐 Remote Mode (AWS Bedrock)
+- **Best for**: Production use, high-quality results, no local GPU requirements
+- **Requirements**: AWS account with Bedrock access
+- **Default Model**: Claude 3.5 Sonnet
+- **Benefits**: Latest models, reliable performance, managed infrastructure
+
+### 🏠 Local Mode (Ollama)
+- **Best for**: Privacy, offline use, cost control, local development
+- **Requirements**: Local Ollama installation
+- **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
+- **Alternative Models** (while also providing same response structure and tools integration)
+    - "llama3.1:8b" (better reasoning)
+    - "qwen2.5:7b" (more efficient)
+- **Benefits**: No cloud dependencies, complete privacy, no API costs
+
+### Comparison
+
+| Feature | Remote (AWS Bedrock) | Local (Ollama) |
+|---------|---------------------|----------------|
+| Privacy | Data sent to AWS | Fully local |
+| Cost | Pay per API call | One-time setup |
+| Performance | High (managed) | Depends on hardware |
+| Offline Use | ❌ No | ✅ Yes |
+| Setup Complexity | Moderate | Higher |
+| Model Quality | Highest | Very Good |
+
+## 5. Installation & Deployment
 
 Cyber-AutoAgent can be deployed in two ways: **locally** or using **Docker** (recommended for consistent environments).
 
-### Prerequisites (Both Methods)
+### Prerequisites 
 
+#### For Remote Mode (AWS Bedrock)
 1. **AWS Account with Bedrock Access**
    ```bash
    # Configure AWS credentials
@@ -182,11 +213,39 @@ Cyber-AutoAgent can be deployed in two ways: **locally** or using **Docker** (re
    export AWS_REGION=your_region
    ```
 
-2. **Clone the Repository**
+#### For Local Mode (Ollama)
+1. **Install Ollama**
    ```bash
-   git clone https://github.com/cyber-autoagent/cyber-autoagent.git
-   cd cyber-autoagent
+   # macOS / Linux
+   curl -fsSL https://ollama.ai/install.sh | sh
+   
+   # Or download from https://ollama.ai
    ```
+
+2. **Pull Required Models**
+   ```bash
+   # Start Ollama service
+   ollama serve
+   
+   # Pull LLM and embedding models
+   ollama pull llama3.2:3b
+   ollama pull mxbai-embed-large
+   ```
+
+3. **Configure Ollama Connection (Optional)**
+   ```bash
+   # Override Ollama host (auto-detected by default)
+   export OLLAMA_HOST=http://your-ollama-host:11434
+   ```
+
+   **Note**: Cyber-AutoAgent automatically detects the correct Ollama host by testing connectivity. If auto-detection fails, set `OLLAMA_HOST` manually. See section '### Environment Variables' for further information.
+
+#### For Both Modes
+**Clone the Repository**
+```bash
+git clone https://github.com/cyber-autoagent/cyber-autoagent.git
+cd cyber-autoagent
+```
 
 ---
 
@@ -338,11 +397,47 @@ python src/cyberautoagent.py \
 - `--target`: Target system/network to assess (ensure you have permission!)
 
 #### Optional Arguments
+- `--server`: Model provider - `remote` for AWS Bedrock, `local` for Ollama (default: remote)
 - `--iterations`: Maximum tool executions before stopping (default: 100)
 - `--verbose`: Enable verbose output with detailed debug logging
-- `--model`: Bedrock model ID to use (default: us.anthropic.claude-3-7-sonnet-20250219-v1:0)
+- `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
 - `--region`: AWS region for Bedrock (default: us-east-1)
 - `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
+
+#### Usage Examples
+
+**Remote Mode (AWS Bedrock)**
+```bash
+# Basic remote assessment
+python src/cyberautoagent.py \
+  --server remote \
+  --target "192.168.1.100" \
+  --objective "Comprehensive security assessment"
+
+# With custom model
+python src/cyberautoagent.py \
+  --server remote \
+  --target "example.com" \
+  --objective "Find SQL injection vulnerabilities" \
+  --model "us.anthropic.claude-3-5-sonnet-20241022-v2:0" \
+  --region "us-west-2"
+```
+
+**Local Mode (Ollama)**
+```bash
+# Basic local assessment (fully offline)
+python src/cyberautoagent.py \
+  --server local \
+  --target "192.168.1.100" \
+  --objective "Comprehensive security assessment"
+
+# With custom local model
+python src/cyberautoagent.py \
+  --server local \
+  --target "testsite.local" \
+  --objective "Web vulnerability assessment" \
+  --model "llama3.1:8b"
+```
 
 **Note**: By default, tool confirmations are disabled to allow autonomous operation. Use `--confirmations` if you want to approve each tool execution manually.
 
@@ -413,13 +508,49 @@ Recent Evidence:
 
 
 ### Environment Variables
+
+#### AWS Configuration (Remote Mode)
 ```bash
 export AWS_REGION=us-east-1
 export AWS_PROFILE=default
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
 export DEV=true  # Set by agent automatically
 ```
 
-## 7. Project Structure
+#### Ollama Configuration (Local Mode)
+```bash
+# Ollama connection settings (optional - auto-detected by default)
+export OLLAMA_HOST=http://localhost:11434     # Manual override if auto-detection fails
+```
+
+**Automatic Host Detection**: Cyber-AutoAgent tests connectivity to find the correct Ollama host:
+- **Native execution**: Uses `localhost:11434`
+- **Docker on Linux**: Tests and uses `localhost:11434` 
+- **Docker on macOS/Windows**: Tests and uses `host.docker.internal:11434`
+- **Fallback**: Uses `host.docker.internal:11434` if testing fails
+
+## 7. Development & Testing
+
+### Running Tests
+
+This project uses `uv` for dependency management and testing:
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_agent_factory.py
+
+# Run tests with verbose output
+uv run pytest -v
+
+# Run tests with coverage
+uv run pytest --cov=src
+```
+
+## 8. Project Structure
 
 ```
 cyber-autoagent/
@@ -438,7 +569,7 @@ cyber-autoagent/
 |- LICENSE                     # MIT License
 ```
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Common Issues
 
@@ -475,14 +606,66 @@ sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 ```
 
-## 9. Roadmap
+#### Ollama Issues (Local Mode)
+
+**Ollama Server Not Running**
+```bash
+# Start Ollama service
+ollama serve
+
+# Check if running
+curl http://localhost:11434/api/version
+```
+
+**Required Models Missing**
+```bash
+# Pull required models
+ollama pull llama3.2:3b
+ollama pull mxbai-embed-large
+
+# List available models
+ollama list
+```
+
+**Connection Errors**
+```bash
+# Check Ollama is accessible
+curl -X POST http://localhost:11434/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3.2:3b", "prompt": "test", "stream": false}'
+```
+
+**Docker Networking (Local Mode)**
+Cyber-AutoAgent automatically detects the correct Ollama host for your environment:
+
+```bash
+# Ensure Ollama is running on your host
+ollama serve
+
+# Test connection from host
+curl http://localhost:11434/api/version
+```
+
+
+**Performance Issues**
+```bash
+# Monitor resource usage
+htop  # Check CPU/Memory during execution
+
+# For better performance, consider:
+# - Using smaller models (e.g., llama3.1:8b instead of 70b)
+# - Allocating more RAM to Ollama
+# - Using GPU acceleration if available
+```
+
+## 10. Roadmap
 
 - **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
 - **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
 - **Multi-Target Orchestration** - Parallel assessment of multiple systems
 - **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
 
-## 10. Contributing
+## 11. Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -490,15 +673,15 @@ brew install nmap nikto sqlmap gobuster      # macOS
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 11. License
+## 12. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 12. Legal Notice
+## 13. Legal Notice
 
 This tool is provided for educational and authorized security testing purposes only. Users are solely responsible for ensuring they have proper authorization before testing any systems. The authors assume no liability for misuse or any damages that may result from using this software.
 
-## 13. Acknowledgments
+## 14. Acknowledgments
 
 - [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access
