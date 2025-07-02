@@ -19,13 +19,15 @@ def auto_setup() -> List[str]:
 
     # Just check which tools are available
     cyber_tools = {
-        "nmap": "Network discovery and security auditing",
-        "nikto": "Web server scanner",
-        "sqlmap": "SQL injection detection and exploitation",
-        "gobuster": "Directory/file brute-forcer",
-        "netcat": "Network utility for reading/writing data",
-        "curl": "HTTP client for web requests",
-        "metasploit": "Penetration testing framework",
+        'nmap': 'Network discovery and security auditing',
+        'nikto': 'Web server scanner',
+        'sqlmap': 'SQL injection detection and exploitation',
+        'gobuster': 'Directory/file brute-forcer',
+        'netcat': 'Network utility for reading/writing data',
+        'curl': 'HTTP client for web requests',
+        'metasploit': 'Penetration testing framework',
+        'iproute2': 'Provides modern networking tools (ip, ss, tc, etc.)',
+        'net-tools': 'Provides classic networking utilities (netstat, ifconfig, route, etc.)',
     }
 
     available_tools = []
