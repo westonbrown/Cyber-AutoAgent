@@ -372,15 +372,7 @@ def main():
                 logger.warning("Error generating final report: %s", report_error)
 
         # Clean up resources
-        from modules.memory_tools import mem0_instance
-
-        if mem0_instance:
-            try:
-                # Attempt graceful cleanup if mem0 supports it
-                # Note: mem0 typically handles cleanup automatically
-                pass
-            except Exception as cleanup_error:
-                logger.warning("Error during cleanup: %s", cleanup_error)
+        # mem0_memory tool handles its own cleanup
 
         # Log operation end
         end_time = time.time()
