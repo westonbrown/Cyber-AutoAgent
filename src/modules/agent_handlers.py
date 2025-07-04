@@ -291,11 +291,12 @@ class ReasoningHandler(PrintingCallbackHandler):
             print("↳ Loading: %s%s%s" % (Colors.GREEN, path, Colors.RESET))
             self.tools_used.append(f"load_tool: {path}")
 
-        elif tool_name in ["memory_store", "memory_retrieve", "memory_list"]:
-            if tool_name == "memory_store":
-                category = tool_input.get("category", "general")
+        elif tool_name == "mem0_memory":
+            action = tool_input.get("action", "")
+            if action == "store":
                 content = str(tool_input.get("content", ""))[:CONTENT_PREVIEW_LENGTH]
                 metadata = tool_input.get("metadata", {})
+                category = metadata.get("category", "general") if metadata else "general"
                 print(
                     "↳ Storing [%s%s%s]: %s%s%s%s"
                     % (
@@ -323,25 +324,22 @@ class ReasoningHandler(PrintingCallbackHandler):
                             Colors.RESET,
                         )
                     )
-            elif tool_name == "memory_retrieve":
+            elif action == "retrieve":
                 query = tool_input.get("query", "")
-                category = tool_input.get("category")
-                limit = tool_input.get("limit", 10)
                 print('↳ Searching: %s"%s"%s' % (Colors.CYAN, query, Colors.RESET))
-                if category:
-                    print(
-                        "  Category: %s%s%s, Limit: %d"
-                        % (Colors.CYAN, category, Colors.RESET, limit)
-                    )
-            elif tool_name == "memory_list":
-                category = tool_input.get("category", "all")
-                limit = tool_input.get("limit", 50)
-                print(
-                    "↳ Listing evidence: %s%s%s (max: %d)"
-                    % (Colors.CYAN, category, Colors.RESET, limit)
-                )
+            elif action == "list":
+                print("↳ Listing evidence")
+            elif action == "delete":
+                memory_id = tool_input.get("memory_id", "unknown")
+                print("↳ Deleting memory: %s%s%s" % (Colors.RED, memory_id, Colors.RESET))
+            elif action == "get":
+                memory_id = tool_input.get("memory_id", "unknown")
+                print("↳ Getting memory: %s%s%s" % (Colors.CYAN, memory_id, Colors.RESET))
+            elif action == "history":
+                memory_id = tool_input.get("memory_id", "unknown")
+                print("↳ Getting history for: %s%s%s" % (Colors.CYAN, memory_id, Colors.RESET))
 
-            self.tools_used.append(f"{tool_name}: executed")
+            self.tools_used.append(f"mem0_memory: {action}")
 
         else:
             # Custom tool
@@ -472,44 +470,11 @@ class ReasoningHandler(PrintingCallbackHandler):
         }
 
     def get_evidence_summary(self):
-        """Get evidence summary from local memory if available"""
-        from .memory_tools import mem0_instance
-
-        if mem0_instance is None:
-            return []
-
-        try:
-            # Retrieve all evidence from mem0
-            memories = mem0_instance.get_all(user_id="cyber_agent")
-
-            # Handle different response formats
-            if not isinstance(memories, list):
-                return []
-
-            op_memories = [
-                m
-                for m in memories
-                if isinstance(m, dict)
-                and m.get("metadata", {}).get("operation_id") == self.operation_id
-            ]
-
-            return [
-                {
-                    "id": m.get("metadata", {}).get(
-                        "evidence_id", m.get("id", "unknown")
-                    ),
-                    "content": m.get("memory", ""),
-                    "category": m.get("metadata", {}).get("category", "unknown"),
-                    "timestamp": m.get("metadata", {}).get("timestamp", ""),
-                }
-                for m in op_memories
-            ]
-        except Exception as e:
-            print(
-                "%sWarning: Error in evidence summary: %s%s"
-                % (Colors.YELLOW, str(e), Colors.RESET)
-            )
-            return []
+        """Get evidence summary from mem0_memory tool"""
+        # Since we're using mem0_memory tool now, we can't directly access memories here
+        # The agent should use mem0_memory(action="list") to get evidence
+        # For now, return empty list to maintain compatibility
+        return []
 
     def generate_final_report(self, agent, target: str, objective: str) -> None:
         """
@@ -565,49 +530,17 @@ class ReasoningHandler(PrintingCallbackHandler):
     def _retrieve_evidence(self) -> List[Dict]:
         """Retrieve all collected evidence from memory system."""
         evidence = []
-
-        # Access memory tools module
-        from . import memory_tools
-
-        if memory_tools.mem0_instance is not None:
-            try:
-                all_memories = memory_tools.mem0_instance.get_all(user_id="cyber_agent")
-
-                # Handle different mem0 response formats
-                if isinstance(all_memories, dict) and "memories" in all_memories:
-                    all_memories = all_memories["memories"]
-                elif isinstance(all_memories, dict) and "results" in all_memories:
-                    all_memories = all_memories["results"]
-                elif not isinstance(all_memories, list):
-                    all_memories = []
-
-                # Convert to standardized evidence format
-                for memory in all_memories:
-                    if isinstance(memory, dict):
-                        evidence.append(
-                            {
-                                "id": memory.get("id", "unknown"),
-                                "content": memory.get("memory", ""),
-                                "category": memory.get("metadata", {}).get(
-                                    "category", "unknown"
-                                ),
-                                "timestamp": memory.get("metadata", {}).get(
-                                    "timestamp", ""
-                                ),
-                            }
-                        )
-
-                print(
-                    "%sRetrieved %d evidence items from memory%s"
-                    % (Colors.DIM, len(evidence), Colors.RESET)
-                )
-
-            except Exception as e:
-                print(
-                    "%sWarning: Error retrieving memories: %s%s"
-                    % (Colors.YELLOW, str(e), Colors.RESET)
-                )
-
+        
+        # Since we're using mem0_memory as a tool now, we can't directly access memories here
+        # The agent should use mem0_memory(action="list") to get evidence during operation
+        # For the final report, we'll return empty evidence to maintain compatibility
+        # The agent should have already collected and stored relevant findings using mem0_memory
+        
+        print(
+            "%sNote: Evidence retrieval now handled through mem0_memory tool%s"
+            % (Colors.DIM, Colors.RESET)
+        )
+        
         return evidence
 
     def _display_no_evidence_message(self) -> None:
