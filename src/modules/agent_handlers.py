@@ -106,8 +106,10 @@ class ReasoningHandler(PrintingCallbackHandler):
 
                             # Track memory operations
                             tool_name = self.tool_use_map[tool_id].get("name", "")
-                            if tool_name == "memory_store":
-                                self.memory_operations += 1
+                            if tool_name == "mem0_memory":
+                                tool_input = self.tool_use_map[tool_id].get("input", {})
+                                if tool_input.get("action") == "store":
+                                    self.memory_operations += 1
 
                 # Suppress parent output to avoid duplication
                 self.suppress_parent_output = True
@@ -167,12 +169,15 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         if tool_name == "shell":
             return bool(tool_input.get("command", "").strip())
-        elif tool_name == "memory_store":
-            return bool(tool_input.get("content", "").strip())
-        elif tool_name == "memory_retrieve":
-            return bool(tool_input.get("query", "").strip())
-        elif tool_name == "memory_list":
-            return True  # Always valid
+        elif tool_name == "mem0_memory":
+            action = tool_input.get("action", "")
+            if action == "store":
+                return bool(tool_input.get("content", "").strip())
+            elif action == "retrieve":
+                return bool(tool_input.get("query", "").strip())
+            elif action in ["list", "delete", "get", "history"]:
+                return True  # These have other validations
+            return False
         elif tool_name == "file_write":
             return bool(tool_input.get("path") and tool_input.get("content"))
         elif tool_name == "editor":
