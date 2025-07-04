@@ -39,10 +39,11 @@ An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or
 - **Autonomous Operation**: Conducts security assessments with minimal human intervention
 - **Intelligent Tool Selection**: Automatically chooses appropriate security tools (nmap, sqlmap, nikto, etc.)
 - **Natural Language Reasoning**: Uses Strands framework for natural decision-making
-- **Evidence Collection**: Automatically documents findings with categorized memory storage
+- **Evidence Collection**: Automatically documents findings with advanced memory storage (Mem0)
 - **Meta-Tool Creation**: Can create custom tools when existing ones are insufficient
 - **Budget-Aware Execution**: Adapts strategy based on remaining computational budget
 - **Professional Reporting**: Generates comprehensive assessment reports
+- **Swarm Intelligence**: Orchestrate parallel agents for complex tasks
 
 ## 3. Architecture
 
@@ -126,10 +127,12 @@ flowchart TD
     B --> |Basic Task| C[Shell Commands]
     B --> |Security Task| D[Cyber Tools via Shell]
     B --> |Complex Task| E[Create Meta-Tool]
+    B --> |Parallel Task| P[Swarm Orchestration]
     
     C --> F[Reflect: Evaluate Results]
     D --> F
     E --> F
+    P --> F
     
     F --> G{Findings?}
     
@@ -149,6 +152,7 @@ flowchart TD
     style C fill:#e8f5e8
     style D fill:#fff3e0
     style E fill:#f3e5f5
+    style P fill:#fce4ec
     style H fill:#ffcdd2
 ```
 
@@ -157,6 +161,7 @@ flowchart TD
 - **Action**: Execute through tool orchestration hierarchy:
   - Shell commands for basic operations
   - Professional cyber tools via shell (nmap, sqlmap, nikto, gobuster)
+  - Swarm orchestration for parallel exploration and complex attacks
   - Meta-tooling creation when existing tools are insufficient
 - **Reflect**: Evaluate results and determine if exploitation is possible
 - **Adapt**: Continue cycle until objectives achieved or budget exhausted
@@ -164,7 +169,8 @@ flowchart TD
 **Tool Orchestration Priority:**
 1. Direct shell commands for simple tasks
 2. Professional security tools for specialized operations
-3. Custom meta-tool creation for complex scenarios requiring multiple chained operations
+3. Swarm deployment for parallel execution and multi-angle attacks
+4. Custom meta-tool creation for complex scenarios requiring new capabilities
 
 ## 4. Model Providers
 
@@ -530,6 +536,23 @@ export OLLAMA_HOST=http://localhost:11434     # Manual override if auto-detectio
 - **Docker on macOS/Windows**: Tests and uses `host.docker.internal:11434`
 - **Fallback**: Uses `host.docker.internal:11434` if testing fails
 
+#### Memory Storage Configuration (Mem0)
+```bash
+# Option 1: Use Mem0 Platform (Cloud)
+export MEM0_API_KEY=your_mem0_api_key
+
+# Option 2: Use OpenSearch (Self-hosted)
+export OPENSEARCH_HOST=your-opensearch-host.region.aoss.amazonaws.com
+
+# Option 3: Local FAISS (Default - no config needed)
+# Automatically uses local FAISS storage at /tmp/mem0_384_faiss
+```
+
+**Memory Backend Selection**: The agent automatically selects based on environment:
+- **Mem0 Platform**: If `MEM0_API_KEY` is set
+- **OpenSearch**: If `OPENSEARCH_HOST` is set
+- **Local FAISS**: Default when neither is set (no cloud dependencies)
+
 ## 7. Development & Testing
 
 ### Running Tests
@@ -560,8 +583,7 @@ cyber-autoagent/
 |     |- __init__.py         # Module initialization
 |     |- utils.py            # UI utilities and analysis functions
 |     |- environment.py      # Environment setup and tool discovery
-|     |- memory_tools.py     # Evidence storage and retrieval
-|     |- system_prompts.py   # System prompt templates
+|     |- system_prompts.py   # System prompt templates & swarm guidance
 |     |- agent_handlers.py   # Core agent callback handlers
 |     |- agent_factory.py    # Agent creation and configuration
 |- pyproject.toml              # Project configuration
@@ -592,11 +614,18 @@ export AWS_REGION=us-east-1
 
 #### Memory System Errors
 ```bash
-# Check FAISS installation
-pip install faiss-cpu
+# For local FAISS backend (default)
+pip install faiss-cpu  # or faiss-gpu for CUDA
 
-# Check file permissions
-chmod 755 ./evidence_*
+# For Mem0 Platform
+export MEM0_API_KEY=your_api_key
+
+# For OpenSearch backend
+export OPENSEARCH_HOST=your_host
+export AWS_REGION=your_region
+
+# Check memory storage location
+ls -la /tmp/mem0_384_faiss/
 ```
 
 #### Tool Not Found Errors
@@ -683,9 +712,10 @@ This tool is provided for educational and authorized security testing purposes o
 
 ## 14. Acknowledgments
 
-- [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration
+- [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration & swarm intelligence
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access
-- [mem0](https://github.com/mem0ai/mem0) - Memory and evidence storage
+- [Ollama](https://ollama.ai) - Local model inference
+- [Mem0](https://github.com/mem0ai/mem0) - Advanced memory management with FAISS/OpenSearch/Platform backends
 ---
 
 **Remember: With great power comes great responsibility. Use this tool ethically and legally.**
