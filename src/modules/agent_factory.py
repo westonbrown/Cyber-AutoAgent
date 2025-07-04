@@ -10,7 +10,6 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, file_write, editor, load_tool, swarm, mem0_memory
-from mem0 import Memory
 
 # Conditional imports with graceful fallback
 try:
@@ -25,8 +24,6 @@ except ImportError:
     OllamaModel = None  # type: ignore
     ollama = None  # type: ignore
     requests = None  # type: ignore
-
-from . import memory_tools
 from .system_prompts import get_system_prompt
 from .agent_handlers import ReasoningHandler
 from .utils import Colors, get_data_path
@@ -123,67 +120,6 @@ def _create_local_model(
         host=host, model_id=model_id, temperature=temperature, max_tokens=max_tokens
     )
 
-
-def _create_memory_config(
-    server: str, operation_id: str, defaults: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Create mem0 configuration based on server type"""
-    base_path = os.path.join(get_data_path("evidence"), f"evidence_{operation_id}")
-
-    if server == "local":
-        ollama_host = _get_ollama_host()
-        return {
-            "llm": {
-                "provider": "ollama",
-                "config": {
-                    "model": defaults["llm_model"],
-                    "temperature": 0.1,
-                    "max_tokens": 1024,
-                    "ollama_base_url": ollama_host,
-                },
-            },
-            "embedder": {
-                "provider": "ollama",
-                "config": {
-                    "model": defaults["embedding_model"],
-                    "ollama_base_url": ollama_host,
-                },
-            },
-            "vector_store": {
-                "provider": "faiss",
-                "config": {
-                    "embedding_model_dims": defaults["embedding_dims"],
-                    "path": base_path,
-                },
-            },
-            "history_db_path": os.path.join(base_path, "history.db"),
-            "version": "v1.1",
-        }
-    else:  # remote
-        return {
-            "llm": {
-                "provider": "aws_bedrock",
-                "config": {
-                    "model": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
-                    "temperature": 0.1,
-                    "max_tokens": 1024,
-                    "top_p": 0.9,
-                },
-            },
-            "embedder": {
-                "provider": "aws_bedrock",
-                "config": {"model": defaults["embedding_model"]},
-            },
-            "vector_store": {
-                "provider": "faiss",
-                "config": {
-                    "embedding_model_dims": defaults["embedding_dims"],
-                    "path": base_path,
-                },
-            },
-            "history_db_path": os.path.join(base_path, "history.db"),
-            "version": "v1.1",
-        }
 
 
 def _validate_server_requirements(server: str) -> None:
