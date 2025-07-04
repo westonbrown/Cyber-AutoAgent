@@ -79,7 +79,7 @@ def _get_default_model_configs(server: str) -> Dict[str, Any]:
     else:  # remote
         return {
             "llm_model": "us.anthropic.claude-opus-4-20250514-v1:0",
-            "embedding_model": "amazon.titan-embed-text-v2:0",
+            "embedding_model": "us.amazon.titan-embed-text-v2:0",
             "embedding_dims": 1024,
         }
 
@@ -96,7 +96,7 @@ def _create_remote_model(
     # Check if this is a thinking-enabled model
     thinking_models = [
         "us.anthropic.claude-opus-4-20250514-v1:0",
-        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0"
     ]
     
@@ -105,8 +105,8 @@ def _create_remote_model(
         return BedrockModel(
             model_id=model_id,
             region_name=region_name,
-            temperature=1.0,  # Fixed temperature for thinking models
-            max_tokens=10000,  # Higher token limit
+            temperature=1.0,  
+            max_tokens=65000,  
             additional_request_fields={
                 "anthropic_beta": ["interleaved-thinking-2025-05-14"],
                 "thinking": {"type": "enabled", "budget_tokens": 8000},
