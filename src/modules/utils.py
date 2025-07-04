@@ -12,58 +12,6 @@ def get_data_path(subdir=""):
     return os.path.join(base, subdir) if subdir else base
 
 
-def sanitize_for_model(content: str) -> str:
-    """Remove emojis and other non-ASCII characters that may cause model issues.
-    
-    This function sanitizes content before it's passed to the model while preserving
-    the semantic meaning of the text.
-    
-    Args:
-        content: Text content that may contain emojis
-        
-    Returns:
-        Sanitized text with emojis removed/replaced
-    """
-    if not isinstance(content, str):
-        return str(content)
-    
-    # Replace emojis with text equivalents for common ones used in the system
-    replacements = {
-        "🟢": "ABUNDANT BUDGET",
-        "🟡": "CONSTRAINED BUDGET", 
-        "🟠": "CRITICAL BUDGET",
-        "🔴": "EMERGENCY BUDGET",
-        "🚨": "CRITICAL",
-        "✅": "SUCCESS",
-        "❌": "ERROR",
-        "⚠️": "WARNING",
-        "🎯": "FOUND",
-        "🔄": "EVOLVING",
-        "🛠️": "CREATING",
-        "🤔": "THINKING",
-        "⚡": "EXECUTING",
-        "ℹ️": "INFO",
-        "→": "->",
-        "←": "<-",
-        "↑": "UP",
-        "↓": "DOWN",
-    }
-    
-    # Apply specific replacements first
-    sanitized = content
-    for emoji, replacement in replacements.items():
-        sanitized = sanitized.replace(emoji, replacement)
-    
-    # More aggressive approach - keep only ASCII printable characters
-    # This will remove ALL non-ASCII characters that could cause issues
-    sanitized = re.sub(r'[^\x20-\x7E\n\r\t]', '', sanitized)
-    
-    # Clean up any double spaces created by character removal
-    sanitized = re.sub(r'\s+', ' ', sanitized).strip()
-    
-    return sanitized
-
-
 # ANSI color codes for terminal output
 class Colors:
     BLUE = "\033[94m"

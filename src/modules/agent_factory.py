@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from strands import Agent
 from strands.models import BedrockModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, file_write, editor, load_tool, swarm, mem0_memory
+from strands_tools import shell, file_write, editor, load_tool, swarm, mem0_memory, think
 
 # Conditional imports with graceful fallback
 try:
@@ -78,7 +78,7 @@ def _get_default_model_configs(server: str) -> Dict[str, Any]:
         }
     else:  # remote
         return {
-            "llm_model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "llm_model": "us.anthropic.claude-opus-4-20250514-v1:0",
             "embedding_model": "amazon.titan-embed-text-v2:0",
             "embedding_dims": 1024,
         }
@@ -92,13 +92,35 @@ def _create_remote_model(
     top_p: float = 0.95,
 ) -> BedrockModel:
     """Create AWS Bedrock model instance"""
-    return BedrockModel(
-        model_id=model_id,
-        region_name=region_name,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-    )
+    
+    # Check if this is a thinking-enabled model
+    thinking_models = [
+        "us.anthropic.claude-opus-4-20250514-v1:0",
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    ]
+    
+    if model_id in thinking_models:
+        # Use thinking parameters for these models
+        return BedrockModel(
+            model_id=model_id,
+            region_name=region_name,
+            temperature=1.0,  # Fixed temperature for thinking models
+            max_tokens=10000,  # Higher token limit
+            additional_request_fields={
+                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+                "thinking": {"type": "enabled", "budget_tokens": 8000},
+            },
+        )
+    else:
+        # Standard model configuration
+        return BedrockModel(
+            model_id=model_id,
+            region_name=region_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+        )
 
 
 def _create_local_model(
@@ -285,6 +307,7 @@ Leverage these tools directly via shell.
             editor,
             load_tool,
             mem0_memory,
+            think,
         ],
         system_prompt=system_prompt,
         callback_handler=callback_handler,

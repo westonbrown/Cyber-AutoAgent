@@ -179,7 +179,7 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 ### 🌐 Remote Mode (AWS Bedrock)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
-- **Default Model**: Claude 3.5 Sonnet
+- **Default Model**: Claude Opus 4 (with thinking capabilities)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
 ### 🏠 Local Mode (Ollama)
@@ -406,7 +406,7 @@ python src/cyberautoagent.py \
 - `--server`: Model provider - `remote` for AWS Bedrock, `local` for Ollama (default: remote)
 - `--iterations`: Maximum tool executions before stopping (default: 100)
 - `--verbose`: Enable verbose output with detailed debug logging
-- `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
+- `--model`: Model ID to use (default: remote=claude-opus-4, local=llama3.2:3b)
 - `--region`: AWS region for Bedrock (default: us-east-1)
 - `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
 
@@ -425,7 +425,7 @@ python src/cyberautoagent.py \
   --server remote \
   --target "example.com" \
   --objective "Find SQL injection vulnerabilities" \
-  --model "us.anthropic.claude-3-5-sonnet-20241022-v2:0" \
+  --model "us.anthropic.claude-opus-4-20250514-v1:0" \
   --region "us-west-2"
 ```
 
