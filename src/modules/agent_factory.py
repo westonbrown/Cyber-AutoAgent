@@ -9,7 +9,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from strands import Agent
 from strands.models import BedrockModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, file_write, editor, load_tool
+from strands_tools import shell, file_write, editor, load_tool, swarm, mem0_memory
 from mem0 import Memory
 
 # Conditional imports with graceful fallback
@@ -27,7 +27,6 @@ except ImportError:
     requests = None  # type: ignore
 
 from . import memory_tools
-from .memory_tools import memory_store, memory_retrieve, memory_list
 from .system_prompts import get_system_prompt
 from .agent_handlers import ReasoningHandler
 from .utils import Colors, get_data_path
@@ -295,14 +294,10 @@ def create_agent(
     else:
         operation_id = op_id
 
-    # Create memory configuration
-    memory_config = _create_memory_config(server, operation_id, defaults)
-
-    # Initialize memory system
-    memory_tools.mem0_instance = Memory.from_config(memory_config)
-    memory_tools.operation_id = operation_id
-
-    print(f"{Colors.GREEN}[+] Memory system initialized ({server} mode){Colors.RESET}")
+    # Create memory configuration for mem0_memory tool
+    # mem0_memory tool will handle its own initialization based on environment
+    # We just need to ensure the operation context is available
+    print(f"{Colors.GREEN}[+] Memory system ready ({server} mode){Colors.RESET}")
 
     tools_context = ""
     if available_tools:
@@ -348,13 +343,12 @@ Leverage these tools directly via shell.
     agent = Agent(
         model=model,
         tools=[
+            swarm,
             shell,
             file_write,
             editor,
             load_tool,
-            memory_store,
-            memory_retrieve,
-            memory_list,
+            mem0_memory,
         ],
         system_prompt=system_prompt,
         callback_handler=callback_handler,
