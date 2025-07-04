@@ -222,7 +222,7 @@ mem0_memory(
   action="store",
   content="SQL injection found at /login endpoint, parameter 'username'",
   user_id="cyber_agent",
-  metadata={"category": "vulnerability", "severity": "high", "endpoint": "/login"}
+  metadata={{"category": "vulnerability", "severity": "high", "endpoint": "/login"}}
 )
 
 **Searching Previous Attempts:**

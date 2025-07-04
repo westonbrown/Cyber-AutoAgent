@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -73,6 +74,11 @@ def auto_setup() -> List[str]:
 
 def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False):
     """Configure unified logging for all operations"""
+    # Ensure the directory exists
+    log_dir = os.path.dirname(log_file)
+    if log_dir and not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+    
     formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
