@@ -6,82 +6,22 @@ import warnings
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 
+import requests
+import ollama
 from strands import Agent
 from strands.models import BedrockModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, file_write, editor, load_tool, swarm, mem0_memory, think
+from strands_tools import shell, editor, load_tool, stop, http_request
+from strands_tools.swarm import swarm 
 
-# Conditional imports with graceful fallback
-try:
-    from strands.models.ollama import OllamaModel
-    import ollama
-    import requests
+from strands.models.ollama import OllamaModel
 
-    OLLAMA_AVAILABLE = True
-except ImportError:
-    OLLAMA_AVAILABLE = False
-    # Define placeholder types for when imports are not available
-    OllamaModel = None  # type: ignore
-    ollama = None  # type: ignore
-    requests = None  # type: ignore
-from .system_prompts import get_system_prompt
+from .system_prompts import get_system_prompt, _get_default_model_configs, _get_ollama_host
 from .agent_handlers import ReasoningHandler
-from .utils import Colors, get_data_path
+from .utils import Colors
+from .memory_tools import mem0_memory, initialize_memory_system
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-
-def _test_ollama_connection(host: str, timeout: int = 2) -> bool:
-    """Test if Ollama server is accessible at the given host"""
-    if requests is None:
-        return False
-    
-    try:
-        response = requests.get(f"{host}/api/version", timeout=timeout)
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
-
-def _get_ollama_host() -> str:
-    """
-    Determine appropriate Ollama host based on environment.
-    Tests actual connectivity to find working host in Docker environments.
-    """
-    # Environment variable override from e.g. .env for full control
-    env_host = os.getenv("OLLAMA_HOST")
-    if env_host:
-        return env_host
-    
-    # Check if running in Docker
-    if os.path.exists('/app'): # WORKDIR created in Dockerfile
-        # In Docker - test both options to find what works
-        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
-        for host in candidates:
-            if _test_ollama_connection(host):
-                return host
-        # Fallback to host.docker.internal if no connection works (Docker on Windows/ Macos)
-        return "http://host.docker.internal:11434"
-    else:
-        # Native execution - use localhost (Docker on Linux & non-docker)
-        return "http://localhost:11434"
-
-
-def _get_default_model_configs(server: str) -> Dict[str, Any]:
-    """Get default model configurations based on server type"""
-    if server == "local":
-        return {
-            "llm_model": "llama3.2:3b",
-            "embedding_model": "mxbai-embed-large",
-            "embedding_dims": 1024,
-        }
-    else:  # remote
-        return {
-            "llm_model": "us.anthropic.claude-opus-4-20250514-v1:0",
-            "embedding_model": "us.amazon.titan-embed-text-v2:0",
-            "embedding_dims": 1024,
-        }
 
 
 def _create_remote_model(
@@ -106,7 +46,7 @@ def _create_remote_model(
             model_id=model_id,
             region_name=region_name,
             temperature=1.0,  
-            max_tokens=65000,  
+            max_tokens=4026,  
             additional_request_fields={
                 "anthropic_beta": ["interleaved-thinking-2025-05-14"],
                 "thinking": {"type": "enabled", "budget_tokens": 8000},
@@ -130,10 +70,6 @@ def _create_local_model(
     max_tokens: int = 4096,
 ) -> Any:
     """Create Ollama model instance"""
-    if not OLLAMA_AVAILABLE or OllamaModel is None:
-        raise ImportError(
-            "Ollama not available. Install with: uv add ollama && uv add 'strands-agents[ollama]'"
-        )
 
     if host is None:
         host = _get_ollama_host()
@@ -151,9 +87,6 @@ def _validate_server_requirements(server: str) -> None:
         ollama_host = _get_ollama_host()
         
         # Check if Ollama is running
-        if requests is None:
-            raise ImportError("Requests module not available")
-        
         try:
             response = requests.get(f"{ollama_host}/api/version", timeout=5)
             if response.status_code != 200:
@@ -165,10 +98,6 @@ def _validate_server_requirements(server: str) -> None:
             )
 
         # Check if required models are available
-        if not OLLAMA_AVAILABLE or ollama is None:
-            raise ImportError(
-                "Ollama client not available. Install with: uv add ollama"
-            )
 
         try:
             client = ollama.Client(host=ollama_host)
@@ -191,7 +120,6 @@ def _validate_server_requirements(server: str) -> None:
             raise ConnectionError(f"Could not verify Ollama models: {e}")
 
     elif server == "remote":
-        # Validate AWS credentials exist
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
@@ -225,6 +153,7 @@ def create_agent(
     model_id: Optional[str] = None,
     region_name: str = "us-east-1",
     server: str = "remote",
+    memory_path: Optional[str] = None,
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
@@ -236,10 +165,8 @@ def create_agent(
         server,
     )
 
-    # Pre-flight validation
     _validate_server_requirements(server)
 
-    # Get default configurations
     defaults = _get_default_model_configs(server)
 
     # Use provided model_id or default
@@ -252,10 +179,68 @@ def create_agent(
     else:
         operation_id = op_id
 
-    # Create memory configuration for mem0_memory tool
-    # mem0_memory tool will handle its own initialization based on environment
-    # We just need to ensure the operation context is available
-    print(f"{Colors.GREEN}[+] Memory system ready ({server} mode){Colors.RESET}")
+    # Configure memory system based on server type
+    memory_config = {}
+    
+    if server == "local":
+        # Local mode with Ollama
+        ollama_host = _get_ollama_host()
+        memory_config = {
+            "embedder": {
+                "provider": "ollama",
+                "config": {
+                    "model": defaults["embedding_model"],
+                    "base_url": ollama_host
+                }
+            },
+            "llm": {
+                "provider": "ollama",
+                "config": {
+                    "model": model_id,
+                    "base_url": ollama_host,
+                    "temperature": 0.1,
+                    "max_tokens": 2000
+                }
+            }
+        }
+    else:
+        memory_config = {
+            "embedder": {
+                "provider": "aws_bedrock",
+                "config": {
+                    "model": defaults["embedding_model"],
+                    "aws_region": region_name
+                }
+            },
+            "llm": {
+                "provider": "aws_bedrock",
+                "config": {
+                    "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    "temperature": 0.1,
+                    "max_tokens": 2000,
+                    "aws_region": region_name
+                }
+            }
+        }
+    
+    # Configure vector store with memory path if provided
+    if memory_path:
+        # Validate existing memory store path
+        if not os.path.exists(memory_path):
+            raise ValueError(f"Memory path does not exist: {memory_path}")
+        if not os.path.isdir(memory_path):
+            raise ValueError(f"Memory path is not a directory: {memory_path}")
+        
+        memory_config["vector_store"] = {
+            "config": {
+                "path": memory_path
+            }
+        }
+        print(f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}")
+    
+    # Initialize the memory system with configuration
+    initialize_memory_system(memory_config, operation_id)
+    print(f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}")
 
     tools_context = ""
     if available_tools:
@@ -268,13 +253,12 @@ Professional tools discovered in your environment:
 Leverage these tools directly via shell. 
 """
 
-    # Get system prompt
     system_prompt = get_system_prompt(
-        target, objective, max_steps, operation_id, tools_context
+        target, objective, max_steps, operation_id, tools_context, server, has_memory_path=bool(memory_path)
     )
 
-    # Create callback handler
-    callback_handler = ReasoningHandler(max_steps=max_steps)
+    # Create callback handler with operation_id
+    callback_handler = ReasoningHandler(max_steps=max_steps, operation_id=operation_id)
 
     # Create model based on server type
     try:
@@ -285,12 +269,10 @@ Leverage these tools directly via shell.
                 f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
             )
         else:
-            # Set AWS region for remote mode
-            os.environ["AWS_REGION"] = region_name
             logger.debug("Configuring BedrockModel")
             model = _create_remote_model(model_id, region_name)
             print(
-                f"{Colors.GREEN}[+] Remote model initialized: {model_id}{Colors.RESET}"
+                f"{Colors.GREEN}[+] Remote agent model initialized: {model_id}{Colors.RESET}"
             )
 
     except Exception as e:
@@ -301,13 +283,13 @@ Leverage these tools directly via shell.
     agent = Agent(
         model=model,
         tools=[
-            swarm,
+            swarm, 
             shell,
-            file_write,
             editor,
             load_tool,
             mem0_memory,
-            think,
+            stop,
+            http_request,
         ],
         system_prompt=system_prompt,
         callback_handler=callback_handler,
