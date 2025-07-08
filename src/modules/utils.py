@@ -106,27 +106,21 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
     if not messages:
         return False, "", {}
 
-    import re
-
     # Look for explicit completion declaration - trust the agent's judgment
     for msg in reversed(messages[-5:]):  # Check last 5 messages
         if msg.get("role") == "assistant":
-            # Handle both old string format and new structured format
             content_raw = msg.get("content", "")
             if isinstance(content_raw, list) and len(content_raw) > 0:
-                # New format: content is a list of content blocks
                 content = ""
                 for block in content_raw:
                     if isinstance(block, dict) and "text" in block:
                         content += block["text"] + " "
                 content = content.strip()
             else:
-                # Old format: content is a string
                 content = str(content_raw)
 
             # Check for explicit objective declaration
             if "objective achieved:" in content.lower():
-                # Extract the agent's reasoning
                 match = re.search(
                     r"objective achieved:(.+?)(?:\n|$)",
                     content,
@@ -190,5 +184,4 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
                         {"confidence": 95, "success_indicator": True},
                     )
 
-    # No explicit completion - let agent continue
     return False, "", {}
