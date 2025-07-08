@@ -2,23 +2,28 @@
 
 import sys
 import io
+import os
+import logging
 from datetime import datetime
 from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
 from .utils import Colors, get_data_path
+from .memory_tools import get_memory_client
+
+logger = logging.getLogger("CyberAutoAgent.handlers")
 
 # Constants for display formatting
-CONTENT_PREVIEW_LENGTH = 60
-METADATA_PREVIEW_LENGTH = 40
+CONTENT_PREVIEW_LENGTH = 150
+METADATA_PREVIEW_LENGTH = 100
 MAX_TOOL_CODE_LINES = 100
 EVIDENCE_PREVIEW_LENGTH = 80
 FALLBACK_EVIDENCE_PREVIEW_LENGTH = 200
 
 
 class ReasoningHandler(PrintingCallbackHandler):
-    """Enhanced callback handler based on working implementation with proper step enforcement"""
+    """Callback handler for cyber security assessment operations with step tracking and reporting."""
 
-    def __init__(self, max_steps=100):
+    def __init__(self, max_steps=100, operation_id=None):
         super().__init__()
         self.steps = 0
         self.max_steps = max_steps
@@ -33,10 +38,14 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.tool_results = {}  # Store tool results for output display
         self.suppress_parent_output = False  # Flag to control parent handler
         self.step_limit_reached = False  # Flag to track if we've hit the limit
+        self.stop_tool_used = False  # Flag to track if stop tool was used
         self.report_generated = False  # Flag to prevent duplicate reports
 
-        # Generate operation ID and show clean header
-        self.operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Use provided operation ID or generate one
+        if operation_id:
+            self.operation_id = operation_id
+        else:
+            self.operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         timestamp = datetime.now().strftime("%H:%M:%S")
 
         # Clean header with full-width break lines
@@ -52,6 +61,10 @@ class ReasoningHandler(PrintingCallbackHandler):
 
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
+        
+        # Immediately return if step limit has been reached
+        if self.step_limit_reached:
+            return
 
         # Handle streaming text data (reasoning/thinking)
         if "data" in kwargs:
@@ -111,12 +124,16 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 if tool_input.get("action") == "store":
                                     self.memory_operations += 1
 
-                # Suppress parent output to avoid duplication
+                # Prevent duplicate output from parent handler
                 self.suppress_parent_output = True
                 return
 
         # Handle tool usage announcement from streaming
         if "current_tool_use" in kwargs:
+            # Check if we've already hit the step limit
+            if self.step_limit_reached:
+                return
+                
             tool = kwargs["current_tool_use"]
             tool_id = tool.get("toolUseId", "")
 
@@ -125,7 +142,6 @@ class ReasoningHandler(PrintingCallbackHandler):
             if self._is_valid_tool_use(tool.get("name", ""), tool_input):
                 # Only show if not already shown
                 if tool_id not in self.shown_tools:
-                    # Step limit is now checked in _show_tool_execution - no need for pre-check
                     self.shown_tools.add(tool_id)
                     self.tool_use_map[tool_id] = tool
                     self._show_tool_execution(tool)
@@ -168,13 +184,19 @@ class ReasoningHandler(PrintingCallbackHandler):
             return False
 
         if tool_name == "shell":
-            return bool(tool_input.get("command", "").strip())
+            command = tool_input.get("command", "")
+            # Handle case where command might be a list
+            if isinstance(command, list):
+                command = " ".join(command) if command else ""
+            return bool(command.strip() if isinstance(command, str) else command)
         elif tool_name == "mem0_memory":
             action = tool_input.get("action", "")
             if action == "store":
-                return bool(tool_input.get("content", "").strip())
+                content = tool_input.get("content", "")
+                return bool(content.strip() if isinstance(content, str) else content)
             elif action == "retrieve":
-                return bool(tool_input.get("query", "").strip())
+                query = tool_input.get("query", "")
+                return bool(query.strip() if isinstance(query, str) else query)
             elif action in ["list", "delete", "get", "history"]:
                 return True  # These have other validations
             return False
@@ -183,7 +205,8 @@ class ReasoningHandler(PrintingCallbackHandler):
         elif tool_name == "editor":
             return bool(tool_input.get("command") and tool_input.get("path"))
         elif tool_name == "load_tool":
-            return bool(tool_input.get("path", "").strip())
+            path = tool_input.get("path", "")
+            return bool(path.strip() if isinstance(path, str) else path)
         else:
             # For other tools, assume valid if there's any input
             return bool(tool_input)
@@ -201,17 +224,17 @@ class ReasoningHandler(PrintingCallbackHandler):
 
     def _show_tool_execution(self, tool_use):
         """Display tool execution with clean formatting based on working implementation"""
-        self.steps += 1
-
-        # Check step limit immediately after incrementing
-        if self.has_reached_limit() and not self.step_limit_reached:
+        # Check step limit BEFORE incrementing to prevent execution beyond limit
+        if self.steps >= self.max_steps and not self.step_limit_reached:
             self.step_limit_reached = True
             print(
-                "\n%s✅ Step limit reached (%d). Assessment complete.%s"
+                "\n%sStep limit reached (%d). Assessment complete.%s"
                 % (Colors.BLUE, self.max_steps, Colors.RESET)
             )
             # Stop all further processing by raising StopIteration
             raise StopIteration("Step limit reached - clean termination")
+            
+        self.steps += 1
 
         tool_name = tool_use.get("name", "unknown")
         tool_input = tool_use.get("input", {})
@@ -233,8 +256,32 @@ class ReasoningHandler(PrintingCallbackHandler):
         # Show detailed tool information
         if tool_name == "shell":
             command = tool_input.get("command", "")
-            print("↳ Running: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
-            self.tools_used.append(f"shell: {command}")
+            parallel = tool_input.get("parallel", False)
+            
+            # Handle different command formats
+            if isinstance(command, list):
+                mode = "parallel" if parallel else "sequential"
+                # Deduplicate commands while preserving order
+                seen = set()
+                unique_commands = []
+                for cmd in command:
+                    cmd_str = cmd if isinstance(cmd, str) else cmd.get("command", str(cmd))
+                    if cmd_str not in seen:
+                        seen.add(cmd_str)
+                        unique_commands.append((cmd, cmd_str))
+                
+                if len(unique_commands) < len(command):
+                    print("↳ Executing %d unique commands (%s) [%d duplicates removed]:" % 
+                          (len(unique_commands), mode, len(command) - len(unique_commands)))
+                else:
+                    print("↳ Executing %d commands (%s):" % (len(unique_commands), mode))
+                
+                for i, (cmd, cmd_str) in enumerate(unique_commands):
+                    print("  %d. %s%s%s" % (i+1, Colors.GREEN, cmd_str, Colors.RESET))
+                self.tools_used.append(f"shell: {len(unique_commands)} commands ({mode})")
+            else:
+                print("↳ Running: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
+                self.tools_used.append(f"shell: {command}")
 
         elif tool_name == "file_write":
             path = tool_input.get("path", "")
@@ -259,28 +306,42 @@ class ReasoningHandler(PrintingCallbackHandler):
             print("↳ Editor: %s%s%s" % (Colors.CYAN, command, Colors.RESET))
             print("  Path: %s%s%s" % (Colors.YELLOW, path, Colors.RESET))
 
-            # Store and show content if creating a tool
-            if command == "create" and path and path.startswith("tools/") and file_text:
-                self.created_tools.append(path.replace("tools/", "").replace(".py", ""))
-                print("\n%s" % ("─" * 70))
-                print("📄 %sMETA-TOOL CODE:%s" % (Colors.YELLOW, Colors.RESET))
+            # Show content for any file creation
+            if command == "create" and file_text:
+                # Track tools specifically
+                if path and path.startswith("tools/") and path.endswith(".py"):
+                    self.created_tools.append(path.replace("tools/", "").replace(".py", ""))
+                    print("\n%s" % ("─" * 70))
+                    print("📄 %sMETA-TOOL CODE:%s" % (Colors.YELLOW, Colors.RESET))
+                else:
+                    print("\n%s" % ("─" * 70))
+                    print("📄 %sFILE CONTENT:%s" % (Colors.CYAN, Colors.RESET))
+                
                 print("%s" % ("─" * 70))
-                # Display the tool code with syntax highlighting
-                for line in file_text.split("\n")[
-                    :MAX_TOOL_CODE_LINES
-                ]:  # Show first 100 lines
-                    if line.strip().startswith("@tool"):
-                        print("%s%s%s" % (Colors.GREEN, line, Colors.RESET))
-                    elif line.strip().startswith("def "):
-                        print("%s%s%s" % (Colors.CYAN, line, Colors.RESET))
-                    elif line.strip().startswith("#"):
-                        print("%s%s%s" % (Colors.DIM, line, Colors.RESET))
+                
+                # Display the file content with syntax highlighting
+                lines = file_text.split("\n")
+                for i, line in enumerate(lines[:MAX_TOOL_CODE_LINES]):
+                    # Python syntax highlighting
+                    if path.endswith(".py"):
+                        if line.strip().startswith("@tool"):
+                            print("%s%s%s" % (Colors.GREEN, line, Colors.RESET))
+                        elif line.strip().startswith("def "):
+                            print("%s%s%s" % (Colors.CYAN, line, Colors.RESET))
+                        elif line.strip().startswith("#"):
+                            print("%s%s%s" % (Colors.DIM, line, Colors.RESET))
+                        elif line.strip().startswith(("import ", "from ")):
+                            print("%s%s%s" % (Colors.MAGENTA, line, Colors.RESET))
+                        else:
+                            print(line)
                     else:
+                        # No highlighting for non-Python files
                         print(line)
-                if len(file_text.split("\n")) > 20:
+                
+                if len(lines) > MAX_TOOL_CODE_LINES:
                     print(
                         "%s... (%d more lines)%s"
-                        % (Colors.DIM, len(file_text.split("\n")) - 20, Colors.RESET)
+                        % (Colors.DIM, len(lines) - MAX_TOOL_CODE_LINES, Colors.RESET)
                     )
                 print("%s" % ("─" * 70))
 
@@ -290,6 +351,12 @@ class ReasoningHandler(PrintingCallbackHandler):
             path = tool_input.get("path", "")
             print("↳ Loading: %s%s%s" % (Colors.GREEN, path, Colors.RESET))
             self.tools_used.append(f"load_tool: {path}")
+
+        elif tool_name == "stop":
+            reason = tool_input.get("reason", "No reason provided")
+            print("↳ Stopping: %s%s%s" % (Colors.RED, reason, Colors.RESET))
+            self.stop_tool_used = True  # Set the flag when stop tool is used
+            self.tools_used.append(f"stop: {reason}")
 
         elif tool_name == "mem0_memory":
             action = tool_input.get("action", "")
@@ -343,12 +410,62 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         else:
             # Custom tool
-            if tool_input:
-                # Show first 2 most relevant parameters
+            if tool_name == "swarm":
+                # Special handling for swarm tool - show full parameters
+                task = tool_input.get("task", "")
+                swarm_size = tool_input.get("swarm_size", 1)
+                pattern = tool_input.get("coordination_pattern", "collaborative")
+                tools = tool_input.get("tools", [])
+                model_provider = tool_input.get("model_provider", "default")
+                
+                print("↳ %sOrchestrating Swarm Intelligence%s" % (Colors.BOLD, Colors.RESET))
+                
+                # Parse task structure if possible
+                task_parts = task.split(". ")
+                if len(task_parts) >= 4 and any(keyword in task for keyword in ["Objective:", "Scope:", "Success:", "Context:"]):
+                    # Structured task format
+                    for part in task_parts:
+                        if part.strip():
+                            if "Objective:" in part:
+                                print("  %sObjective:%s %s" % (Colors.CYAN, Colors.RESET, part.replace("Objective:", "").strip()))
+                            elif "Scope:" in part:
+                                print("  %sScope:%s %s" % (Colors.YELLOW, Colors.RESET, part.replace("Scope:", "").strip()))
+                            elif "Success:" in part:
+                                print("  %sSuccess:%s %s" % (Colors.GREEN, Colors.RESET, part.replace("Success:", "").strip()))
+                            elif "Context:" in part:
+                                print("  %sContext:%s %s" % (Colors.DIM, Colors.RESET, part.replace("Context:", "").strip()))
+                else:
+                    # Unstructured task - show as is
+                    print("  Task: %s%s%s" % (Colors.YELLOW, task[:200] + "..." if len(task) > 200 else task, Colors.RESET))
+                
+                print("  %sConfiguration:%s" % (Colors.BOLD, Colors.RESET))
+                print("    Agents: %s%d%s" % (Colors.CYAN, int(swarm_size), Colors.RESET))
+                print("    Pattern: %s%s%s" % (Colors.MAGENTA, pattern, Colors.RESET))
+                if tools:
+                    print("    Tools: %s%s%s" % (Colors.GREEN, ", ".join(tools) if isinstance(tools, list) else str(tools), Colors.RESET))
+                if model_provider and model_provider != "default":
+                    print("    Model: %s%s%s" % (Colors.BLUE, model_provider, Colors.RESET))
+                
+                self.tools_used.append(f"swarm: {int(swarm_size)} agents, {pattern}")
+            elif tool_name == "http_request":
+                # Special handling for http_request - show full URL
+                method = tool_input.get("method", "GET")
+                url = tool_input.get("url", "")
+                print("↳ HTTP Request: %s%s %s%s" % (Colors.MAGENTA, method, url, Colors.RESET))
+                self.tools_used.append(f"http_request: {method} {url}")
+            elif tool_name == "think":
+                # Special handling for think tool - show full thought
+                thought = tool_input.get("thought", "")
+                cycle_count = tool_input.get("cycle_count", 1)
+                print("↳ Thinking (%s%d cycles%s):" % (Colors.CYAN, cycle_count, Colors.RESET))
+                print("  Thought: %s%s%s" % (Colors.DIM, thought[:500] + "..." if len(thought) > 500 else thought, Colors.RESET))
+                self.tools_used.append(f"think: {cycle_count} cycles")
+            elif tool_input:
+                # Show first 2 most relevant parameters for other tools
                 key_params = list(tool_input.keys())[:2]
                 if key_params:
                     params_str = ", ".join(
-                        f"{k}={str(tool_input[k])[:20]}{'...' if len(str(tool_input[k])) > 20 else ''}"
+                        f"{k}={str(tool_input[k])[:50]}{'...' if len(str(tool_input[k])) > 50 else ''}"
                         for k in key_params
                     )
                     print(
@@ -359,10 +476,10 @@ class ReasoningHandler(PrintingCallbackHandler):
                         "↳ Executing: %s%s%s"
                         % (Colors.MAGENTA, tool_name, Colors.RESET)
                     )
+                self.tools_used.append(f"{tool_name}: {list(tool_input.keys())}")
             else:
                 print("↳ Executing: %s%s%s" % (Colors.MAGENTA, tool_name, Colors.RESET))
-
-            self.tools_used.append(f"{tool_name}: {list(tool_input.keys())}")
+                self.tools_used.append(f"{tool_name}: no params")
 
         # Add blank line for readability
         print()
@@ -378,19 +495,17 @@ class ReasoningHandler(PrintingCallbackHandler):
         result_content = tool_result.get("content", [])
         status = tool_result.get("status", "unknown")
 
-        # Show output based on tool type - following working implementation pattern
+        # Process tool output based on tool type
         if tool_name == "shell" and result_content:
-            # Shell command output - process only first text block to avoid duplicates
             for content_block in result_content:
                 if isinstance(content_block, dict) and "text" in content_block:
                     output_text = content_block.get("text", "")
                     if output_text.strip():
-                        # Filter out execution summary lines (same as working version)
+                        # Filter out execution summary lines
                         lines = output_text.strip().split("\n")
                         filtered_lines = []
                         skip_summary = False
                         for line in lines:
-                            # Skip execution summary section
                             if "Execution Summary:" in line:
                                 skip_summary = True
                                 continue
@@ -420,6 +535,32 @@ class ReasoningHandler(PrintingCallbackHandler):
                     error_text = content_block.get("text", "").strip()
                     if error_text and error_text != "Error:":
                         print("%sError: %s%s" % (Colors.RED, error_text, Colors.RESET))
+        else:
+            # Show output for other tools (like swarm, mem0_memory, etc.)
+            if result_content and tool_name not in ["shell"]:  # Shell already handled above
+                for content_block in result_content:
+                    if isinstance(content_block, dict) and "text" in content_block:
+                        output_text = content_block.get("text", "")
+                        if output_text.strip():
+                            # For swarm tool, show the full output without truncation
+                            if tool_name == "swarm":
+                                print("%s[Swarm Output]%s" % (Colors.CYAN, Colors.RESET))
+                                print(output_text)
+                            # For other tools, show reasonable output
+                            else:
+                                # Limit output to reasonable length for non-swarm tools
+                                max_lines = 50
+                                lines = output_text.strip().split("\n")
+                                if len(lines) > max_lines:
+                                    for line in lines[:max_lines]:
+                                        print(line)
+                                    print(
+                                        "%s... (%d more lines)%s"
+                                        % (Colors.DIM, len(lines) - max_lines, Colors.RESET)
+                                    )
+                                else:
+                                    print(output_text)
+                            break  # Only show first text block
 
         # Add separator line after tool result
         print("%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
@@ -441,6 +582,10 @@ class ReasoningHandler(PrintingCallbackHandler):
     def has_reached_limit(self):
         """Check if step limit reached"""
         return self.steps >= self.max_steps
+
+    def should_stop(self):
+        """Check if agent should stop (step limit or stop tool used)"""
+        return self.has_reached_limit() or self.stop_tool_used
 
     def get_remaining_steps(self):
         """Get remaining steps for budget management"""
@@ -492,7 +637,7 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         print("\n%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
         print(
-            "📊 %s%sGenerating Final Assessment Report%s"
+            "%s%sGenerating Final Assessment Report%s"
             % (Colors.CYAN, Colors.BOLD, Colors.RESET)
         )
         print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
@@ -531,16 +676,88 @@ class ReasoningHandler(PrintingCallbackHandler):
         """Retrieve all collected evidence from memory system."""
         evidence = []
         
-        # Since we're using mem0_memory as a tool now, we can't directly access memories here
-        # The agent should use mem0_memory(action="list") to get evidence during operation
-        # For the final report, we'll return empty evidence to maintain compatibility
-        # The agent should have already collected and stored relevant findings using mem0_memory
+        # Get memory client using the helper function
+        memory_client = get_memory_client()
+        if memory_client is None:
+            logger.error("Memory client is not initialized!")
+            print(
+                "%sError: Memory client not initialized. Cannot retrieve evidence.%s"
+                % (Colors.RED, Colors.RESET)
+            )
+            return evidence
         
-        print(
-            "%sNote: Evidence retrieval now handled through mem0_memory tool%s"
-            % (Colors.DIM, Colors.RESET)
-        )
+        # Use simple user_id for consistency
+        agent_user_id = "cyber_agent"
         
+        try:
+            # Debug logging
+            logger.info(f"Attempting to retrieve memories for user_id: {agent_user_id}")
+            
+            # Call list_memories on the memory client
+            memories_response = memory_client.list_memories(user_id=agent_user_id)
+            
+            # Debug the response type
+            logger.debug(f"Memory response type: {type(memories_response)}")
+            logger.debug(f"Memory response: {memories_response}")
+            
+            # Handle different response formats from mem0 API
+            if isinstance(memories_response, dict):
+                # Extract memories from standard response formats
+                raw_memories = memories_response.get("memories", memories_response.get("results", []))
+                logger.debug(f"Extracted {len(raw_memories)} memories from dict response")
+            elif isinstance(memories_response, list):
+                # Direct list return
+                raw_memories = memories_response
+                logger.debug(f"Got {len(raw_memories)} memories as list")
+            else:
+                # Fallback for unexpected format
+                raw_memories = []
+                logger.warning(f"Unexpected memory response format: {type(memories_response)}")
+
+            logger.info(f"Found {len(raw_memories)} total memories")
+            
+            # Filter for 'finding' category and format for the report
+            for mem in raw_memories:
+                # Ensure 'metadata' is a dict and 'category' exists
+                metadata = mem.get('metadata', {})
+                
+                # Debug each memory
+                logger.debug(f"Processing memory: {mem}")
+                
+                if metadata and metadata.get('category') == 'finding':
+                    evidence.append({
+                        'category': metadata.get('category'),
+                        'content': mem.get('memory', 'N/A'),
+                        'id': mem.get('id', 'N/A')
+                    })
+                    logger.info(f"Added finding to evidence: {mem.get('memory', 'N/A')[:50]}...")
+                # Also include any memories that don't have a category but are relevant
+                elif 'memory' in mem and 'category' not in metadata:
+                    # Heuristic: if it's a concise memory, include it
+                    if len(mem.get('memory', '').split()) < 50: # Arbitrary length for "concise"
+                        evidence.append({
+                            'category': 'general',
+                            'content': mem.get('memory', 'N/A'),
+                            'id': mem.get('id', 'N/A')
+                        })
+                        logger.info(f"Added general memory to evidence: {mem.get('memory', 'N/A')[:50]}...")
+
+            print(
+                "%sRetrieved %d items from memory for final report.%s"
+                % (Colors.DIM, len(evidence), Colors.RESET)
+            )
+            
+        except Exception as e:
+            logger.error(f"Error retrieving evidence from mem0_memory: {str(e)}", exc_info=True)
+            print(
+                "%sWarning: Failed to retrieve evidence from memory (user_id: %s). Report may be incomplete.%s"
+                % (Colors.YELLOW, agent_user_id, Colors.RESET)
+            )
+            print(
+                "%sError details: %s%s" % (Colors.DIM, str(e), Colors.RESET)
+            )
+            evidence = [] # Ensure empty list on error
+
         return evidence
 
     def _display_no_evidence_message(self) -> None:
@@ -598,7 +815,8 @@ Format this as a professional penetration testing report."""
 
         try:
             # Generate report with suppressed output
-            raw_report = agent(report_prompt, messages=[])
+            # Note: Don't pass empty messages=[] as it causes "conversation must start with user message" error
+            raw_report = agent(report_prompt)
             return self._clean_duplicate_content(str(raw_report))
         finally:
             # Restore stdout
@@ -662,9 +880,6 @@ Format this as a professional penetration testing report."""
     ) -> None:
         """Save report to file in evidence directory."""
         try:
-            import os
-            from datetime import datetime
-
             # Create evidence directory if it doesn't exist
             evidence_dir = os.path.join(
                 get_data_path("evidence"), f"evidence_{self.operation_id}"
@@ -688,7 +903,7 @@ Format this as a professional penetration testing report."""
                 f.write(report_content)
 
             print(
-                "\n%s📄 Report saved to: %s%s"
+                "\n%sReport saved to: %s%s"
                 % (Colors.GREEN, report_path, Colors.RESET)
             )
 

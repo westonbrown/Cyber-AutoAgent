@@ -38,12 +38,12 @@ An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or
 
 - **Autonomous Operation**: Conducts security assessments with minimal human intervention
 - **Intelligent Tool Selection**: Automatically chooses appropriate security tools (nmap, sqlmap, nikto, etc.)
-- **Natural Language Reasoning**: Uses Strands framework for natural decision-making
-- **Evidence Collection**: Automatically documents findings with advanced memory storage (Mem0)
-- **Meta-Tool Creation**: Can create custom tools when existing ones are insufficient
-- **Budget-Aware Execution**: Adapts strategy based on remaining computational budget
+- **Natural Language Reasoning**: Uses Strands framework with metacognitive architecture
+- **Evidence Collection**: Automatically stores findings with Mem0 memory (category="finding")
+- **Meta-Tool Creation**: Dynamically creates custom exploitation tools when needed
+- **Adaptive Execution**: Metacognitive assessment guides strategy based on confidence levels
 - **Professional Reporting**: Generates comprehensive assessment reports
-- **Swarm Intelligence**: Orchestrate parallel agents for complex tasks
+- **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
 
 ## 3. Architecture
 
@@ -118,7 +118,7 @@ sequenceDiagram
 - All findings stored as evidence for final analysis
 - Assessment completes when objectives met or budget exhausted
 
-### Think-Action-Reflect Cycle
+### Metacognitive Assessment Cycle
 
 ```mermaid
 flowchart TD
@@ -156,21 +156,24 @@ flowchart TD
     style H fill:#ffcdd2
 ```
 
-**Decision Process:**
-- **Think**: AI model analyzes current situation and selects next action
-- **Action**: Execute through tool orchestration hierarchy:
-  - Shell commands for basic operations
-  - Professional cyber tools via shell (nmap, sqlmap, nikto, gobuster)
-  - Swarm orchestration for parallel exploration and complex attacks
-  - Meta-tooling creation when existing tools are insufficient
-- **Reflect**: Evaluate results and determine if exploitation is possible
-- **Adapt**: Continue cycle until objectives achieved or budget exhausted
+**Metacognitive Process:**
+- **Assess Confidence**: Evaluate current knowledge and confidence level (High >80%, Medium 50-80%, Low <50%)
+- **Adaptive Strategy**: 
+  - High confidence → Use specialized tools directly
+  - Medium confidence → Deploy swarm for parallel exploration
+  - Low confidence → Gather more information, try alternatives
+- **Execute**: Tool hierarchy based on confidence:
+  - Professional security tools for known vulnerabilities (sqlmap, nikto, nmap)
+  - Swarm deployment when multiple approaches needed (with memory access)
+  - Parallel shell for rapid reconnaissance (up to 7 commands)
+  - Meta-tool creation only when no existing tool suffices
+- **Learn & Store**: Store findings with category="finding" for memory persistence
 
-**Tool Orchestration Priority:**
-1. Direct shell commands for simple tasks
-2. Professional security tools for specialized operations
-3. Swarm deployment for parallel execution and multi-angle attacks
-4. Custom meta-tool creation for complex scenarios requiring new capabilities
+**Tool Selection Hierarchy (Confidence-Based):**
+1. Specialized cyber tools (sqlmap, nikto, metasploit) - when vulnerability type is known
+2. Swarm deployment - when confidence <70% or need multiple perspectives (includes memory)
+3. Parallel shell execution - for rapid multi-command reconnaissance
+4. Meta-tool creation - only for novel exploits when existing tools fail
 
 ## 4. Model Providers
 
@@ -179,7 +182,7 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 ### 🌐 Remote Mode (AWS Bedrock)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
-- **Default Model**: Claude Opus 4 (with thinking capabilities)
+- **Default Model**: Claude Sonnet 4 (us.anthropic.claude-sonnet-4-20250514-v1:0)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
 ### 🏠 Local Mode (Ollama)
@@ -195,12 +198,11 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 
 | Feature | Remote (AWS Bedrock) | Local (Ollama) |
 |---------|---------------------|----------------|
-| Privacy | Data sent to AWS | Fully local |
 | Cost | Pay per API call | One-time setup |
 | Performance | High (managed) | Depends on hardware |
 | Offline Use | ❌ No | ✅ Yes |
 | Setup Complexity | Moderate | Higher |
-| Model Quality | Highest | Very Good |
+| Model Quality | Highest | Low |
 
 ## 5. Installation & Deployment
 
@@ -391,7 +393,7 @@ python src/cyberautoagent.py \
 python src/cyberautoagent.py \
   --target "x.x.x.x" \
   --objective "Find SQL injection vulnerabilities" \
-  --model "us.anthropic.claude-opus-4-20250514-v1:0" \
+  --model "us.anthropic.claude-sonnet-4-20250514-v1:0" \
   --region "us-west-2" \
   --verbose
 ```
@@ -406,7 +408,7 @@ python src/cyberautoagent.py \
 - `--server`: Model provider - `remote` for AWS Bedrock, `local` for Ollama (default: remote)
 - `--iterations`: Maximum tool executions before stopping (default: 100)
 - `--verbose`: Enable verbose output with detailed debug logging
-- `--model`: Model ID to use (default: remote=claude-opus-4, local=llama3.2:3b)
+- `--model`: Model ID to use (default: remote=claude-sonnet-4, local=llama3.2:3b)
 - `--region`: AWS region for Bedrock (default: us-east-1)
 - `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
 
@@ -425,7 +427,7 @@ python src/cyberautoagent.py \
   --server remote \
   --target "example.com" \
   --objective "Find SQL injection vulnerabilities" \
-  --model "us.anthropic.claude-opus-4-20250514-v1:0" \
+  --model "us.anthropic.claude-sonnet-4-20250514-v1:0" \
   --region "us-west-2"
 ```
 
@@ -545,7 +547,7 @@ export MEM0_API_KEY=your_mem0_api_key
 export OPENSEARCH_HOST=your-opensearch-host.region.aoss.amazonaws.com
 
 # Option 3: Local FAISS (Default - no config needed)
-# Automatically uses local FAISS storage at /tmp/mem0_384_faiss
+# Automatically uses local FAISS storage at ./mem0_faiss_OP_[timestamp]
 ```
 
 **Memory Backend Selection**: The agent automatically selects based on environment:
@@ -564,7 +566,7 @@ This project uses `uv` for dependency management and testing:
 uv run pytest
 
 # Run specific test file
-uv run pytest tests/test_agent_factory.py
+uv run pytest tests/test_agent.py
 
 # Run tests with verbose output
 uv run pytest -v
@@ -585,7 +587,7 @@ cyber-autoagent/
 |     |- environment.py      # Environment setup and tool discovery
 |     |- system_prompts.py   # System prompt templates & swarm guidance
 |     |- agent_handlers.py   # Core agent callback handlers
-|     |- agent_factory.py    # Agent creation and configuration
+|     |- agent.py            # Agent creation and configuration
 |- pyproject.toml              # Project configuration
 |- README.md                   # This file
 |- LICENSE                     # MIT License
@@ -625,7 +627,7 @@ export OPENSEARCH_HOST=your_host
 export AWS_REGION=your_region
 
 # Check memory storage location
-ls -la /tmp/mem0_384_faiss/
+ls -la ./mem0_faiss_OP_*/
 ```
 
 #### Tool Not Found Errors
