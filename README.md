@@ -1,17 +1,5 @@
 # Cyber-AutoAgent
 
-<div align="center">
-
-![GitHub License](https://img.shields.io/github/license/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/cyber-autoagent/cyber-autoagent/ci.yml?branch=main&style=flat-square)
-![GitHub issues](https://img.shields.io/github/issues/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub contributors](https://img.shields.io/github/contributors/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub stars](https://img.shields.io/github/stars/cyber-autoagent/cyber-autoagent?style=flat-square)
-![GitHub forks](https://img.shields.io/github/forks/cyber-autoagent/cyber-autoagent?style=flat-square)
-
 ```
  ██████╗██╗   ██╗██████╗ ███████╗██████╗ 
 ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
@@ -28,20 +16,42 @@
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
 ```
 
+<div align="center">
+
+![GitHub License](https://img.shields.io/github/license/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/westonbrown/Cyber-AutoAgent/ci.yml?branch=main&style=flat-square)
+![GitHub issues](https://img.shields.io/github/issues/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub contributors](https://img.shields.io/github/contributors/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub stars](https://img.shields.io/github/stars/westonbrown/Cyber-AutoAgent?style=flat-square)
+![GitHub forks](https://img.shields.io/github/forks/westonbrown/Cyber-AutoAgent?style=flat-square)
+
 **[!] EXPERIMENTAL SOFTWARE - USE ONLY IN AUTHORIZED, SAFE, SANDBOXED ENVIRONMENTS [!]**
 
-<h3>Autonomous Cybersecurity Assessment Tool Powered by AI</h3>
+<h3>Proactive Cybersecurity Autonomous Agent Powered by AI</h3>
 
 <p>
-  <strong>Cyber-AutoAgent</strong> conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection using AWS Bedrock or local Ollama models with the Strands framework.
+  <strong>Cyber-AutoAgent</strong> is a proactive security assessment tool that autonomously conducts intelligent penetration testing with natural language reasoning, dynamic tool selection, and evidence collection using AWS Bedrock or local Ollama models with the Strands framework.
 </p>
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/cyberautoagent/cyber-autoagent)
-[![Python](https://img.shields.io/badge/Python-3.9+-yellow?logo=python&style=for-the-badge)](https://www.python.org)
+[![Python](https://img.shields.io/badge/Python-3.10+-yellow?logo=python&style=for-the-badge)](https://www.python.org)
 [![AWS Bedrock](https://img.shields.io/badge/AWS-Bedrock-orange?logo=amazon-aws&style=for-the-badge)](https://aws.amazon.com/bedrock/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local_AI-green?style=for-the-badge)](https://ollama.ai)
 
 </div>
+
+---
+
+![Demo GIF](docs/agent_demo.gif)
+
+<div align="center">
+  <em>Cyber-AutoAgent in action - Autonomous security assessment with AI reasoning</em>
+</div>
+
+---
 
 ## Table of Contents
 
@@ -75,16 +85,6 @@ cd cyber-autoagent
 pip install -e .
 python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive security assessment"
 ```
-
----
-
-![Demo GIF](docs/agent_demo.gif)
-
-<div align="center">
-  <em>Cyber-AutoAgent in action - Autonomous security assessment with AI reasoning</em>
-</div>
-
----
 
 ## Important Disclaimer
 
@@ -219,6 +219,19 @@ flowchart TD
 ```
 
 **Metacognitive Process:**
+
+***Design Philosophy: Meta-Everything Architecture***
+
+At the core of Cyber-AutoAgent is a "meta-everything" design philosophy that enables dynamic adaptation and scaling:
+
+- **Meta-Agent**: The swarm capability deploys dynamic agents as tools, each tailored for specific subtasks with their own reasoning loops
+- **Meta-Tooling**: Through the editor and load_tool capabilities, the agent can create, modify, and deploy new tools at runtime to address novel challenges
+- **Meta-Learning**: Continuous memory storage and retrieval enables cross-session learning, building expertise over time
+- **Meta-Cognition**: Self-reflection and confidence assessment drives strategic decisions about tool selection and approach (Note: This aspect is still being expanded for deeper reasoning capabilities)
+
+This meta-architecture allows the system to transcend static tool limitations and evolve its capabilities during execution.
+
+**Process Flow:**
 - **Assess Confidence**: Evaluate current knowledge and confidence level (High >80%, Medium 50-80%, Low <50%)
 - **Adaptive Strategy**: 
   - High confidence → Use specialized tools directly
