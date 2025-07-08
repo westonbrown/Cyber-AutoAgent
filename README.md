@@ -1,5 +1,17 @@
 # Cyber-AutoAgent
 
+<div align="center">
+
+![GitHub License](https://img.shields.io/github/license/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/cyber-autoagent/cyber-autoagent/ci.yml?branch=main&style=flat-square)
+![GitHub issues](https://img.shields.io/github/issues/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub contributors](https://img.shields.io/github/contributors/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub stars](https://img.shields.io/github/stars/cyber-autoagent/cyber-autoagent?style=flat-square)
+![GitHub forks](https://img.shields.io/github/forks/cyber-autoagent/cyber-autoagent?style=flat-square)
+
 ```
  ██████╗██╗   ██╗██████╗ ███████╗██████╗ 
 ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
@@ -18,13 +30,63 @@
 
 **[!] EXPERIMENTAL SOFTWARE - USE ONLY IN AUTHORIZED, SAFE, SANDBOXED ENVIRONMENTS [!]**
 
-An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or local Ollama) and the Strands framework. Conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection.
+<h3>Autonomous Cybersecurity Assessment Tool Powered by AI</h3>
+
+<p>
+  <strong>Cyber-AutoAgent</strong> conducts intelligent penetration testing with natural language reasoning, tool selection, and evidence collection using AWS Bedrock or local Ollama models with the Strands framework.
+</p>
+
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/cyberautoagent/cyber-autoagent)
+[![Python](https://img.shields.io/badge/Python-3.9+-yellow?logo=python&style=for-the-badge)](https://www.python.org)
+[![AWS Bedrock](https://img.shields.io/badge/AWS-Bedrock-orange?logo=amazon-aws&style=for-the-badge)](https://aws.amazon.com/bedrock/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local_AI-green?style=for-the-badge)](https://ollama.ai)
+
+</div>
+
+## Table of Contents
+
+- [Important Disclaimer](#important-disclaimer)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Model Providers](#model-providers)
+- [Installation & Deployment](#installation--deployment)
+- [Quick Start](#quick-start)
+- [Development & Testing](#development--testing)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Quick Start
+
+```bash
+# Using Docker (Recommended)
+docker run --rm \
+  -v ~/.aws:/home/cyberagent/.aws:ro \
+  -v $(pwd)/evidence:/app/evidence \
+  cyber-autoagent \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify SQL injection vulnerabilities"
+
+# Using Python
+git clone https://github.com/cyber-autoagent/cyber-autoagent.git
+cd cyber-autoagent
+pip install -e .
+python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive security assessment"
+```
+
+---
 
 ![Demo GIF](docs/agent_demo.gif)
 
-*Demo of Cyber-AutoAgent in action*
+<div align="center">
+  <em>Cyber-AutoAgent in action - Autonomous security assessment with AI reasoning</em>
+</div>
 
-## 1. Important Disclaimer
+---
+
+## Important Disclaimer
 
 **THIS TOOL IS FOR EDUCATIONAL AND AUTHORIZED SECURITY TESTING PURPOSES ONLY.**
 
@@ -34,7 +96,7 @@ An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or
 - [-] Never use on unauthorized systems or networks
 - [-] Users are fully responsible for legal and ethical use
 
-## 2. Features
+## Features
 
 - **Autonomous Operation**: Conducts security assessments with minimal human intervention
 - **Intelligent Tool Selection**: Automatically chooses appropriate security tools (nmap, sqlmap, nikto, etc.)
@@ -45,7 +107,7 @@ An autonomous cybersecurity assessment tool powered by AI models (AWS Bedrock or
 - **Professional Reporting**: Generates comprehensive assessment reports
 - **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
 
-## 3. Architecture
+## Architecture
 
 ### System Architecture
 
@@ -175,23 +237,21 @@ flowchart TD
 3. Parallel shell execution - for rapid multi-command reconnaissance
 4. Meta-tool creation - only for novel exploits when existing tools fail
 
-## 4. Model Providers
+## Model Providers
 
 Cyber-AutoAgent supports two model providers for maximum flexibility:
 
-### 🌐 Remote Mode (AWS Bedrock)
+### Remote Mode (AWS Bedrock)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
 - **Default Model**: Claude Sonnet 4 (us.anthropic.claude-sonnet-4-20250514-v1:0)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
-### 🏠 Local Mode (Ollama)
+### Local Mode (Ollama)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
 - **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
-- **Alternative Models** (while also providing same response structure and tools integration)
-    - "llama3.1:8b" (better reasoning)
-    - "qwen2.5:7b" (more efficient)
+- **Alternative Models**: `llama3.1:8b` (better reasoning), `qwen2.5:7b` (more efficient)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### Comparison
@@ -200,229 +260,127 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 |---------|---------------------|----------------|
 | Cost | Pay per API call | One-time setup |
 | Performance | High (managed) | Depends on hardware |
-| Offline Use | ❌ No | ✅ Yes |
+| Offline Use | No | Yes |
 | Setup Complexity | Moderate | Higher |
 | Model Quality | Highest | Low |
 
-## 5. Installation & Deployment
+## Installation & Deployment
 
-Cyber-AutoAgent can be deployed in two ways: **locally** or using **Docker** (recommended for consistent environments).
+### Prerequisites
 
-### Prerequisites 
-
-#### For Remote Mode (AWS Bedrock)
-1. **AWS Account with Bedrock Access**
-   ```bash
-   # Configure AWS credentials
-   aws configure
-   # Or set environment variables:
-   export AWS_ACCESS_KEY_ID=your_key
-   export AWS_SECRET_ACCESS_KEY=your_secret
-   export AWS_REGION=your_region
-   ```
-
-#### For Local Mode (Ollama)
-1. **Install Ollama**
-   ```bash
-   # macOS / Linux
-   curl -fsSL https://ollama.ai/install.sh | sh
-   
-   # Or download from https://ollama.ai
-   ```
-
-2. **Pull Required Models**
-   ```bash
-   # Start Ollama service
-   ollama serve
-   
-   # Pull LLM and embedding models
-   ollama pull llama3.2:3b
-   ollama pull mxbai-embed-large
-   ```
-
-3. **Configure Ollama Connection (Optional)**
-   ```bash
-   # Override Ollama host (auto-detected by default)
-   export OLLAMA_HOST=http://your-ollama-host:11434
-   ```
-
-   **Note**: Cyber-AutoAgent automatically detects the correct Ollama host by testing connectivity. If auto-detection fails, set `OLLAMA_HOST` manually. See section '### Environment Variables' for further information.
-
-#### For Both Modes
-**Clone the Repository**
+**Remote Mode (AWS Bedrock)**
 ```bash
-git clone https://github.com/cyber-autoagent/cyber-autoagent.git
-cd cyber-autoagent
+# Configure AWS credentials
+aws configure
+# Or set environment variables:
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=your_region
 ```
 
----
+**Local Mode (Ollama)**
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
 
-### Option 1: Docker Deployment (Recommended)
+# Start service and pull models
+ollama serve
+ollama pull llama3.2:3b
+ollama pull mxbai-embed-large
+```
 
-**Best for:** Quick setup, consistent environment, all security tools pre-installed
-
-1. **Prerequisites**
-   - Docker installed ([Get Docker](https://docs.docker.com/get-docker/))
-   - AWS credentials configured (see above)
-
-2. **Build the Docker Image**
-   ```bash
-   docker build -t cyber-autoagent .
-   ```
-
-3. **Run with Docker**
-   ```bash
-   # Using environment variables
-   docker run --rm \
-     -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-     -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-     -e AWS_REGION=${AWS_REGION:-us-east-1} \
-     -v $(pwd)/evidence:/app/evidence \
-     -v $(pwd)/logs:/app/logs \
-     cyber-autoagent \
-     --target "http://testphp.vulnweb.com" \
-     --objective "Identify vulnerabilities" \
-     --iterations 50
-   
-   # Or using AWS credentials file
-   docker run --rm \
-     -v ~/.aws:/home/cyberagent/.aws:ro \
-     -v $(pwd)/evidence:/app/evidence \
-     -v $(pwd)/logs:/app/logs \
-     cyber-autoagent \
-     --target "http://testphp.vulnweb.com" \
-     --objective "Identify vulnerabilities" \
-     --iterations 50
-   ```
-
-4. **Using Docker Compose** (Alternative)
-   ```bash
-   # Start with docker-compose
-   docker-compose up --build
-   
-   # Or run specific command
-   docker-compose run --rm cyber-autoagent \
-     --target "http://testphp.vulnweb.com" \
-     --objective "Identify vulnerabilities" \
-     --iterations 50
-   ```
-
----
-
-### Option 2: Local Installation
-
-**Best for:** Development, debugging, or when Docker is not available
-
-1. **System Requirements**
-   - Python 3.9+ (`python --version`)
-   - pip package manager
-
-2. **Install Security Tools** (Optional but Recommended)
-   ```bash
-   # On Kali Linux / Debian / Ubuntu
-   sudo apt update && sudo apt install -y nmap nikto sqlmap gobuster
-   
-   # On macOS with Homebrew
-   brew install nmap nikto sqlmap gobuster
-   
-   # On other systems, install tools individually from their official sources
-   ```
-
-3. **Install Python Dependencies**
-   ```bash
-   # Create virtual environment (recommended)
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   
-   # Install package
-   pip install -e .
-   
-   # Install FAISS for memory storage
-   pip install faiss-cpu  # or faiss-gpu for CUDA support
-   ```
-
-4. **Verify Installation**
-   ```bash
-   python src/cyberautoagent.py --help
-   ```
-
-5. **Run Locally**
-   ```bash
-   python src/cyberautoagent.py \
-     --target "http://testphp.vulnweb.com" \
-     --objective "Identify and demonstrate exploitable vulnerabilities" \
-     --iterations 50
-   ```
-
----
-
-### Evidence & Log Storage
-
-Both deployment methods store data in the same local directories:
-
-| Data Type | Local Execution | Docker Execution | Local Directory |
-|-----------|----------------|------------------|-----------------|
-| Evidence  | `./evidence/evidence_OP_*` | `/app/evidence/evidence_OP_*` | `./evidence/` |
-| Logs      | `./logs/cyber_operations.log` | `/app/logs/cyber_operations.log` | `./logs/` |
-| Reports   | Saved in evidence directory | Saved in evidence directory | `./evidence/evidence_OP_*/` |
-
-**Note:** Directories are created automatically on first run.
-
----
-
-### Quick Start Examples
+### Docker Deployment (Recommended)
 
 ```bash
-# Basic security assessment (Docker)
+# Clone repository
+git clone https://github.com/cyber-autoagent/cyber-autoagent.git
+cd cyber-autoagent
+
+# Build image
+docker build -t cyber-autoagent .
+
+# Run with AWS credentials (using volume mount)
 docker run --rm \
   -v ~/.aws:/home/cyberagent/.aws:ro \
   -v $(pwd)/evidence:/app/evidence \
   -v $(pwd)/logs:/app/logs \
   cyber-autoagent \
-  --target "192.168.1.100" \
-  --objective "Perform comprehensive security assessment" \
-  --iterations 50
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify vulnerabilities"
 
-# Basic security assessment (Local)
-python src/cyberautoagent.py \
-  --target "192.168.1.100" \
-  --objective "Perform comprehensive security assessment" \
+# Using environment variables
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
+  -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/logs:/app/logs \
+  cyber-autoagent \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Identify vulnerabilities" \
   --iterations 50
-
-# With custom model and verbose output
-python src/cyberautoagent.py \
-  --target "x.x.x.x" \
-  --objective "Find SQL injection vulnerabilities" \
-  --model "us.anthropic.claude-sonnet-4-20250514-v1:0" \
-  --region "us-west-2" \
-  --verbose
 ```
+
+### Local Installation
+
+```bash
+# Clone repository
+git clone https://github.com/cyber-autoagent/cyber-autoagent.git
+cd cyber-autoagent
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -e .
+
+# Optional: Install security tools
+sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
+brew install nmap nikto sqlmap gobuster      # macOS
+
+# Run
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Comprehensive security assessment"
+```
+
+### Data Storage
+
+| Data Type | Location |
+|-----------|----------|
+| Evidence  | `./evidence/evidence_OP_*` |
+| Logs      | `./logs/cyber_operations.log` |
+| Reports   | `./evidence/evidence_OP_*/` |
+
+Directories are created automatically on first run.
 
 ### Command-Line Arguments
 
-#### Required Arguments
-- `--objective`: Security assessment objective (what you want to achieve)
+**Required Arguments**:
+- `--objective`: Security assessment objective
 - `--target`: Target system/network to assess (ensure you have permission!)
 
-#### Optional Arguments
-- `--server`: Model provider - `remote` for AWS Bedrock, `local` for Ollama (default: remote)
-- `--iterations`: Maximum tool executions before stopping (default: 100)
+**Optional Arguments**: 
+- `--server`: Model provider - `remote` (AWS Bedrock) or `local` (Ollama), default: remote
+- `--iterations`: Maximum tool executions before stopping, default: 100
+- `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
+- `--region`: AWS region for Bedrock, default: us-east-1
 - `--verbose`: Enable verbose output with detailed debug logging
-- `--model`: Model ID to use (default: remote=claude-sonnet-4, local=llama3.2:3b)
-- `--region`: AWS region for Bedrock (default: us-east-1)
-- `--confirmations`: Enable tool confirmation prompts (default: disabled for autonomous operation)
+- `--confirmations`: Enable tool confirmation prompts (default: disabled)
+- `--memory-path`: Path to existing FAISS memory store to load past memories
+- `--keep-memory`: Keep memory data after operation completes (default: remove)
 
-#### Usage Examples
+### Usage Examples
 
-**Remote Mode (AWS Bedrock)**
 ```bash
-# Basic remote assessment
+# Local Mode (Ollama)
 python src/cyberautoagent.py \
-  --server remote \
+  --server local \
   --target "192.168.1.100" \
-  --objective "Comprehensive security assessment"
+  --objective "Web vulnerability assessment"
 
-# With custom model
+# With custom model and region
 python src/cyberautoagent.py \
   --server remote \
   --target "example.com" \
@@ -431,131 +389,25 @@ python src/cyberautoagent.py \
   --region "us-west-2"
 ```
 
-**Local Mode (Ollama)**
-```bash
-# Basic local assessment (fully offline)
-python src/cyberautoagent.py \
-  --server local \
-  --target "192.168.1.100" \
-  --objective "Comprehensive security assessment"
-
-# With custom local model
-python src/cyberautoagent.py \
-  --server local \
-  --target "testsite.local" \
-  --objective "Web vulnerability assessment" \
-  --model "llama3.1:8b"
-```
-
-**Note**: By default, tool confirmations are disabled to allow autonomous operation. Use `--confirmations` if you want to approve each tool execution manually.
-
-## 5. Setting Up DVWA Test Target
-
-For safe testing, we recommend using Damn Vulnerable Web Application (DVWA) as a hello world example when starting:
-
-### Manual Setup
-
-```bash
-# Clone DVWA
-git clone https://github.com/digininja/DVWA.git
-cd DVWA
-
-# Copy config
-cp config/config.inc.php.dist config/config.inc.php
-
-```
-
-### Test Against DVWA
-
-```bash
-python src/cyberautoagent.py \
-  --target "X.X.X.X" \
-  --objective "Identify SQL injection vulnerabilities and extract database contents" \
-  --iterations 30
-```
-
-## 6. Understanding the Output
-
-### Step Execution Format
-```
-────────────────────────────────────────────────────────────────────────────────
-Step 1/50: nmap
-────────────────────────────────────────────────────────────────────────────────
-↳ Running: nmap -sV -sC 192.168.1.100
-
-Starting Nmap 7.94 ( https://nmap.org )
-Nmap scan report for 192.168.1.100
-Host is up (0.001s latency).
-PORT     STATE SERVICE    VERSION
-22/tcp   open  ssh        OpenSSH 8.2p1
-80/tcp   open  http       Apache httpd 2.4.41
-────────────────────────────────────────────────────────────────────────────────
-```
-
-### Evidence Collection
-```
-[*] Evidence Summary
-────────────────────────────────────────────────────────────────────────────────
-
-Categories:
-   - vulnerability: 3 items
-   - credential: 1 items
-   - finding: 5 items
-
-Recent Evidence:
-   [1] vulnerability
-       SQL injection in login parameter id (POST /login.php)
-       ID: abc12345...
-```
-
-### Budget Management
-- [1] **Abundant Budget (>20 steps)**: Standard methodology
-- [2] **Constrained Budget (10-19 steps)**: Professional tools only  
-- [3] **Critical Budget (5-9 steps)**: Exploitation-only mode
-- [4] **Emergency Budget (<5 steps)**: Single high-impact attempt
-
+## Configuration
 
 ### Environment Variables
 
-#### AWS Configuration (Remote Mode)
 ```bash
-export AWS_REGION=us-east-1
-export AWS_PROFILE=default
+# AWS Bedrock (Remote Mode)
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
-export DEV=true  # Set by agent automatically
+export AWS_REGION=us-east-1
+
+# Ollama (Local Mode)
+export OLLAMA_HOST=http://localhost:11434  # Optional
+
+# Memory Storage (Optional)
+export MEM0_API_KEY=your_key               # Mem0 Platform
+export OPENSEARCH_HOST=your-host.com       # OpenSearch
 ```
 
-#### Ollama Configuration (Local Mode)
-```bash
-# Ollama connection settings (optional - auto-detected by default)
-export OLLAMA_HOST=http://localhost:11434     # Manual override if auto-detection fails
-```
-
-**Automatic Host Detection**: Cyber-AutoAgent tests connectivity to find the correct Ollama host:
-- **Native execution**: Uses `localhost:11434`
-- **Docker on Linux**: Tests and uses `localhost:11434` 
-- **Docker on macOS/Windows**: Tests and uses `host.docker.internal:11434`
-- **Fallback**: Uses `host.docker.internal:11434` if testing fails
-
-#### Memory Storage Configuration (Mem0)
-```bash
-# Option 1: Use Mem0 Platform (Cloud)
-export MEM0_API_KEY=your_mem0_api_key
-
-# Option 2: Use OpenSearch (Self-hosted)
-export OPENSEARCH_HOST=your-opensearch-host.region.aoss.amazonaws.com
-
-# Option 3: Local FAISS (Default - no config needed)
-# Automatically uses local FAISS storage at ./mem0_faiss_OP_[timestamp]
-```
-
-**Memory Backend Selection**: The agent automatically selects based on environment:
-- **Mem0 Platform**: If `MEM0_API_KEY` is set
-- **OpenSearch**: If `OPENSEARCH_HOST` is set
-- **Local FAISS**: Default when neither is set (no cloud dependencies)
-
-## 7. Development & Testing
+## Development & Testing
 
 ### Running Tests
 
@@ -575,7 +427,7 @@ uv run pytest -v
 uv run pytest --cov=src
 ```
 
-## 8. Project Structure
+## Project Structure
 
 ```
 cyber-autoagent/
@@ -585,7 +437,7 @@ cyber-autoagent/
 |     |- __init__.py         # Module initialization
 |     |- utils.py            # UI utilities and analysis functions
 |     |- environment.py      # Environment setup and tool discovery
-|     |- system_prompts.py   # System prompt templates & swarm guidance
+|     |- system_prompts.py   # System prompt templates 
 |     |- agent_handlers.py   # Core agent callback handlers
 |     |- agent.py            # Agent creation and configuration
 |- pyproject.toml              # Project configuration
@@ -593,7 +445,7 @@ cyber-autoagent/
 |- LICENSE                     # MIT License
 ```
 
-## 9. Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -689,14 +541,27 @@ htop  # Check CPU/Memory during execution
 # - Using GPU acceleration if available
 ```
 
-## 10. Roadmap
+## Roadmap
 
-- **Advanced Objective Completion** - Enhanced success detection with multi-criteria evaluation
-- **Dynamic Plan Decomposition** - Automatic task breakdown based on target complexity  
-- **Multi-Target Orchestration** - Parallel assessment of multiple systems
-- **Chain-of-Thought Reasoning** - Detailed decision logging and explanation
+### Near-term Enhancements
+- **Enhanced Objective Completion** - Multi-criteria evaluation with dynamic success metrics
+- **Advanced Reporting** - Visualization dashboards and automated risk scoring
+- **Tool Plugin Architecture** - Extensible framework for custom security tools
+- **Performance Optimization** - Improved parallel execution and resource management
 
-## 11. Contributing
+### Medium-term Goals
+- **Multi-Target Orchestration** - Simultaneous assessment of multiple systems
+- **Web UI Dashboard** - Real-time monitoring and interactive configuration
+- **Additional LLM Providers** - Support for OpenAI, Anthropic API, and local models
+- **SIEM Integration** - Direct export to Splunk, Elastic, and other platforms
+
+### Long-term Vision
+- **Autonomous Red Team Operations** - Full attack chain automation
+- **Compliance Frameworks** - Built-in OWASP, NIST, and PCI-DSS mappings
+- **AI-Powered Exploit Generation** - Advanced meta-tool creation with ML
+- **Distributed Agent Networks** - Cloud-native swarm deployment
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -704,15 +569,15 @@ htop  # Check CPU/Memory during execution
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 12. License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 13. Legal Notice
+## Legal Notice
 
 This tool is provided for educational and authorized security testing purposes only. Users are solely responsible for ensuring they have proper authorization before testing any systems. The authors assume no liability for misuse or any damages that may result from using this software.
 
-## 14. Acknowledgments
+## Acknowledgments
 
 - [Strands Framework](https://github.com/anthropics/strands) - Agent orchestration & swarm intelligence
 - [AWS Bedrock](https://aws.amazon.com/bedrock/) - Foundation model access

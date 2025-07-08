@@ -691,30 +691,30 @@ class ReasoningHandler(PrintingCallbackHandler):
         
         try:
             # Debug logging
-            logger.info(f"Attempting to retrieve memories for user_id: {agent_user_id}")
+            logger.info("Attempting to retrieve memories for user_id: %s", agent_user_id)
             
             # Call list_memories on the memory client
             memories_response = memory_client.list_memories(user_id=agent_user_id)
             
             # Debug the response type
-            logger.debug(f"Memory response type: {type(memories_response)}")
-            logger.debug(f"Memory response: {memories_response}")
+            logger.debug("Memory response type: %s", type(memories_response))
+            logger.debug("Memory response: %s", memories_response)
             
             # Handle different response formats from mem0 API
             if isinstance(memories_response, dict):
                 # Extract memories from standard response formats
                 raw_memories = memories_response.get("memories", memories_response.get("results", []))
-                logger.debug(f"Extracted {len(raw_memories)} memories from dict response")
+                logger.debug("Extracted %d memories from dict response", len(raw_memories))
             elif isinstance(memories_response, list):
                 # Direct list return
                 raw_memories = memories_response
-                logger.debug(f"Got {len(raw_memories)} memories as list")
+                logger.debug("Got %d memories as list", len(raw_memories))
             else:
                 # Fallback for unexpected format
                 raw_memories = []
-                logger.warning(f"Unexpected memory response format: {type(memories_response)}")
+                logger.warning("Unexpected memory response format: %s", type(memories_response))
 
-            logger.info(f"Found {len(raw_memories)} total memories")
+            logger.info("Found %d total memories", len(raw_memories))
             
             # Filter for 'finding' category and format for the report
             for mem in raw_memories:
@@ -722,7 +722,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                 metadata = mem.get('metadata', {})
                 
                 # Debug each memory
-                logger.debug(f"Processing memory: {mem}")
+                logger.debug("Processing memory: %s", mem)
                 
                 if metadata and metadata.get('category') == 'finding':
                     evidence.append({
@@ -730,7 +730,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                         'content': mem.get('memory', 'N/A'),
                         'id': mem.get('id', 'N/A')
                     })
-                    logger.info(f"Added finding to evidence: {mem.get('memory', 'N/A')[:50]}...")
+                    logger.info("Added finding to evidence: %s...", mem.get('memory', 'N/A')[:50])
                 # Also include any memories that don't have a category but are relevant
                 elif 'memory' in mem and 'category' not in metadata:
                     # Heuristic: if it's a concise memory, include it
@@ -740,7 +740,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                             'content': mem.get('memory', 'N/A'),
                             'id': mem.get('id', 'N/A')
                         })
-                        logger.info(f"Added general memory to evidence: {mem.get('memory', 'N/A')[:50]}...")
+                        logger.info("Added general memory to evidence: %s...", mem.get('memory', 'N/A')[:50])
 
             print(
                 "%sRetrieved %d items from memory for final report.%s"
@@ -748,7 +748,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             )
             
         except Exception as e:
-            logger.error(f"Error retrieving evidence from mem0_memory: {str(e)}", exc_info=True)
+            logger.error("Error retrieving evidence from mem0_memory: %s", str(e), exc_info=True)
             print(
                 "%sWarning: Failed to retrieve evidence from memory (user_id: %s). Report may be incomplete.%s"
                 % (Colors.YELLOW, agent_user_id, Colors.RESET)
@@ -913,7 +913,7 @@ Format this as a professional penetration testing report."""
                 % (Colors.YELLOW, str(e), Colors.RESET)
             )
 
-    def _generate_no_evidence_report(self, target: str, objective: str) -> str:
+    def _generate_no_evidence_report(self, target: str, objective: str) -> str:  # pylint: disable=unused-argument
         """Generate a report when no evidence was collected."""
         summary = self.get_summary()
         return f"""## Assessment Summary
@@ -939,7 +939,7 @@ Format this as a professional penetration testing report."""
 """
 
     def _generate_fallback_report(
-        self, target: str, objective: str, evidence: List[Dict]
+        self, target: str, objective: str, evidence: List[Dict]  # pylint: disable=unused-argument
     ) -> str:
         """Generate a fallback report when LLM generation fails."""
         summary = self.get_summary()
