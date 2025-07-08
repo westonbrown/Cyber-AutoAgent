@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   quality-checks:
     name: Code Quality
@@ -26,7 +31,8 @@ jobs:
     - name: Run Pylint
       id: pylint
       run: |
-        score=$(pylint src/ --exit-zero --score=y | grep -oP "Your code has been rated at \K[\d.]+")
+        output=$(pylint src/ --exit-zero --score=y)
+        score=$(echo "$output" | grep "Your code has been rated at" | sed -E 's/.*rated at ([0-9.]+).*/\1/')
         echo "score=$score" >> $GITHUB_OUTPUT
         echo "Pylint score: $score/10"
         pylint src/ --fail-under=9.5
@@ -35,9 +41,23 @@ jobs:
       run: |
         pytest tests/ -v --tb=short
     
+    - name: Display Results Summary
+      if: always()
+      run: |
+        echo "## 🔍 PR Quality Check Summary"
+        echo ""
+        echo "**Pylint Score:** ${{ steps.pylint.outputs.score }}/10"
+        if [ $(echo "${{ steps.pylint.outputs.score }} >= 9.5" | bc -l) -eq 1 ]; then
+          echo "✅ Pylint check passed!"
+        else
+          echo "❌ Pylint score must be 9.5 or higher"
+        fi
+        echo ""
+        echo "Check the workflow status above for test results."
+    
     - name: Comment PR
       uses: actions/github-script@v7
-      if: always()
+      if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
       with:
         script: |
           const score = '${{ steps.pylint.outputs.score }}' || 'N/A';
@@ -50,9 +70,14 @@ jobs:
           
           ${passed ? '✅ All checks passed!' : '❌ Pylint score must be 9.5 or higher'}`;
           
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
+          try {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Could not create comment:', error.message);
+            console.log('This is expected for PRs from forks.');
+          }
