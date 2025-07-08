@@ -219,21 +219,21 @@ class Mem0ServiceClient:
             An initialized Mem0 client (MemoryClient or Mem0Memory instance).
         """
         if os.environ.get("MEM0_API_KEY"):
-            print(f"🧠 Memory Backend: Mem0 Platform (cloud)")
-            print(f"🔗 API Key: {'*' * 8}{os.environ.get('MEM0_API_KEY', '')[-4:]}")
+            print("[+] Memory Backend: Mem0 Platform (cloud)")
+            print(f"    API Key: {'*' * 8}{os.environ.get('MEM0_API_KEY', '')[-4:]}")
             logger.debug("Using Mem0 Platform backend (MemoryClient)")
             return MemoryClient()
 
         if os.environ.get("OPENSEARCH_HOST"):
             merged_config = self._merge_config(config)
             embedder_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region", "us-east-1")
-            llm_region = merged_config.get("llm", {}).get("config", {}).get("aws_region", "us-east-1")
+            # llm_region = merged_config.get("llm", {}).get("config", {}).get("aws_region", "us-east-1")
             
-            print(f"🧠 Memory Backend: OpenSearch")
-            print(f"🔗 Host: {os.environ.get('OPENSEARCH_HOST')}")
-            print(f"🌍 Region: {embedder_region}")
-            print(f"📊 Embedder: AWS Bedrock - amazon.titan-embed-text-v2:0 (1024 dims)")
-            print(f"🤖 LLM: AWS Bedrock - us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            print("[+] Memory Backend: OpenSearch")
+            print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
+            print(f"    Region: {embedder_region}")
+            print("    Embedder: AWS Bedrock - amazon.titan-embed-text-v2:0 (1024 dims)")
+            print("    LLM: AWS Bedrock - us.anthropic.claude-3-5-sonnet-20241022-v2:0")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
             return self._initialize_opensearch_client(config)
 
@@ -308,8 +308,8 @@ class Mem0ServiceClient:
         }
 
         # Display FAISS configuration
-        print(f"• Memory Backend: FAISS (local)")
-        print(f"• Store Location: {faiss_path}")
+        print("[+] Memory Backend: FAISS (local)")
+        print(f"    Store Location: {faiss_path}")
         
         # Display embedder configuration
         embedder_config = merged_config.get("embedder", {})
@@ -319,17 +319,17 @@ class Mem0ServiceClient:
         
         # Display LLM configuration
         llm_config = merged_config.get("llm", {})
-        llm_provider = llm_config.get("provider", "aws_bedrock")
+        # llm_provider = llm_config.get("provider", "aws_bedrock")
         llm_model = llm_config.get("config", {}).get("model", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
-        llm_region = llm_config.get("config", {}).get("aws_region", "us-east-1")
+        # llm_region = llm_config.get("config", {}).get("aws_region", "us-east-1")
         
         if embedder_provider == "ollama":
-            print(f"• Embedder: Ollama - {embedder_model} (1024 dims)")
-            print(f"• LLM: Ollama - {llm_model}")
+            print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
+            print(f"    LLM: Ollama - {llm_model}")
         else:
-            print(f"• Region: {embedder_region}")
-            print(f"• Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
-            print(f"• LLM: AWS Bedrock - {llm_model}")
+            print(f"    Region: {embedder_region}")
+            print(f"    Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
+            print(f"    LLM: AWS Bedrock - {llm_model}")
         
         # Check if loading existing store
         if os.path.exists(faiss_path):
@@ -378,10 +378,10 @@ class Mem0ServiceClient:
             # regardless of mem0's fact filtering (critical for security assessments)
             result = self.mem0.add(messages, user_id=user_id, agent_id=agent_id, metadata=metadata, infer=False)
             # Log successful storage
-            logger.debug(f"Memory stored successfully: {result}")
+            logger.debug("Memory stored successfully: %s", result)
             return result
         except Exception as e:
-            logger.error(f"Error storing memory: {e}")
+            logger.error("Error storing memory: %s", e)
             # Return empty result to prevent downstream errors
             return {"results": []}
 
@@ -576,7 +576,7 @@ def initialize_memory_system(config: Optional[Dict] = None, operation_id: Option
     _MEMORY_CONFIG = config
     _OPERATION_ID = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     _MEMORY_CLIENT = Mem0ServiceClient(config)
-    logger.info(f"Memory system initialized for operation {_OPERATION_ID}")
+    logger.info("Memory system initialized for operation %s", _OPERATION_ID)
 
 
 def get_memory_client() -> Optional[Mem0ServiceClient]:
@@ -587,7 +587,7 @@ def get_memory_client() -> Optional[Mem0ServiceClient]:
         try:
             initialize_memory_system()
         except Exception as e:
-            logger.error(f"Failed to auto-initialize memory client: {e}")
+            logger.error("Failed to auto-initialize memory client: %s", e)
             return None
     return _MEMORY_CLIENT
 
@@ -672,7 +672,7 @@ def mem0_memory(
                     # JSON parsing error in mem0 - return success but log issue
                     fallback_result = [{"status": "stored", "content_preview": cleaned_content[:50] + "..."}]
                     if not strands_dev:
-                        console.print(f"[yellow]Memory stored with minor parsing warnings[/yellow]")
+                        console.print("[yellow]Memory stored with minor parsing warnings[/yellow]")
                     return json.dumps(fallback_result, indent=2)
                 else:
                     raise store_error

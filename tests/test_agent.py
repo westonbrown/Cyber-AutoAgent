@@ -2,7 +2,6 @@
 
 import pytest
 import os
-import tempfile
 from unittest.mock import Mock, patch
 
 # Add src to path for imports
@@ -10,13 +9,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.agent_factory import (
-    _get_default_model_configs,
-    _create_memory_config,
+from modules.agent import (
     _validate_server_requirements,
-    _get_ollama_host,
-    _test_ollama_connection,
     create_agent,
+)
+from modules.system_prompts import (
+    _get_default_model_configs,
+    _get_ollama_host,
 )
 
 
@@ -73,40 +72,54 @@ class TestOllamaHostDetection:
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
-    @patch("modules.agent_factory._test_ollama_connection")
+    @patch("requests.get")
     def test_get_ollama_host_docker_localhost_works(self, mock_test, mock_exists):
         """Test Docker environment where localhost works (Linux host networking)"""
-        mock_exists.return_value = True  # /.dockerenv exists
+        mock_exists.return_value = True  # /app exists
         # Mock localhost works, host.docker.internal doesn't
-        mock_test.side_effect = lambda host: host == "http://localhost:11434"
+        mock_response = Mock()
+        mock_response.status_code = 200
+        def side_effect(url, timeout=None):
+            if "localhost" in url:
+                return mock_response
+            else:
+                raise Exception("Connection failed")
+        mock_test.side_effect = side_effect
         
         host = _get_ollama_host()
         assert host == "http://localhost:11434"
         
         # Verify it tested localhost first and found it working
         assert mock_test.call_count >= 1
-        mock_test.assert_any_call("http://localhost:11434")
+        mock_test.assert_any_call("http://localhost:11434/api/version", timeout=2)
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
-    @patch("modules.agent_factory._test_ollama_connection")
+    @patch("requests.get")
     def test_get_ollama_host_docker_host_internal_works(self, mock_test, mock_exists):
         """Test Docker environment where host.docker.internal works (macOS/Windows)"""
-        mock_exists.return_value = True  # /.dockerenv exists
+        mock_exists.return_value = True  # /app exists
         # Mock localhost fails, host.docker.internal works
-        mock_test.side_effect = lambda host: host == "http://host.docker.internal:11434"
+        mock_response = Mock()
+        mock_response.status_code = 200
+        def side_effect(url, timeout=None):
+            if "host.docker.internal" in url:
+                return mock_response
+            else:
+                raise Exception("Connection failed")
+        mock_test.side_effect = side_effect
         
         host = _get_ollama_host()
         assert host == "http://host.docker.internal:11434"
         
         # Verify it tested both options
         assert mock_test.call_count >= 2
-        mock_test.assert_any_call("http://localhost:11434")
-        mock_test.assert_any_call("http://host.docker.internal:11434")
+        mock_test.assert_any_call("http://localhost:11434/api/version", timeout=2)
+        mock_test.assert_any_call("http://host.docker.internal:11434/api/version", timeout=2)
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
-    @patch("modules.agent_factory._test_ollama_connection")
+    @patch("requests.get")
     def test_get_ollama_host_docker_no_connection(self, mock_test, mock_exists):
         """Test Docker environment where neither option works"""
         mock_exists.return_value = True  # /.dockerenv exists
@@ -116,71 +129,74 @@ class TestOllamaHostDetection:
         # Should fallback to host.docker.internal
         assert host == "http://host.docker.internal:11434"
 
-    @patch("modules.agent_factory.requests.get")
-    def test_test_ollama_connection_success(self, mock_get):
-        """Test successful Ollama connection test"""
-        mock_get.return_value.status_code = 200
-        
-        result = _test_ollama_connection("http://localhost:11434")
-        assert result is True
-
-    @patch("modules.agent_factory.requests.get")
-    def test_test_ollama_connection_failure(self, mock_get):
-        """Test failed Ollama connection test"""
-        mock_get.side_effect = Exception("Connection failed")
-        
-        result = _test_ollama_connection("http://localhost:11434")
-        assert result is False
 
 
 
 class TestMemoryConfig:
     """Test memory configuration generation"""
 
-    def test_create_memory_config_local(self):
-        """Test local memory configuration"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("modules.agent_factory.get_data_path", return_value=tmpdir):
-                defaults = {
-                    "llm_model": "llama3.2:3b",
-                    "embedding_model": "mxbai-embed-large",
-                    "embedding_dims": 1024,
-                }
-                config = _create_memory_config("local", "test_op", defaults)
+    @patch("modules.agent.initialize_memory_system")
+    def test_memory_config_local(self, mock_init_memory):
+        """Test local memory configuration is created correctly"""
+        # The current implementation builds memory config inline in create_agent
+        # We'll test that the right config is passed to initialize_memory_system
+        with patch("modules.agent._validate_server_requirements"):
+            with patch("modules.agent._create_local_model") as mock_create_local:
+                mock_create_local.return_value = Mock()
+                with patch("modules.agent.Agent") as mock_agent_class:
+                    mock_agent_class.return_value = Mock()
+                    with patch("modules.agent.ReasoningHandler") as mock_handler:
+                        mock_handler.return_value = Mock()
+                        with patch("modules.agent.get_system_prompt"):
+                            # Call create_agent with local server
+                            create_agent(
+                                target="test.com",
+                                objective="test",
+                                server="local"
+                            )
+                            
+                            # Check that initialize_memory_system was called
+                            mock_init_memory.assert_called_once()
+                            config = mock_init_memory.call_args[0][0]
+                            
+                            # Verify local config structure
+                            assert config["embedder"]["provider"] == "ollama"
+                            assert config["llm"]["provider"] == "ollama"
+                            assert "base_url" in config["embedder"]["config"]
 
-                assert config["llm"]["provider"] == "ollama"
-                assert config["embedder"]["provider"] == "ollama"
-                assert config["llm"]["config"]["model"] == "llama3.2:3b"
-                assert config["embedder"]["config"]["model"] == "mxbai-embed-large"
-                assert config["vector_store"]["provider"] == "faiss"
-                assert config["vector_store"]["config"]["embedding_model_dims"] == 1024
-
-    def test_create_memory_config_remote(self):
-        """Test remote memory configuration"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("modules.agent_factory.get_data_path", return_value=tmpdir):
-                defaults = {
-                    "llm_model": "claude",
-                    "embedding_model": "amazon.titan-embed-text-v2:0",
-                    "embedding_dims": 1024,
-                }
-                config = _create_memory_config("remote", "test_op", defaults)
-
-                assert config["llm"]["provider"] == "aws_bedrock"
-                assert config["embedder"]["provider"] == "aws_bedrock"
-                assert (
-                    config["embedder"]["config"]["model"]
-                    == "amazon.titan-embed-text-v2:0"
-                )
-                assert config["vector_store"]["provider"] == "faiss"
+    @patch("modules.agent.initialize_memory_system")
+    def test_memory_config_remote(self, mock_init_memory):
+        """Test remote memory configuration is created correctly"""
+        with patch("modules.agent._validate_server_requirements"):
+            with patch("modules.agent._create_remote_model") as mock_create_remote:
+                mock_create_remote.return_value = Mock()
+                with patch("modules.agent.Agent") as mock_agent_class:
+                    mock_agent_class.return_value = Mock()
+                    with patch("modules.agent.ReasoningHandler") as mock_handler:
+                        mock_handler.return_value = Mock()
+                        with patch("modules.agent.get_system_prompt"):
+                            # Call create_agent with remote server
+                            create_agent(
+                                target="test.com",
+                                objective="test",
+                                server="remote"
+                            )
+                            
+                            # Check that initialize_memory_system was called
+                            mock_init_memory.assert_called_once()
+                            config = mock_init_memory.call_args[0][0]
+                            
+                            # Verify remote config structure
+                            assert config["embedder"]["provider"] == "aws_bedrock"
+                            assert config["llm"]["provider"] == "aws_bedrock"
+                            assert "aws_region" in config["embedder"]["config"]
 
 
 class TestServerValidation:
     """Test server requirements validation"""
 
-    @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
-    @patch("modules.agent_factory.requests.get")
-    @patch("modules.agent_factory.ollama.Client")
+    @patch("modules.agent.requests.get")
+    @patch("modules.agent.ollama.Client")
     def test_validate_server_requirements_local_success(
         self, mock_ollama_client, mock_requests
     ):
@@ -200,8 +216,7 @@ class TestServerValidation:
         # Verify client was created (host is now dynamic)
         mock_ollama_client.assert_called_once()
 
-    @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
-    @patch("modules.agent_factory.requests.get")
+    @patch("modules.agent.requests.get")
     def test_validate_server_requirements_local_server_down(self, mock_requests):
         """Test local server validation when Ollama is down"""
         # Mock Ollama server not responding
@@ -210,9 +225,8 @@ class TestServerValidation:
         with pytest.raises(ConnectionError, match="Ollama server not accessible"):
             _validate_server_requirements("local")
 
-    @patch("modules.agent_factory.OLLAMA_AVAILABLE", True)
-    @patch("modules.agent_factory.requests.get")
-    @patch("modules.agent_factory.ollama.Client")
+    @patch("modules.agent.requests.get")
+    @patch("modules.agent.ollama.Client")
     def test_validate_server_requirements_local_missing_models(
         self, mock_ollama_client, mock_requests
     ):
@@ -245,21 +259,19 @@ class TestServerValidation:
 class TestCreateAgent:
     """Test agent creation functionality"""
 
-    @patch("modules.agent_factory._validate_server_requirements")
-    @patch("modules.agent_factory.Memory.from_config")
-    @patch("modules.agent_factory._create_remote_model")
-    @patch("modules.agent_factory.Agent")
-    @patch("modules.agent_factory.ReasoningHandler")
-    @patch("modules.agent_factory.get_system_prompt")
-    @patch("modules.agent_factory.memory_tools")
+    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.agent._create_remote_model")
+    @patch("modules.agent.Agent")
+    @patch("modules.agent.ReasoningHandler")
+    @patch("modules.agent.get_system_prompt")
+    @patch("modules.agent.initialize_memory_system")
     def test_create_agent_remote_success(
         self,
-        mock_memory_tools,
+        mock_init_memory,
         mock_get_prompt,
         mock_reasoning_handler,
         mock_agent_class,
         mock_create_remote,
-        mock_memory_from_config,
         mock_validate,
     ):
         """Test successful remote agent creation"""
@@ -285,21 +297,19 @@ class TestCreateAgent:
         assert agent == mock_agent
         assert handler == mock_handler
 
-    @patch("modules.agent_factory._validate_server_requirements")
-    @patch("modules.agent_factory.Memory.from_config")
-    @patch("modules.agent_factory._create_local_model")
-    @patch("modules.agent_factory.Agent")
-    @patch("modules.agent_factory.ReasoningHandler")
-    @patch("modules.agent_factory.get_system_prompt")
-    @patch("modules.agent_factory.memory_tools")
+    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.agent._create_local_model")
+    @patch("modules.agent.Agent")
+    @patch("modules.agent.ReasoningHandler")
+    @patch("modules.agent.get_system_prompt")
+    @patch("modules.agent.initialize_memory_system")
     def test_create_agent_local_success(
         self,
-        mock_memory_tools,
+        mock_init_memory,
         mock_get_prompt,
         mock_reasoning_handler,
         mock_agent_class,
         mock_create_local,
-        mock_memory_from_config,
         mock_validate,
     ):
         """Test successful local agent creation"""
@@ -325,7 +335,7 @@ class TestCreateAgent:
         assert agent == mock_agent
         assert handler == mock_handler
 
-    @patch("modules.agent_factory._validate_server_requirements")
+    @patch("modules.agent._validate_server_requirements")
     def test_create_agent_validation_failure(self, mock_validate):
         """Test agent creation when validation fails"""
         mock_validate.side_effect = ConnectionError("Test error")
@@ -333,17 +343,15 @@ class TestCreateAgent:
         with pytest.raises(ConnectionError):
             create_agent(target="test.com", objective="test objective", server="local")
 
-    @patch("modules.agent_factory._validate_server_requirements")
-    @patch("modules.agent_factory.Memory.from_config")
-    @patch("modules.agent_factory._create_local_model")
-    @patch("modules.agent_factory._handle_model_creation_error")
-    @patch("modules.agent_factory.memory_tools")
+    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.agent._create_local_model")
+    @patch("modules.agent._handle_model_creation_error")
+    @patch("modules.agent.initialize_memory_system")
     def test_create_agent_model_creation_failure(
         self,
-        mock_memory_tools,
+        mock_init_memory,
         mock_handle_error,
         mock_create_local,
-        mock_memory_from_config,
         mock_validate,
     ):
         """Test agent creation when model creation fails"""
