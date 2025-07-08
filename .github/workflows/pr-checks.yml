@@ -44,13 +44,13 @@ jobs:
     - name: Display Results Summary
       if: always()
       run: |
-        echo "## 🔍 PR Quality Check Summary"
+        echo "## PR Quality Check Summary"
         echo ""
         echo "**Pylint Score:** ${{ steps.pylint.outputs.score }}/10"
         if [ $(echo "${{ steps.pylint.outputs.score }} >= 9.5" | bc -l) -eq 1 ]; then
-          echo "✅ Pylint check passed!"
+          echo "[PASS] Pylint check passed!"
         else
-          echo "❌ Pylint score must be 9.5 or higher"
+          echo "[FAIL] Pylint score must be 9.5 or higher"
         fi
         echo ""
         echo "Check the workflow status above for test results."
@@ -63,12 +63,12 @@ jobs:
           const score = '${{ steps.pylint.outputs.score }}' || 'N/A';
           const passed = parseFloat(score) >= 9.5;
           
-          const comment = `## 🔍 PR Quality Check
+          const comment = `## PR Quality Check
           
-          **Pylint Score:** ${score}/10 ${passed ? '✅' : '❌'}
+          **Pylint Score:** ${score}/10 ${passed ? '[PASS]' : '[FAIL]'}
           **Tests:** Check workflow status above
           
-          ${passed ? '✅ All checks passed!' : '❌ Pylint score must be 9.5 or higher'}`;
+          ${passed ? '[PASS] All checks passed!' : '[FAIL] Pylint score must be 9.5 or higher'}`;
           
           try {
             await github.rest.issues.createComment({

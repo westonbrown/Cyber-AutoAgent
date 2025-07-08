@@ -541,26 +541,6 @@ htop  # Check CPU/Memory during execution
 # - Using GPU acceleration if available
 ```
 
-## Roadmap
-
-### Near-term Enhancements
-- **Enhanced Objective Completion** - Multi-criteria evaluation with dynamic success metrics
-- **Advanced Reporting** - Visualization dashboards and automated risk scoring
-- **Tool Plugin Architecture** - Extensible framework for custom security tools
-- **Performance Optimization** - Improved parallel execution and resource management
-
-### Medium-term Goals
-- **Multi-Target Orchestration** - Simultaneous assessment of multiple systems
-- **Web UI Dashboard** - Real-time monitoring and interactive configuration
-- **Additional LLM Providers** - Support for OpenAI, Anthropic API, and local models
-- **SIEM Integration** - Direct export to Splunk, Elastic, and other platforms
-
-### Long-term Vision
-- **Autonomous Red Team Operations** - Full attack chain automation
-- **Compliance Frameworks** - Built-in OWASP, NIST, and PCI-DSS mappings
-- **AI-Powered Exploit Generation** - Advanced meta-tool creation with ML
-- **Distributed Agent Networks** - Cloud-native swarm deployment
-
 ## Contributing
 
 1. Fork the repository
