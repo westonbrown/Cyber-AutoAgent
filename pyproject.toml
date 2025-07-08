@@ -69,7 +69,7 @@ include = ["*"]
 
 [tool.black]
 line-length = 120
-target-version = ['py39']
+target-version = ['py310']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
