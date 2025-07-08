@@ -114,6 +114,7 @@ addopts = [
 
 [dependency-groups]
 dev = [
+    "pylint>=3.3.7",
     "pyright>=1.1.402",
     "pytest>=8.4.1",
     "pytest-mock>=3.14.1",

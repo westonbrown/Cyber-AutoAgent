@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import requests
 from typing import Dict, Any
+
+import requests
 
 
 def _get_default_model_configs(server: str) -> Dict[str, Any]:
@@ -31,7 +32,7 @@ def _get_ollama_host() -> str:
     
     # Check if running in Docker
     if os.path.exists('/app'): 
-        candidates = ["http://localhost:11434", "http://host.docker.docker.internal:11434"]
+        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
         for host in candidates:
             try:
                 response = requests.get(f"{host}/api/version", timeout=2)

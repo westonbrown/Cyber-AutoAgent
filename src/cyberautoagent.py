@@ -25,6 +25,9 @@ import atexit
 import re
 from datetime import datetime
 
+from modules.agent import create_agent
+from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+
 from modules.utils import (
     Colors,
     print_banner,
@@ -135,18 +138,18 @@ def main():
             print("\n" + "="*80)
             print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("="*80 + "\n")
-        except:
+        except Exception:
             pass
         
         if hasattr(sys.stdout, 'close') and callable(sys.stdout.close):
             try:
                 sys.stdout.close()
-            except:
+            except Exception:
                 pass
         if hasattr(sys.stderr, 'close') and callable(sys.stderr.close):
             try:
                 sys.stderr.close()
-            except:
+            except Exception:
                 pass
     
     atexit.register(cleanup_logging)
@@ -201,9 +204,6 @@ def main():
     start_time = time.time()
     callback_handler = None
 
-    # Import agent module AFTER environment variables are set
-    from modules.agent import create_agent
-    from modules.system_prompts import get_initial_prompt, get_continuation_prompt
 
     try:
         # Create agent

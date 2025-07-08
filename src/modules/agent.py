@@ -10,11 +10,10 @@ import requests
 import ollama
 from strands import Agent
 from strands.models import BedrockModel
+from strands.models.ollama import OllamaModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request
-from strands_tools.swarm import swarm 
-
-from strands.models.ollama import OllamaModel
+from strands_tools.swarm import swarm
 
 from .system_prompts import get_system_prompt, _get_default_model_configs, _get_ollama_host
 from .agent_handlers import ReasoningHandler
