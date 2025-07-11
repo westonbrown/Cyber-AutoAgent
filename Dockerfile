@@ -69,7 +69,6 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code (specific files only)
 COPY --chown=cyberagent:cyberagent src/ ./src/
-COPY --chown=cyberagent:cyberagent scripts/ ./scripts/
 COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
 # Create directories for evidence storage and logs with proper permissions
