@@ -30,13 +30,14 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "strands-agents[ollama]>=0.1.6",
-    "strands-agents-tools>=0.1.4", 
+    "strands-agents-tools @ git+https://github.com/cagataycali/tools.git@feat/model-switch-clean", 
     "mem0ai",
     "boto3",
     "botocore",
     "faiss-cpu",
     "ollama>=0.1.0",
-    "requests>=2.25.0"
+    "requests>=2.25.0",
+    "opensearch-py"
 ]
 
 [project.optional-dependencies]
@@ -68,7 +69,7 @@ include = ["*"]
 
 [tool.black]
 line-length = 120
-target-version = ['py39']
+target-version = ['py310']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -113,6 +114,7 @@ addopts = [
 
 [dependency-groups]
 dev = [
+    "pylint>=3.3.7",
     "pyright>=1.1.402",
     "pytest>=8.4.1",
     "pytest-mock>=3.14.1",

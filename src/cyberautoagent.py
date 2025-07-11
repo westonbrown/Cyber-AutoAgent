@@ -21,7 +21,12 @@ import os
 import sys
 import argparse
 import time
+import atexit
+import re
 from datetime import datetime
+
+from modules.agent import create_agent
+from modules.system_prompts import get_initial_prompt, get_continuation_prompt
 
 from modules.utils import (
     Colors,
@@ -30,13 +35,9 @@ from modules.utils import (
     print_status,
     analyze_objective_completion,
     get_data_path,
-    sanitize_for_model,
 )
-from modules.environment import auto_setup, setup_logging
-from modules.agent_factory import create_agent
-from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+from modules.environment import auto_setup, setup_logging, clean_operation_memory
 
-# Simple warning suppression
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
@@ -91,11 +92,19 @@ def main():
         action="store_true",
         help="Enable tool confirmation prompts (default: disabled)",
     )
+    parser.add_argument(
+        "--memory-path",
+        type=str,
+        help="Path to existing FAISS memory store to load past memories (e.g., /tmp/mem0_OP_20240320_101530)",
+    )
+    parser.add_argument(
+        "--keep-memory",
+        action="store_true",
+        help="Keep memory data after operation completes (default: remove)",
+    )
 
     args = parser.parse_args()
 
-    # Set environment variables based on command line arguments
-    # By default, bypass tool confirmations (--confirmations flag enables them)
     if not args.confirmations:
         os.environ["BYPASS_TOOL_CONSENT"] = "true"
     else:
@@ -103,12 +112,47 @@ def main():
         os.environ.pop("BYPASS_TOOL_CONSENT", None)
 
     os.environ["DEV"] = "true"
+    
+    os.environ["AWS_REGION"] = args.region
+    
+    if args.server == "local":
+        os.environ["MEM0_LLM_PROVIDER"] = "ollama"
+        os.environ["MEM0_LLM_MODEL"] = "llama3.2:3b"  # mem0 always uses the smaller model
+        os.environ["MEM0_EMBEDDING_MODEL"] = "mxbai-embed-large"
+    else:
+        os.environ["MEM0_LLM_PROVIDER"] = "aws_bedrock"
+        os.environ["MEM0_LLM_MODEL"] = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # mem0 uses Claude 3.5 Sonnet
+        os.environ["MEM0_EMBEDDING_MODEL"] = "amazon.titan-embed-text-v2:0"
 
     # Initialize logger with volume path
     logger = setup_logging(
         log_file=os.path.join(get_data_path("logs"), "cyber_operations.log"),
         verbose=args.verbose,
     )
+    
+    # Register cleanup function to properly close log files
+    def cleanup_logging():
+        """Ensure log files are properly closed on exit"""
+        try:
+            # Write session end marker before closing
+            print("\n" + "="*80)
+            print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print("="*80 + "\n")
+        except Exception:
+            pass
+        
+        if hasattr(sys.stdout, 'close') and callable(sys.stdout.close):
+            try:
+                sys.stdout.close()
+            except Exception:
+                pass
+        if hasattr(sys.stderr, 'close') and callable(sys.stderr.close):
+            try:
+                sys.stderr.close()
+            except Exception:
+                pass
+    
+    atexit.register(cleanup_logging)
 
     # Display banner
     print_banner()
@@ -132,10 +176,11 @@ def main():
     )
 
     # Auto-setup and environment discovery
-    available_tools = auto_setup()
+    # Pass memory_path to auto_setup to skip cleanup if using existing memory
+    available_tools = auto_setup(skip_mem0_cleanup=bool(args.memory_path))
 
     # Log operation start
-    local_operation_id = f"OP-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    local_operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     logger.info("Operation %s initiated", local_operation_id)
     logger.info("Objective: %s", args.objective)
     logger.info("Target: %s", args.target)
@@ -159,6 +204,7 @@ def main():
     start_time = time.time()
     callback_handler = None
 
+
     try:
         # Create agent
         agent, callback_handler = create_agent(
@@ -166,9 +212,11 @@ def main():
             objective=args.objective,
             max_steps=args.iterations,
             available_tools=available_tools,
+            op_id=local_operation_id,
             model_id=args.model,
             region_name=args.region,
             server=args.server,
+            memory_path=args.memory_path,
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 
@@ -190,33 +238,49 @@ def main():
                 try:
                     # For newer strands versions, pass the prompt directly without messages on first call
                     if not messages:
-                        # First call - don't pass messages parameter (sanitize for model)
-                        result = agent(sanitize_for_model(current_message))
+                        # First call - don't pass messages parameter
+                        result = agent(current_message)
                     else:
-                        # Subsequent calls - pass messages (sanitize for model)
-                        result = agent(sanitize_for_model(current_message), messages=messages)
+                        # Subsequent calls - pass messages
+                        result = agent(current_message, messages=messages)
 
-                    # Update conversation history (sanitize content for model input)
-                    # Structure content properly for Strands/Ollama integration
-                    sanitized_user_content = sanitize_for_model(current_message)
-                    sanitized_assistant_content = sanitize_for_model(str(result))
-                    
-                    # Structure messages with proper content format expected by Strands
+                    # Update conversation history
+                    # Structure content properly for Strands integration
                     messages.append({
                         "role": "user", 
-                        "content": [{"text": sanitized_user_content}]
+                        "content": [{"text": current_message}]
                     })
-                    messages.append({
-                        "role": "assistant", 
-                        "content": [{"text": sanitized_assistant_content}]
-                    })
+                    
+                    # For thinking-enabled models, preserve the original response structure
+                    # For non-thinking models, wrap in text block
+                    if hasattr(result, 'content') and isinstance(result.content, list):
+                        # Result already has proper structure (thinking + text blocks)
+                        messages.append({
+                            "role": "assistant", 
+                            "content": result.content
+                        })
+                    else:
+                        # Fallback for simple text responses
+                        messages.append({
+                            "role": "assistant", 
+                            "content": [{"text": str(result)}]
+                        })
 
                 except (StopIteration, Exception) as error:
                     # Handle termination scenarios
+                    error_str = str(error).lower()
                     if (
-                        "step limit" in str(error).lower()
-                        or "clean termination" in str(error).lower()
+                        "step limit" in error_str
+                        or "clean termination" in error_str
+                        or "event loop cycle stop requested" in error_str
                     ):
+                        # Check if this was from the stop tool
+                        if "event loop cycle stop requested" in error_str:
+                            # Extract the reason from the error message
+                            reason_match = re.search(r'Reason: (.+?)(?:\n|$)', str(error))
+                            reason = reason_match.group(1) if reason_match else "Objective achieved"
+                            print_status(f"Agent terminated: {reason}", "SUCCESS")
+                        
                         if callback_handler:
                             callback_handler.generate_final_report(
                                 agent, args.target, args.objective
@@ -262,6 +326,17 @@ def main():
                         )
                     break
 
+                # Check if step limit reached or stop tool was used
+                if callback_handler and callback_handler.should_stop():
+                    if callback_handler.stop_tool_used:
+                        print_status("Stop tool used - terminating", "SUCCESS")
+                    elif callback_handler.has_reached_limit():
+                        print_status("Step limit reached - terminating", "SUCCESS")
+                    callback_handler.generate_final_report(
+                        agent, args.target, args.objective
+                    )
+                    break
+
                 # Generate continuation prompt for next iteration
                 remaining_steps = (
                     args.iterations - callback_handler.steps
@@ -283,7 +358,7 @@ def main():
 
         # Display comprehensive results
         print("\n%s" % ("=" * 80))
-        print("🧠 %sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
+        print("%sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
         print("%s" % ("=" * 80))
 
         # Operation summary
@@ -300,14 +375,14 @@ def main():
 
             # Determine status based on completion
             if analyze_objective_completion(messages):
-                status_text = "%s✅ Objective Achieved%s" % (Colors.GREEN, Colors.RESET)
+                status_text = "%sObjective Achieved%s" % (Colors.GREEN, Colors.RESET)
             elif callback_handler.has_reached_limit():
-                status_text = "%s⚠️  Step Limit Reached - Final Report Generated%s" % (
+                status_text = "%sStep Limit Reached - Final Report Generated%s" % (
                     Colors.YELLOW,
                     Colors.RESET,
                 )
             else:
-                status_text = "%sℹ️  Operation Completed%s" % (Colors.BLUE, Colors.RESET)
+                status_text = "%sOperation Completed%s" % (Colors.BLUE, Colors.RESET)
 
             print(
                 "%sStatus:%s            %s" % (Colors.BOLD, Colors.RESET, status_text)
@@ -317,14 +392,14 @@ def main():
                 % (Colors.BOLD, Colors.RESET, minutes, seconds)
             )
 
-            print("\n%s📊 Execution Metrics:%s" % (Colors.BOLD, Colors.RESET))
+            print("\n%sExecution Metrics:%s" % (Colors.BOLD, Colors.RESET))
             print("  • Total Steps: %d/%d" % (summary["total_steps"], args.iterations))
             print("  • Tools Created: %d" % summary["tools_created"])
             print("  • Evidence Collected: %d items" % summary["evidence_collected"])
             print("  • Memory Operations: %d total" % summary["memory_operations"])
 
             if summary["capability_expansion"]:
-                print("\n%s🔧 Capabilities Created:%s" % (Colors.BOLD, Colors.RESET))
+                print("\n%sCapabilities Created:%s" % (Colors.BOLD, Colors.RESET))
                 for tool in summary["capability_expansion"]:
                     print("  • %s%s%s" % (Colors.GREEN, tool, Colors.RESET))
 
@@ -332,7 +407,7 @@ def main():
             if callback_handler:
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
-                    print("\n%s🎯 Key Evidence:%s" % (Colors.BOLD, Colors.RESET))
+                    print("\n%sKey Evidence:%s" % (Colors.BOLD, Colors.RESET))
                     if isinstance(evidence_summary[0], dict):
                         for ev in evidence_summary[:5]:
                             cat = ev.get("category", "unknown")
@@ -344,9 +419,15 @@ def main():
                                 % (len(evidence_summary) - 5)
                             )
 
+            # Show where evidence and memories are stored
+            memory_location = os.environ.get("MEM0_FAISS_PATH", "Not configured")
             print(
-                "\n%s💾 Evidence stored in:%s /app/evidence/evidence_%s"
+                "\n%sEvidence stored in:%s /app/evidence/evidence_%s"
                 % (Colors.BOLD, Colors.RESET, local_operation_id)
+            )
+            print(
+                "%sMemory stored in:%s %s"
+                % (Colors.BOLD, Colors.RESET, memory_location)
             )
             print("%s" % ("=" * 80))
 
@@ -372,15 +453,11 @@ def main():
                 logger.warning("Error generating final report: %s", report_error)
 
         # Clean up resources
-        from modules.memory_tools import mem0_instance
-
-        if mem0_instance:
+        if not args.keep_memory and not args.memory_path:
             try:
-                # Attempt graceful cleanup if mem0 supports it
-                # Note: mem0 typically handles cleanup automatically
-                pass
+                clean_operation_memory(local_operation_id)
             except Exception as cleanup_error:
-                logger.warning("Error during cleanup: %s", cleanup_error)
+                logger.warning("Error cleaning up memory: %s", cleanup_error)
 
         # Log operation end
         end_time = time.time()
