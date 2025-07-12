@@ -89,7 +89,7 @@ ENV PYTHONPATH="/app/src"
 # Create volume for evidence persistence
 VOLUME ["/app/evidence", "/app/logs"]
 
-# Expose port for any web interfaces (if needed in future)
+# Expose port for any web interfaces 
 EXPOSE 8080
 
 # Health check

@@ -67,6 +67,10 @@ def setup_observability(logger):
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel/v1/traces"
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
     
+    # Override service name for OpenTelemetry to show as Cyber-AutoAgent
+    os.environ["OTEL_SERVICE_NAME"] = "Cyber-AutoAgent"
+    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=Cyber-AutoAgent,gen_ai.system=Cyber-AutoAgent"
+    
     # Initialize Strands tracer with OTLP exporter
     from strands.telemetry import get_tracer
     
