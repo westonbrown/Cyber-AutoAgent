@@ -1,6 +1,3 @@
-# Dynamic key generation: keys are auto-generated if not set
-# For custom keys: export LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32) && export LANGFUSE_SALT=$(openssl rand -hex 16)
-
 services:
   cyber-autoagent:
     build: .
@@ -12,7 +9,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       # - AWS_PROFILE=${AWS_PROFILE}
       
-      # Ollama Configuration (Local Mode) - only if user wants to override
+      # Ollama Configuration (Local Mode) 
       - OLLAMA_HOST=${OLLAMA_HOST}
       
       # Python configuration
@@ -27,23 +24,26 @@ services:
       - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-cyber-public}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-cyber-secret}
+      
+      # Evaluation configuration 
+      - ENABLE_AUTO_EVALUATION=${ENABLE_AUTO_EVALUATION:-false}
+      - RAGAS_EVALUATOR_MODEL=${RAGAS_EVALUATOR_MODEL:-us.anthropic.claude-3-5-sonnet-20241022-v2:0}
+      - EVALUATION_BATCH_SIZE=${EVALUATION_BATCH_SIZE:-5}
+      - MIN_TOOL_ACCURACY_SCORE=${MIN_TOOL_ACCURACY_SCORE:-0.8}
+      - MIN_EVIDENCE_QUALITY_SCORE=${MIN_EVIDENCE_QUALITY_SCORE:-0.7}
+      - MIN_ANSWER_RELEVANCY_SCORE=${MIN_ANSWER_RELEVANCY_SCORE:-0.7}
+      - MIN_CONTEXT_PRECISION_SCORE=${MIN_CONTEXT_PRECISION_SCORE:-0.8}
     
     volumes:
       # Evidence persistence
       - ./evidence:/app/evidence
       - ./logs:/app/logs
       
-      # Mount entire project for development (uncomment for dev mode)
-      # - .:/app
     
     # Network configuration - bridge mode to allow Langfuse communication
-    # Note: Change to "host" if you need direct host network access for scans
     networks:
       - default
-    
-    # Uncomment to run with additional privileges for certain scans
-    # privileged: true
-    
+
     # Resource limits
     deploy:
       resources:
@@ -54,18 +54,14 @@ services:
           memory: 512M
           cpus: '0.5'
     
-    # Override default command for interactive use
-    # command: ["--target", "example.com", "--objective", "Basic reconnaissance"]
-    
     # For interactive debugging
     stdin_open: true
     tty: true
     
-    # Add dependency on Langfuse when observability is enabled
     depends_on:
       - langfuse-web
 
-  # Langfuse observability service (self-hosted) - v3 with all required services
+  # Langfuse observability service (self-hosted) 
   langfuse-web:
     image: docker.io/langfuse/langfuse:3
     container_name: cyber-langfuse
@@ -81,21 +77,6 @@ services:
         condition: service_healthy
     ports:
       - "0.0.0.0:3000:3000"
-    volumes:
-      - langfuse_keys:/tmp
-    entrypoint: |
-      sh -c '
-        # Generate or load shared encryption keys
-        if [ ! -f /tmp/langfuse-keys.env ]; then
-          echo "LANGFUSE_ENCRYPTION_KEY=$$(openssl rand -hex 32)" > /tmp/langfuse-keys.env
-          echo "LANGFUSE_SALT=$$(openssl rand -hex 16)" >> /tmp/langfuse-keys.env
-          echo "Generated shared encryption keys"
-        fi
-        . /tmp/langfuse-keys.env
-        export ENCRYPTION_KEY=$$LANGFUSE_ENCRYPTION_KEY
-        export SALT=$$LANGFUSE_SALT
-        exec dumb-init -- ./web/server.js
-      '
     environment:
       # Database
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
@@ -109,7 +90,9 @@ services:
       HOST: 0.0.0.0
       HOSTNAME: 0.0.0.0
       
-      # Security keys - generated dynamically in entrypoint
+      # Security keys - regenerate with: openssl rand -hex 32 & openssl rand -hex 16
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456}
+      SALT: ${LANGFUSE_SALT:-cyber-dev-salt-12345}
       
       # ClickHouse configuration
       CLICKHOUSE_URL: http://clickhouse:8123
@@ -202,27 +185,14 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-    volumes:
-      - langfuse_keys:/tmp
-    entrypoint: |
-      sh -c '
-        # Load shared encryption keys (wait for web service to generate them)
-        while [ ! -f /tmp/langfuse-keys.env ]; do
-          echo "Waiting for encryption keys..."
-          sleep 2
-        done
-        . /tmp/langfuse-keys.env
-        export ENCRYPTION_KEY=$$LANGFUSE_ENCRYPTION_KEY
-        export SALT=$$LANGFUSE_SALT
-        echo "Loaded shared encryption keys"
-        exec dumb-init -- ./worker/start.js
-      '
     environment:
       # Database
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
       DIRECT_URL: postgresql://postgres:postgres@postgres:5432/postgres
       
-      # Security keys - generated dynamically in entrypoint
+      # Security keys - regenerate with: openssl rand -hex 32 & openssl rand -hex 16
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456}
+      SALT: ${LANGFUSE_SALT:-cyber-dev-salt-12345}
       
       # ClickHouse configuration
       CLICKHOUSE_URL: http://clickhouse:8123

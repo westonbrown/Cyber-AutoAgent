@@ -57,12 +57,20 @@
 - [Features](#features)
 - [Architecture](#architecture)
 - [Model Providers](#model-providers)
+- [Observability](#observability)
 - [Installation & Deployment](#installation--deployment)
 - [Quick Start](#quick-start)
 - [Development & Testing](#development--testing)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
+
+## Documentation
+
+- 📖 **[Agent Architecture](docs/architecture.md)** - Strands framework, tools, and metacognitive design
+- 🧠 **[Memory System](docs/memory.md)** - Mem0 backends, storage, and evidence management  
+- 👁️ **[Observability](docs/observability.md)** - Langfuse integration and trace monitoring
+- 🚀 **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
 
 ---
 
@@ -106,6 +114,8 @@ python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive
 - **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
 
 ## Architecture
+
+> 📖 **[Full Architecture Guide](docs/architecture.md)** - Complete technical deep dive into Strands framework, tools, and metacognitive design
 
 ### System Architecture
 
@@ -275,7 +285,66 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 | Setup Complexity | Moderate | Higher |
 | Model Quality | Highest | Low |
 
+## Observability
+
+> 👁️ **[Complete Observability Guide](docs/observability.md)** - Langfuse setup, OTLP integration, and trace monitoring
+
+Cyber-AutoAgent includes **built-in observability** using self-hosted Langfuse, providing complete visibility into agent operations, tool executions, and decision-making processes. Observability is enabled by default in the Docker container.
+
+### Features
+
+With zero configuration, you automatically get:
+
+- **Complete operation traces**: Every penetration test operation is traced
+- **Tool execution timeline**: See when and how tools like nmap, sqlmap are used
+- **Token usage metrics**: Track LLM token consumption
+- **Memory operations**: Monitor agent memory storage and retrieval
+- **Swarm coordination**: When multiple agents are deployed
+- **Error tracking**: Failed tool executions and errors
+- **Performance metrics**: Operation duration and efficiency
+
+### Accessing Traces
+
+When running with Docker Compose, Langfuse is automatically available at http://localhost:3000
+- Default login: `admin@cyber-autoagent.com` / `changeme`
+
+### Configuration
+
+All observability configuration is via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_OBSERVABILITY` | `true` | Enable/disable observability |
+| `LANGFUSE_HOST` | `http://langfuse-web:3000` | Langfuse server URL |
+| `LANGFUSE_PUBLIC_KEY` | `cyber-public` | Auto-configured for local setup |
+| `LANGFUSE_SECRET_KEY` | `cyber-secret` | Auto-configured for local setup |
+| `LANGFUSE_ADMIN_EMAIL` | `admin@cyber-autoagent.com` | Admin login email |
+| `LANGFUSE_ADMIN_PASSWORD` | `changeme` | Admin login password |
+
+### Production Security
+
+For production deployments, update the security keys in your `.env` file:
+
+```bash
+LANGFUSE_NEXTAUTH_SECRET=your-random-secret-here
+LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32)
+LANGFUSE_SALT=your-random-salt-here
+LANGFUSE_ADMIN_PASSWORD=strong-password-here
+```
+
+### Disabling Observability
+
+To disable observability, set `ENABLE_OBSERVABILITY=false`. The Langfuse containers will still run but won't receive any data.
+
+To completely remove Langfuse containers:
+```bash
+docker-compose stop langfuse langfuse-postgres
+docker-compose rm langfuse langfuse-postgres
+```
+
 ## Installation & Deployment
+
+> 🚀 **[Complete Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, production setup, and troubleshooting
 
 ### Prerequisites
 
@@ -310,24 +379,16 @@ cd cyber-autoagent
 # Build image
 docker build -t cyber-autoagent .
 
-# Run with AWS credentials (using volume mount)
-docker run --rm \
-  -v ~/.aws:/home/cyberagent/.aws:ro \
-  -v $(pwd)/evidence:/app/evidence \
-  -v $(pwd)/logs:/app/logs \
-  cyber-autoagent \
-  --target "http://testphp.vulnweb.com" \
-  --objective "Identify vulnerabilities"
-
 # Using environment variables
 docker run --rm \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/evidence:/app/evidence \
   -v $(pwd)/logs:/app/logs \
   cyber-autoagent \
-  --target "http://testphp.vulnweb.com" \
+  --target "x.x.x.x" \
   --objective "Identify vulnerabilities" \
   --iterations 50
 ```
@@ -442,19 +503,38 @@ uv run pytest --cov=src
 
 ```
 cyber-autoagent/
-|- src/
-|  |- cyberautoagent.py       # Main entry point
-|  |- modules/
-|     |- __init__.py         # Module initialization
-|     |- utils.py            # UI utilities and analysis functions
-|     |- environment.py      # Environment setup and tool discovery
-|     |- system_prompts.py   # System prompt templates 
-|     |- agent_handlers.py   # Core agent callback handlers
-|     |- agent.py            # Agent creation and configuration
-|- pyproject.toml              # Project configuration
-|- README.md                   # This file
-|- LICENSE                     # MIT License
+├── src/                       # Source code
+│   ├── cyberautoagent.py      # Main entry point and CLI
+│   └── modules/               # Core modules
+│       ├── agent.py           # Agent creation (Strands + models)
+│       ├── memory_tools.py    # Mem0 memory management
+│       ├── system_prompts.py  # AI prompts and configurations
+│       ├── agent_handlers.py  # Reasoning and callback handlers
+│       ├── environment.py     # Tool discovery and logging
+│       └── utils.py           # UI utilities and analysis
+├── docs/                      # Documentation
+│   ├── architecture.md       # Agent architecture and tools
+│   ├── memory.md             # Memory system (Mem0 backends)
+│   ├── observability.md      # Langfuse monitoring setup
+│   └── deployment.md         # Docker and production deployment
+├── docker-compose.yml        # Full stack (agent + Langfuse)
+├── Dockerfile                # Agent container build
+├── pyproject.toml            # Dependencies and project config
+├── uv.lock                   # Dependency lockfile
+├── evidence/                 # Generated evidence (auto-created)
+├── logs/                     # Operation logs (auto-created)
+└── README.md                 # This file
 ```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/cyberautoagent.py` | CLI entry point, observability setup |
+| `src/modules/agent.py` | Strands agent creation, model configuration |
+| `src/modules/memory_tools.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
+| `docker-compose.yml` | Complete observability stack |
+| `docs/architecture.md` | Technical architecture deep dive |
 
 ## Troubleshooting
 
@@ -478,6 +558,8 @@ export AWS_REGION=us-east-1
 ```
 
 #### Memory System Errors
+
+> **See [Memory System Guide](docs/memory.md)** for complete backend configuration and troubleshooting
 ```bash
 # For local FAISS backend (default)
 pip install faiss-cpu  # or faiss-gpu for CUDA

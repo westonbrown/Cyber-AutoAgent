@@ -298,6 +298,9 @@ Leverage these tools directly via shell.
         trace_attributes={
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
+            "agent.name": "Cyber-AutoAgent",
+            "gen_ai.agent.name": "Cyber-AutoAgent",
+            "gen_ai.system": "Cyber-AutoAgent", 
             "langfuse.tags": [
                 "Cyber-AutoAgent",
                 server.upper(),
@@ -306,6 +309,8 @@ Leverage these tools directly via shell.
             "agent.target": target,
             "agent.objective": objective,
             "agent.model": model_id,
+            # Model pricing for cost tracking in Langfuse
+            "gen_ai.request.model": model_id,
         }
     )
 
