@@ -23,7 +23,9 @@ import argparse
 import time
 import atexit
 import re
+import base64
 from datetime import datetime
+from opentelemetry import trace
 
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
@@ -39,6 +41,49 @@ from modules.utils import (
 from modules.environment import auto_setup, setup_logging, clean_operation_memory
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+
+def setup_observability(logger):
+    """
+    Setup Langfuse observability by configuring OpenTelemetry environment variables
+    and initializing the OTLP exporter.
+    """
+    # Check if observability is enabled via environment (default: true)
+    if os.getenv("ENABLE_OBSERVABILITY", "true").lower() != "true":
+        logger.debug("Observability is disabled (set ENABLE_OBSERVABILITY=false)")
+        return False
+    
+    # Get configuration from environment with defaults for self-hosted Langfuse
+    host = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public")
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret")
+    
+    # Create auth token for Langfuse
+    auth_token = base64.b64encode(
+        f"{public_key}:{secret_key}".encode()
+    ).decode()
+    
+    # Set OpenTelemetry environment variables that Strands SDK will use
+    os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel/v1/traces"
+    os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
+    
+    # Initialize Strands tracer with OTLP exporter
+    from strands.telemetry import get_tracer
+    
+    logger.debug("Initializing Strands tracer with OTLP exporter")
+    # The tracer will automatically use OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS
+    # environment variables that we set above
+    tracer = get_tracer(
+        service_name="cyber-autoagent",
+        otlp_endpoint=f"{host}/api/public/otel/v1/traces",
+        otlp_headers={"Authorization": f"Basic {auth_token}"}
+    )
+    
+    logger.info("Langfuse observability enabled at %s", host)
+    logger.info("OTLP endpoint: %s", os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"])
+    logger.info("View traces at %s (login: admin@cyber-autoagent.com/changeme)", host)
+    
+    return True
 
 
 def main():
@@ -129,6 +174,9 @@ def main():
         log_file=os.path.join(get_data_path("logs"), "cyber_operations.log"),
         verbose=args.verbose,
     )
+    
+    # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
+    setup_observability(logger)
     
     # Register cleanup function to properly close log files
     def cleanup_logging():
@@ -463,6 +511,18 @@ def main():
         end_time = time.time()
         total_time = end_time - start_time
         logger.info("Operation %s ended after %.2fs", local_operation_id, total_time)
+        
+        # Flush OpenTelemetry traces before exit
+        try:
+            from opentelemetry import trace
+            tracer_provider = trace.get_tracer_provider()
+            if hasattr(tracer_provider, 'force_flush'):
+                logger.debug("Flushing OpenTelemetry traces...")
+                tracer_provider.force_flush()
+                # Give a moment for traces to be sent
+                time.sleep(2)
+        except Exception as e:
+            logger.warning("Error flushing traces: %s", e)
 
 
 if __name__ == "__main__":

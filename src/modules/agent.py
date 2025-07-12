@@ -295,6 +295,18 @@ Leverage these tools directly via shell.
         conversation_manager=SlidingWindowConversationManager(window_size=120),
         load_tools_from_directory=True,
         max_parallel_tools=8,
+        trace_attributes={
+            "session.id": operation_id,
+            "user.id": f"cyber-agent-{target}",
+            "langfuse.tags": [
+                "Cyber-AutoAgent",
+                server.upper(),
+                operation_id,
+            ],
+            "agent.target": target,
+            "agent.objective": objective,
+            "agent.model": model_id,
+        }
     )
 
     logger.debug("Agent initialized successfully")
