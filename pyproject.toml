@@ -29,7 +29,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "strands-agents[ollama]>=0.1.6",
+    "strands-agents[ollama,otel]>=0.1.6",
     "strands-agents-tools @ git+https://github.com/cagataycali/tools.git@feat/model-switch-clean", 
     "mem0ai",
     "boto3",
@@ -37,7 +37,8 @@ dependencies = [
     "faiss-cpu",
     "ollama>=0.1.0",
     "requests>=2.25.0",
-    "opensearch-py"
+    "opensearch-py",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0"
 ]
 
 [project.optional-dependencies]

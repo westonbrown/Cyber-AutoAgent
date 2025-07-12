@@ -10,17 +10,18 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 # Copy only dependency files for installation
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
+# Copy uv.lock if it exists, otherwise uv will generate it
+COPY uv.lock* ./
 
 # Install dependencies with uv (need src for editable install)
 COPY src/ ./src/
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 FROM python:3.11-slim-bullseye
 
 # Install system dependencies and security tools in single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Security tools (core requirements)
     nmap \
     sqlmap \
     gobuster \
