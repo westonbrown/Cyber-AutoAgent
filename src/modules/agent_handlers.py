@@ -4,6 +4,7 @@ import sys
 import io
 import os
 import logging
+import asyncio
 from datetime import datetime
 from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
@@ -671,6 +672,9 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         # Always save report to file, regardless of content type
         self._save_report_to_file(report_content, target, objective)
+        
+        # Trigger automatic evaluation if enabled
+        self._trigger_evaluation_if_enabled()
 
     def _retrieve_evidence(self) -> List[Dict]:
         """Retrieve all collected evidence from memory system."""
@@ -1001,3 +1005,27 @@ Review the evidence items above for detailed findings.
             )
             if len(item["content"]) > FALLBACK_EVIDENCE_PREVIEW_LENGTH:
                 print("   %s(truncated)%s" % (Colors.DIM, Colors.RESET))
+    
+    def _trigger_evaluation_if_enabled(self):
+        """Trigger automatic evaluation if enabled via environment variable."""
+        if os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
+            try:
+                # Import here to avoid circular imports
+                from .evaluation import CyberAgentEvaluator
+                
+                # Get current trace ID from environment (set by Strands)
+                trace_id = os.getenv("LANGFUSE_TRACE_ID")
+                if not trace_id:
+                    logger.warning("No trace ID available for evaluation")
+                    return
+                
+                # Create and run evaluation in background
+                evaluator = CyberAgentEvaluator()
+                asyncio.create_task(evaluator.evaluate_operation(trace_id, "comprehensive"))
+                
+                print(f"\n{Colors.CYAN}🔍 Automatic evaluation triggered for trace {trace_id}{Colors.RESET}")
+                
+            except Exception as e:
+                logger.warning(f"Failed to trigger automatic evaluation: {str(e)}")
+        else:
+            logger.debug("Automatic evaluation disabled (set ENABLE_AUTO_EVALUATION=true to enable)")

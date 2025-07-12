@@ -4,7 +4,7 @@ Cyber-AutoAgent implements a **Single Agent Meta-Everything Architecture** using
 
 ## Design Philosophy: Single Agent Meta-Everything Architecture
 
-The core design philosophy centers on a **single primary agent** that dynamically extends its capabilities through meta-operations, rather than multiple specialized agents competing for control.
+The core design philosophy centers on a **single agent** that dynamically extends its capabilities through meta-operations, rather than multiple specialized agents competing for control.
 
 ### Why Single Agent?
 
@@ -27,7 +27,7 @@ This meta-architecture allows the system to transcend static tool limitations an
 graph TB
     A[User Input] --> B[Cyber-AutoAgent]
     B --> C[Agent]
-    C --> D[Tool Ecosystem]
+    C --> D[Tool Registry]
     C --> E[Memory System]
     C --> F[AI Models]
     
@@ -213,7 +213,7 @@ graph TB
 ## Model Providers
 
 ### Remote Mode (AWS Bedrock)
-- **Primary**: Claude Sonnet 4
+- **Primary**: Any AWS Bedrock model
 - **Embeddings**: Titan Text v2
 - **Benefits**: Latest models, managed infrastructure
 
