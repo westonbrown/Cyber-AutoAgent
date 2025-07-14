@@ -106,95 +106,33 @@ python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive
 ### System Architecture
 
 ```mermaid
-graph TB
-    A[User Input<br/>Target & Objective] --> B[Cyber-AutoAgent Core]
+graph LR
+    A[User Input<br/>Target & Objective] --> B[Cyber-AutoAgent]
+    B --> C[AI Models<br/>Remote/Local]
+    B --> D[Agent Tools<br/>shell, swarm, editior, etc.]
+    B --> E[Evidence Storage<br/>Memory System]
+    B --> O[Observability<br/>Langfuse + Ragas]
     
-    subgraph "Agent Internal Architecture"
-        B --> BA[Strands Framework<br/>Orchestration]
-        BA --> BB[Metacognitive Engine<br/>Think-Reflect-Assess]
-        BB --> BC[Tool Selection<br/>Confidence-Based]
-        BC --> BD[Swarm Orchestration<br/>Parallel Agents]
-        BD --> BE[Meta-Tool Creation<br/>Dynamic Tools]
-    end
-    
-    subgraph "AI Models"
-        C1[Remote Models<br/>AWS Bedrock]
-        C2[Local Models<br/>Ollama]
-    end
-    
-    subgraph "Security Tools"
-        D1[Reconnaissance<br/>nmap, gobuster]
-        D2[Vulnerability Scanning<br/>nikto, sqlmap]
-        D3[Exploitation<br/>metasploit, custom]
-        D4[Shell Commands<br/>curl, wget, nc]
-    end
-    
-    subgraph "Memory & Evidence"
-        E1[FAISS Local<br/>Vector Store]
-        E2[OpenSearch<br/>Distributed]
-        E3[Mem0 Platform<br/>Cloud]
-    end
-    
-    subgraph "Observability Stack"
-        O1[Langfuse<br/>Trace Collection]
-        O2[Ragas Evaluation<br/>Automated Scoring]
-        O3[Performance Metrics<br/>Token Usage]
-    end
-    
-    BA --> C1
-    BA --> C2
-    BC --> D1
-    BC --> D2
-    BC --> D3
-    BC --> D4
-    BD --> D1
-    BD --> D2
-    BE --> D4
-    
-    D1 --> E1
-    D2 --> E1
-    D3 --> E1
-    D1 --> E2
-    D2 --> E2
-    D3 --> E2
-    D1 --> E3
-    D2 --> E3
-    D3 --> E3
-    
-    BA --> O1
-    BC --> O1
-    BD --> O1
-    BE --> O1
-    
-    E1 --> F[Final Report<br/>AI Generated]
-    E2 --> F
-    E3 --> F
-    
-    O1 --> G[Trace Analytics<br/>Tool Timeline]
-    O2 --> H[Quality Scores<br/>Tool Accuracy]
-    O3 --> I[Cost Metrics<br/>Usage Tracking]
+    C --> B
+    D --> E
+    E --> F[Final Report<br/>AI Generated]
+    O --> G[Performance<br/>Metrics]
     
     style A fill:#e3f2fd
-    style B fill:#f3e5f5
     style F fill:#e8f5e8
-    style BA fill:#fff3e0
-    style BB fill:#fce4ec
-    style BC fill:#e8f5e8
-    style BD fill:#f1f8e9
-    style BE fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#fff3e0
+    style O fill:#e1f5fe
+    style G fill:#f1f8e9
 ```
 
 **Key Components:**
-- **Agent Internal Architecture**: 
-  - **Strands Framework**: Core orchestration and agent lifecycle management
-  - **Metacognitive Engine**: Think-Reflect-Assess decision making cycle
-  - **Tool Selection**: Confidence-based strategic tool choice and sequencing
-  - **Swarm Orchestration**: Parallel agent deployment for complex tasks
-  - **Meta-Tool Creation**: Dynamic tool generation for novel challenges
-- **AI Models**: Remote (AWS Bedrock) or Local (Ollama) language models
-- **Security Tools**: Categorized pentesting capabilities (recon, scanning, exploitation, shell)
-- **Memory & Evidence**: Multi-backend storage (FAISS, OpenSearch, Mem0 Platform)
-- **Observability Stack**: Complete tracing, evaluation, and performance monitoring
+- **User Interface**: Command-line interface with target and objective specification
+- **Agent Core**: Strands framework orchestration with metacognitive reasoning and tool selection
+- **AI Models**: GenAI tool use models (AWS Bedrock remote) or local models (Ollama) 
+- **Security Tools**: Pentesting tools (nmap, sqlmap, nikto, metasploit, custom tools)
+- **Evidence Storage**: Persistent memory with FAISS, OpenSearch, or Mem0 Platform backends
+- **Observability**: Real-time tracing with Langfuse and automated evaluation with Ragas metrics
 
 ### Assessment Execution Flow
 
@@ -339,7 +277,6 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
 - **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
-- **Alternative Models**: `llama3.1:8b` (better reasoning), `qwen2.5:7b` (more efficient)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### Comparison
