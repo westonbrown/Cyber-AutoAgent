@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cyber-autoagent"
-version = "0.0.1"
+version = "0.1.1"
 description = "Autonomous cybersecurity assessment tool powered by AWS Bedrock and Strands framework"
 readme = "README.md"
 authors = [
