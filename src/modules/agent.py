@@ -296,21 +296,49 @@ Leverage these tools directly via shell.
         load_tools_from_directory=True,
         max_parallel_tools=8,
         trace_attributes={
+            # Session and user identification
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
+            
+            # Agent identification
             "agent.name": "Cyber-AutoAgent",
+            "agent.version": "1.0.0",
             "gen_ai.agent.name": "Cyber-AutoAgent",
-            "gen_ai.system": "Cyber-AutoAgent", 
+            "gen_ai.system": "Cyber-AutoAgent",
+            
+            # Operation metadata
+            "operation.id": operation_id,
+            "operation.type": "security_assessment",
+            "operation.start_time": datetime.now().isoformat(),
+            "operation.max_steps": max_steps,
+            
+            # Target information
+            "target.host": target,
+            
+            # Objective and scope
+            "objective.description": objective,
+            
+            # Model configuration
+            "model.provider": server,
+            "model.id": model_id,
+            "model.region": region_name if server == "remote" else "local",
+            "gen_ai.request.model": model_id,
+            
+            # Tool configuration
+            "tools.available": 7,  # Number of core tools
+            "tools.names": ["swarm", "shell", "editor", "load_tool", "mem0_memory", "stop", "http_request"],
+            "tools.parallel_limit": 8,
+            
+            # Memory configuration
+            "memory.enabled": True,
+            "memory.path": memory_path if memory_path else "ephemeral",
+            
+            # Tags for filtering
             "langfuse.tags": [
                 "Cyber-AutoAgent",
                 server.upper(),
                 operation_id,
             ],
-            "agent.target": target,
-            "agent.objective": objective,
-            "agent.model": model_id,
-            # Model pricing for cost tracking in Langfuse
-            "gen_ai.request.model": model_id,
         }
     )
 

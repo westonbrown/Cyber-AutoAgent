@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cyber-autoagent"
-version = "0.0.1"
-description = "Autonomous cybersecurity assessment tool powered by AWS Bedrock and Strands framework"
+version = "0.1.1"
+description = "Autonomous cybersecurity agent designed for ethical security assessments"
 readme = "README.md"
 authors = [
     {name = "Cyber-AutoAgent Team", email = "aaron.weston.brown@gmail.com"}
@@ -40,7 +40,9 @@ dependencies = [
     "opensearch-py",
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
     "ragas>=0.2.0",
-    "langfuse>=2.0.0"
+    "langfuse>=2.0.0",
+    "langchain-aws>=0.2.0",
+    "langchain-ollama>=0.2.0"
 ]
 
 [project.optional-dependencies]
