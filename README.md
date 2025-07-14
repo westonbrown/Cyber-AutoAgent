@@ -1,18 +1,4 @@
-```
- ██████╗██╗   ██╗██████╗ ███████╗██████╗ 
-██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗
-██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝
-██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗
-╚██████╗   ██║   ██████╔╝███████╗██║  ██║
- ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝
-
-█████╗ ██╗   ██╗████████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗
-██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
-███████║██║   ██║   ██║   ██║   ██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
-██╔══██║██║   ██║   ██║   ██║   ██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
-██║  ██║╚██████╔╝   ██║   ╚██████╔╝██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
-╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
-```
+![Cyber-AutoAgent Cover Art](docs/cover_art.png)
 
 <div align="center">
 
@@ -67,10 +53,10 @@
 
 ## Documentation
 
-- 📖 **[Agent Architecture](docs/architecture.md)** - Strands framework, tools, and metacognitive design
-- 🧠 **[Memory System](docs/memory.md)** - Mem0 backends, storage, and evidence management  
-- 👁️ **[Observability](docs/observability.md)** - Langfuse integration and trace monitoring
-- 🚀 **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
+- **[Agent Architecture](docs/architecture.md)** - Strands framework, tools, and metacognitive design
+- **[Memory System](docs/memory.md)** - Mem0 backends, storage, and evidence management  
+- **[Observability & Evaluation](docs/observability-evaluation.md)** - Langfuse tracing, Ragas metrics, and performance monitoring
+- **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
 
 ---
 
@@ -115,32 +101,100 @@ python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive
 
 ## Architecture
 
-> 📖 **[Full Architecture Guide](docs/architecture.md)** - Complete technical deep dive into Strands framework, tools, and metacognitive design
+> **[Full Architecture Guide](docs/architecture.md)** - Complete technical deep dive into Strands framework, tools, and metacognitive design
 
 ### System Architecture
 
 ```mermaid
-graph LR
-    A[User Input] --> B[Cyber-AutoAgent]
-    B --> C[AI Model]
-    B --> D[Security Tools]
-    B --> E[Evidence Storage]
+graph TB
+    A[User Input<br/>Target & Objective] --> B[Cyber-AutoAgent Core]
     
-    C --> B
-    D --> E
-    E --> F[Final Report]
+    subgraph "Agent Internal Architecture"
+        B --> BA[Strands Framework<br/>Orchestration]
+        BA --> BB[Metacognitive Engine<br/>Think-Reflect-Assess]
+        BB --> BC[Tool Selection<br/>Confidence-Based]
+        BC --> BD[Swarm Orchestration<br/>Parallel Agents]
+        BD --> BE[Meta-Tool Creation<br/>Dynamic Tools]
+    end
+    
+    subgraph "AI Models"
+        C1[Remote Models<br/>AWS Bedrock]
+        C2[Local Models<br/>Ollama]
+    end
+    
+    subgraph "Security Tools"
+        D1[Reconnaissance<br/>nmap, gobuster]
+        D2[Vulnerability Scanning<br/>nikto, sqlmap]
+        D3[Exploitation<br/>metasploit, custom]
+        D4[Shell Commands<br/>curl, wget, nc]
+    end
+    
+    subgraph "Memory & Evidence"
+        E1[FAISS Local<br/>Vector Store]
+        E2[OpenSearch<br/>Distributed]
+        E3[Mem0 Platform<br/>Cloud]
+    end
+    
+    subgraph "Observability Stack"
+        O1[Langfuse<br/>Trace Collection]
+        O2[Ragas Evaluation<br/>Automated Scoring]
+        O3[Performance Metrics<br/>Token Usage]
+    end
+    
+    BA --> C1
+    BA --> C2
+    BC --> D1
+    BC --> D2
+    BC --> D3
+    BC --> D4
+    BD --> D1
+    BD --> D2
+    BE --> D4
+    
+    D1 --> E1
+    D2 --> E1
+    D3 --> E1
+    D1 --> E2
+    D2 --> E2
+    D3 --> E2
+    D1 --> E3
+    D2 --> E3
+    D3 --> E3
+    
+    BA --> O1
+    BC --> O1
+    BD --> O1
+    BE --> O1
+    
+    E1 --> F[Final Report<br/>AI Generated]
+    E2 --> F
+    E3 --> F
+    
+    O1 --> G[Trace Analytics<br/>Tool Timeline]
+    O2 --> H[Quality Scores<br/>Tool Accuracy]
+    O3 --> I[Cost Metrics<br/>Usage Tracking]
     
     style A fill:#e3f2fd
-    style F fill:#e8f5e8
     style B fill:#f3e5f5
-    style C fill:#fff3e0
+    style F fill:#e8f5e8
+    style BA fill:#fff3e0
+    style BB fill:#fce4ec
+    style BC fill:#e8f5e8
+    style BD fill:#f1f8e9
+    style BE fill:#e1f5fe
 ```
 
 **Key Components:**
-- User provides target and objectives via command line
-- Agent orchestrates assessment using AI reasoning
-- Security tools execute scans and exploits
-- Evidence system stores and analyzes findings
+- **Agent Internal Architecture**: 
+  - **Strands Framework**: Core orchestration and agent lifecycle management
+  - **Metacognitive Engine**: Think-Reflect-Assess decision making cycle
+  - **Tool Selection**: Confidence-based strategic tool choice and sequencing
+  - **Swarm Orchestration**: Parallel agent deployment for complex tasks
+  - **Meta-Tool Creation**: Dynamic tool generation for novel challenges
+- **AI Models**: Remote (AWS Bedrock) or Local (Ollama) language models
+- **Security Tools**: Categorized pentesting capabilities (recon, scanning, exploitation, shell)
+- **Memory & Evidence**: Multi-backend storage (FAISS, OpenSearch, Mem0 Platform)
+- **Observability Stack**: Complete tracing, evaluation, and performance monitoring
 
 ### Assessment Execution Flow
 
@@ -151,21 +205,28 @@ sequenceDiagram
     participant M as AI Model
     participant T as Tools
     participant E as Evidence
+    participant L as Observability
+    participant R as Evaluator
 
     U->>A: Start Assessment
+    A->>L: Initialize Trace
     A->>E: Initialize Storage
     
     loop Assessment Steps
         A->>M: Analyze Situation
         M-->>A: Next Action
+        A->>L: Log Decision
         A->>T: Execute Tool
         T-->>A: Results
+        A->>L: Log Tool Execution
         A->>E: Store Findings
+        A->>L: Log Evidence Storage
         
         alt Critical Discovery
             A->>T: Exploit Immediately
             T-->>A: Access Gained
             A->>E: Store Evidence
+            A->>L: Log Exploitation
         end
         
         A->>A: Check Progress
@@ -179,14 +240,20 @@ sequenceDiagram
     
     A->>M: Generate Report
     M-->>A: Final Analysis
+    A->>L: Complete Trace
+    A->>R: Trigger Evaluation
+    R-->>L: Upload Scores
     A->>U: Deliver Report
 ```
 
-**Execution Pattern:**
-- Agent continuously analyzes situation and selects appropriate tools
-- Critical discoveries trigger immediate exploitation attempts
-- All findings stored as evidence for final analysis
-- Assessment completes when objectives met or budget exhausted
+**Enhanced Execution Pattern:**
+- **Real-time Monitoring**: Every action traced for complete visibility
+- **Intelligent Analysis**: Agent continuously analyzes situation using metacognitive reasoning
+- **Dynamic Tool Selection**: Chooses appropriate tools based on confidence and findings
+- **Evidence Collection**: All discoveries stored in persistent memory with categorization
+- **Immediate Exploitation**: Critical vulnerabilities trigger immediate exploitation attempts
+- **Automated Evaluation**: System scores tool selection, evidence quality, and methodology
+- **Comprehensive Reporting**: Final analysis combines findings with performance metrics
 
 ### Metacognitive Assessment Cycle
 
@@ -285,66 +352,76 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 | Setup Complexity | Moderate | Higher |
 | Model Quality | Highest | Low |
 
-## Observability
+## Observability & Evaluation
 
-> 👁️ **[Complete Observability Guide](docs/observability.md)** - Langfuse setup, OTLP integration, and trace monitoring
+> **[Complete Observability & Evaluation Guide](docs/observability-evaluation.md)** - Langfuse tracing, Ragas metrics, and automated performance evaluation
 
-Cyber-AutoAgent includes **built-in observability** using self-hosted Langfuse, providing complete visibility into agent operations, tool executions, and decision-making processes. Observability is enabled by default in the Docker container.
+Cyber-AutoAgent includes **built-in observability and evaluation** using self-hosted Langfuse for tracing and Ragas for automated performance metrics. This provides complete visibility into agent operations and continuous assessment of cybersecurity effectiveness.
 
-### Features
+### Key Features
 
-With zero configuration, you automatically get:
+**Observability (Langfuse)**:
+- **Complete operation traces**: Every penetration test operation is traced end-to-end
+- **Tool execution timeline**: Visual timeline of nmap, sqlmap, nikto usage
+- **Token usage metrics**: Track LLM token consumption and costs
+- **Memory operations**: Monitor agent memory storage and retrieval patterns
+- **Error tracking**: Failed tool executions and error analysis
 
-- **Complete operation traces**: Every penetration test operation is traced
-- **Tool execution timeline**: See when and how tools like nmap, sqlmap are used
-- **Token usage metrics**: Track LLM token consumption
-- **Memory operations**: Monitor agent memory storage and retrieval
-- **Swarm coordination**: When multiple agents are deployed
-- **Error tracking**: Failed tool executions and errors
-- **Performance metrics**: Operation duration and efficiency
+**Evaluation (Ragas)**:
+- **Tool Selection Accuracy**: How well the agent chooses appropriate cybersecurity tools
+- **Evidence Quality**: Assessment of collected security findings and documentation
+- **Answer Relevancy**: Alignment of agent actions with stated objectives
+- **Context Precision**: Effective use of memory and tool outputs
+- **Automated scoring**: Every operation receives performance metrics automatically
 
-### Accessing Traces
+### Quick Start
 
-When running with Docker Compose, Langfuse is automatically available at http://localhost:3000
-- Default login: `admin@cyber-autoagent.com` / `changeme`
+When running with Docker Compose, observability and evaluation are enabled by default:
+
+```bash
+# Start with observability and evaluation
+docker-compose up -d
+
+# Access Langfuse UI at http://localhost:3000
+# Login: admin@cyber-autoagent.com / changeme
+
+# Enable evaluation for your operations
+export ENABLE_AUTO_EVALUATION=true
+```
 
 ### Configuration
 
-All observability configuration is via environment variables:
+**Essential Environment Variables**:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ENABLE_OBSERVABILITY` | `true` | Enable/disable observability |
+| `ENABLE_OBSERVABILITY` | `true` | Enable/disable Langfuse tracing |
+| `ENABLE_AUTO_EVALUATION` | `false` | Enable automatic Ragas evaluation |
 | `LANGFUSE_HOST` | `http://langfuse-web:3000` | Langfuse server URL |
-| `LANGFUSE_PUBLIC_KEY` | `cyber-public` | Auto-configured for local setup |
-| `LANGFUSE_SECRET_KEY` | `cyber-secret` | Auto-configured for local setup |
-| `LANGFUSE_ADMIN_EMAIL` | `admin@cyber-autoagent.com` | Admin login email |
-| `LANGFUSE_ADMIN_PASSWORD` | `changeme` | Admin login password |
+| `RAGAS_EVALUATOR_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` | Model for evaluation |
+
+### Evaluation Metrics
+
+The system automatically evaluates four key metrics after each operation:
+
+1. **Tool Selection Accuracy** (0.0-1.0): Strategic tool choice and sequencing
+2. **Evidence Quality** (0.0-1.0): Comprehensive vulnerability documentation  
+3. **Answer Relevancy** (0.0-1.0): Alignment with security objectives
+4. **Context Precision** (0.0-1.0): Effective use of previous findings
 
 ### Production Security
 
-For production deployments, update the security keys in your `.env` file:
+For production deployments, update security keys:
 
 ```bash
-LANGFUSE_NEXTAUTH_SECRET=your-random-secret-here
 LANGFUSE_ENCRYPTION_KEY=$(openssl rand -hex 32)
-LANGFUSE_SALT=your-random-salt-here
+LANGFUSE_SALT=$(openssl rand -hex 16)
 LANGFUSE_ADMIN_PASSWORD=strong-password-here
-```
-
-### Disabling Observability
-
-To disable observability, set `ENABLE_OBSERVABILITY=false`. The Langfuse containers will still run but won't receive any data.
-
-To completely remove Langfuse containers:
-```bash
-docker-compose stop langfuse langfuse-postgres
-docker-compose rm langfuse langfuse-postgres
 ```
 
 ## Installation & Deployment
 
-> 🚀 **[Complete Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, production setup, and troubleshooting
+> **[Complete Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, production setup, and troubleshooting
 
 ### Prerequisites
 
@@ -446,19 +523,28 @@ Directories are created automatically on first run.
 ### Usage Examples
 
 ```bash
-# Local Mode (Ollama)
+# Basic Python Usage (Remote Mode)
 python src/cyberautoagent.py \
-  --server local \
-  --target "192.168.1.100" \
-  --objective "Web vulnerability assessment"
-
-# With custom model and region
-python src/cyberautoagent.py \
-  --server remote \
-  --target "example.com" \
+  --target "http://testphp.vulnweb.com" \
   --objective "Find SQL injection vulnerabilities" \
-  --model "us.anthropic.claude-sonnet-4-20250514-v1:0" \
-  --region "us-west-2"
+  --iterations 50
+
+# Docker with Full Observability & Evaluation
+docker run --rm \
+  --network cyber-autoagent_default \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
+  -e LANGFUSE_HOST=http://langfuse-web:3000 \
+  -e LANGFUSE_PUBLIC_KEY=cyber-public \
+  -e LANGFUSE_SECRET_KEY=cyber-secret \
+  -e ENABLE_AUTO_EVALUATION=true \
+  -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/logs:/app/logs \
+  cyber-autoagent:dev \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Comprehensive SQL injection and XSS assessment" \
+  --iterations 25
 ```
 
 ## Configuration
