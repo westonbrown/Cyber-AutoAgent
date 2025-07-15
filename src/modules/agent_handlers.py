@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
+from strands import Agent
 from .utils import Colors, get_data_path
 from .memory_tools import get_memory_client
 
@@ -815,13 +816,16 @@ Format this as a professional penetration testing report."""
 
         try:
             # Generate report with suppressed output
-            # Note: Don't pass empty messages=[] as it causes "conversation must start with user message" error
-            raw_report = agent(report_prompt)
-            # Extract text content only, ignoring any tool use blocks
-            if hasattr(raw_report, 'content'):
-                report_text = raw_report.content
-            else:
-                report_text = str(raw_report)
+            # Create a new agent without tools to avoid tool_use/tool_result pairing issues
+            # Use the same model as the original agent
+            report_agent = Agent(
+                model=agent.model if hasattr(agent, 'model') else None,
+                tools=[],  # No tools for report generation
+                system_prompt=agent.system_prompt if hasattr(agent, 'system_prompt') else None
+            )
+            
+            raw_report = report_agent(report_prompt)
+            report_text = str(raw_report)
             return self._clean_duplicate_content(report_text)
         finally:
             # Restore stdout
