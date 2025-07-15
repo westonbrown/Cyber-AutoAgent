@@ -30,7 +30,6 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     Path("tools").mkdir(exist_ok=True)  # Local tools directory for custom tools
     Path(get_data_path("logs")).mkdir(exist_ok=True)  # Logs directory
 
-    # Note: Memory cleanup is handled per-operation to avoid conflicts
     # Each operation uses its own isolated memory path: /tmp/mem0_{operation_id}
     if skip_mem0_cleanup:
         print("%s[*] Using existing memory store%s" % (Colors.CYAN, Colors.RESET))
@@ -95,7 +94,7 @@ class TeeOutput:
     """Thread-safe output duplicator to both terminal and log file"""
     def __init__(self, stream, log_file):
         self.terminal = stream
-        self.log = open(log_file, 'a', encoding='utf-8', buffering=1)  # Line buffering
+        self.log = open(log_file, 'a', encoding='utf-8', buffering=1) 
         self.lock = threading.Lock()
         
     def write(self, message):
@@ -160,7 +159,6 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     file_handler.setFormatter(formatter)
 
     # Console handler - only show warnings and above unless verbose
-    # Note: This won't duplicate because we're using TeeOutput for stdout/stderr
     console_handler = logging.StreamHandler(sys.__stdout__)  # Use original stdout
     console_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
     console_handler.setFormatter(formatter)
