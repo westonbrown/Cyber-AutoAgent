@@ -817,7 +817,12 @@ Format this as a professional penetration testing report."""
             # Generate report with suppressed output
             # Note: Don't pass empty messages=[] as it causes "conversation must start with user message" error
             raw_report = agent(report_prompt)
-            return self._clean_duplicate_content(str(raw_report))
+            # Extract text content only, ignoring any tool use blocks
+            if hasattr(raw_report, 'content'):
+                report_text = raw_report.content
+            else:
+                report_text = str(raw_report)
+            return self._clean_duplicate_content(report_text)
         finally:
             # Restore stdout
             sys.stdout = original_stdout

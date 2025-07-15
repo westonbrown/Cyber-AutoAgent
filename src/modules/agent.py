@@ -293,8 +293,7 @@ Leverage these tools directly via shell.
         system_prompt=system_prompt,
         callback_handler=callback_handler,
         conversation_manager=SlidingWindowConversationManager(window_size=120),
-        load_tools_from_directory=True,
-        max_parallel_tools=8,
+        load_tools_from_directory=True
     )
 
     logger.debug("Agent initialized successfully")
