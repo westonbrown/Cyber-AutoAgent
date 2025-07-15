@@ -9,7 +9,7 @@ from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
 from strands import Agent
 from .utils import Colors, get_data_path
-from .memory_tools import get_memory_client, mem0_memory
+from .memory_tools import get_memory_client
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -815,13 +815,11 @@ Format this as a professional penetration testing report."""
         sys.stdout = io.StringIO()
 
         try:
-            # Generate report with suppressed output
-            # Create a new agent with mem0_memory tool for evidence verification
-            # Use the same model as the original agent
+            # Generate report 
             report_agent = Agent(
                 model=agent.model if hasattr(agent, 'model') else None,
-                tools=[mem0_memory],  # Include mem0_memory for evidence verification
-                system_prompt="You are a cybersecurity assessment report generator. Follow the exact structure and requirements provided in the prompt. Generate a professional penetration testing report that includes all six requested sections: Executive Summary, Critical Vulnerabilities, Attack Vectors, Risk Assessment, Recommendations, and Security Posture Evaluation. Use mem0_memory if needed to ensure all findings are included."
+                tools=[],
+                system_prompt="You are a cybersecurity assessment report generator. Follow the exact structure and requirements provided in the prompt. Generate a professional penetration testing report that includes all six requested sections: Executive Summary, Critical Vulnerabilities, Attack Vectors, Risk Assessment, Recommendations, and Security Posture Evaluation."
             )
             
             raw_report = report_agent(report_prompt)
