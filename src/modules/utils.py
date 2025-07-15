@@ -7,8 +7,8 @@ from datetime import datetime
 
 
 def get_data_path(subdir=""):
-    """Get the appropriate data path for current environment (Docker or local)"""
-    base = "/app" if os.path.exists("/app") else os.getcwd()
+    """Get the appropriate data path"""
+    base = os.getcwd()
     return os.path.join(base, subdir) if subdir else base
 
 
@@ -76,21 +76,18 @@ def print_status(message, status="INFO"):
         "ERROR": (Colors.RED, "❌"),
         "THINKING": (Colors.MAGENTA, "🤔"),
         "EXECUTING": (Colors.CYAN, "⚡"),
-        "FOUND": (Colors.GREEN, "🎯"),
-        "EVOLVING": (Colors.CYAN, "🔄"),
-        "CREATING": (Colors.YELLOW, "🛠️"),
+        "FOUND": (Colors.GREEN, "[SCAN]"),
     }
-    color, emoji = status_config.get(status, (Colors.BLUE, "•"))
+    color, prefix = status_config.get(status, (Colors.BLUE, "[INFO]"))
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(
-        "%s[%s]%s %s %s[%s]%s %s"
+        "%s[%s]%s %s %s%s %s"
         % (
             Colors.DIM,
             timestamp,
             Colors.RESET,
-            emoji,
+            prefix,
             color,
-            status,
             Colors.RESET,
             message,
         )

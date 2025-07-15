@@ -9,7 +9,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       # - AWS_PROFILE=${AWS_PROFILE}
       
-      # Ollama Configuration (Local Mode) - only if user wants to override
+      # Ollama Configuration (Local Mode) 
       - OLLAMA_HOST=${OLLAMA_HOST}
       
       # Python configuration
@@ -18,21 +18,32 @@ services:
       
       # Application configuration
       - DEV=true
+      
+      # Observability configuration (enabled by default)
+      - ENABLE_OBSERVABILITY=${ENABLE_OBSERVABILITY:-true}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-cyber-public}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-cyber-secret}
+      
+      # Evaluation configuration 
+      - ENABLE_AUTO_EVALUATION=${ENABLE_AUTO_EVALUATION:-false}
+      - RAGAS_EVALUATOR_MODEL=${RAGAS_EVALUATOR_MODEL:-us.anthropic.claude-3-5-sonnet-20241022-v2:0}
+      - EVALUATION_BATCH_SIZE=${EVALUATION_BATCH_SIZE:-5}
+      - MIN_TOOL_ACCURACY_SCORE=${MIN_TOOL_ACCURACY_SCORE:-0.8}
+      - MIN_EVIDENCE_QUALITY_SCORE=${MIN_EVIDENCE_QUALITY_SCORE:-0.7}
+      - MIN_ANSWER_RELEVANCY_SCORE=${MIN_ANSWER_RELEVANCY_SCORE:-0.7}
+      - MIN_CONTEXT_PRECISION_SCORE=${MIN_CONTEXT_PRECISION_SCORE:-0.8}
     
     volumes:
       # Evidence persistence
       - ./evidence:/app/evidence
       - ./logs:/app/logs
       
-      # Mount entire project for development (uncomment for dev mode)
-      # - .:/app
     
-    # Network configuration for security scanning
-    network_mode: "host"
-    
-    # Uncomment to run with additional privileges for certain scans
-    # privileged: true
-    
+    # Network configuration - bridge mode to allow Langfuse communication
+    networks:
+      - default
+
     # Resource limits
     deploy:
       resources:
@@ -43,18 +54,276 @@ services:
           memory: 512M
           cpus: '0.5'
     
-    # Override default command for interactive use
-    # command: ["--target", "example.com", "--objective", "Basic reconnaissance"]
-    
     # For interactive debugging
     stdin_open: true
     tty: true
+    
+    depends_on:
+      - langfuse-web
+
+  # Langfuse observability service (self-hosted) 
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    container_name: cyber-langfuse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:3000:3000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      
+      # Auth configuration (required for browser access)
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: mysecret
+      
+      # Network binding
+      HOST: 0.0.0.0
+      HOSTNAME: 0.0.0.0
+      
+      # Security keys - regenerate with: openssl rand -hex 32 & openssl rand -hex 16
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456}
+      SALT: ${LANGFUSE_SALT:-cyber-dev-salt-12345}
+      
+      # ClickHouse configuration
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: myredissecret
+      
+      # MinIO/S3 configuration for batch exports
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_REGION: us-east-1
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+      
+      # MinIO/S3 configuration for media uploads  
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      
+      # MinIO/S3 configuration for event uploads
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      
+      # Auto-initialize project for Cyber-AutoAgent
+      LANGFUSE_INIT_ORG_ID: cyber-org-id
+      LANGFUSE_INIT_ORG_NAME: Cyber-AutoAgent
+      LANGFUSE_INIT_PROJECT_ID: cyber-project-id
+      LANGFUSE_INIT_PROJECT_NAME: penetration-tests
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: cyber-public
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: cyber-secret
+      LANGFUSE_INIT_USER_EMAIL: admin@cyber-autoagent.com
+      LANGFUSE_INIT_USER_NAME: Admin
+      LANGFUSE_INIT_USER_PASSWORD: changeme
+      
+      # Features
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: true
+      TELEMETRY_ENABLED: "false"
+      
+      # Performance optimizations for pentesting workloads
+      LANGFUSE_INGESTION_QUEUE_DELAY_MS: "5000"  # 5 seconds for faster trace visibility
+      LANGFUSE_CACHE_API_KEY_ENABLED: "true"
+      LANGFUSE_CACHE_API_KEY_TTL_SECONDS: "300"  # 5 minutes
+      LANGFUSE_CACHE_PROMPT_ENABLED: "true"
+      LANGFUSE_CACHE_PROMPT_TTL_SECONDS: "3600"  # 1 hour - useful for repeated scans
+      
+      # Security & Rate Limiting
+      LANGFUSE_RATE_LIMITS_ENABLED: "true"
+      
+      # Data retention - skip init, configure in UI instead
+      
+      # Batch export configuration
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "true"
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: "exports/"
+      
+      # Media upload support for evidence/screenshots
+      LANGFUSE_S3_MEDIA_MAX_CONTENT_LENGTH: "104857600"  # 100MB
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: "evidence/"
+      LANGFUSE_S3_MEDIA_DOWNLOAD_URL_EXPIRY_SECONDS: "86400"  # 24 hours
+      
+      # Concurrent operations optimization
+      LANGFUSE_S3_CONCURRENT_WRITES: "25"
+      
+      # Disable signup for security
+      NEXT_PUBLIC_SIGN_UP_DISABLED: "true"
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: cyber-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      DIRECT_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      
+      # Security keys - regenerate with: openssl rand -hex 32 & openssl rand -hex 16
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456}
+      SALT: ${LANGFUSE_SALT:-cyber-dev-salt-12345}
+      
+      # ClickHouse configuration
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      
+      # Redis configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: myredissecret
+      
+      # MinIO/S3 configuration
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_REGION: us-east-1
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+      
+      # MinIO/S3 configuration for media uploads  
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      
+      # MinIO/S3 configuration for event uploads
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      
+      # Performance optimizations (same as web service)
+      LANGFUSE_INGESTION_QUEUE_DELAY_MS: "5000"
+      LANGFUSE_S3_CONCURRENT_WRITES: "25"
+      
+      # Batch export configuration
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "true"
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: "exports/"
+      
+      # Media configuration
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: "evidence/"
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: cyber-langfuse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: cyber-langfuse-clickhouse
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  redis:
+    image: docker.io/redis:7
+    container_name: cyber-langfuse-redis
+    restart: unless-stopped
+    command: --requirepass myredissecret
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  minio:
+    image: docker.io/minio/minio
+    container_name: cyber-langfuse-minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "9090:9000"
+      - "9091:9001"
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
 
 # Named volumes for better control
 volumes:
   evidence_data:
     driver: local
   logs_data:
+    driver: local
+  langfuse_postgres_data:
+    driver: local
+  langfuse_clickhouse_data:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_redis_data:
+    driver: local
+  langfuse_minio_data:
+    driver: local
+  langfuse_keys:
     driver: local
 
 networks:
