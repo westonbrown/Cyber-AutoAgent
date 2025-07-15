@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict
 from strands.handlers import PrintingCallbackHandler
+from strands import Agent
 from .utils import Colors, get_data_path
 from .memory_tools import get_memory_client
 
@@ -814,10 +815,16 @@ Format this as a professional penetration testing report."""
         sys.stdout = io.StringIO()
 
         try:
-            # Generate report with suppressed output
-            # Note: Don't pass empty messages=[] as it causes "conversation must start with user message" error
-            raw_report = agent(report_prompt)
-            return self._clean_duplicate_content(str(raw_report))
+            # Generate report 
+            report_agent = Agent(
+                model=agent.model if hasattr(agent, 'model') else None,
+                tools=[],
+                system_prompt="You are a cybersecurity assessment report generator. Follow the exact structure and requirements provided in the prompt. Generate a professional penetration testing report that includes all six requested sections: Executive Summary, Critical Vulnerabilities, Attack Vectors, Risk Assessment, Recommendations, and Security Posture Evaluation."
+            )
+            
+            raw_report = report_agent(report_prompt)
+            report_text = str(raw_report)
+            return self._clean_duplicate_content(report_text)
         finally:
             # Restore stdout
             sys.stdout = original_stdout

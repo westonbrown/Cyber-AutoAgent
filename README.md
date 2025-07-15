@@ -322,14 +322,15 @@ docker run --rm \
 # Using environment variables
 docker run --rm \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/evidence:/app/evidence \
   -v $(pwd)/logs:/app/logs \
   cyber-autoagent \
-  --target "http://testphp.vulnweb.com" \
-  --objective "Identify vulnerabilities" \
-  --iterations 50
+  --target "http://localhost" \
+  --objective "Identify vulnerabilities and document" \
+  --iterations 4
 ```
 
 ### Local Installation
