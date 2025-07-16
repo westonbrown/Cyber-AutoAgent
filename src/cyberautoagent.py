@@ -28,15 +28,14 @@ from datetime import datetime
 from opentelemetry import trace
 import requests
 
-from modules.agent import create_agent
-from modules.system_prompts import get_initial_prompt, get_continuation_prompt
-from modules.config import get_config_manager
-
 try:
     from strands.telemetry import StrandsTelemetry
 except ImportError:
     StrandsTelemetry = None
 
+from modules.agent import create_agent
+from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+from modules.config import get_config_manager
 from modules.utils import (
     Colors,
     print_banner,
@@ -276,7 +275,7 @@ def main():
 {Colors.RED}{Colors.BOLD}EXPERIMENTAL SOFTWARE - AUTHORIZED USE ONLY{Colors.RESET}
 
 • This tool is for {Colors.BOLD}authorized security testing only{Colors.RESET}
-• Use only in {Colors.BOLD}safe, sandboxed environments{Colors.RESET}  
+• Use only in {Colors.BOLD}safe, sandboxed environments{Colors.RESET}
 • Ensure you have {Colors.BOLD}explicit written permission{Colors.RESET} for target testing
 • Users are {Colors.BOLD}fully responsible{Colors.RESET} for compliance with applicable laws
 • Misuse may result in {Colors.BOLD}legal consequences{Colors.RESET}
@@ -336,7 +335,7 @@ def main():
             args.target, args.objective, args.iterations, available_tools
         )
 
-        print("\n%s%s%s\n" % (Colors.DIM, "─" * 80, Colors.RESET))
+        print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
 
         # Execute autonomous operation
         try:
@@ -410,7 +409,7 @@ def main():
                                     "Error triggering evaluation: %s", eval_error
                                 )
                     else:
-                        print_status("Agent error: %s" % str(error), "ERROR")
+                        print_status(f"Agent error: {str(error)}", "ERROR")
                         logger.exception("Unexpected agent error occurred")
                         if callback_handler:
                             callback_handler.generate_final_report(
@@ -441,16 +440,15 @@ def main():
                     if callback_handler:
                         summary = callback_handler.get_summary()
                         print_status(
-                            "Memory operations: %d" % summary["memory_operations"],
+                            f"Memory operations: {summary['memory_operations']}",
                             "INFO",
                         )
                         print_status(
-                            "Capabilities created: %d" % summary["tools_created"],
+                            f"Capabilities created: {summary['tools_created']}",
                             "INFO",
                         )
                         print_status(
-                            "Evidence collected: %d items"
-                            % summary["evidence_collected"],
+                            f"Evidence collected: {summary['evidence_collected']} items",
                             "INFO",
                         )
                         callback_handler.generate_final_report(
@@ -507,9 +505,9 @@ def main():
             raise
 
         # Display comprehensive results
-        print("\n%s" % ("=" * 80))
-        print("%sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
-        print("%s" % ("=" * 80))
+        print(f"\n{'=' * 80}")
+        print(f"{Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
+        print(f"{'=' * 80}")
 
         # Operation summary
         if callback_handler:
@@ -518,56 +516,42 @@ def main():
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
 
-            print(
-                "%sOperation ID:%s      %s"
-                % (Colors.BOLD, Colors.RESET, local_operation_id)
-            )
+            print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
 
             # Determine status based on completion
             if analyze_objective_completion(messages):
-                status_text = "%sObjective Achieved%s" % (Colors.GREEN, Colors.RESET)
+                status_text = f"{Colors.GREEN}Objective Achieved{Colors.RESET}"
             elif callback_handler.has_reached_limit():
-                status_text = "%sStep Limit Reached - Final Report Generated%s" % (
-                    Colors.YELLOW,
-                    Colors.RESET,
-                )
+                status_text = f"{Colors.YELLOW}Step Limit Reached - Final Report Generated{Colors.RESET}"
             else:
-                status_text = "%sOperation Completed%s" % (Colors.BLUE, Colors.RESET)
+                status_text = f"{Colors.BLUE}Operation Completed{Colors.RESET}"
 
-            print(
-                "%sStatus:%s            %s" % (Colors.BOLD, Colors.RESET, status_text)
-            )
-            print(
-                "%sDuration:%s          %dm %ds"
-                % (Colors.BOLD, Colors.RESET, minutes, seconds)
-            )
+            print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
+            print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
 
-            print("\n%sExecution Metrics:%s" % (Colors.BOLD, Colors.RESET))
-            print("  • Total Steps: %d/%d" % (summary["total_steps"], args.iterations))
-            print("  • Tools Created: %d" % summary["tools_created"])
-            print("  • Evidence Collected: %d items" % summary["evidence_collected"])
-            print("  • Memory Operations: %d total" % summary["memory_operations"])
+            print(f"\n{Colors.BOLD}Execution Metrics:{Colors.RESET}")
+            print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
+            print(f"  • Tools Created: {summary['tools_created']}")
+            print(f"  • Evidence Collected: {summary['evidence_collected']} items")
+            print(f"  • Memory Operations: {summary['memory_operations']} total")
 
             if summary["capability_expansion"]:
-                print("\n%sCapabilities Created:%s" % (Colors.BOLD, Colors.RESET))
+                print(f"\n{Colors.BOLD}Capabilities Created:{Colors.RESET}")
                 for tool in summary["capability_expansion"]:
-                    print("  • %s%s%s" % (Colors.GREEN, tool, Colors.RESET))
+                    print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
 
             # Show evidence summary if available
             if callback_handler:
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
-                    print("\n%sKey Evidence:%s" % (Colors.BOLD, Colors.RESET))
+                    print(f"\n{Colors.BOLD}Key Evidence:{Colors.RESET}")
                     if isinstance(evidence_summary[0], dict):
                         for ev in evidence_summary[:5]:
                             cat = ev.get("category", "unknown")
                             content = ev.get("content", "")[:60]
-                            print("  • [%s] %s..." % (cat, content))
+                            print(f"  • [{cat}] {content}...")
                         if len(evidence_summary) > 5:
-                            print(
-                                "  • ... and %d more items"
-                                % (len(evidence_summary) - 5)
-                            )
+                            print(f"  • ... and {len(evidence_summary) - 5} more items")
 
             # Show where evidence and memories are stored
             # Determine memory location based on backend and operation ID
@@ -580,15 +564,9 @@ def main():
 
             evidence_location = f"./evidence/evidence_{local_operation_id}"
 
-            print(
-                "\n%sEvidence stored in:%s %s"
-                % (Colors.BOLD, Colors.RESET, evidence_location)
-            )
-            print(
-                "%sMemory stored in:%s %s"
-                % (Colors.BOLD, Colors.RESET, memory_location)
-            )
-            print("%s" % ("=" * 80))
+            print(f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}")
+            print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
+            print(f"{'=' * 80}")
 
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")
