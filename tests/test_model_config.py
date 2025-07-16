@@ -610,3 +610,27 @@ class TestEnvironmentIntegration:
             # Test server config uses default region
             server_config = config_manager.get_server_config("remote")
             assert server_config.region == "us-east-1"
+    
+    def test_thinking_models_configuration(self):
+        """Test centralized thinking models configuration."""
+        config_manager = ConfigManager()
+        
+        # Test get_thinking_models method
+        thinking_models = config_manager.get_thinking_models()
+        assert isinstance(thinking_models, list)
+        assert len(thinking_models) > 0
+        
+        # Test specific thinking models
+        expected_models = [
+            "us.anthropic.claude-opus-4-20250514-v1:0",
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        ]
+        for model in expected_models:
+            assert model in thinking_models
+        
+        # Test is_thinking_model method
+        assert config_manager.is_thinking_model("us.anthropic.claude-opus-4-20250514-v1:0")
+        assert config_manager.is_thinking_model("us.anthropic.claude-sonnet-4-20250514-v1:0")
+        assert not config_manager.is_thinking_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+        assert not config_manager.is_thinking_model("llama3.2:3b")

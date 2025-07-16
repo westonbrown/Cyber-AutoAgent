@@ -157,7 +157,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)",
+        help="Model ID to use (defaults configured in model_config.py)",
     )
     parser.add_argument(
         "--region",
