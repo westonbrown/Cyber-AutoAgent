@@ -15,7 +15,8 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request
 from strands_tools.swarm import swarm
 
-from .system_prompts import get_system_prompt, _get_default_model_configs, _get_ollama_host
+from .system_prompts import get_system_prompt, _get_ollama_host
+from .model_config import get_config_manager
 from .agent_handlers import ReasoningHandler
 from .utils import Colors
 from .memory_tools import mem0_memory, initialize_memory_system
@@ -166,11 +167,13 @@ def create_agent(
 
     _validate_server_requirements(server)
 
-    defaults = _get_default_model_configs(server)
+    # Get configuration from ConfigManager
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(server)
 
     # Use provided model_id or default
     if model_id is None:
-        model_id = str(defaults["llm_model"])
+        model_id = server_config.llm.model_id
 
     # Use provided operation_id or generate new one
     if not op_id:
@@ -188,7 +191,7 @@ def create_agent(
             "embedder": {
                 "provider": "ollama",
                 "config": {
-                    "model": defaults["embedding_model"],
+                    "model": server_config.embedding.model_id,
                     "ollama_base_url": ollama_host
                 }
             },
@@ -207,14 +210,14 @@ def create_agent(
             "embedder": {
                 "provider": "aws_bedrock",
                 "config": {
-                    "model": defaults["embedding_model"],
+                    "model": server_config.embedding.model_id,
                     "aws_region": region_name
                 }
             },
             "llm": {
                 "provider": "aws_bedrock",
                 "config": {
-                    "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    "model": server_config.memory.llm.model_id,
                     "temperature": 0.1,
                     "max_tokens": 2000,
                     "aws_region": region_name

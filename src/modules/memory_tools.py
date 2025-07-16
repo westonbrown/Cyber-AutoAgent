@@ -88,6 +88,7 @@ from rich.table import Table
 from rich.text import Text
 from strands.types.tools import ToolResult, ToolResultContent, ToolUse
 from strands import tool
+from .model_config import get_config_manager
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -163,44 +164,50 @@ TOOL_SPEC = {
 class Mem0ServiceClient:
     """Client for interacting with Mem0 service."""
 
-    DEFAULT_CONFIG = {
-        "embedder": {
-            "provider": "aws_bedrock", 
-            "config": {
-                "model": "amazon.titan-embed-text-v2:0",
-                "aws_region": "us-east-1"
-            }
-        },
-        "llm": {
-            "provider": "aws_bedrock",
-            "config": {
-                "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                "temperature": 0.1,
-                "max_tokens": 2000,
-                "aws_region": "us-east-1"
+    @staticmethod
+    def get_default_config() -> Dict:
+        """Get default configuration from ConfigManager."""
+        config_manager = get_config_manager()
+        remote_config = config_manager.get_server_config("remote")
+        
+        return {
+            "embedder": {
+                "provider": "aws_bedrock", 
+                "config": {
+                    "model": remote_config.embedding.model_id,
+                    "aws_region": "us-east-1"
+                }
             },
-        },
-        "vector_store": {
-            "provider": "opensearch",
-            "config": {
-                "port": 443,
-                "collection_name": "mem0_memories",
-                "host": os.environ.get("OPENSEARCH_HOST"),
-                "embedding_model_dims": 1024,
-                "connection_class": RequestsHttpConnection,
-                "pool_maxsize": 20,
-                "use_ssl": True,
-                "verify_certs": True,
+            "llm": {
+                "provider": "aws_bedrock",
+                "config": {
+                    "model": remote_config.memory.llm.model_id,
+                    "temperature": 0.1,
+                    "max_tokens": 2000,
+                    "aws_region": "us-east-1"
+                },
             },
-        },
-    }
+            "vector_store": {
+                "provider": "opensearch",
+                "config": {
+                    "port": 443,
+                    "collection_name": "mem0_memories",
+                    "host": os.environ.get("OPENSEARCH_HOST"),
+                    "embedding_model_dims": 1024,
+                    "connection_class": RequestsHttpConnection,
+                    "pool_maxsize": 20,
+                    "use_ssl": True,
+                    "verify_certs": True,
+                },
+            },
+        }
 
     def __init__(self, config: Optional[Dict] = None):
         """Initialize the Mem0 service client.
 
         Args:
             config: Optional configuration dictionary to override defaults.
-                   If provided, it will be merged with DEFAULT_CONFIG.
+                   If provided, it will be merged with the default configuration.
 
         The client will use one of three backends based on environment variables:
         1. Mem0 Platform if MEM0_API_KEY is set
@@ -232,8 +239,10 @@ class Mem0ServiceClient:
             print("[+] Memory Backend: OpenSearch")
             print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
             print(f"    Region: {embedder_region}")
-            print("    Embedder: AWS Bedrock - amazon.titan-embed-text-v2:0 (1024 dims)")
-            print("    LLM: AWS Bedrock - us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            config_manager = get_config_manager()
+            remote_config = config_manager.get_server_config("remote")
+            print(f"    Embedder: AWS Bedrock - {remote_config.embedding.model_id} (1024 dims)")
+            print(f"    LLM: AWS Bedrock - {remote_config.memory.llm.model_id}")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
             return self._initialize_opensearch_client(config)
 
@@ -314,14 +323,21 @@ class Mem0ServiceClient:
         # Display embedder configuration
         embedder_config = merged_config.get("embedder", {})
         embedder_provider = embedder_config.get("provider", "aws_bedrock")
-        embedder_model = embedder_config.get("config", {}).get("model", "amazon.titan-embed-text-v2:0")
+        embedder_model = embedder_config.get("config", {}).get("model")
         embedder_region = embedder_config.get("config", {}).get("aws_region", "us-east-1")
         
         # Display LLM configuration
         llm_config = merged_config.get("llm", {})
         # llm_provider = llm_config.get("provider", "aws_bedrock")
-        llm_model = llm_config.get("config", {}).get("model", "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+        llm_model = llm_config.get("config", {}).get("model")
         # llm_region = llm_config.get("config", {}).get("aws_region", "us-east-1")
+        
+        # Get default models from ConfigManager if not in config
+        if not embedder_model or not llm_model:
+            config_manager = get_config_manager()
+            remote_config = config_manager.get_server_config("remote")
+            embedder_model = embedder_model or remote_config.embedding.model_id
+            llm_model = llm_model or remote_config.memory.llm.model_id
         
         if embedder_provider == "ollama":
             print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
@@ -348,7 +364,7 @@ class Mem0ServiceClient:
         Returns:
             A merged configuration dictionary.
         """
-        merged_config = self.DEFAULT_CONFIG.copy()
+        merged_config = self.get_default_config().copy()
         if not config:
             return merged_config
 
