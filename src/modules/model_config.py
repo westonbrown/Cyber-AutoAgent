@@ -85,11 +85,71 @@ class VectorStoreConfig:
 
 
 @dataclass
+class MemoryLLMConfig(ModelConfig):
+    """Configuration for memory-specific LLM models."""
+    temperature: float = 0.1
+    max_tokens: int = 2000
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.parameters.update({
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "aws_region": self.aws_region
+        })
+
+
+@dataclass
+class MemoryEmbeddingConfig(ModelConfig):
+    """Configuration for memory-specific embedding models."""
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    dimensions: int = 1024
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.parameters.update({
+            "aws_region": self.aws_region,
+            "dimensions": self.dimensions
+        })
+
+
+@dataclass
+class MemoryVectorStoreConfig:
+    """Configuration for memory vector store with provider-specific settings."""
+    provider: str = "faiss"
+    opensearch_config: Dict[str, Any] = field(default_factory=lambda: {
+        "port": 443,
+        "collection_name": "mem0_memories",
+        "embedding_model_dims": 1024,
+        "pool_maxsize": 20,
+        "use_ssl": True,
+        "verify_certs": True,
+    })
+    faiss_config: Dict[str, Any] = field(default_factory=lambda: {
+        "embedding_model_dims": 1024,
+    })
+    
+    def get_config_for_provider(self, provider: str, **overrides) -> Dict[str, Any]:
+        """Get configuration for specific provider."""
+        if provider == "opensearch":
+            config = self.opensearch_config.copy()
+            config.update(overrides)
+            return config
+        elif provider == "faiss":
+            config = self.faiss_config.copy()
+            config.update(overrides)
+            return config
+        else:
+            return overrides
+
+
+@dataclass
 class MemoryConfig:
     """Configuration for memory system."""
-    embedder: ModelConfig
-    llm: ModelConfig
-    vector_store: VectorStoreConfig = field(default_factory=VectorStoreConfig)
+    embedder: MemoryEmbeddingConfig
+    llm: MemoryLLMConfig
+    vector_store: MemoryVectorStoreConfig = field(default_factory=MemoryVectorStoreConfig)
 
 
 @dataclass
@@ -115,7 +175,7 @@ class ServerConfig:
     evaluation: EvaluationConfig
     swarm: SwarmConfig
     host: Optional[str] = None
-    region: str = "us-east-1"
+    region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
 
 class ConfigManager:
@@ -125,6 +185,10 @@ class ConfigManager:
         """Initialize configuration manager."""
         self._config_cache = {}
         self._default_configs = self._initialize_default_configs()
+    
+    def get_default_region(self) -> str:
+        """Get the default AWS region with environment override support."""
+        return os.getenv("AWS_REGION", "us-east-1")
     
     def _initialize_default_configs(self) -> Dict[str, Dict[str, Any]]:
         """Initialize default configurations for all server types."""
@@ -141,11 +205,12 @@ class ConfigManager:
                     model_id="mxbai-embed-large",
                     dimensions=1024
                 ),
-                "memory_llm": LLMConfig(
+                "memory_llm": MemoryLLMConfig(
                     provider=ModelProvider.OLLAMA,
                     model_id="llama3.2:3b",
                     temperature=0.1,
-                    max_tokens=2000
+                    max_tokens=2000,
+                    aws_region="local"
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
@@ -175,11 +240,12 @@ class ConfigManager:
                     model_id="amazon.titan-embed-text-v2:0",
                     dimensions=1024
                 ),
-                "memory_llm": LLMConfig(
+                "memory_llm": MemoryLLMConfig(
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                     temperature=0.1,
-                    max_tokens=2000
+                    max_tokens=2000,
+                    aws_region=os.getenv("AWS_REGION", "us-east-1")
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.AWS_BEDROCK,
@@ -194,7 +260,7 @@ class ConfigManager:
                     max_tokens=500
                 ),
                 "host": None,
-                "region": "us-east-1"
+                "region": os.getenv("AWS_REGION", "us-east-1")
             }
         }
     
@@ -219,7 +285,7 @@ class ConfigManager:
         memory_config = MemoryConfig(
             embedder=self._get_memory_embedder_config(server, defaults),
             llm=self._get_memory_llm_config(server, defaults),
-            vector_store=VectorStoreConfig()
+            vector_store=MemoryVectorStoreConfig()
         )
         
         # Build evaluation configuration
@@ -274,6 +340,52 @@ class ConfigManager:
         """Get swarm configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.swarm
+    
+    def get_mem0_service_config(self, server: str, **overrides) -> Dict[str, Any]:
+        """Get complete Mem0 service configuration."""
+        server_config = self.get_server_config(server, **overrides)
+        memory_config = server_config.memory
+        
+        # Build embedder config
+        embedder_config = {
+            "provider": memory_config.embedder.provider.value,
+            "config": {
+                "model": memory_config.embedder.model_id,
+                "aws_region": memory_config.embedder.aws_region
+            }
+        }
+        
+        # Build LLM config
+        llm_config = {
+            "provider": memory_config.llm.provider.value,
+            "config": {
+                "model": memory_config.llm.model_id,
+                "temperature": memory_config.llm.temperature,
+                "max_tokens": memory_config.llm.max_tokens,
+                "aws_region": memory_config.llm.aws_region
+            }
+        }
+        
+        # Build vector store config
+        if os.environ.get("OPENSEARCH_HOST"):
+            vector_store_config = {
+                "provider": "opensearch",
+                "config": memory_config.vector_store.get_config_for_provider(
+                    "opensearch", 
+                    host=os.environ.get("OPENSEARCH_HOST")
+                )
+            }
+        else:
+            vector_store_config = {
+                "provider": "faiss",
+                "config": memory_config.vector_store.get_config_for_provider("faiss")
+            }
+        
+        return {
+            "embedder": embedder_config,
+            "llm": llm_config,
+            "vector_store": vector_store_config
+        }
     
     def validate_requirements(self, server: str) -> None:
         """Validate that all requirements are met for the specified server."""
@@ -362,11 +474,12 @@ class ConfigManager:
         # Memory LLM override
         memory_llm_model = os.getenv("MEM0_LLM_MODEL")
         if memory_llm_model:
-            defaults["memory_llm"] = LLMConfig(
+            defaults["memory_llm"] = MemoryLLMConfig(
                 provider=defaults["memory_llm"].provider,
                 model_id=memory_llm_model,
                 temperature=defaults["memory_llm"].temperature,
-                max_tokens=defaults["memory_llm"].max_tokens
+                max_tokens=defaults["memory_llm"].max_tokens,
+                aws_region=defaults["memory_llm"].aws_region
             )
         
         # Memory embedding override (only if not already overridden)
@@ -385,11 +498,17 @@ class ConfigManager:
         
         return defaults
     
-    def _get_memory_embedder_config(self, server: str, defaults: Dict[str, Any]) -> ModelConfig:
+    def _get_memory_embedder_config(self, server: str, defaults: Dict[str, Any]) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
-        return defaults["embedding"]
+        embedding_config = defaults["embedding"]
+        return MemoryEmbeddingConfig(
+            provider=embedding_config.provider,
+            model_id=embedding_config.model_id,
+            aws_region=defaults.get("region", self.get_default_region()),
+            dimensions=embedding_config.dimensions
+        )
     
-    def _get_memory_llm_config(self, server: str, defaults: Dict[str, Any]) -> ModelConfig:
+    def _get_memory_llm_config(self, server: str, defaults: Dict[str, Any]) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
     

@@ -103,7 +103,13 @@ def _validate_server_requirements(server: str) -> None:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
             available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
-            required_models = ["llama3.2:3b", "mxbai-embed-large"]
+            # Get required models from centralized config
+            config_manager = get_config_manager()
+            server_config = config_manager.get_server_config("local")
+            required_models = [
+                server_config.llm.model_id,
+                server_config.embedding.model_id
+            ]
             missing = [
                 m
                 for m in required_models
@@ -149,7 +155,7 @@ def create_agent(
     available_tools: Optional[List[str]] = None,
     op_id: Optional[str] = None,
     model_id: Optional[str] = None,
-    region_name: str = "us-east-1",
+    region_name: str = None,
     server: str = "remote",
     memory_path: Optional[str] = None,
 ) -> Tuple[Agent, ReasoningHandler]:
@@ -168,6 +174,10 @@ def create_agent(
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(server)
+    
+    # Get centralized region configuration
+    if region_name is None:
+        region_name = config_manager.get_default_region()
 
     # Use provided model_id or default
     if model_id is None:

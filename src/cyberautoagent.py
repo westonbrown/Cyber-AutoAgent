@@ -163,7 +163,7 @@ def main():
         "--region",
         type=str,
         default="us-east-1",
-        help="AWS region for Bedrock (default: us-east-1)",
+        help="AWS region for Bedrock (default: from AWS_REGION or us-east-1)",
     )
     parser.add_argument(
         "--server",
@@ -197,6 +197,11 @@ def main():
         os.environ.pop("BYPASS_TOOL_CONSENT", None)
 
     os.environ["DEV"] = "true"
+    
+    # Get centralized region configuration if not provided
+    if args.region is None:
+        config_manager = get_config_manager()
+        args.region = config_manager.get_default_region()
     
     os.environ["AWS_REGION"] = args.region
     

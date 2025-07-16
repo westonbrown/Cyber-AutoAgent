@@ -81,11 +81,11 @@ class CyberAgentEvaluator:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
                 model_id=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
-                region_name=os.getenv("AWS_REGION", "us-east-1")
+                region_name=config_manager.get_default_region()
             )
             langchain_embeddings = BedrockEmbeddings(
                 model_id=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
-                region_name=os.getenv("AWS_REGION", "us-east-1")
+                region_name=config_manager.get_default_region()
             )
             
             self.llm = LangchainLLMWrapper(langchain_chat)

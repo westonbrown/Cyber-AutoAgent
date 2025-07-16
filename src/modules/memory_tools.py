@@ -165,42 +165,16 @@ class Mem0ServiceClient:
     """Client for interacting with Mem0 service."""
 
     @staticmethod
-    def get_default_config() -> Dict:
+    def get_default_config(server: str = "remote") -> Dict:
         """Get default configuration from ConfigManager."""
         config_manager = get_config_manager()
-        remote_config = config_manager.get_server_config("remote")
+        mem0_config = config_manager.get_mem0_service_config(server)
         
-        return {
-            "embedder": {
-                "provider": "aws_bedrock", 
-                "config": {
-                    "model": remote_config.embedding.model_id,
-                    "aws_region": "us-east-1"
-                }
-            },
-            "llm": {
-                "provider": "aws_bedrock",
-                "config": {
-                    "model": remote_config.memory.llm.model_id,
-                    "temperature": 0.1,
-                    "max_tokens": 2000,
-                    "aws_region": "us-east-1"
-                },
-            },
-            "vector_store": {
-                "provider": "opensearch",
-                "config": {
-                    "port": 443,
-                    "collection_name": "mem0_memories",
-                    "host": os.environ.get("OPENSEARCH_HOST"),
-                    "embedding_model_dims": 1024,
-                    "connection_class": RequestsHttpConnection,
-                    "pool_maxsize": 20,
-                    "use_ssl": True,
-                    "verify_certs": True,
-                },
-            },
-        }
+        # Add RequestsHttpConnection for OpenSearch if needed
+        if mem0_config["vector_store"]["provider"] == "opensearch":
+            mem0_config["vector_store"]["config"]["connection_class"] = RequestsHttpConnection
+        
+        return mem0_config
 
     def __init__(self, config: Optional[Dict] = None):
         """Initialize the Mem0 service client.
@@ -231,38 +205,42 @@ class Mem0ServiceClient:
             logger.debug("Using Mem0 Platform backend (MemoryClient)")
             return MemoryClient()
 
+        # Determine server type based on environment
+        # Use remote if OpenSearch is available, otherwise local
+        server_type = "remote" if os.environ.get("OPENSEARCH_HOST") else "local"
+        
         if os.environ.get("OPENSEARCH_HOST"):
-            merged_config = self._merge_config(config)
-            embedder_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region", "us-east-1")
-            # llm_region = merged_config.get("llm", {}).get("config", {}).get("aws_region", "us-east-1")
+            merged_config = self._merge_config(config, server_type)
+            config_manager = get_config_manager()
+            embedder_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region", config_manager.get_default_region())
             
             print("[+] Memory Backend: OpenSearch")
             print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
             print(f"    Region: {embedder_region}")
-            config_manager = get_config_manager()
-            remote_config = config_manager.get_server_config("remote")
-            print(f"    Embedder: AWS Bedrock - {remote_config.embedding.model_id} (1024 dims)")
-            print(f"    LLM: AWS Bedrock - {remote_config.memory.llm.model_id}")
+            print(f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)")
+            print(f"    LLM: AWS Bedrock - {merged_config['llm']['config']['model']}")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
-            return self._initialize_opensearch_client(config)
+            return self._initialize_opensearch_client(config, server_type)
 
         # FAISS backend
         logger.debug("Using FAISS backend (Mem0Memory with FAISS)")
-        return self._initialize_faiss_client(config)
+        return self._initialize_faiss_client(config, server_type)
 
-    def _initialize_opensearch_client(self, config: Optional[Dict] = None) -> Mem0Memory:
+    def _initialize_opensearch_client(self, config: Optional[Dict] = None, server: str = "remote") -> Mem0Memory:
         """Initialize a Mem0 client with OpenSearch backend.
 
         Args:
             config: Optional configuration dictionary to override defaults.
+            server: Server type for configuration.
 
         Returns:
             An initialized Mem0Memory instance configured for OpenSearch.
         """
         # Set up AWS region - prioritize passed config, then environment, then default
-        merged_config = self._merge_config(config)
+        merged_config = self._merge_config(config, server)
+        config_manager = get_config_manager()
         config_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region")
-        self.region = config_region or os.environ.get("AWS_REGION") or "us-east-1"
+        self.region = config_region or os.environ.get("AWS_REGION") or config_manager.get_default_region()
         
         if not os.environ.get("AWS_REGION"):
             os.environ["AWS_REGION"] = self.region
@@ -273,16 +251,16 @@ class Mem0ServiceClient:
         auth = AWSV4SignerAuth(credentials, self.region, "aoss")
 
         # Prepare configuration
-        merged_config = self._merge_config(config)
         merged_config["vector_store"]["config"].update({"http_auth": auth, "host": os.environ["OPENSEARCH_HOST"]})
 
         return Mem0Memory.from_config(config_dict=merged_config)
 
-    def _initialize_faiss_client(self, config: Optional[Dict] = None) -> Mem0Memory:
+    def _initialize_faiss_client(self, config: Optional[Dict] = None, server: str = "local") -> Mem0Memory:
         """Initialize a Mem0 client with FAISS backend.
 
         Args:
             config: Optional configuration dictionary to override defaults.
+            server: Server type for configuration.
 
         Returns:
             An initialized Mem0Memory instance configured for FAISS.
@@ -298,7 +276,7 @@ class Mem0ServiceClient:
                 "Please install it using: pip install faiss-cpu"
             ) from err
 
-        merged_config = self._merge_config(config)
+        merged_config = self._merge_config(config, server)
         
         # Use provided path or create operation-specific path
         if merged_config.get("vector_store", {}).get("config", {}).get("path"):
@@ -308,13 +286,7 @@ class Mem0ServiceClient:
             # Create operation-specific path in current directory for persistence
             faiss_path = f"./mem0_faiss_{_OPERATION_ID or 'default'}"
         
-        merged_config["vector_store"] = {
-            "provider": "faiss",
-            "config": {
-                "embedding_model_dims": 1024,
-                "path": faiss_path,
-            },
-        }
+        merged_config["vector_store"]["config"]["path"] = faiss_path
 
         # Display FAISS configuration
         print("[+] Memory Backend: FAISS (local)")
@@ -324,20 +296,12 @@ class Mem0ServiceClient:
         embedder_config = merged_config.get("embedder", {})
         embedder_provider = embedder_config.get("provider", "aws_bedrock")
         embedder_model = embedder_config.get("config", {}).get("model")
-        embedder_region = embedder_config.get("config", {}).get("aws_region", "us-east-1")
+        config_manager = get_config_manager()
+        embedder_region = embedder_config.get("config", {}).get("aws_region", config_manager.get_default_region())
         
         # Display LLM configuration
         llm_config = merged_config.get("llm", {})
-        # llm_provider = llm_config.get("provider", "aws_bedrock")
         llm_model = llm_config.get("config", {}).get("model")
-        # llm_region = llm_config.get("config", {}).get("aws_region", "us-east-1")
-        
-        # Get default models from ConfigManager if not in config
-        if not embedder_model or not llm_model:
-            config_manager = get_config_manager()
-            remote_config = config_manager.get_server_config("remote")
-            embedder_model = embedder_model or remote_config.embedding.model_id
-            llm_model = llm_model or remote_config.memory.llm.model_id
         
         if embedder_provider == "ollama":
             print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
@@ -355,16 +319,17 @@ class Mem0ServiceClient:
 
         return Mem0Memory.from_config(config_dict=merged_config)
 
-    def _merge_config(self, config: Optional[Dict] = None) -> Dict:
+    def _merge_config(self, config: Optional[Dict] = None, server: str = "remote") -> Dict:
         """Merge user-provided configuration with default configuration.
 
         Args:
             config: Optional configuration dictionary to override defaults.
+            server: Server type for configuration.
 
         Returns:
             A merged configuration dictionary.
         """
-        merged_config = self.get_default_config().copy()
+        merged_config = self.get_default_config(server).copy()
         if not config:
             return merged_config
 
