@@ -189,14 +189,14 @@ def create_agent(
                 "provider": "ollama",
                 "config": {
                     "model": defaults["embedding_model"],
-                    "base_url": ollama_host
+                    "ollama_base_url": ollama_host
                 }
             },
             "llm": {
                 "provider": "ollama",
                 "config": {
                     "model": model_id,
-                    "base_url": ollama_host,
+                    "ollama_base_url": ollama_host,
                     "temperature": 0.1,
                     "max_tokens": 2000
                 }
