@@ -29,6 +29,7 @@ from opentelemetry import trace
 
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+from modules.model_config import get_config_manager
 
 from modules.utils import (
     Colors,
@@ -199,14 +200,19 @@ def main():
     
     os.environ["AWS_REGION"] = args.region
     
+    # Get configuration from ConfigManager
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(args.server)
+    
+    # Set mem0 environment variables based on configuration
     if args.server == "local":
         os.environ["MEM0_LLM_PROVIDER"] = "ollama"
-        os.environ["MEM0_LLM_MODEL"] = "llama3.2:3b"  # mem0 always uses the smaller model
-        os.environ["MEM0_EMBEDDING_MODEL"] = "mxbai-embed-large"
+        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
+        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
     else:
         os.environ["MEM0_LLM_PROVIDER"] = "aws_bedrock"
-        os.environ["MEM0_LLM_MODEL"] = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # mem0 uses Claude 3.5 Sonnet
-        os.environ["MEM0_EMBEDDING_MODEL"] = "amazon.titan-embed-text-v2:0"
+        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
+        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
 
     # Initialize logger with volume path
     logger = setup_logging(
