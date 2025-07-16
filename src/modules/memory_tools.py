@@ -88,7 +88,7 @@ from rich.table import Table
 from rich.text import Text
 from strands.types.tools import ToolResult, ToolResultContent, ToolUse
 from strands import tool
-from .model_config import get_config_manager
+from .config import get_config_manager
 
 # Set up logging
 logger = logging.getLogger(__name__)

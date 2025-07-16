@@ -29,7 +29,7 @@ from opentelemetry import trace
 
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
-from modules.model_config import get_config_manager
+from modules.config import get_config_manager
 
 from modules.utils import (
     Colors,
@@ -157,7 +157,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (defaults configured in model_config.py)",
+        help="Model ID to use (defaults configured in config.py)",
     )
     parser.add_argument(
         "--region",

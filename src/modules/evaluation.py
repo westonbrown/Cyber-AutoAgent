@@ -29,7 +29,7 @@ from ragas.metrics import (
     RubricsScore
 )
 from ragas.run_config import RunConfig
-from .model_config import get_config_manager
+from .config import get_config_manager
 
 logger = logging.getLogger(__name__)
 
