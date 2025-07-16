@@ -13,10 +13,7 @@ from modules.agent import (
     _validate_server_requirements,
     create_agent,
 )
-from modules.system_prompts import (
-    _get_default_model_configs,
-    _get_ollama_host,
-)
+from modules.model_config import get_config_manager, get_default_model_configs, get_ollama_host
 
 
 class TestModelConfigs:
@@ -24,7 +21,7 @@ class TestModelConfigs:
 
     def test_get_default_model_configs_local(self):
         """Test local model configuration defaults"""
-        config = _get_default_model_configs("local")
+        config = get_default_model_configs("local")
 
         assert config["llm_model"] == "llama3.2:3b"
         assert config["embedding_model"] == "mxbai-embed-large"
@@ -32,7 +29,7 @@ class TestModelConfigs:
 
     def test_get_default_model_configs_remote(self):
         """Test remote model configuration defaults"""
-        config = _get_default_model_configs("remote")
+        config = get_default_model_configs("remote")
 
         assert "us.anthropic.claude" in config["llm_model"]
         assert config["embedding_model"] == "amazon.titan-embed-text-v2:0"
@@ -42,7 +39,7 @@ class TestModelConfigs:
         """Test configuration for invalid server type"""
         # Should now raise an error for invalid server type
         with pytest.raises(ValueError, match="Unsupported server type"):
-            _get_default_model_configs("invalid")
+            get_default_model_configs("invalid")
 
 
 class TestOllamaHostDetection:
@@ -51,13 +48,13 @@ class TestOllamaHostDetection:
     @patch.dict(os.environ, {"OLLAMA_HOST": "http://custom-host:8080"}, clear=True)
     def test_get_ollama_host_env_override(self):
         """Test OLLAMA_HOST environment variable override"""
-        host = _get_ollama_host()
+        host = get_ollama_host()
         assert host == "http://custom-host:8080"
 
     @patch.dict(os.environ, {"OLLAMA_HOST": "http://localhost:9999"}, clear=True)
     def test_get_ollama_host_custom_port(self):
         """Test OLLAMA_HOST with custom port"""
-        host = _get_ollama_host()
+        host = get_ollama_host()
         assert host == "http://localhost:9999"
 
     @patch.dict(os.environ, {}, clear=True)
@@ -66,7 +63,7 @@ class TestOllamaHostDetection:
         """Test host detection for native execution (not in Docker)"""
         mock_exists.return_value = False  # /.dockerenv doesn't exist
         
-        host = _get_ollama_host()
+        host = get_ollama_host()
         # Should use localhost for native execution
         assert host == "http://localhost:11434"
 
@@ -86,7 +83,7 @@ class TestOllamaHostDetection:
                 raise Exception("Connection failed")
         mock_test.side_effect = side_effect
         
-        host = _get_ollama_host()
+        host = get_ollama_host()
         assert host == "http://localhost:11434"
         
         # Verify it tested localhost first and found it working
@@ -109,7 +106,7 @@ class TestOllamaHostDetection:
                 raise Exception("Connection failed")
         mock_test.side_effect = side_effect
         
-        host = _get_ollama_host()
+        host = get_ollama_host()
         assert host == "http://host.docker.internal:11434"
         
         # Verify it tested both options
@@ -125,7 +122,7 @@ class TestOllamaHostDetection:
         mock_exists.return_value = True  # /.dockerenv exists
         mock_test.return_value = False  # Neither option works
         
-        host = _get_ollama_host()
+        host = get_ollama_host()
         # Should fallback to host.docker.internal
         assert host == "http://host.docker.internal:11434"
 
