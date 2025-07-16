@@ -442,10 +442,9 @@ class CyberAgentEvaluator:
                     )
                     scores[metric.name] = 0.0
                     continue
-                else:
-                    logger.error(f"Metric {metric.name} missing evaluation method")
-                    scores[metric.name] = 0.0
-                    continue
+                logger.error(f"Metric {metric.name} missing evaluation method")
+                scores[metric.name] = 0.0
+                continue
 
             logger.debug(f"Raw score for {metric.name}: {score} (type: {type(score)})")
 
@@ -491,7 +490,7 @@ class CyberAgentEvaluator:
                     metadata=score_metadata,
                 )
             else:
-                logger.error(f"No score creation method found on Langfuse client")
+                logger.error("No score creation method found on Langfuse client")
                 return
 
         logger.info(
