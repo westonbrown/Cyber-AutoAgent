@@ -1,66 +1,53 @@
 #!/usr/bin/env python3
 
-import os
 from typing import Dict, Any
 
-import requests
+# Import the new configuration system
+from .model_config import get_config_manager
 
 
 def _get_default_model_configs(server: str) -> Dict[str, Any]:
-    """Get default model configurations based on server type"""
-    if server == "local":
-        return {
-            "llm_model": "llama3.2:3b",
-            "embedding_model": "mxbai-embed-large",
-            "embedding_dims": 1024,
-        }
-    else:  # remote
-        return {
-            "llm_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-            "embedding_model": "amazon.titan-embed-text-v2:0",
-            "embedding_dims": 1024,
-        }
+    """Get default model configurations based on server type (backward compatibility)"""
+    # Delegate to the new configuration system
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(server)
+    
+    return {
+        "llm_model": server_config.llm.model_id,
+        "embedding_model": server_config.embedding.model_id,
+        "embedding_dims": server_config.embedding.dimensions,
+    }
 
 
 def _get_ollama_host() -> str:
     """
-    Determine appropriate Ollama host based on environment.
+    Determine appropriate Ollama host based on environment (backward compatibility).
     """
-    env_host = os.getenv("OLLAMA_HOST")
-    if env_host:
-        return env_host
-    
-    # Check if running in Docker
-    if os.path.exists('/app'): 
-        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
-        for host in candidates:
-            try:
-                response = requests.get(f"{host}/api/version", timeout=2)
-                if response.status_code == 200:
-                    return host
-            except Exception:
-                pass
-        # Fallback to host.docker.internal if no connection works (Docker on Windows/ Macos)
-        return "http://host.docker.internal:11434"
-    else:
-        # Native execution - use localhost (Docker on Linux & non-docker)
-        return "http://localhost:11434"
+    # Delegate to the new configuration system
+    config_manager = get_config_manager()
+    return config_manager.get_ollama_host()
 
 
 def _get_swarm_model_guidance(server: str) -> str:
     """Generate swarm model configuration guidance based on server type."""
+    # Use the new configuration system
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(server)
+    
     if server == "local":
-        ollama_host = _get_ollama_host()
+        ollama_host = config_manager.get_ollama_host()
         return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
 When using swarm, always set:
 - model_provider: "ollama"
-- model_settings: {{\"model_id\": \"llama3.2:3b\", \"host\": \"{ollama_host}\"}}
+- model_settings: {{\"model_id\": \"{server_config.llm.model_id}\", \"host\": \"{ollama_host}\"}}
 """
     else:
-        return """## SWARM MODEL CONFIGURATION (REMOTE MODE)
+        # Use evaluation LLM for swarm tasks (smaller, faster model)
+        eval_model = server_config.evaluation.llm.model_id
+        return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
 When using swarm, always set:
 - model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"us.anthropic.claude-3-7-sonnet-20250219-v1:0\", \"params\": {{\"temperature\": 0.7, \"max_tokens\": 500}}}}
+- model_settings: {{\"model_id\": \"{eval_model}\", \"params\": {{\"temperature\": 0.7, \"max_tokens\": 500}}}}
 """
 
 
