@@ -27,51 +27,50 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 def _create_remote_model(
     model_id: str,
     region_name: str,
-    temperature: float = 0.95,
-    max_tokens: int = 4096,
-    top_p: float = 0.95,
+    server: str = "remote",
 ) -> BedrockModel:
-    """Create AWS Bedrock model instance"""
+    """Create AWS Bedrock model instance using centralized configuration."""
     
-    # Check if this is a thinking-enabled model using centralized config
+    # Get centralized configuration
     config_manager = get_config_manager()
     
     if config_manager.is_thinking_model(model_id):
-        # Use thinking parameters for these models
+        # Use thinking model configuration
+        config = config_manager.get_thinking_model_config(model_id, region_name)
         return BedrockModel(
-            model_id=model_id,
-            region_name=region_name,
-            temperature=1.0,  
-            max_tokens=4026,  
-            additional_request_fields={
-                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
-                "thinking": {"type": "enabled", "budget_tokens": 8000},
-            },
+            model_id=config["model_id"],
+            region_name=config["region_name"],
+            temperature=config["temperature"],
+            max_tokens=config["max_tokens"],
+            additional_request_fields=config["additional_request_fields"],
         )
     else:
         # Standard model configuration
+        config = config_manager.get_standard_model_config(model_id, region_name, server)
         return BedrockModel(
-            model_id=model_id,
-            region_name=region_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
+            model_id=config["model_id"],
+            region_name=config["region_name"],
+            temperature=config["temperature"],
+            max_tokens=config["max_tokens"],
+            top_p=config["top_p"],
         )
 
 
 def _create_local_model(
     model_id: str,
-    host: Optional[str] = None,
-    temperature: float = 0.95,
-    max_tokens: int = 4096,
+    server: str = "local",
 ) -> Any:
-    """Create Ollama model instance"""
+    """Create Ollama model instance using centralized configuration."""
 
-    if host is None:
-        host = get_config_manager().get_ollama_host()
+    # Get centralized configuration
+    config_manager = get_config_manager()
+    config = config_manager.get_local_model_config(model_id, server)
 
     return OllamaModel(
-        host=host, model_id=model_id, temperature=temperature, max_tokens=max_tokens
+        host=config["host"],
+        model_id=config["model_id"],
+        temperature=config["temperature"],
+        max_tokens=config["max_tokens"],
     )
 
 
@@ -185,49 +184,8 @@ def create_agent(
     else:
         operation_id = op_id
 
-    # Configure memory system based on server type
-    memory_config = {}
-    
-    if server == "local":
-        # Local mode with Ollama
-        ollama_host = get_config_manager().get_ollama_host()
-        memory_config = {
-            "embedder": {
-                "provider": "ollama",
-                "config": {
-                    "model": server_config.embedding.model_id,
-                    "ollama_base_url": ollama_host
-                }
-            },
-            "llm": {
-                "provider": "ollama",
-                "config": {
-                    "model": model_id,
-                    "ollama_base_url": ollama_host,
-                    "temperature": 0.1,
-                    "max_tokens": 2000
-                }
-            }
-        }
-    else:
-        memory_config = {
-            "embedder": {
-                "provider": "aws_bedrock",
-                "config": {
-                    "model": server_config.embedding.model_id,
-                    "aws_region": region_name
-                }
-            },
-            "llm": {
-                "provider": "aws_bedrock",
-                "config": {
-                    "model": server_config.memory.llm.model_id,
-                    "temperature": 0.1,
-                    "max_tokens": 2000,
-                    "aws_region": region_name
-                }
-            }
-        }
+    # Configure memory system using centralized configuration
+    memory_config = config_manager.get_mem0_service_config(server)
     
     # Configure vector store with memory path if provided
     if memory_path:
@@ -237,6 +195,7 @@ def create_agent(
         if not os.path.isdir(memory_path):
             raise ValueError(f"Memory path is not a directory: {memory_path}")
         
+        # Override vector store path in centralized config
         memory_config["vector_store"] = {
             "config": {
                 "path": memory_path
@@ -270,13 +229,13 @@ Leverage these tools directly via shell.
     try:
         if server == "local":
             logger.debug("Configuring OllamaModel")
-            model = _create_local_model(model_id)
+            model = _create_local_model(model_id, server)
             print(
                 f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
             )
         else:
             logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(model_id, region_name)
+            model = _create_remote_model(model_id, region_name, server)
             print(
                 f"{Colors.GREEN}[+] Remote agent model initialized: {model_id}{Colors.RESET}"
             )
