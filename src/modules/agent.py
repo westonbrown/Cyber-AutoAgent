@@ -74,59 +74,6 @@ def _create_local_model(
     )
 
 
-def _validate_server_requirements(server: str) -> None:
-    """Validate server requirements before creating agent"""
-    if server == "local":
-        # Get dynamic host configuration
-        ollama_host = get_config_manager().get_ollama_host()
-
-        # Check if Ollama is running
-        try:
-            response = requests.get(f"{ollama_host}/api/version", timeout=5)
-            if response.status_code != 200:
-                raise ConnectionError("Ollama server not responding")
-        except Exception:
-            raise ConnectionError(
-                f"Ollama server not accessible at {ollama_host}. "
-                "Please ensure Ollama is installed and running."
-            )
-
-        # Check if required models are available
-
-        try:
-            client = ollama.Client(host=ollama_host)
-            models_response = client.list()
-            available_models = [
-                m.get("model", m.get("name", "")) for m in models_response["models"]
-            ]
-            # Get required models from centralized config
-            config_manager = get_config_manager()
-            server_config = config_manager.get_server_config("local")
-            required_models = [
-                server_config.llm.model_id,
-                server_config.embedding.model_id,
-            ]
-            missing = [
-                m
-                for m in required_models
-                if not any(m in model for model in available_models)
-            ]
-            if missing:
-                raise ValueError(
-                    f"Required models not found: {missing}. "
-                    f"Pull them with: ollama pull {' && ollama pull '.join(missing)}"
-                )
-        except Exception as e:
-            if "Required models not found" in str(e):
-                raise e
-            raise ConnectionError(f"Could not verify Ollama models: {e}")
-
-    elif server == "remote":
-        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
-            raise EnvironmentError(
-                "AWS credentials not configured for remote mode. "
-                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
-            )
 
 
 def _handle_model_creation_error(server: str, error: Exception) -> None:
@@ -165,10 +112,9 @@ def create_agent(
         server,
     )
 
-    _validate_server_requirements(server)
-
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
+    config_manager.validate_requirements(server)
     server_config = config_manager.get_server_config(server)
 
     # Get centralized region configuration
