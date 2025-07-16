@@ -134,9 +134,7 @@ def _handle_model_creation_error(server: str, error: Exception) -> None:
         print(f"{Colors.YELLOW}[?] Troubleshooting steps:{Colors.RESET}")
         print("    1. Ensure Ollama is installed: https://ollama.ai")
         print("    2. Start Ollama: ollama serve")
-        print("    3. Pull required models:")
-        print("       ollama pull llama3.2:3b")
-        print("       ollama pull mxbai-embed-large")
+        print("    3. Pull required models (see config.py file)")
     else:
         print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
         print(
