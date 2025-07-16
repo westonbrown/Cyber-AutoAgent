@@ -117,6 +117,27 @@ addopts = [
     "--verbose"
 ]
 
+[tool.pylint.main]
+# Disable specific warnings that are not relevant for this project
+disable = [
+    "too-many-positional-arguments",  # R0917 - Common for API functions
+    "unused-argument",               # W0613 - Common for API compatibility
+    "too-many-lines",               # C0302 - Some modules need to be large
+    "too-many-nested-blocks",       # R1702 - Complex logic sometimes needed
+    "logging-fstring-interpolation", # W1203 - f-strings in logging are readable
+    "redefined-outer-name",         # W0621 - Common in function parameters
+    "no-else-continue",             # R1724 - Sometimes else-continue is clearer
+    "attribute-defined-outside-init" # W0201 - Sometimes needed for complex initialization
+]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.design]
+# Allow more arguments and attributes for complex classes
+max-args = 10
+max-attributes = 15
+
 [dependency-groups]
 dev = [
     "pylint>=3.3.7",

@@ -72,7 +72,7 @@ class ReasoningHandler(PrintingCallbackHandler):
 
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
-        
+
         # Check step limit
         if self.step_limit_reached:
             return
@@ -144,7 +144,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Check if we've already hit the step limit
             if self.step_limit_reached:
                 return
-                
+
             tool = kwargs["current_tool_use"]
             tool_id = tool.get("toolUseId", "")
 
@@ -244,7 +244,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             )
             # Terminate execution
             raise StopIteration("Step limit reached - clean termination")
-            
+
         self.steps += 1
 
         tool_name = tool_use.get("name", "unknown")
@@ -268,7 +268,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         if tool_name == "shell":
             command = tool_input.get("command", "")
             parallel = tool_input.get("parallel", False)
-            
+
             # Process command input
             if isinstance(command, list):
                 mode = "parallel" if parallel else "sequential"
@@ -276,20 +276,32 @@ class ReasoningHandler(PrintingCallbackHandler):
                 seen = set()
                 unique_commands = []
                 for cmd in command:
-                    cmd_str = cmd if isinstance(cmd, str) else cmd.get("command", str(cmd))
+                    cmd_str = (
+                        cmd if isinstance(cmd, str) else cmd.get("command", str(cmd))
+                    )
                     if cmd_str not in seen:
                         seen.add(cmd_str)
                         unique_commands.append((cmd, cmd_str))
-                
+
                 if len(unique_commands) < len(command):
-                    print("↳ Executing %d unique commands (%s) [%d duplicates removed]:" % 
-                          (len(unique_commands), mode, len(command) - len(unique_commands)))
+                    print(
+                        "↳ Executing %d unique commands (%s) [%d duplicates removed]:"
+                        % (
+                            len(unique_commands),
+                            mode,
+                            len(command) - len(unique_commands),
+                        )
+                    )
                 else:
-                    print("↳ Executing %d commands (%s):" % (len(unique_commands), mode))
-                
+                    print(
+                        "↳ Executing %d commands (%s):" % (len(unique_commands), mode)
+                    )
+
                 for i, (cmd, cmd_str) in enumerate(unique_commands):
-                    print("  %d. %s%s%s" % (i+1, Colors.GREEN, cmd_str, Colors.RESET))
-                self.tools_used.append(f"shell: {len(unique_commands)} commands ({mode})")
+                    print("  %d. %s%s%s" % (i + 1, Colors.GREEN, cmd_str, Colors.RESET))
+                self.tools_used.append(
+                    f"shell: {len(unique_commands)} commands ({mode})"
+                )
             else:
                 print("↳ Running: %s%s%s" % (Colors.GREEN, command, Colors.RESET))
                 self.tools_used.append(f"shell: {command}")
@@ -321,15 +333,17 @@ class ReasoningHandler(PrintingCallbackHandler):
             if command == "create" and file_text:
                 # Record tool files
                 if path and path.startswith("tools/") and path.endswith(".py"):
-                    self.created_tools.append(path.replace("tools/", "").replace(".py", ""))
+                    self.created_tools.append(
+                        path.replace("tools/", "").replace(".py", "")
+                    )
                     print("\n%s" % ("─" * 70))
                     print("📄 %sMETA-TOOL CODE:%s" % (Colors.YELLOW, Colors.RESET))
                 else:
                     print("\n%s" % ("─" * 70))
                     print("📄 %sFILE CONTENT:%s" % (Colors.CYAN, Colors.RESET))
-                
+
                 print("%s" % ("─" * 70))
-                
+
                 # Show file content
                 lines = file_text.split("\n")
                 for i, line in enumerate(lines[:MAX_TOOL_CODE_LINES]):
@@ -348,7 +362,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                     else:
                         # Plain text display
                         print(line)
-                
+
                 if len(lines) > MAX_TOOL_CODE_LINES:
                     print(
                         "%s... (%d more lines)%s"
@@ -374,7 +388,9 @@ class ReasoningHandler(PrintingCallbackHandler):
             if action == "store":
                 content = str(tool_input.get("content", ""))[:CONTENT_PREVIEW_LENGTH]
                 metadata = tool_input.get("metadata", {})
-                category = metadata.get("category", "general") if metadata else "general"
+                category = (
+                    metadata.get("category", "general") if metadata else "general"
+                )
                 print(
                     "↳ Storing [%s%s%s]: %s%s%s%s"
                     % (
@@ -409,13 +425,20 @@ class ReasoningHandler(PrintingCallbackHandler):
                 print("↳ Listing evidence")
             elif action == "delete":
                 memory_id = tool_input.get("memory_id", "unknown")
-                print("↳ Deleting memory: %s%s%s" % (Colors.RED, memory_id, Colors.RESET))
+                print(
+                    "↳ Deleting memory: %s%s%s" % (Colors.RED, memory_id, Colors.RESET)
+                )
             elif action == "get":
                 memory_id = tool_input.get("memory_id", "unknown")
-                print("↳ Getting memory: %s%s%s" % (Colors.CYAN, memory_id, Colors.RESET))
+                print(
+                    "↳ Getting memory: %s%s%s" % (Colors.CYAN, memory_id, Colors.RESET)
+                )
             elif action == "history":
                 memory_id = tool_input.get("memory_id", "unknown")
-                print("↳ Getting history for: %s%s%s" % (Colors.CYAN, memory_id, Colors.RESET))
+                print(
+                    "↳ Getting history for: %s%s%s"
+                    % (Colors.CYAN, memory_id, Colors.RESET)
+                )
 
             self.tools_used.append(f"mem0_memory: {action}")
 
@@ -428,48 +451,114 @@ class ReasoningHandler(PrintingCallbackHandler):
                 pattern = tool_input.get("coordination_pattern", "collaborative")
                 tools = tool_input.get("tools", [])
                 model_provider = tool_input.get("model_provider", "default")
-                
-                print("↳ %sOrchestrating Swarm Intelligence%s" % (Colors.BOLD, Colors.RESET))
-                
+
+                print(
+                    "↳ %sOrchestrating Swarm Intelligence%s"
+                    % (Colors.BOLD, Colors.RESET)
+                )
+
                 # Parse task format
                 task_parts = task.split(". ")
-                if len(task_parts) >= 4 and any(keyword in task for keyword in ["Objective:", "Scope:", "Success:", "Context:"]):
+                if len(task_parts) >= 4 and any(
+                    keyword in task
+                    for keyword in ["Objective:", "Scope:", "Success:", "Context:"]
+                ):
                     # Display structured task
                     for part in task_parts:
                         if part.strip():
                             if "Objective:" in part:
-                                print("  %sObjective:%s %s" % (Colors.CYAN, Colors.RESET, part.replace("Objective:", "").strip()))
+                                print(
+                                    "  %sObjective:%s %s"
+                                    % (
+                                        Colors.CYAN,
+                                        Colors.RESET,
+                                        part.replace("Objective:", "").strip(),
+                                    )
+                                )
                             elif "Scope:" in part:
-                                print("  %sScope:%s %s" % (Colors.YELLOW, Colors.RESET, part.replace("Scope:", "").strip()))
+                                print(
+                                    "  %sScope:%s %s"
+                                    % (
+                                        Colors.YELLOW,
+                                        Colors.RESET,
+                                        part.replace("Scope:", "").strip(),
+                                    )
+                                )
                             elif "Success:" in part:
-                                print("  %sSuccess:%s %s" % (Colors.GREEN, Colors.RESET, part.replace("Success:", "").strip()))
+                                print(
+                                    "  %sSuccess:%s %s"
+                                    % (
+                                        Colors.GREEN,
+                                        Colors.RESET,
+                                        part.replace("Success:", "").strip(),
+                                    )
+                                )
                             elif "Context:" in part:
-                                print("  %sContext:%s %s" % (Colors.DIM, Colors.RESET, part.replace("Context:", "").strip()))
+                                print(
+                                    "  %sContext:%s %s"
+                                    % (
+                                        Colors.DIM,
+                                        Colors.RESET,
+                                        part.replace("Context:", "").strip(),
+                                    )
+                                )
                 else:
                     # Display task description
-                    print("  Task: %s%s%s" % (Colors.YELLOW, task[:200] + "..." if len(task) > 200 else task, Colors.RESET))
-                
+                    print(
+                        "  Task: %s%s%s"
+                        % (
+                            Colors.YELLOW,
+                            task[:200] + "..." if len(task) > 200 else task,
+                            Colors.RESET,
+                        )
+                    )
+
                 print("  %sConfiguration:%s" % (Colors.BOLD, Colors.RESET))
-                print("    Agents: %s%d%s" % (Colors.CYAN, int(swarm_size), Colors.RESET))
+                print(
+                    "    Agents: %s%d%s" % (Colors.CYAN, int(swarm_size), Colors.RESET)
+                )
                 print("    Pattern: %s%s%s" % (Colors.MAGENTA, pattern, Colors.RESET))
                 if tools:
-                    print("    Tools: %s%s%s" % (Colors.GREEN, ", ".join(tools) if isinstance(tools, list) else str(tools), Colors.RESET))
+                    print(
+                        "    Tools: %s%s%s"
+                        % (
+                            Colors.GREEN,
+                            ", ".join(tools) if isinstance(tools, list) else str(tools),
+                            Colors.RESET,
+                        )
+                    )
                 if model_provider and model_provider != "default":
-                    print("    Model: %s%s%s" % (Colors.BLUE, model_provider, Colors.RESET))
-                
+                    print(
+                        "    Model: %s%s%s"
+                        % (Colors.BLUE, model_provider, Colors.RESET)
+                    )
+
                 self.tools_used.append(f"swarm: {int(swarm_size)} agents, {pattern}")
             elif tool_name == "http_request":
                 # Display HTTP request details
                 method = tool_input.get("method", "GET")
                 url = tool_input.get("url", "")
-                print("↳ HTTP Request: %s%s %s%s" % (Colors.MAGENTA, method, url, Colors.RESET))
+                print(
+                    "↳ HTTP Request: %s%s %s%s"
+                    % (Colors.MAGENTA, method, url, Colors.RESET)
+                )
                 self.tools_used.append(f"http_request: {method} {url}")
             elif tool_name == "think":
                 # Display thinking process
                 thought = tool_input.get("thought", "")
                 cycle_count = tool_input.get("cycle_count", 1)
-                print("↳ Thinking (%s%d cycles%s):" % (Colors.CYAN, cycle_count, Colors.RESET))
-                print("  Thought: %s%s%s" % (Colors.DIM, thought[:500] + "..." if len(thought) > 500 else thought, Colors.RESET))
+                print(
+                    "↳ Thinking (%s%d cycles%s):"
+                    % (Colors.CYAN, cycle_count, Colors.RESET)
+                )
+                print(
+                    "  Thought: %s%s%s"
+                    % (
+                        Colors.DIM,
+                        thought[:500] + "..." if len(thought) > 500 else thought,
+                        Colors.RESET,
+                    )
+                )
                 self.tools_used.append(f"think: {cycle_count} cycles")
             elif tool_input:
                 # Display tool parameters
@@ -555,7 +644,9 @@ class ReasoningHandler(PrintingCallbackHandler):
                         if output_text.strip():
                             # Display full swarm output
                             if tool_name == "swarm":
-                                print("%s[Swarm Output]%s" % (Colors.CYAN, Colors.RESET))
+                                print(
+                                    "%s[Swarm Output]%s" % (Colors.CYAN, Colors.RESET)
+                                )
                                 print(output_text)
                             # Display truncated output
                             else:
@@ -567,7 +658,11 @@ class ReasoningHandler(PrintingCallbackHandler):
                                         print(line)
                                     print(
                                         "%s... (%d more lines)%s"
-                                        % (Colors.DIM, len(lines) - max_lines, Colors.RESET)
+                                        % (
+                                            Colors.DIM,
+                                            len(lines) - max_lines,
+                                            Colors.RESET,
+                                        )
                                     )
                                 else:
                                     print(output_text)
@@ -643,7 +738,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         if self.report_generated:
             return
         self.report_generated = True
-        
+
         # Send operation metadata to Langfuse
         self._send_operation_metadata()
 
@@ -666,7 +761,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             % (Colors.CYAN, Colors.BOLD, Colors.RESET)
         )
         print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
-        
+
         # Generate AI assessment report
         try:
             report_content = self._generate_llm_report(
@@ -681,13 +776,13 @@ class ReasoningHandler(PrintingCallbackHandler):
                 % (Colors.RED, str(e), Colors.RESET)
             )
             # If LLM report generation fails, don't save any report
-        
+
         # Note: Evaluation is triggered from cyberautoagent.py, not here to avoid duplicates
 
     def _retrieve_evidence(self) -> List[Dict]:
         """Retrieve all collected evidence from memory system."""
         evidence = []
-        
+
         # Initialize memory client
         memory_client = get_memory_client()
         if memory_client is None:
@@ -697,26 +792,32 @@ class ReasoningHandler(PrintingCallbackHandler):
                 % (Colors.RED, Colors.RESET)
             )
             return evidence
-        
+
         # Set agent user ID
         agent_user_id = "cyber_agent"
-        
+
         try:
             # Retrieve memories
-            logger.info("Attempting to retrieve memories for user_id: %s", agent_user_id)
-            
+            logger.info(
+                "Attempting to retrieve memories for user_id: %s", agent_user_id
+            )
+
             # Fetch memory list
             memories_response = memory_client.list_memories(user_id=agent_user_id)
-            
+
             # Process response
             logger.debug("Memory response type: %s", type(memories_response))
             logger.debug("Memory response: %s", memories_response)
-            
+
             # Parse memory response format
             if isinstance(memories_response, dict):
                 # Extract from dictionary response
-                raw_memories = memories_response.get("memories", memories_response.get("results", []))
-                logger.debug("Extracted %d memories from dict response", len(raw_memories))
+                raw_memories = memories_response.get(
+                    "memories", memories_response.get("results", [])
+                )
+                logger.debug(
+                    "Extracted %d memories from dict response", len(raw_memories)
+                )
             elif isinstance(memories_response, list):
                 # Process list response
                 raw_memories = memories_response
@@ -724,35 +825,47 @@ class ReasoningHandler(PrintingCallbackHandler):
             else:
                 # Handle unexpected format
                 raw_memories = []
-                logger.warning("Unexpected memory response format: %s", type(memories_response))
+                logger.warning(
+                    "Unexpected memory response format: %s", type(memories_response)
+                )
 
             logger.info("Found %d total memories", len(raw_memories))
-            
+
             # Process findings
             for mem in raw_memories:
                 # Extract metadata
-                metadata = mem.get('metadata', {})
-                
+                metadata = mem.get("metadata", {})
+
                 # Process memory entry
                 logger.debug("Processing memory: %s", mem)
-                
-                if metadata and metadata.get('category') == 'finding':
-                    evidence.append({
-                        'category': metadata.get('category'),
-                        'content': mem.get('memory', 'N/A'),
-                        'id': mem.get('id', 'N/A')
-                    })
-                    logger.info("Added finding to evidence: %s...", mem.get('memory', 'N/A')[:50])
+
+                if metadata and metadata.get("category") == "finding":
+                    evidence.append(
+                        {
+                            "category": metadata.get("category"),
+                            "content": mem.get("memory", "N/A"),
+                            "id": mem.get("id", "N/A"),
+                        }
+                    )
+                    logger.info(
+                        "Added finding to evidence: %s...",
+                        mem.get("memory", "N/A")[:50],
+                    )
                 # Include uncategorized memories
-                elif 'memory' in mem and 'category' not in metadata:
+                elif "memory" in mem and "category" not in metadata:
                     # Include concise memories
-                    if len(mem.get('memory', '').split()) < 50:
-                        evidence.append({
-                            'category': 'general',
-                            'content': mem.get('memory', 'N/A'),
-                            'id': mem.get('id', 'N/A')
-                        })
-                        logger.info("Added general memory to evidence: %s...", mem.get('memory', 'N/A')[:50])
+                    if len(mem.get("memory", "").split()) < 50:
+                        evidence.append(
+                            {
+                                "category": "general",
+                                "content": mem.get("memory", "N/A"),
+                                "id": mem.get("id", "N/A"),
+                            }
+                        )
+                        logger.info(
+                            "Added general memory to evidence: %s...",
+                            mem.get("memory", "N/A")[:50],
+                        )
 
             # Only show retrieval message if evidence was found
             if evidence:
@@ -760,20 +873,19 @@ class ReasoningHandler(PrintingCallbackHandler):
                     "%sRetrieved %d items from memory for final report.%s"
                     % (Colors.DIM, len(evidence), Colors.RESET)
                 )
-            
+
         except Exception as e:
-            logger.error("Error retrieving evidence from mem0_memory: %s", str(e), exc_info=True)
+            logger.error(
+                "Error retrieving evidence from mem0_memory: %s", str(e), exc_info=True
+            )
             print(
                 "%sWarning: Failed to retrieve evidence from memory (user_id: %s). Report may be incomplete.%s"
                 % (Colors.YELLOW, agent_user_id, Colors.RESET)
             )
-            print(
-                "%sError details: %s%s" % (Colors.DIM, str(e), Colors.RESET)
-            )
+            print("%sError details: %s%s" % (Colors.DIM, str(e), Colors.RESET))
             evidence = []
 
         return evidence
-
 
     def _generate_llm_report(
         self, agent, target: str, objective: str, evidence: List[Dict]
@@ -903,8 +1015,7 @@ Format this as a professional penetration testing report."""
                 f.write(report_content)
 
             print(
-                "\n%sReport saved to: %s%s"
-                % (Colors.GREEN, report_path, Colors.RESET)
+                "\n%sReport saved to: %s%s" % (Colors.GREEN, report_path, Colors.RESET)
             )
 
         except Exception as e:
@@ -913,16 +1024,13 @@ Format this as a professional penetration testing report."""
                 % (Colors.YELLOW, str(e), Colors.RESET)
             )
 
-
-
-    
     def _trigger_evaluation_if_enabled(self):
         """Trigger automatic evaluation if enabled via environment variable."""
         # Prevent multiple evaluation triggers
         if self.evaluation_triggered:
             logger.debug("Evaluation already triggered, skipping duplicate trigger")
             return
-            
+
         eval_enabled = os.getenv("ENABLE_AUTO_EVALUATION", "false").lower()
         logger.debug(f"Evaluation check: ENABLE_AUTO_EVALUATION='{eval_enabled}'")
         if eval_enabled == "true":
@@ -931,90 +1039,142 @@ Format this as a professional penetration testing report."""
                 # Lazy import evaluation module
                 from .evaluation import CyberAgentEvaluator
                 from langfuse import Langfuse
-                
+
                 # Configure Langfuse connection
                 langfuse = Langfuse(
                     public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
                     secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-                    host=os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+                    host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
                 )
-                
+
                 # Execute batch evaluation
                 def run_batch_evaluation():
                     try:
                         # Create evaluator instance
                         evaluator = CyberAgentEvaluator()
-                        
+
                         # Allow trace propagation delay
-                        logger.info(f"Starting batch evaluation for operation {self.operation_id}")
-                        print(f"\n{Colors.DIM}Waiting 30 seconds for trace propagation...{Colors.RESET}")
+                        logger.info(
+                            f"Starting batch evaluation for operation {self.operation_id}"
+                        )
+                        print(
+                            f"\n{Colors.DIM}Waiting 30 seconds for trace propagation...{Colors.RESET}"
+                        )
                         time.sleep(30)
-                        
+
                         # Retrieve operation traces
-                        logger.info(f"Fetching traces for operation {self.operation_id}")
-                        print(f"\n{Colors.CYAN}Fetching traces for evaluation...{Colors.RESET}")
-                        
+                        logger.info(
+                            f"Fetching traces for operation {self.operation_id}"
+                        )
+                        print(
+                            f"\n{Colors.CYAN}Fetching traces for evaluation...{Colors.RESET}"
+                        )
+
                         # Fetch traces from Langfuse API
                         logger.info(f"Attempting to fetch traces from Langfuse API")
-                        
+
                         try:
                             # First, try to get all recent traces without filtering
                             all_traces = langfuse.api.trace.list(limit=20)
-                            logger.info(f"API returned {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces")
-                            
+                            logger.info(
+                                f"API returned {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces"
+                            )
+
                             # Log trace structure for debugging
-                            if hasattr(all_traces, 'data') and all_traces.data:
+                            if hasattr(all_traces, "data") and all_traces.data:
                                 first_trace = all_traces.data[0]
-                                logger.debug(f"First trace attributes: {dir(first_trace)}")
-                                if hasattr(first_trace, 'session_id'):
-                                    logger.debug(f"First trace session_id: {first_trace.session_id}")
-                                if hasattr(first_trace, 'metadata'):
-                                    logger.debug(f"First trace metadata: {first_trace.metadata}")
-                                if hasattr(first_trace, 'tags'):
-                                    logger.debug(f"First trace tags: {first_trace.tags}")
-                            
+                                logger.debug(
+                                    f"First trace attributes: {dir(first_trace)}"
+                                )
+                                if hasattr(first_trace, "session_id"):
+                                    logger.debug(
+                                        f"First trace session_id: {first_trace.session_id}"
+                                    )
+                                if hasattr(first_trace, "metadata"):
+                                    logger.debug(
+                                        f"First trace metadata: {first_trace.metadata}"
+                                    )
+                                if hasattr(first_trace, "tags"):
+                                    logger.debug(
+                                        f"First trace tags: {first_trace.tags}"
+                                    )
+
                             # Try to filter by session_id if available
                             filtered_traces = []
                             for t in all_traces.data:
                                 # Check various possible locations for session_id
-                                if hasattr(t, 'session_id') and t.session_id == self.operation_id:
+                                if (
+                                    hasattr(t, "session_id")
+                                    and t.session_id == self.operation_id
+                                ):
                                     filtered_traces.append(t)
-                                elif hasattr(t, 'metadata') and isinstance(t.metadata, dict):
+                                elif hasattr(t, "metadata") and isinstance(
+                                    t.metadata, dict
+                                ):
                                     # Check in metadata
-                                    if t.metadata.get('session_id') == self.operation_id:
+                                    if (
+                                        t.metadata.get("session_id")
+                                        == self.operation_id
+                                    ):
                                         filtered_traces.append(t)
-                                    elif t.metadata.get('attributes', {}).get('session.id') == self.operation_id:
+                                    elif (
+                                        t.metadata.get("attributes", {}).get(
+                                            "session.id"
+                                        )
+                                        == self.operation_id
+                                    ):
                                         filtered_traces.append(t)
-                            
+
                             if filtered_traces:
-                                logger.info(f"Found {len(filtered_traces)} traces matching operation {self.operation_id}")
-                                traces = type('obj', (object,), {'data': filtered_traces})
+                                logger.info(
+                                    f"Found {len(filtered_traces)} traces matching operation {self.operation_id}"
+                                )
+                                traces = type(
+                                    "obj", (object,), {"data": filtered_traces}
+                                )
                             else:
-                                logger.info(f"No traces found with session_id {self.operation_id}, using all recent traces")
+                                logger.info(
+                                    f"No traces found with session_id {self.operation_id}, using all recent traces"
+                                )
                                 traces = all_traces
-                                
+
                         except Exception as api_error:
-                            logger.error(f"Failed to fetch traces from Langfuse API: {str(api_error)}", exc_info=True)
-                            print(f"\n{Colors.RED}❌ Failed to fetch traces: {str(api_error)}{Colors.RESET}")
+                            logger.error(
+                                f"Failed to fetch traces from Langfuse API: {str(api_error)}",
+                                exc_info=True,
+                            )
+                            print(
+                                f"\n{Colors.RED}❌ Failed to fetch traces: {str(api_error)}{Colors.RESET}"
+                            )
                             return
-                        
+
                         if not traces.data:
-                            logger.warning(f"No traces found for operation {self.operation_id}")
-                            print(f"\n{Colors.YELLOW}⚠️ No traces found for operation {self.operation_id} - evaluation skipped{Colors.RESET}")
+                            logger.warning(
+                                f"No traces found for operation {self.operation_id}"
+                            )
+                            print(
+                                f"\n{Colors.YELLOW}⚠️ No traces found for operation {self.operation_id} - evaluation skipped{Colors.RESET}"
+                            )
                             return
-                        
+
                         logger.info(f"Found {len(traces.data)} traces to evaluate")
-                        print(f"\n{Colors.GREEN}✓ Found {len(traces.data)} trace(s) to evaluate{Colors.RESET}")
-                        
+                        print(
+                            f"\n{Colors.GREEN}✓ Found {len(traces.data)} trace(s) to evaluate{Colors.RESET}"
+                        )
+
                         successful_evals = 0
                         failed_evals = 0
-                        
+
                         # Process traces
                         for i, trace in enumerate(traces.data, 1):
                             trace_id = trace.id
-                            logger.info(f"Evaluating trace {i}/{len(traces.data)}: {trace_id}")
-                            print(f"\n{Colors.CYAN}Evaluating trace {i}/{len(traces.data)}: {trace_id[:8]}...{Colors.RESET}")
-                            
+                            logger.info(
+                                f"Evaluating trace {i}/{len(traces.data)}: {trace_id}"
+                            )
+                            print(
+                                f"\n{Colors.CYAN}Evaluating trace {i}/{len(traces.data)}: {trace_id[:8]}...{Colors.RESET}"
+                            )
+
                             try:
                                 # Execute evaluation - handle asyncio properly in thread
                                 try:
@@ -1022,67 +1182,110 @@ Format this as a professional penetration testing report."""
                                     loop = asyncio.get_event_loop()
                                     if loop.is_running():
                                         # If loop is already running, create a new task
-                                        future = asyncio.ensure_future(evaluator.evaluate_trace(trace_id))
+                                        future = asyncio.ensure_future(
+                                            evaluator.evaluate_trace(trace_id)
+                                        )
                                         scores = loop.run_until_complete(future)
                                     else:
                                         # If no loop is running, use asyncio.run
-                                        scores = asyncio.run(evaluator.evaluate_trace(trace_id))
+                                        scores = asyncio.run(
+                                            evaluator.evaluate_trace(trace_id)
+                                        )
                                 except RuntimeError as e:
                                     logger.debug(f"RuntimeError in asyncio: {str(e)}")
                                     # No event loop in thread, create a new one
                                     loop = asyncio.new_event_loop()
                                     asyncio.set_event_loop(loop)
                                     try:
-                                        scores = loop.run_until_complete(evaluator.evaluate_trace(trace_id))
+                                        scores = loop.run_until_complete(
+                                            evaluator.evaluate_trace(trace_id)
+                                        )
                                     finally:
                                         loop.close()
                                 except Exception as async_error:
-                                    logger.error(f"Asyncio execution failed: {str(async_error)}", exc_info=True)
+                                    logger.error(
+                                        f"Asyncio execution failed: {str(async_error)}",
+                                        exc_info=True,
+                                    )
                                     raise
-                                
+
                                 if scores:
                                     successful_evals += 1
-                                    logger.info(f"Successfully evaluated trace {trace_id}: {scores}")
-                                    print(f"{Colors.GREEN}✅ Evaluation completed: {scores}{Colors.RESET}")
+                                    logger.info(
+                                        f"Successfully evaluated trace {trace_id}: {scores}"
+                                    )
+                                    print(
+                                        f"{Colors.GREEN}✅ Evaluation completed: {scores}{Colors.RESET}"
+                                    )
                                 else:
                                     failed_evals += 1
-                                    logger.warning(f"No scores returned for trace {trace_id}")
-                                    print(f"{Colors.YELLOW}⚠️ No scores returned{Colors.RESET}")
-                                    
+                                    logger.warning(
+                                        f"No scores returned for trace {trace_id}"
+                                    )
+                                    print(
+                                        f"{Colors.YELLOW}⚠️ No scores returned{Colors.RESET}"
+                                    )
+
                             except Exception as eval_error:
                                 failed_evals += 1
-                                logger.error(f"Failed to evaluate trace {trace_id}: {str(eval_error)}", exc_info=True)
-                                print(f"{Colors.RED}❌ Evaluation failed: {str(eval_error)}{Colors.RESET}")
-                        
+                                logger.error(
+                                    f"Failed to evaluate trace {trace_id}: {str(eval_error)}",
+                                    exc_info=True,
+                                )
+                                print(
+                                    f"{Colors.RED}❌ Evaluation failed: {str(eval_error)}{Colors.RESET}"
+                                )
+
                         # Summary
-                        logger.info(f"Batch evaluation complete: {successful_evals} successful, {failed_evals} failed")
-                        print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
-                        print(f"{Colors.BOLD}Evaluation Summary for {self.operation_id}:{Colors.RESET}")
+                        logger.info(
+                            f"Batch evaluation complete: {successful_evals} successful, {failed_evals} failed"
+                        )
+                        print(f"\n{Colors.CYAN}{'=' * 60}{Colors.RESET}")
+                        print(
+                            f"{Colors.BOLD}Evaluation Summary for {self.operation_id}:{Colors.RESET}"
+                        )
                         print(f"   ✅ Successful evaluations: {successful_evals}")
                         print(f"   ❌ Failed evaluations: {failed_evals}")
-                        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
-                            
+                        print(f"{Colors.CYAN}{'=' * 60}{Colors.RESET}\n")
+
                     except Exception as batch_error:
-                        logger.error(f"Batch evaluation crashed: {str(batch_error)}", exc_info=True)
-                        print(f"\n{Colors.RED}❌ Batch evaluation crashed: {str(batch_error)}{Colors.RESET}")
+                        logger.error(
+                            f"Batch evaluation crashed: {str(batch_error)}",
+                            exc_info=True,
+                        )
+                        print(
+                            f"\n{Colors.RED}❌ Batch evaluation crashed: {str(batch_error)}{Colors.RESET}"
+                        )
                     finally:
-                        logger.info(f"Batch evaluation thread completed for operation {self.operation_id}")
-                
+                        logger.info(
+                            f"Batch evaluation thread completed for operation {self.operation_id}"
+                        )
+
                 # Launch background evaluation
-                eval_thread = threading.Thread(target=run_batch_evaluation, daemon=False, name=f"eval-{self.operation_id}")
+                eval_thread = threading.Thread(
+                    target=run_batch_evaluation,
+                    daemon=False,
+                    name=f"eval-{self.operation_id}",
+                )
                 eval_thread.start()
-                
-                print(f"\n{Colors.CYAN}Batch evaluation scheduled for operation {self.operation_id} (will run in 30 seconds){Colors.RESET}")
-                logger.debug(f"Background evaluation thread started: {eval_thread.name}")
-                
+
+                print(
+                    f"\n{Colors.CYAN}Batch evaluation scheduled for operation {self.operation_id} (will run in 30 seconds){Colors.RESET}"
+                )
+                logger.debug(
+                    f"Background evaluation thread started: {eval_thread.name}"
+                )
+
                 # Store thread reference for later joining
                 self.evaluation_thread = eval_thread
-                
+
             except Exception as e:
                 logger.warning(f"Failed to trigger automatic evaluation: {str(e)}")
         else:
-            logger.debug("Automatic evaluation disabled (set ENABLE_AUTO_EVALUATION=true to enable)")
-    
+            logger.debug(
+                "Automatic evaluation disabled (set ENABLE_AUTO_EVALUATION=true to enable)"
+            )
+
     def _send_operation_metadata(self):
         """Send operation completion metadata to Langfuse."""
         try:
@@ -1090,18 +1293,18 @@ Format this as a professional penetration testing report."""
             langfuse = Langfuse(
                 public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
                 secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-                host=os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+                host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
             )
-            
+
             # Calculate operation metrics
             operation_duration = time.time() - self.start_time
-            
+
             # Tool usage summary
             tool_usage_summary = {}
             for tool_entry in self.tools_used:
                 tool_name = tool_entry.split(":")[0]
                 tool_usage_summary[tool_name] = tool_usage_summary.get(tool_name, 0) + 1
-            
+
             # Log operation metadata
             operation_metadata = {
                 "operation_id": self.operation_id,
@@ -1109,7 +1312,11 @@ Format this as a professional penetration testing report."""
                 "total_steps": self.steps,
                 "max_steps": self.max_steps,
                 "step_utilization": round((self.steps / self.max_steps) * 100, 1),
-                "completion_reason": "step_limit" if self.step_limit_reached else "objective_achieved" if self.stop_tool_used else "completed",
+                "completion_reason": "step_limit"
+                if self.step_limit_reached
+                else "objective_achieved"
+                if self.stop_tool_used
+                else "completed",
                 "tools_created": len(self.created_tools),
                 "created_tools_list": self.created_tools,
                 "memory_operations": self.memory_operations,
@@ -1117,23 +1324,29 @@ Format this as a professional penetration testing report."""
                 "tool_usage_count": sum(tool_usage_summary.values()),
                 "unique_tools_used": len(tool_usage_summary),
                 "tool_effectiveness": self.tool_effectiveness,
-                "avg_seconds_per_step": round(operation_duration / self.steps, 2) if self.steps > 0 else 0,
+                "avg_seconds_per_step": round(operation_duration / self.steps, 2)
+                if self.steps > 0
+                else 0,
             }
             logger.debug(f"Operation metadata: {operation_metadata}")
-            
+
             logger.debug(f"Operation {self.operation_id} metadata logged successfully")
-            
+
         except Exception as e:
             logger.warning(f"Failed to send operation metadata to Langfuse: {str(e)}")
-    
+
     def trigger_evaluation_on_completion(self):
         """Trigger evaluation when agent completes (success or failure)."""
         logger.debug("trigger_evaluation_on_completion called")
         self._trigger_evaluation_if_enabled()
-    
+
     def wait_for_evaluation_completion(self, timeout=300):
         """Wait for evaluation thread to complete if it exists."""
-        if hasattr(self, 'evaluation_thread') and self.evaluation_thread and self.evaluation_thread.is_alive():
+        if (
+            hasattr(self, "evaluation_thread")
+            and self.evaluation_thread
+            and self.evaluation_thread.is_alive()
+        ):
             logger.info(f"Waiting for evaluation to complete (timeout: {timeout}s)...")
             self.evaluation_thread.join(timeout=timeout)
             if self.evaluation_thread.is_alive():
