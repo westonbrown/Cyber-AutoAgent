@@ -12,21 +12,21 @@ def _get_swarm_model_guidance(server: str) -> str:
     # Use the new configuration system
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(server)
+    swarm_config = server_config.swarm
     
     if server == "local":
         ollama_host = config_manager.get_ollama_host()
         return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
 When using swarm, always set:
 - model_provider: "ollama"
-- model_settings: {{\"model_id\": \"{server_config.llm.model_id}\", \"host\": \"{ollama_host}\"}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"host\": \"{ollama_host}\", \"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}
 """
     else:
-        # Use evaluation LLM for swarm tasks (smaller, faster model)
-        eval_model = server_config.evaluation.llm.model_id
+        # Use dedicated swarm LLM configuration
         return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
 When using swarm, always set:
 - model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"{eval_model}\", \"params\": {{\"temperature\": 0.7, \"max_tokens\": 500}}}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"params\": {{\"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}}}
 """
 
 

@@ -100,6 +100,12 @@ class EvaluationConfig:
 
 
 @dataclass
+class SwarmConfig:
+    """Configuration for swarm system."""
+    llm: ModelConfig
+
+
+@dataclass
 class ServerConfig:
     """Complete server configuration."""
     server_type: str  # "local" or "remote"
@@ -107,6 +113,7 @@ class ServerConfig:
     embedding: EmbeddingConfig
     memory: MemoryConfig
     evaluation: EvaluationConfig
+    swarm: SwarmConfig
     host: Optional[str] = None
     region: str = "us-east-1"
 
@@ -146,6 +153,12 @@ class ConfigManager:
                     temperature=0.1,
                     max_tokens=2000
                 ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="llama3.2:3b",
+                    temperature=0.7,
+                    max_tokens=500
+                ),
                 "host": None,  # Will be resolved dynamically
                 "region": "local"
             },
@@ -173,6 +186,12 @@ class ConfigManager:
                     model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                     temperature=0.1,
                     max_tokens=2000
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.7,
+                    max_tokens=500
                 ),
                 "host": None,
                 "region": "us-east-1"
@@ -209,6 +228,11 @@ class ConfigManager:
             embedding=self._get_evaluation_embedding_config(server, defaults)
         )
         
+        # Build swarm configuration
+        swarm_config = SwarmConfig(
+            llm=self._get_swarm_llm_config(server, defaults)
+        )
+        
         # Resolve host for local server
         host = self.get_ollama_host() if server == "local" else None
         
@@ -218,6 +242,7 @@ class ConfigManager:
             embedding=defaults["embedding"],
             memory=memory_config,
             evaluation=evaluation_config,
+            swarm=swarm_config,
             host=host,
             region=defaults["region"]
         )
@@ -244,6 +269,11 @@ class ConfigManager:
         """Get evaluation configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.evaluation
+    
+    def get_swarm_config(self, server: str, **overrides) -> SwarmConfig:
+        """Get swarm configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.swarm
     
     def validate_requirements(self, server: str) -> None:
         """Validate that all requirements are met for the specified server."""
@@ -319,6 +349,16 @@ class ConfigManager:
                 max_tokens=defaults["evaluation_llm"].max_tokens
             )
         
+        # Swarm model override
+        swarm_model = os.getenv("CYBER_AGENT_SWARM_MODEL")
+        if swarm_model:
+            defaults["swarm_llm"] = LLMConfig(
+                provider=defaults["swarm_llm"].provider,
+                model_id=swarm_model,
+                temperature=defaults["swarm_llm"].temperature,
+                max_tokens=defaults["swarm_llm"].max_tokens
+            )
+        
         # Memory LLM override
         memory_llm_model = os.getenv("MEM0_LLM_MODEL")
         if memory_llm_model:
@@ -360,6 +400,10 @@ class ConfigManager:
     def _get_evaluation_embedding_config(self, server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
+    
+    def _get_swarm_llm_config(self, server: str, defaults: Dict[str, Any]) -> ModelConfig:
+        """Get swarm LLM configuration."""
+        return defaults["swarm_llm"]
     
     def _validate_ollama_requirements(self) -> None:
         """Validate Ollama requirements."""

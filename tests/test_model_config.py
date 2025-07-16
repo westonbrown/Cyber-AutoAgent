@@ -18,6 +18,7 @@ from modules.model_config import (
     VectorStoreConfig,
     MemoryConfig,
     EvaluationConfig,
+    SwarmConfig,
     ServerConfig,
     ConfigManager,
     get_config_manager,
@@ -209,6 +210,24 @@ class TestConfigManager:
         assert config.llm.provider == ModelProvider.OLLAMA
         assert config.embedding.provider == ModelProvider.OLLAMA
     
+    def test_get_swarm_config(self):
+        """Test getting swarm configuration."""
+        # Test local swarm config
+        local_config = self.config_manager.get_swarm_config("local")
+        assert isinstance(local_config, SwarmConfig)
+        assert local_config.llm.provider == ModelProvider.OLLAMA
+        assert local_config.llm.model_id == "llama3.2:3b"
+        assert local_config.llm.temperature == 0.7
+        assert local_config.llm.max_tokens == 500
+        
+        # Test remote swarm config
+        remote_config = self.config_manager.get_swarm_config("remote")
+        assert isinstance(remote_config, SwarmConfig)
+        assert remote_config.llm.provider == ModelProvider.AWS_BEDROCK
+        assert "claude" in remote_config.llm.model_id
+        assert remote_config.llm.temperature == 0.7
+        assert remote_config.llm.max_tokens == 500
+    
     @patch.dict(os.environ, {"CYBER_AGENT_LLM_MODEL": "custom-llm"})
     def test_environment_variable_override(self):
         """Test that environment variables override default config."""
@@ -226,6 +245,15 @@ class TestConfigManager:
         
         config = self.config_manager.get_server_config("local")
         assert config.evaluation.llm.model_id == "custom-evaluator"
+    
+    @patch.dict(os.environ, {"CYBER_AGENT_SWARM_MODEL": "custom-swarm-model"})
+    def test_swarm_model_environment_variable_override(self):
+        """Test that swarm model can be overridden with environment variables."""
+        # Clear cache to force re-evaluation
+        self.config_manager._config_cache = {}
+        
+        config = self.config_manager.get_server_config("local")
+        assert config.swarm.llm.model_id == "custom-swarm-model"
     
     def test_parameter_overrides(self):
         """Test that function parameters override configuration."""
