@@ -634,3 +634,53 @@ class TestEnvironmentIntegration:
         assert config_manager.is_thinking_model("us.anthropic.claude-sonnet-4-20250514-v1:0")
         assert not config_manager.is_thinking_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         assert not config_manager.is_thinking_model("llama3.2:3b")
+    
+    def test_centralized_model_configuration_methods(self):
+        """Test the new centralized model configuration methods."""
+        config_manager = ConfigManager()
+        
+        # Test thinking model configuration
+        thinking_config = config_manager.get_thinking_model_config(
+            "us.anthropic.claude-opus-4-20250514-v1:0", 
+            "us-east-1"
+        )
+        assert thinking_config["temperature"] == 1.0
+        assert thinking_config["max_tokens"] == 4026
+        assert "additional_request_fields" in thinking_config
+        assert "anthropic_beta" in thinking_config["additional_request_fields"]
+        assert "thinking" in thinking_config["additional_request_fields"]
+        
+        # Test standard model configuration
+        standard_config = config_manager.get_standard_model_config(
+            "us.anthropic.claude-3-5-sonnet-20241022-v2:0", 
+            "us-east-1", 
+            "remote"
+        )
+        assert standard_config["temperature"] == 0.95
+        assert standard_config["max_tokens"] == 4096
+        assert standard_config["top_p"] == 0.95
+        
+        # Test local model configuration
+        local_config = config_manager.get_local_model_config("llama3.2:3b", "local")
+        assert local_config["temperature"] == 0.95
+        assert local_config["max_tokens"] == 4096
+        assert "host" in local_config
+        assert local_config["host"].startswith("http://")
+    
+    def test_centralized_mem0_service_config_local_vs_remote(self):
+        """Test that local and remote Mem0 configurations are properly differentiated."""
+        config_manager = ConfigManager()
+        
+        # Test local config has ollama_base_url
+        local_config = config_manager.get_mem0_service_config("local")
+        assert local_config["embedder"]["config"]["ollama_base_url"].startswith("http://")
+        assert local_config["llm"]["config"]["ollama_base_url"].startswith("http://")
+        assert "aws_region" not in local_config["embedder"]["config"]
+        assert "aws_region" not in local_config["llm"]["config"]
+        
+        # Test remote config has aws_region
+        remote_config = config_manager.get_mem0_service_config("remote")
+        assert "aws_region" in remote_config["embedder"]["config"]
+        assert "aws_region" in remote_config["llm"]["config"]
+        assert "ollama_base_url" not in remote_config["embedder"]["config"]
+        assert "ollama_base_url" not in remote_config["llm"]["config"]
