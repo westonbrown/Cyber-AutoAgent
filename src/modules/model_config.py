@@ -19,7 +19,7 @@ import os
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import requests
 
 logger = logging.getLogger(__name__)
@@ -189,6 +189,18 @@ class ConfigManager:
     def get_default_region(self) -> str:
         """Get the default AWS region with environment override support."""
         return os.getenv("AWS_REGION", "us-east-1")
+    
+    def get_thinking_models(self) -> List[str]:
+        """Get list of models that support thinking capabilities."""
+        return [
+            "us.anthropic.claude-opus-4-20250514-v1:0",
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        ]
+    
+    def is_thinking_model(self, model_id: str) -> bool:
+        """Check if a model supports thinking capabilities."""
+        return model_id in self.get_thinking_models()
     
     def _initialize_default_configs(self) -> Dict[str, Dict[str, Any]]:
         """Initialize default configurations for all server types."""
