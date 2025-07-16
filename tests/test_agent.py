@@ -192,8 +192,8 @@ class TestMemoryConfig:
 class TestServerValidation:
     """Test server requirements validation"""
 
-    @patch("modules.agent.requests.get")
-    @patch("modules.agent.ollama.Client")
+    @patch("modules.config.requests.get")
+    @patch("modules.config.ollama.Client")
     def test_validate_server_requirements_local_success(
         self, mock_ollama_client, mock_requests
     ):
@@ -213,7 +213,7 @@ class TestServerValidation:
         # Verify client was created (host is now dynamic)
         mock_ollama_client.assert_called_once()
 
-    @patch("modules.agent.requests.get")
+    @patch("modules.config.requests.get")
     def test_validate_server_requirements_local_server_down(self, mock_requests):
         """Test local server validation when Ollama is down"""
         # Mock Ollama server not responding
@@ -222,8 +222,8 @@ class TestServerValidation:
         with pytest.raises(ConnectionError, match="Ollama server not accessible"):
             get_config_manager().validate_requirements("local")
 
-    @patch("modules.agent.requests.get")
-    @patch("modules.agent.ollama.Client")
+    @patch("modules.config.requests.get")
+    @patch("modules.config.ollama.Client")
     def test_validate_server_requirements_local_missing_models(
         self, mock_ollama_client, mock_requests
     ):
