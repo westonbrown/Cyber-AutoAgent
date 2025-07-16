@@ -2,6 +2,7 @@
 
 import pytest
 import os
+import requests
 from unittest.mock import Mock, patch
 
 # Add src to path for imports
@@ -10,7 +11,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.agent import (
-    _validate_server_requirements,
     create_agent,
 )
 from modules.config import get_config_manager, get_default_model_configs, get_ollama_host
@@ -103,7 +103,7 @@ class TestOllamaHostDetection:
             if "host.docker.internal" in url:
                 return mock_response
             else:
-                raise Exception("Connection failed")
+                raise requests.exceptions.ConnectionError("Connection failed")
         mock_test.side_effect = side_effect
         
         host = get_ollama_host()
@@ -119,8 +119,8 @@ class TestOllamaHostDetection:
     @patch("requests.get")
     def test_get_ollama_host_docker_no_connection(self, mock_test, mock_exists):
         """Test Docker environment where neither option works"""
-        mock_exists.return_value = True  # /.dockerenv exists
-        mock_test.return_value = False  # Neither option works
+        mock_exists.return_value = True  # /app exists
+        mock_test.side_effect = requests.exceptions.ConnectionError("Connection failed")  # Neither option works
         
         host = get_ollama_host()
         # Should fallback to host.docker.internal
@@ -137,7 +137,7 @@ class TestMemoryConfig:
         """Test local memory configuration is created correctly"""
         # The current implementation builds memory config inline in create_agent
         # We'll test that the right config is passed to initialize_memory_system
-        with patch("modules.agent._validate_server_requirements"):
+        with patch("modules.config.ConfigManager.validate_requirements"):
             with patch("modules.agent._create_local_model") as mock_create_local:
                 mock_create_local.return_value = Mock()
                 with patch("modules.agent.Agent") as mock_agent_class:
@@ -164,7 +164,7 @@ class TestMemoryConfig:
     @patch("modules.agent.initialize_memory_system")
     def test_memory_config_remote(self, mock_init_memory):
         """Test remote memory configuration is created correctly"""
-        with patch("modules.agent._validate_server_requirements"):
+        with patch("modules.config.ConfigManager.validate_requirements"):
             with patch("modules.agent._create_remote_model") as mock_create_remote:
                 mock_create_remote.return_value = Mock()
                 with patch("modules.agent.Agent") as mock_agent_class:
@@ -208,7 +208,7 @@ class TestServerValidation:
         }
 
         # Should not raise any exception
-        _validate_server_requirements("local")
+        get_config_manager().validate_requirements("local")
         
         # Verify client was created (host is now dynamic)
         mock_ollama_client.assert_called_once()
@@ -220,7 +220,7 @@ class TestServerValidation:
         mock_requests.side_effect = Exception("Connection refused")
 
         with pytest.raises(ConnectionError, match="Ollama server not accessible"):
-            _validate_server_requirements("local")
+            get_config_manager().validate_requirements("local")
 
     @patch("modules.agent.requests.get")
     @patch("modules.agent.ollama.Client")
@@ -238,25 +238,25 @@ class TestServerValidation:
         }
 
         with pytest.raises(ValueError, match="Required models not found"):
-            _validate_server_requirements("local")
+            get_config_manager().validate_requirements("local")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_validate_server_requirements_remote_no_credentials(self):
         """Test remote server validation without AWS credentials"""
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
-            _validate_server_requirements("remote")
+            get_config_manager().validate_requirements("remote")
 
     @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test_key"}, clear=True)
     def test_validate_server_requirements_remote_success(self):
         """Test successful remote server validation"""
         # Should not raise any exception
-        _validate_server_requirements("remote")
+        get_config_manager().validate_requirements("remote")
 
 
 class TestCreateAgent:
     """Test agent creation functionality"""
 
-    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agent._create_remote_model")
     @patch("modules.agent.Agent")
     @patch("modules.agent.ReasoningHandler")
@@ -294,7 +294,7 @@ class TestCreateAgent:
         assert agent == mock_agent
         assert handler == mock_handler
 
-    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agent._create_local_model")
     @patch("modules.agent.Agent")
     @patch("modules.agent.ReasoningHandler")
@@ -332,7 +332,7 @@ class TestCreateAgent:
         assert agent == mock_agent
         assert handler == mock_handler
 
-    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.config.ConfigManager.validate_requirements")
     def test_create_agent_validation_failure(self, mock_validate):
         """Test agent creation when validation fails"""
         mock_validate.side_effect = ConnectionError("Test error")
@@ -340,7 +340,7 @@ class TestCreateAgent:
         with pytest.raises(ConnectionError):
             create_agent(target="test.com", objective="test objective", server="local")
 
-    @patch("modules.agent._validate_server_requirements")
+    @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agent._create_local_model")
     @patch("modules.agent._handle_model_creation_error")
     @patch("modules.agent.initialize_memory_system")

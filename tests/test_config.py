@@ -419,8 +419,8 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("local", custom_param="value")
         assert config.server_type == "local"
     
-    @patch("modules.model_config.os.path.exists")
-    @patch("modules.model_config.requests.get")
+    @patch("modules.config.os.path.exists")
+    @patch("modules.config.requests.get")
     def test_get_ollama_host_docker(self, mock_get, mock_exists):
         """Test Ollama host detection in Docker environment."""
         mock_exists.return_value = True  # Simulate Docker environment
@@ -431,7 +431,7 @@ class TestConfigManager:
         host = self.config_manager.get_ollama_host()
         assert host == "http://localhost:11434"
     
-    @patch("modules.model_config.os.path.exists")
+    @patch("modules.config.os.path.exists")
     def test_get_ollama_host_native(self, mock_exists):
         """Test Ollama host detection in native environment."""
         mock_exists.return_value = False  # Simulate native environment
@@ -445,7 +445,7 @@ class TestConfigManager:
         host = self.config_manager.get_ollama_host()
         assert host == "http://custom:11434"
     
-    @patch("modules.model_config.requests.get")
+    @patch("modules.config.requests.get")
     def test_validate_ollama_requirements_success(self, mock_get):
         """Test successful Ollama requirements validation."""
         mock_response = MagicMock()
@@ -465,7 +465,7 @@ class TestConfigManager:
                 # Should not raise an exception
                 self.config_manager.validate_requirements("local")
     
-    @patch("modules.model_config.requests.get")
+    @patch("modules.config.requests.get")
     def test_validate_ollama_requirements_server_down(self, mock_get):
         """Test Ollama requirements validation when server is down."""
         mock_get.side_effect = ConnectionError("Connection refused")
@@ -645,7 +645,7 @@ class TestEnvironmentIntegration:
             "us-east-1"
         )
         assert thinking_config["temperature"] == 1.0
-        assert thinking_config["max_tokens"] == 4026
+        assert thinking_config["max_tokens"] == 4096
         assert "additional_request_fields" in thinking_config
         assert "anthropic_beta" in thinking_config["additional_request_fields"]
         assert "thinking" in thinking_config["additional_request_fields"]
