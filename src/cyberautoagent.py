@@ -29,7 +29,12 @@ from datetime import datetime
 # Third-party imports
 import requests
 from opentelemetry import trace as opentelemetry_trace
-from strands.telemetry import StrandsTelemetry
+
+# Optional telemetry import
+try:
+    from strands.telemetry import StrandsTelemetry
+except ImportError:
+    StrandsTelemetry = None
 
 # Local imports
 from modules.agent import create_agent
@@ -85,6 +90,8 @@ def setup_observability(logger):
     
     try:
         # Try to use StrandsTelemetry for explicit setup
+        if StrandsTelemetry is None:
+            raise ImportError("StrandsTelemetry not available")
         
         logger.debug("StrandsTelemetry available - setting up OTLP exporter")
         strands_telemetry = StrandsTelemetry()
