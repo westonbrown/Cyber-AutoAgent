@@ -29,6 +29,7 @@ from ragas.metrics import (
     RubricsScore
 )
 from ragas.run_config import RunConfig
+from .model_config import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +60,18 @@ class CyberAgentEvaluator:
         """Configure evaluation models based on server type."""
         server_type = os.getenv("SERVER", "remote").lower()
         
+        # Get configuration from ConfigManager
+        config_manager = get_config_manager()
+        server_config = config_manager.get_server_config(server_type)
+        
         if server_type == "local":
             # Local mode using Ollama
             langchain_chat = ChatOllama(
-                model=os.getenv("RAGAS_EVALUATOR_MODEL", "llama3.2:3b"),
+                model=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.llm.model_id),
                 base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434")
             )
             langchain_embeddings = OllamaEmbeddings(
-                model=os.getenv("MEM0_EMBEDDING_MODEL", "mxbai-embed-large"),
+                model=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
                 base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434")
             )
             
@@ -75,11 +80,11 @@ class CyberAgentEvaluator:
         else:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
-                model_id=os.getenv("RAGAS_EVALUATOR_MODEL", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
+                model_id=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
                 region_name=os.getenv("AWS_REGION", "us-east-1")
             )
             langchain_embeddings = BedrockEmbeddings(
-                model_id=os.getenv("MEM0_EMBEDDING_MODEL", "amazon.titan-embed-text-v2:0"),
+                model_id=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
                 region_name=os.getenv("AWS_REGION", "us-east-1")
             )
             
