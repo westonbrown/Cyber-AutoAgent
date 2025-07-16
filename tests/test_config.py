@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, Any
 
 # Import the modules we're testing
-from modules.model_config import (
+from modules.config import (
     ModelProvider,
     ModelConfig,
     LLMConfig,

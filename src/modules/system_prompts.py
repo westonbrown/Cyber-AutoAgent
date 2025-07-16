@@ -3,7 +3,7 @@
 from typing import Dict, Any
 
 # Import the new configuration system
-from .model_config import get_config_manager
+from .config import get_config_manager
 
 
 

@@ -16,7 +16,7 @@ from strands_tools import shell, editor, load_tool, stop, http_request
 from strands_tools.swarm import swarm
 
 from .system_prompts import get_system_prompt
-from .model_config import get_config_manager
+from .config import get_config_manager
 from .agent_handlers import ReasoningHandler
 from .utils import Colors
 from .memory_tools import mem0_memory, initialize_memory_system
