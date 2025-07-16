@@ -30,10 +30,10 @@ def _create_remote_model(
     server: str = "remote",
 ) -> BedrockModel:
     """Create AWS Bedrock model instance using centralized configuration."""
-    
+
     # Get centralized configuration
     config_manager = get_config_manager()
-    
+
     if config_manager.is_thinking_model(model_id):
         # Use thinking model configuration
         config = config_manager.get_thinking_model_config(model_id, region_name)
@@ -74,13 +74,12 @@ def _create_local_model(
     )
 
 
-
 def _validate_server_requirements(server: str) -> None:
     """Validate server requirements before creating agent"""
     if server == "local":
         # Get dynamic host configuration
         ollama_host = get_config_manager().get_ollama_host()
-        
+
         # Check if Ollama is running
         try:
             response = requests.get(f"{ollama_host}/api/version", timeout=5)
@@ -97,13 +96,15 @@ def _validate_server_requirements(server: str) -> None:
         try:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
-            available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
+            available_models = [
+                m.get("model", m.get("name", "")) for m in models_response["models"]
+            ]
             # Get required models from centralized config
             config_manager = get_config_manager()
             server_config = config_manager.get_server_config("local")
             required_models = [
                 server_config.llm.model_id,
-                server_config.embedding.model_id
+                server_config.embedding.model_id,
             ]
             missing = [
                 m
@@ -169,7 +170,7 @@ def create_agent(
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(server)
-    
+
     # Get centralized region configuration
     if region_name is None:
         region_name = config_manager.get_default_region()
@@ -186,7 +187,7 @@ def create_agent(
 
     # Configure memory system using centralized configuration
     memory_config = config_manager.get_mem0_service_config(server)
-    
+
     # Configure vector store with memory path if provided
     if memory_path:
         # Validate existing memory store path
@@ -194,18 +195,18 @@ def create_agent(
             raise ValueError(f"Memory path does not exist: {memory_path}")
         if not os.path.isdir(memory_path):
             raise ValueError(f"Memory path is not a directory: {memory_path}")
-        
+
         # Override vector store path in centralized config
-        memory_config["vector_store"] = {
-            "config": {
-                "path": memory_path
-            }
-        }
-        print(f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}")
-    
+        memory_config["vector_store"] = {"config": {"path": memory_path}}
+        print(
+            f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}"
+        )
+
     # Initialize the memory system with configuration
     initialize_memory_system(memory_config, operation_id)
-    print(f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}")
+    print(
+        f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
+    )
 
     tools_context = ""
     if available_tools:
@@ -219,7 +220,13 @@ Leverage these tools directly via shell.
 """
 
     system_prompt = get_system_prompt(
-        target, objective, max_steps, operation_id, tools_context, server, has_memory_path=bool(memory_path)
+        target,
+        objective,
+        max_steps,
+        operation_id,
+        tools_context,
+        server,
+        has_memory_path=bool(memory_path),
     )
 
     # Create callback handler with operation_id
@@ -248,7 +255,7 @@ Leverage these tools directly via shell.
     agent = Agent(
         model=model,
         tools=[
-            swarm, 
+            swarm,
             shell,
             editor,
             load_tool,
@@ -265,47 +272,47 @@ Leverage these tools directly via shell.
             # Session and user identification
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
-            
             # Agent identification
             "agent.name": "Cyber-AutoAgent",
             "agent.version": "1.0.0",
             "gen_ai.agent.name": "Cyber-AutoAgent",
             "gen_ai.system": "Cyber-AutoAgent",
-            
             # Operation metadata
             "operation.id": operation_id,
             "operation.type": "security_assessment",
             "operation.start_time": datetime.now().isoformat(),
             "operation.max_steps": max_steps,
-            
             # Target information
             "target.host": target,
-            
             # Objective and scope
             "objective.description": objective,
-            
             # Model configuration
             "model.provider": server,
             "model.id": model_id,
             "model.region": region_name if server == "remote" else "local",
             "gen_ai.request.model": model_id,
-            
             # Tool configuration
             "tools.available": 7,  # Number of core tools
-            "tools.names": ["swarm", "shell", "editor", "load_tool", "mem0_memory", "stop", "http_request"],
+            "tools.names": [
+                "swarm",
+                "shell",
+                "editor",
+                "load_tool",
+                "mem0_memory",
+                "stop",
+                "http_request",
+            ],
             "tools.parallel_limit": 8,
-            
             # Memory configuration
             "memory.enabled": True,
             "memory.path": memory_path if memory_path else "ephemeral",
-            
             # Tags for filtering
             "langfuse.tags": [
                 "Cyber-AutoAgent",
                 server.upper(),
                 operation_id,
             ],
-        }
+        },
     )
 
     logger.debug("Agent initialized successfully")

@@ -26,10 +26,16 @@ import re
 import base64
 from datetime import datetime
 from opentelemetry import trace
+import requests
 
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
 from modules.config import get_config_manager
+
+try:
+    from strands.telemetry import StrandsTelemetry
+except ImportError:
+    StrandsTelemetry = None
 
 from modules.utils import (
     Colors,
@@ -53,76 +59,82 @@ def setup_observability(logger):
     if os.getenv("ENABLE_OBSERVABILITY", "true").lower() != "true":
         logger.debug("Observability is disabled (set ENABLE_OBSERVABILITY=false)")
         return False
-    
+
     # Get configuration from environment with defaults for self-hosted Langfuse
     host = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public")
     secret_key = os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret")
-    
+
     # Create auth token for Langfuse
-    auth_token = base64.b64encode(
-        f"{public_key}:{secret_key}".encode()
-    ).decode()
-    
+    auth_token = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
+
     # Set OpenTelemetry environment variables that Strands SDK will use
     # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
     # Note: Some OTLP endpoints expect base URL, others expect full path
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
-    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = f"{host}/api/public/otel/v1/traces"
+    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = (
+        f"{host}/api/public/otel/v1/traces"
+    )
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
     os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
-    
+
     # Override service name for OpenTelemetry to show as Cyber-AutoAgent
     os.environ["OTEL_SERVICE_NAME"] = "Cyber-AutoAgent"
-    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=Cyber-AutoAgent,service.version=0.1.1,gen_ai.system=Cyber-AutoAgent"
-    
+    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = (
+        "service.name=Cyber-AutoAgent,service.version=0.1.1,gen_ai.system=Cyber-AutoAgent"
+    )
+
     # According to Strands documentation, there are multiple ways to enable OTLP export:
     # Option 1: If OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTLP by default
     # Option 2: Use StrandsTelemetry class (requires strands-agents[otel])
-    
-    try:
+
+    if StrandsTelemetry:
         # Try to use StrandsTelemetry for explicit setup
-        from strands.telemetry import StrandsTelemetry
-        
         logger.debug("StrandsTelemetry available - setting up OTLP exporter")
         strands_telemetry = StrandsTelemetry()
         strands_telemetry.setup_otlp_exporter()  # Send traces to OTLP endpoint
-        
+
         # Also setup console exporter for debugging if requested
         if os.getenv("DEBUG_TRACES", "false").lower() == "true":
             strands_telemetry.setup_console_exporter()
             logger.info("Console trace exporter enabled for debugging")
-            
+
         logger.info("OTLP exporter initialized via StrandsTelemetry")
-        
-    except ImportError:
+
+    else:
         # StrandsTelemetry not available - rely on environment variables
-        logger.info("StrandsTelemetry not available - using environment variable configuration")
+        logger.info(
+            "StrandsTelemetry not available - using environment variable configuration"
+        )
         logger.info("Strands will use OTEL_EXPORTER_OTLP_ENDPOINT for trace export")
-        
+
         # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
         # We've already set all necessary environment variables above
-    
+
     # Test OTLP endpoint connectivity
     try:
-        import requests
         test_url = f"{host}/api/public/otel/v1/traces"
         headers = {"Authorization": f"Basic {auth_token}"}
         response = requests.get(test_url, headers=headers, timeout=5)
         if response.status_code == 405:  # Method not allowed is expected for GET
             logger.info("OTLP endpoint is reachable at %s", test_url)
         else:
-            logger.warning("OTLP endpoint returned unexpected status %d", response.status_code)
+            logger.warning(
+                "OTLP endpoint returned unexpected status %d", response.status_code
+            )
     except requests.exceptions.ConnectionError:
-        logger.error("Cannot connect to OTLP endpoint at %s - traces will not be exported!", test_url)
+        logger.error(
+            "Cannot connect to OTLP endpoint at %s - traces will not be exported!",
+            test_url,
+        )
         logger.error("  Check that Langfuse is running and accessible")
     except Exception as e:
         logger.warning("Could not test OTLP endpoint: %s", str(e))
-    
+
     logger.info("Langfuse observability enabled at %s", host)
     logger.info("OTLP endpoint: %s", os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"])
     logger.info("View traces at %s (login: admin@cyber-autoagent.com/changeme)", host)
-    
+
     return True
 
 
@@ -197,18 +209,18 @@ def main():
         os.environ.pop("BYPASS_TOOL_CONSENT", None)
 
     os.environ["DEV"] = "true"
-    
+
     # Get centralized region configuration if not provided
     if args.region is None:
         config_manager = get_config_manager()
         args.region = config_manager.get_default_region()
-    
+
     os.environ["AWS_REGION"] = args.region
-    
+
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(args.server)
-    
+
     # Set mem0 environment variables based on configuration
     if args.server == "local":
         os.environ["MEM0_LLM_PROVIDER"] = "ollama"
@@ -224,32 +236,34 @@ def main():
         log_file=os.path.join(get_data_path("logs"), "cyber_operations.log"),
         verbose=args.verbose,
     )
-    
+
     # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
     setup_observability(logger)
-    
+
     # Register cleanup function to properly close log files
     def cleanup_logging():
         """Ensure log files are properly closed on exit"""
         try:
             # Write session end marker before closing
-            print("\n" + "="*80)
-            print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("="*80 + "\n")
+            print("\n" + "=" * 80)
+            print(
+                f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            print("=" * 80 + "\n")
         except Exception:
             pass
-        
-        if hasattr(sys.stdout, 'close') and callable(sys.stdout.close):
+
+        if hasattr(sys.stdout, "close") and callable(sys.stdout.close):
             try:
                 sys.stdout.close()
             except Exception:
                 pass
-        if hasattr(sys.stderr, 'close') and callable(sys.stderr.close):
+        if hasattr(sys.stderr, "close") and callable(sys.stderr.close):
             try:
                 sys.stderr.close()
             except Exception:
                 pass
-    
+
     atexit.register(cleanup_logging)
 
     # Display banner
@@ -302,7 +316,6 @@ def main():
     start_time = time.time()
     callback_handler = None
 
-
     try:
         # Create agent
         agent, callback_handler = create_agent(
@@ -344,25 +357,22 @@ def main():
 
                     # Update conversation history
                     # Structure content properly for Strands integration
-                    messages.append({
-                        "role": "user", 
-                        "content": [{"text": current_message}]
-                    })
-                    
+                    messages.append(
+                        {"role": "user", "content": [{"text": current_message}]}
+                    )
+
                     # For thinking-enabled models, preserve the original response structure
                     # For non-thinking models, wrap in text block
-                    if hasattr(result, 'content') and isinstance(result.content, list):
+                    if hasattr(result, "content") and isinstance(result.content, list):
                         # Result already has proper structure (thinking + text blocks)
-                        messages.append({
-                            "role": "assistant", 
-                            "content": result.content
-                        })
+                        messages.append(
+                            {"role": "assistant", "content": result.content}
+                        )
                     else:
                         # Fallback for simple text responses
-                        messages.append({
-                            "role": "assistant", 
-                            "content": [{"text": str(result)}]
-                        })
+                        messages.append(
+                            {"role": "assistant", "content": [{"text": str(result)}]}
+                        )
 
                 except (StopIteration, Exception) as error:
                     # Handle termination scenarios
@@ -375,20 +385,30 @@ def main():
                         # Check if this was from the stop tool
                         if "event loop cycle stop requested" in error_str:
                             # Extract the reason from the error message
-                            reason_match = re.search(r'Reason: (.+?)(?:\n|$)', str(error))
-                            reason = reason_match.group(1) if reason_match else "Objective achieved"
+                            reason_match = re.search(
+                                r"Reason: (.+?)(?:\n|$)", str(error)
+                            )
+                            reason = (
+                                reason_match.group(1)
+                                if reason_match
+                                else "Objective achieved"
+                            )
                             print_status(f"Agent terminated: {reason}", "SUCCESS")
-                        
+
                         if callback_handler:
                             callback_handler.generate_final_report(
                                 agent, args.target, args.objective
                             )
                             # Trigger evaluation after clean termination
                             try:
-                                logger.info("Triggering evaluation after clean termination")
+                                logger.info(
+                                    "Triggering evaluation after clean termination"
+                                )
                                 callback_handler.trigger_evaluation_on_completion()
                             except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
+                                logger.warning(
+                                    "Error triggering evaluation: %s", eval_error
+                                )
                     else:
                         print_status("Agent error: %s" % str(error), "ERROR")
                         logger.exception("Unexpected agent error occurred")
@@ -401,7 +421,9 @@ def main():
                                 logger.info("Triggering evaluation after error")
                                 callback_handler.trigger_evaluation_on_completion()
                             except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
+                                logger.warning(
+                                    "Error triggering evaluation: %s", eval_error
+                                )
                     break
 
                 # Check if agent has determined objective completion
@@ -436,10 +458,14 @@ def main():
                         )
                         # Trigger evaluation after successful completion
                         try:
-                            logger.info("Triggering evaluation after successful completion")
+                            logger.info(
+                                "Triggering evaluation after successful completion"
+                            )
                             callback_handler.trigger_evaluation_on_completion()
                         except Exception as eval_error:
-                            logger.warning("Error triggering evaluation: %s", eval_error)
+                            logger.warning(
+                                "Error triggering evaluation: %s", eval_error
+                            )
                     break
 
                 # Check if step limit reached or stop tool was used
@@ -453,7 +479,9 @@ def main():
                     )
                     # Trigger evaluation after completion
                     try:
-                        logger.info("Triggering evaluation after step limit/stop completion")
+                        logger.info(
+                            "Triggering evaluation after step limit/stop completion"
+                        )
                         callback_handler.trigger_evaluation_on_completion()
                     except Exception as eval_error:
                         logger.warning("Error triggering evaluation: %s", eval_error)
@@ -549,9 +577,9 @@ def main():
                 memory_location = f"OpenSearch: {os.getenv('OPENSEARCH_HOST')}"
             else:
                 memory_location = f"./mem0_faiss_{local_operation_id}"
-            
+
             evidence_location = f"./evidence/evidence_{local_operation_id}"
-            
+
             print(
                 "\n%sEvidence stored in:%s %s"
                 % (Colors.BOLD, Colors.RESET, evidence_location)
@@ -588,11 +616,11 @@ def main():
             try:
                 logger.info("Triggering evaluation on completion")
                 callback_handler.trigger_evaluation_on_completion()
-                
+
                 # Wait for evaluation to complete if running
                 if os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
                     callback_handler.wait_for_evaluation_completion(timeout=300)
-                    
+
             except Exception as eval_error:
                 logger.warning("Error triggering evaluation: %s", eval_error)
         else:
@@ -609,12 +637,11 @@ def main():
         end_time = time.time()
         total_time = end_time - start_time
         logger.info("Operation %s ended after %.2fs", local_operation_id, total_time)
-        
+
         # Flush OpenTelemetry traces before exit
         try:
-            from opentelemetry import trace
             tracer_provider = trace.get_tracer_provider()
-            if hasattr(tracer_provider, 'force_flush'):
+            if hasattr(tracer_provider, "force_flush"):
                 logger.debug("Flushing OpenTelemetry traces...")
                 tracer_provider.force_flush()
                 # Give a moment for traces to be sent

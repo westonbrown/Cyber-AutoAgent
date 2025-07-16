@@ -6,14 +6,13 @@ from typing import Dict, Any
 from .config import get_config_manager
 
 
-
 def _get_swarm_model_guidance(server: str) -> str:
     """Generate swarm model configuration guidance based on server type."""
     # Use the new configuration system
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(server)
     swarm_config = server_config.swarm
-    
+
     if server == "local":
         ollama_host = config_manager.get_ollama_host()
         return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
@@ -36,21 +35,27 @@ def get_system_prompt(
     max_steps: int,
     operation_id: str,
     tools_context: str = "",
-    server: str = "remote", # Add server parameter
+    server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
     swarm_guidance = _get_swarm_model_guidance(server)
-    full_tools_context = f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
-    
+    full_tools_context = (
+        f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
+    )
+
     # Dynamic memory instruction based on whether continuing previous operation
-    memory_instruction = """
+    memory_instruction = (
+        """
 - FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
-- Build upon previous discoveries and avoid repeating completed work""" if has_memory_path else """
+- Build upon previous discoveries and avoid repeating completed work"""
+        if has_memory_path
+        else """
 - Begin with reconnaissance - do NOT check memory on fresh operations
 - Focus first step on target information gathering"""
-    
+    )
+
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
 </role>
@@ -66,7 +71,7 @@ Procedural Memory: Tool registry + dynamic tool creation capability
 - Target: {target}
 - Objective: {objective}
 - Operation ID: {operation_id}
-- Budget: {max_steps} steps (Urgency: {'HIGH' if max_steps < 30 else 'MEDIUM'})
+- Budget: {max_steps} steps (Urgency: {"HIGH" if max_steps < 30 else "MEDIUM"})
 - Available Tools: {full_tools_context}
 - Package Installation: You can install packages without sudo:
   - System: `apt-get install [package]` or `apt install [package]`
@@ -288,7 +293,7 @@ def get_continuation_prompt(
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
-    
+
     return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}
 Reassessing strategy based on current knowledge and confidence levels.
 Continuing adaptive execution toward objective completion."""
