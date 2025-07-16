@@ -19,7 +19,7 @@ import os
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 import requests
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class ModelProvider(Enum):
     """Supported model providers."""
     AWS_BEDROCK = "aws_bedrock"
     OLLAMA = "ollama"
-    OPENAI = "openai"  # Future extension
+    OPENAI = "openai"  # Future extension possible in a simple way
 
 
 @dataclass
@@ -291,25 +291,27 @@ class ConfigManager:
     def _apply_environment_overrides(self, server: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
         # Main LLM model override
-        if os.getenv("CYBER_AGENT_LLM_MODEL"):
+        llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
+        if llm_model:
             defaults["llm"] = LLMConfig(
                 provider=defaults["llm"].provider,
-                model_id=os.getenv("CYBER_AGENT_LLM_MODEL"),
+                model_id=llm_model,
                 temperature=defaults["llm"].temperature,
                 max_tokens=defaults["llm"].max_tokens
             )
         
         # Embedding model override
-        if os.getenv("CYBER_AGENT_EMBEDDING_MODEL"):
+        embedding_model = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+        if embedding_model:
             defaults["embedding"] = EmbeddingConfig(
                 provider=defaults["embedding"].provider,
-                model_id=os.getenv("CYBER_AGENT_EMBEDDING_MODEL"),
+                model_id=embedding_model,
                 dimensions=defaults["embedding"].dimensions
             )
         
         # Evaluation model override
-        if os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL"):
-            eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
+        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
+        if eval_model:
             defaults["evaluation_llm"] = LLMConfig(
                 provider=defaults["evaluation_llm"].provider,
                 model_id=eval_model,
@@ -318,25 +320,28 @@ class ConfigManager:
             )
         
         # Memory LLM override
-        if os.getenv("MEM0_LLM_MODEL"):
+        memory_llm_model = os.getenv("MEM0_LLM_MODEL")
+        if memory_llm_model:
             defaults["memory_llm"] = LLMConfig(
                 provider=defaults["memory_llm"].provider,
-                model_id=os.getenv("MEM0_LLM_MODEL"),
+                model_id=memory_llm_model,
                 temperature=defaults["memory_llm"].temperature,
                 max_tokens=defaults["memory_llm"].max_tokens
             )
         
         # Memory embedding override (only if not already overridden)
-        if os.getenv("MEM0_EMBEDDING_MODEL") and not os.getenv("CYBER_AGENT_EMBEDDING_MODEL"):
+        mem0_embedding_model = os.getenv("MEM0_EMBEDDING_MODEL")
+        if mem0_embedding_model and not embedding_model:  # Only if not already overridden
             defaults["embedding"] = EmbeddingConfig(
                 provider=defaults["embedding"].provider,
-                model_id=os.getenv("MEM0_EMBEDDING_MODEL"),
+                model_id=mem0_embedding_model,
                 dimensions=defaults["embedding"].dimensions
             )
         
         # Region override
-        if os.getenv("AWS_REGION"):
-            defaults["region"] = os.getenv("AWS_REGION")
+        aws_region = os.getenv("AWS_REGION")
+        if aws_region:
+            defaults["region"] = aws_region
         
         return defaults
     
