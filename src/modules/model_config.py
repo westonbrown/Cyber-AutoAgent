@@ -202,6 +202,44 @@ class ConfigManager:
         """Check if a model supports thinking capabilities."""
         return model_id in self.get_thinking_models()
     
+    def get_thinking_model_config(self, model_id: str, region_name: str) -> Dict[str, Any]:
+        """Get configuration for thinking-enabled models."""
+        return {
+            "model_id": model_id,
+            "region_name": region_name,
+            "temperature": 1.0,
+            "max_tokens": 4096,
+            "additional_request_fields": {
+                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+                "thinking": {"type": "enabled", "budget_tokens": 8000},
+            },
+        }
+    
+    def get_standard_model_config(self, model_id: str, region_name: str, server: str) -> Dict[str, Any]:
+        """Get configuration for standard (non-thinking) models."""
+        server_config = self.get_server_config(server)
+        llm_config = server_config.llm
+        
+        return {
+            "model_id": model_id,
+            "region_name": region_name,
+            "temperature": llm_config.temperature,
+            "max_tokens": llm_config.max_tokens,
+            "top_p": llm_config.top_p,
+        }
+    
+    def get_local_model_config(self, model_id: str, server: str) -> Dict[str, Any]:
+        """Get configuration for local Ollama models."""
+        server_config = self.get_server_config(server)
+        llm_config = server_config.llm
+        
+        return {
+            "model_id": model_id,
+            "host": self.get_ollama_host(),
+            "temperature": llm_config.temperature,
+            "max_tokens": llm_config.max_tokens,
+        }
+    
     def _initialize_default_configs(self) -> Dict[str, Dict[str, Any]]:
         """Initialize default configurations for all server types."""
         return {
@@ -358,25 +396,45 @@ class ConfigManager:
         server_config = self.get_server_config(server, **overrides)
         memory_config = server_config.memory
         
-        # Build embedder config
-        embedder_config = {
-            "provider": memory_config.embedder.provider.value,
-            "config": {
-                "model": memory_config.embedder.model_id,
-                "aws_region": memory_config.embedder.aws_region
+        # Build embedder config based on server type
+        if server == "local":
+            embedder_config = {
+                "provider": memory_config.embedder.provider.value,
+                "config": {
+                    "model": memory_config.embedder.model_id,
+                    "ollama_base_url": self.get_ollama_host()
+                }
             }
-        }
+        else:
+            embedder_config = {
+                "provider": memory_config.embedder.provider.value,
+                "config": {
+                    "model": memory_config.embedder.model_id,
+                    "aws_region": memory_config.embedder.aws_region
+                }
+            }
         
-        # Build LLM config
-        llm_config = {
-            "provider": memory_config.llm.provider.value,
-            "config": {
-                "model": memory_config.llm.model_id,
-                "temperature": memory_config.llm.temperature,
-                "max_tokens": memory_config.llm.max_tokens,
-                "aws_region": memory_config.llm.aws_region
+        # Build LLM config based on server type
+        if server == "local":
+            llm_config = {
+                "provider": memory_config.llm.provider.value,
+                "config": {
+                    "model": memory_config.llm.model_id,
+                    "temperature": memory_config.llm.temperature,
+                    "max_tokens": memory_config.llm.max_tokens,
+                    "ollama_base_url": self.get_ollama_host()
+                }
             }
-        }
+        else:
+            llm_config = {
+                "provider": memory_config.llm.provider.value,
+                "config": {
+                    "model": memory_config.llm.model_id,
+                    "temperature": memory_config.llm.temperature,
+                    "max_tokens": memory_config.llm.max_tokens,
+                    "aws_region": memory_config.llm.aws_region
+                }
+            }
         
         # Build vector store config
         if os.environ.get("OPENSEARCH_HOST"):
