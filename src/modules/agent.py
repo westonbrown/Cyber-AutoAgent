@@ -33,14 +33,10 @@ def _create_remote_model(
 ) -> BedrockModel:
     """Create AWS Bedrock model instance"""
     
-    # Check if this is a thinking-enabled model
-    thinking_models = [
-        "us.anthropic.claude-opus-4-20250514-v1:0",
-        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        "us.anthropic.claude-sonnet-4-20250514-v1:0"
-    ]
+    # Check if this is a thinking-enabled model using centralized config
+    config_manager = get_config_manager()
     
-    if model_id in thinking_models:
+    if config_manager.is_thinking_model(model_id):
         # Use thinking parameters for these models
         return BedrockModel(
             model_id=model_id,
