@@ -17,6 +17,9 @@ from modules.model_config import (
     EmbeddingConfig,
     VectorStoreConfig,
     MemoryConfig,
+    MemoryLLMConfig,
+    MemoryEmbeddingConfig, 
+    MemoryVectorStoreConfig,
     EvaluationConfig,
     SwarmConfig,
     ServerConfig,
@@ -117,6 +120,96 @@ class TestEmbeddingConfig:
         assert config.parameters["dimensions"] == 512
 
 
+class TestMemoryLLMConfig:
+    """Test MemoryLLMConfig dataclass."""
+    
+    def test_default_parameters(self):
+        """Test memory LLM config with default parameters."""
+        config = MemoryLLMConfig(
+            provider=ModelProvider.OLLAMA,
+            model_id="llama3.2:3b"
+        )
+        assert config.temperature == 0.1
+        assert config.max_tokens == 2000
+        assert config.aws_region == "us-east-1"
+        assert config.parameters["temperature"] == 0.1
+        assert config.parameters["max_tokens"] == 2000
+        assert config.parameters["aws_region"] == "us-east-1"
+    
+    def test_custom_parameters(self):
+        """Test memory LLM config with custom parameters."""
+        config = MemoryLLMConfig(
+            provider=ModelProvider.OLLAMA,
+            model_id="llama3.2:3b",
+            temperature=0.2,
+            max_tokens=1500,
+            aws_region="eu-west-1"
+        )
+        assert config.temperature == 0.2
+        assert config.max_tokens == 1500
+        assert config.aws_region == "eu-west-1"
+        assert config.parameters["temperature"] == 0.2
+
+
+class TestMemoryEmbeddingConfig:
+    """Test MemoryEmbeddingConfig dataclass."""
+    
+    def test_default_parameters(self):
+        """Test memory embedding config with default parameters."""
+        config = MemoryEmbeddingConfig(
+            provider=ModelProvider.OLLAMA,
+            model_id="mxbai-embed-large"
+        )
+        assert config.aws_region == "us-east-1"
+        assert config.dimensions == 1024
+        assert config.parameters["aws_region"] == "us-east-1"
+        assert config.parameters["dimensions"] == 1024
+    
+    def test_custom_parameters(self):
+        """Test memory embedding config with custom parameters."""
+        config = MemoryEmbeddingConfig(
+            provider=ModelProvider.OLLAMA,
+            model_id="mxbai-embed-large",
+            aws_region="eu-west-1",
+            dimensions=512
+        )
+        assert config.aws_region == "eu-west-1"
+        assert config.dimensions == 512
+        assert config.parameters["aws_region"] == "eu-west-1"
+
+
+class TestMemoryVectorStoreConfig:
+    """Test MemoryVectorStoreConfig dataclass."""
+    
+    def test_default_provider(self):
+        """Test default vector store configuration."""
+        config = MemoryVectorStoreConfig()
+        assert config.provider == "faiss"
+        assert "embedding_model_dims" in config.faiss_config
+        assert config.faiss_config["embedding_model_dims"] == 1024
+    
+    def test_opensearch_config(self):
+        """Test OpenSearch configuration."""
+        config = MemoryVectorStoreConfig()
+        opensearch_config = config.get_config_for_provider("opensearch")
+        assert opensearch_config["port"] == 443
+        assert opensearch_config["collection_name"] == "mem0_memories"
+        assert opensearch_config["embedding_model_dims"] == 1024
+    
+    def test_faiss_config(self):
+        """Test FAISS configuration."""
+        config = MemoryVectorStoreConfig()
+        faiss_config = config.get_config_for_provider("faiss")
+        assert faiss_config["embedding_model_dims"] == 1024
+    
+    def test_config_overrides(self):
+        """Test configuration overrides."""
+        config = MemoryVectorStoreConfig()
+        opensearch_config = config.get_config_for_provider("opensearch", host="test-host")
+        assert opensearch_config["host"] == "test-host"
+        assert opensearch_config["port"] == 443  # Default preserved
+
+
 class TestConfigManager:
     """Test ConfigManager class."""
     
@@ -198,9 +291,11 @@ class TestConfigManager:
         config = self.config_manager.get_memory_config("local")
         
         assert isinstance(config, MemoryConfig)
+        assert isinstance(config.embedder, MemoryEmbeddingConfig)
         assert config.embedder.provider == ModelProvider.OLLAMA
+        assert isinstance(config.llm, MemoryLLMConfig)
         assert config.llm.provider == ModelProvider.OLLAMA
-        assert isinstance(config.vector_store, VectorStoreConfig)
+        assert isinstance(config.vector_store, MemoryVectorStoreConfig)
     
     def test_get_evaluation_config(self):
         """Test getting evaluation configuration."""
@@ -227,6 +322,68 @@ class TestConfigManager:
         assert "claude" in remote_config.llm.model_id
         assert remote_config.llm.temperature == 0.7
         assert remote_config.llm.max_tokens == 500
+    
+    def test_get_mem0_service_config(self):
+        """Test getting Mem0 service configuration."""
+        # Test local config
+        with patch.dict(os.environ, {}, clear=True):
+            # Clear cache to ensure fresh config
+            self.config_manager._config_cache = {}
+            local_config = self.config_manager.get_mem0_service_config("local")
+            assert isinstance(local_config, dict)
+            assert "embedder" in local_config
+            assert "llm" in local_config
+            assert "vector_store" in local_config
+            
+            # Test embedder config
+            embedder_config = local_config["embedder"]
+            assert embedder_config["provider"] == "ollama"
+            assert embedder_config["config"]["model"] == "mxbai-embed-large"
+            
+            # Test LLM config
+            llm_config = local_config["llm"]
+            assert llm_config["provider"] == "ollama"
+            assert llm_config["config"]["model"] == "llama3.2:3b"
+            assert llm_config["config"]["temperature"] == 0.1
+            assert llm_config["config"]["max_tokens"] == 2000
+            
+            # Test vector store config (should default to FAISS for local)
+            vector_store_config = local_config["vector_store"]
+            assert vector_store_config["provider"] == "faiss"
+            assert vector_store_config["config"]["embedding_model_dims"] == 1024
+        
+        # Test remote config
+        remote_config = self.config_manager.get_mem0_service_config("remote")
+        assert isinstance(remote_config, dict)
+        
+        # Test embedder config
+        embedder_config = remote_config["embedder"]
+        assert embedder_config["provider"] == "aws_bedrock"
+        assert "titan-embed" in embedder_config["config"]["model"]
+        assert embedder_config["config"]["aws_region"] == "us-east-1"
+        
+        # Test LLM config
+        llm_config = remote_config["llm"]
+        assert llm_config["provider"] == "aws_bedrock"
+        assert "claude" in llm_config["config"]["model"]
+        assert llm_config["config"]["temperature"] == 0.1
+        assert llm_config["config"]["max_tokens"] == 2000
+        assert llm_config["config"]["aws_region"] == "us-east-1"
+    
+    @patch.dict(os.environ, {"OPENSEARCH_HOST": "test-opensearch.com"})
+    def test_get_mem0_service_config_with_opensearch(self):
+        """Test Mem0 service configuration with OpenSearch."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+        
+        config = self.config_manager.get_mem0_service_config("remote")
+        
+        # Should use OpenSearch when OPENSEARCH_HOST is set
+        vector_store_config = config["vector_store"]
+        assert vector_store_config["provider"] == "opensearch"
+        assert vector_store_config["config"]["host"] == "test-opensearch.com"
+        assert vector_store_config["config"]["port"] == 443
+        assert vector_store_config["config"]["collection_name"] == "mem0_memories"
     
     @patch.dict(os.environ, {"CYBER_AGENT_LLM_MODEL": "custom-llm"})
     def test_environment_variable_override(self):
@@ -419,3 +576,37 @@ class TestEnvironmentIntegration:
             config = config_manager.get_server_config("local")
             
             assert config.evaluation.llm.model_id == "new-evaluator"
+    
+    def test_centralized_region_configuration(self):
+        """Test that AWS regions are centralized and consistent across all components."""
+        # Test with custom region
+        with patch.dict(os.environ, {"AWS_REGION": "eu-west-1"}, clear=True):
+            config_manager = ConfigManager()
+            
+            # Test get_default_region method
+            assert config_manager.get_default_region() == "eu-west-1"
+            
+            # Test server config uses centralized region
+            server_config = config_manager.get_server_config("remote")
+            assert server_config.region == "eu-west-1"
+            
+            # Test memory config uses centralized region
+            memory_config = config_manager.get_memory_config("remote")
+            assert memory_config.llm.aws_region == "eu-west-1"
+            assert memory_config.embedder.aws_region == "eu-west-1"
+            
+            # Test mem0 service config uses centralized region
+            mem0_config = config_manager.get_mem0_service_config("remote")
+            assert mem0_config["llm"]["config"]["aws_region"] == "eu-west-1"
+            assert mem0_config["embedder"]["config"]["aws_region"] == "eu-west-1"
+        
+        # Test without environment variable (should use default)
+        with patch.dict(os.environ, {}, clear=True):
+            config_manager = ConfigManager()
+            
+            # Test get_default_region method
+            assert config_manager.get_default_region() == "us-east-1"
+            
+            # Test server config uses default region
+            server_config = config_manager.get_server_config("remote")
+            assert server_config.region == "us-east-1"
