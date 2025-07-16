@@ -131,6 +131,10 @@ dmypy.json
 # Evidence files
 evidence_*
 
+# Local experimentation and memory files
+experimentation/
+memory/
+
 # IDE
 .vscode/
 .idea/
