@@ -40,9 +40,9 @@ class TestModelConfigs:
 
     def test_get_default_model_configs_invalid(self):
         """Test configuration for invalid server type"""
-        config = _get_default_model_configs("invalid")
-        # Should default to remote
-        assert "us.anthropic.claude" in config["llm_model"]
+        # Should now raise an error for invalid server type
+        with pytest.raises(ValueError, match="Unsupported server type"):
+            _get_default_model_configs("invalid")
 
 
 class TestOllamaHostDetection:
@@ -162,7 +162,7 @@ class TestMemoryConfig:
                             # Verify local config structure
                             assert config["embedder"]["provider"] == "ollama"
                             assert config["llm"]["provider"] == "ollama"
-                            assert "base_url" in config["embedder"]["config"]
+                            assert "ollama_base_url" in config["embedder"]["config"]
 
     @patch("modules.agent.initialize_memory_system")
     def test_memory_config_remote(self, mock_init_memory):
