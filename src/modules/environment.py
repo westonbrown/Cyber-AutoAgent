@@ -53,11 +53,12 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
 
     # Check existing tools using subprocess for security
     for tool_name, description in cyber_tools.items():
-        check_cmd = (
-            ["which", tool_name]
-            if tool_name != "metasploit"
-            else ["which", "msfconsole"]
-        )
+        tool_commands = {
+            "metasploit": "msfconsole",
+            "iproute2": "ip",
+            "net-tools": "netstat"
+        }
+        check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
         try:
             subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
             available_tools.append(tool_name)
