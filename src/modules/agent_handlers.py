@@ -1071,7 +1071,7 @@ Format this as a professional penetration testing report."""
                         )
 
                         # Fetch traces from Langfuse API
-                        logger.info(f"Attempting to fetch traces from Langfuse API")
+                        logger.info("Attempting to fetch traces from Langfuse API")
 
                         try:
                             # First, try to get all recent traces without filtering

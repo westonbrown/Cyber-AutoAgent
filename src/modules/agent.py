@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
+"""Agent creation and management for Cyber-AutoAgent."""
 
 import os
 import logging
 import warnings
 from datetime import datetime
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple, Any
 
-import requests
-import ollama
 from strands import Agent
 from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
@@ -44,16 +43,15 @@ def _create_remote_model(
             max_tokens=config["max_tokens"],
             additional_request_fields=config["additional_request_fields"],
         )
-    else:
-        # Standard model configuration
-        config = config_manager.get_standard_model_config(model_id, region_name, server)
-        return BedrockModel(
-            model_id=config["model_id"],
-            region_name=config["region_name"],
-            temperature=config["temperature"],
-            max_tokens=config["max_tokens"],
-            top_p=config["top_p"],
-        )
+    # Standard model configuration
+    config = config_manager.get_standard_model_config(model_id, region_name, server)
+    return BedrockModel(
+        model_id=config["model_id"],
+        region_name=config["region_name"],
+        temperature=config["temperature"],
+        max_tokens=config["max_tokens"],
+        top_p=config["top_p"],
+    )
 
 
 def _create_local_model(
