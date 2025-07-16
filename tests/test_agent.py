@@ -13,7 +13,7 @@ from modules.agent import (
     _validate_server_requirements,
     create_agent,
 )
-from modules.model_config import get_config_manager, get_default_model_configs, get_ollama_host
+from modules.config import get_config_manager, get_default_model_configs, get_ollama_host
 
 
 class TestModelConfigs:
