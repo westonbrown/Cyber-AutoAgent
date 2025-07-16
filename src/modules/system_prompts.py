@@ -6,27 +6,6 @@ from typing import Dict, Any
 from .model_config import get_config_manager
 
 
-def _get_default_model_configs(server: str) -> Dict[str, Any]:
-    """Get default model configurations based on server type (backward compatibility)"""
-    # Delegate to the new configuration system
-    config_manager = get_config_manager()
-    server_config = config_manager.get_server_config(server)
-    
-    return {
-        "llm_model": server_config.llm.model_id,
-        "embedding_model": server_config.embedding.model_id,
-        "embedding_dims": server_config.embedding.dimensions,
-    }
-
-
-def _get_ollama_host() -> str:
-    """
-    Determine appropriate Ollama host based on environment (backward compatibility).
-    """
-    # Delegate to the new configuration system
-    config_manager = get_config_manager()
-    return config_manager.get_ollama_host()
-
 
 def _get_swarm_model_guidance(server: str) -> str:
     """Generate swarm model configuration guidance based on server type."""

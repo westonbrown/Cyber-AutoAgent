@@ -15,7 +15,7 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request
 from strands_tools.swarm import swarm
 
-from .system_prompts import get_system_prompt, _get_ollama_host
+from .system_prompts import get_system_prompt
 from .model_config import get_config_manager
 from .agent_handlers import ReasoningHandler
 from .utils import Colors
@@ -72,7 +72,7 @@ def _create_local_model(
     """Create Ollama model instance"""
 
     if host is None:
-        host = _get_ollama_host()
+        host = get_config_manager().get_ollama_host()
 
     return OllamaModel(
         host=host, model_id=model_id, temperature=temperature, max_tokens=max_tokens
@@ -84,7 +84,7 @@ def _validate_server_requirements(server: str) -> None:
     """Validate server requirements before creating agent"""
     if server == "local":
         # Get dynamic host configuration
-        ollama_host = _get_ollama_host()
+        ollama_host = get_config_manager().get_ollama_host()
         
         # Check if Ollama is running
         try:
@@ -184,7 +184,7 @@ def create_agent(
     
     if server == "local":
         # Local mode with Ollama
-        ollama_host = _get_ollama_host()
+        ollama_host = get_config_manager().get_ollama_host()
         memory_config = {
             "embedder": {
                 "provider": "ollama",
