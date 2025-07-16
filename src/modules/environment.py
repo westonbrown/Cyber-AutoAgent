@@ -120,7 +120,7 @@ class TeeOutput:
         with self.lock:
             try:
                 self.log.close()
-            except:
+            except OSError:
                 pass
     
     # Additional methods to fully mimic file objects

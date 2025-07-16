@@ -434,7 +434,7 @@ class CyberAgentEvaluator:
                     metadata=score_metadata
                 )
             else:
-                logger.error(f"No score creation method found on Langfuse client")
+                logger.error("No score creation method found on Langfuse client")
                 return
         
         logger.info(f"Uploaded {len(scores)} evaluation scores to Langfuse trace {trace_id}")
