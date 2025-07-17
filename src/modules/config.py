@@ -189,6 +189,41 @@ class SwarmConfig:
     llm: ModelConfig
 
 
+def get_default_base_dir() -> str:
+    """Get the default base directory for outputs.
+
+    Returns:
+        Default base directory path, preferring project root if detectable
+    """
+    # Try to detect if we're in a project directory structure
+    cwd = os.getcwd()
+
+    # Check if we're in the project root (contains pyproject.toml)
+    if os.path.exists(os.path.join(cwd, "pyproject.toml")):
+        return os.path.join(cwd, "outputs")
+
+    # Check if we're in a subdirectory of the project
+    # Look for project root by traversing up the directory tree
+    current = cwd
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        if os.path.exists(os.path.join(current, "pyproject.toml")):
+            return os.path.join(current, "outputs")
+        current = os.path.dirname(current)
+
+    # Fallback to current working directory
+    return os.path.join(cwd, "outputs")
+
+
+@dataclass
+class OutputConfig:
+    """Configuration for output directory management."""
+
+    base_dir: str = field(default_factory=get_default_base_dir)
+    target_name: Optional[str] = None
+    enable_unified_output: bool = False
+    cleanup_memory: bool = False
+
+
 @dataclass
 class ServerConfig:
     """Complete server configuration."""
@@ -199,6 +234,7 @@ class ServerConfig:
     memory: MemoryConfig
     evaluation: EvaluationConfig
     swarm: SwarmConfig
+    output: OutputConfig = field(default_factory=OutputConfig)
     host: Optional[str] = None
     region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
@@ -376,6 +412,9 @@ class ConfigManager:
         # Build swarm configuration
         swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(server, defaults))
 
+        # Build output configuration
+        output_config = self._get_output_config(server, defaults, overrides)
+
         # Resolve host for local server
         host = self.get_ollama_host() if server == "local" else None
 
@@ -386,6 +425,7 @@ class ConfigManager:
             memory=memory_config,
             evaluation=evaluation_config,
             swarm=swarm_config,
+            output=output_config,
             host=host,
             region=defaults["region"],
         )
@@ -417,6 +457,11 @@ class ConfigManager:
         """Get swarm configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.swarm
+
+    def get_output_config(self, server: str, **overrides) -> OutputConfig:
+        """Get output configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.output
 
     def get_mem0_service_config(self, server: str, **overrides) -> Dict[str, Any]:
         """Get complete Mem0 service configuration."""
@@ -634,6 +679,38 @@ class ConfigManager:
     ) -> ModelConfig:
         """Get swarm LLM configuration."""
         return defaults["swarm_llm"]
+
+    def _get_output_config(
+        self, server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]
+    ) -> OutputConfig:
+        """Get output configuration with environment variable and override support."""
+        # Get base output directory
+        base_dir = (
+            overrides.get("output_dir")
+            or os.getenv("CYBER_AGENT_OUTPUT_DIR")
+            or get_default_base_dir()
+        )
+
+        # Get target name
+        target_name = overrides.get("target_name")
+
+        # Get feature flags
+        enable_unified_output = (
+            overrides.get("enable_unified_output", False)
+            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "false").lower() == "true"
+        )
+
+        cleanup_memory = (
+            overrides.get("cleanup_memory", False)
+            or os.getenv("CYBER_AGENT_CLEANUP_MEMORY", "false").lower() == "true"
+        )
+
+        return OutputConfig(
+            base_dir=base_dir,
+            target_name=target_name,
+            enable_unified_output=enable_unified_output,
+            cleanup_memory=cleanup_memory,
+        )
 
     def _validate_ollama_requirements(self) -> None:
         """Validate Ollama requirements."""
