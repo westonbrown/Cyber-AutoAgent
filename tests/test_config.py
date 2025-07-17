@@ -687,7 +687,7 @@ class TestOutputConfig:
         config = OutputConfig()
         assert config.base_dir == get_default_base_dir()
         assert config.target_name is None
-        assert config.enable_unified_output is False
+        assert config.enable_unified_output is True
         assert config.cleanup_memory is False
 
     def test_custom_output_config(self):
@@ -728,7 +728,7 @@ class TestOutputConfigIntegration:
         assert isinstance(output_config, OutputConfig)
         assert output_config.base_dir == get_default_base_dir()
         assert output_config.target_name is None
-        assert output_config.enable_unified_output is False
+        assert output_config.enable_unified_output is True
         assert output_config.cleanup_memory is False
 
     def test_get_output_config_with_overrides(self):
