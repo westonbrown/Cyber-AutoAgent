@@ -1036,10 +1036,7 @@ Format this as a professional penetration testing report."""
         if eval_enabled == "true":
             self.evaluation_triggered = True  # Mark as triggered
             try:
-                # Lazy import evaluation module
-                from .evaluation import CyberAgentEvaluator
-                from langfuse import Langfuse
-
+                
                 # Configure Langfuse connection
                 langfuse = Langfuse(
                     public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
@@ -1072,7 +1069,7 @@ Format this as a professional penetration testing report."""
 
                         # Fetch traces from Langfuse API
                         logger.info("Attempting to fetch traces from Langfuse API")
-
+                        
                         try:
                             # First, try to get all recent traces without filtering
                             all_traces = langfuse.api.trace.list(limit=20)
