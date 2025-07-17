@@ -66,7 +66,7 @@
 # Using Docker (Recommended)
 docker run --rm \
   -v ~/.aws:/home/cyberagent/.aws:ro \
-  -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/outputs:/app/outputs \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify SQL injection vulnerabilities"
@@ -399,8 +399,8 @@ docker run --rm \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
-  -v $(pwd)/evidence:/app/evidence \
-  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/tools:/app/tools \
   cyber-autoagent \
   --target "x.x.x.x" \
   --objective "Identify vulnerabilities" \
@@ -435,9 +435,12 @@ python src/cyberautoagent.py \
 
 | Data Type | Location |
 |-----------|----------|
-| Evidence  | `./evidence/evidence_OP_*` |
-| Logs      | `./logs/cyber_operations.log` |
-| Reports   | `./evidence/evidence_OP_*/` |
+| Evidence  | `./outputs/<target>/OP_<id>/` |
+| Logs      | `./outputs/<target>/OP_<id>/logs/` |
+| Reports   | `./outputs/<target>/OP_<id>/` |
+| Tools     | `./tools/` |
+| Utils     | `./outputs/<target>/OP_<id>/utils/` |
+| Memory    | `./outputs/<target>/memory/` |
 
 Directories are created automatically on first run.
 
@@ -477,8 +480,8 @@ docker run --rm \
   -e LANGFUSE_PUBLIC_KEY=cyber-public \
   -e LANGFUSE_SECRET_KEY=cyber-secret \
   -e ENABLE_AUTO_EVALUATION=true \
-  -v $(pwd)/evidence:/app/evidence \
-  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/tools:/app/tools \
   cyber-autoagent:dev \
   --target "http://testphp.vulnweb.com" \
   --objective "Comprehensive SQL injection and XSS assessment" \
@@ -560,8 +563,14 @@ cyber-autoagent/
 ├── pyproject.toml            # Dependencies and project config
 ├── uv.lock                   # Dependency lockfile
 ├── .env.example              # Environment configuration template
-├── evidence/                 # Generated evidence (auto-created)
-├── logs/                     # Operation logs (auto-created)
+├── outputs/                  # Unified output directory (auto-created)
+│   ├── <target>/            # Target-specific organization
+│   │   ├── OP_<id>/        # Operation-specific files
+│   │   │   ├── evidence/   # Security findings
+│   │   │   ├── utils/      # Tool outputs
+│   │   │   └── logs/       # Operation logs
+│   │   └── memory/         # Cross-operation memory
+│   └── tools/              # Custom tools created by agent
 └── README.md                 # This file
 ```
 
