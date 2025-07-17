@@ -236,10 +236,10 @@ def main():
         config_overrides["output_dir"] = args.output_dir
     if args.cleanup_memory:
         config_overrides["cleanup_memory"] = args.cleanup_memory
-    
+
     # Always enable unified output system
     config_overrides["enable_unified_output"] = True
-    
+
     server_config = config_manager.get_server_config(args.server, **config_overrides)
 
     # Set mem0 environment variables based on configuration
@@ -248,9 +248,9 @@ def main():
     os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
 
     # Log operation start
-    operation_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    operation_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     local_operation_id = f"OP_{operation_timestamp}"
-    
+
     # Initialize logger using unified output system
     log_path = get_output_path(
         sanitize_target_name(args.target),
@@ -259,7 +259,7 @@ def main():
         server_config.output.base_dir,
     )
     log_file = os.path.join(log_path, "cyber_operations.log")
-    
+
     logger = setup_logging(log_file=log_file, verbose=args.verbose)
 
     # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
@@ -323,8 +323,10 @@ def main():
 
     # Display operation details with unified output information
     target_sanitized = sanitize_target_name(args.target)
-    output_base_path = get_output_path(target_sanitized, operation_timestamp, "", server_config.output.base_dir)
-    
+    output_base_path = get_output_path(
+        target_sanitized, operation_timestamp, "", server_config.output.base_dir
+    )
+
     print_section(
         "MISSION PARAMETERS",
         f"""
@@ -645,11 +647,11 @@ def main():
 
         # Clean up resources
         should_cleanup = (
-            not args.keep_memory and 
-            not args.memory_path and 
-            server_config.output.cleanup_memory
+            not args.keep_memory
+            and not args.memory_path
+            and server_config.output.cleanup_memory
         )
-        
+
         if should_cleanup:
             try:
                 clean_operation_memory(local_operation_id)
