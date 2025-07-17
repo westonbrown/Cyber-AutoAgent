@@ -599,7 +599,6 @@ def main():
             evidence_location = get_output_path(
                 sanitize_target_name(args.target),
                 operation_timestamp,
-                "evidence",
                 server_config.output.base_dir,
             )
 
@@ -654,7 +653,9 @@ def main():
 
         if should_cleanup:
             try:
-                clean_operation_memory(local_operation_id)
+                # Extract target name for unified output structure cleanup
+                target_name = sanitize_target_name(args.target)
+                clean_operation_memory(local_operation_id, target_name)
                 logger.info("Memory cleaned up for operation %s", local_operation_id)
             except Exception as cleanup_error:
                 logger.warning("Error cleaning up memory: %s", cleanup_error)
