@@ -2,14 +2,122 @@
 
 import os
 import re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
 
-def get_data_path(subdir=""):
-    """Get the appropriate data path"""
-    base = os.getcwd()
+def get_data_path(subdir: str = "", base_dir: Optional[str] = None) -> str:
+    """Get the appropriate data path with optional base directory override.
+
+    Args:
+        subdir: Subdirectory to append to base path
+        base_dir: Optional base directory override (defaults to current working directory)
+
+    Returns:
+        Full path combining base directory and subdirectory
+    """
+    base = base_dir if base_dir is not None else os.getcwd()
     return os.path.join(base, subdir) if subdir else base
+
+
+def get_output_path(
+    target_name: str,
+    operation_id: str,
+    subdir: str = "",
+    base_dir: Optional[str] = None,
+) -> str:
+    """Get path for unified output directory structure.
+
+    Args:
+        target_name: Sanitized target name for organization
+        operation_id: Unique operation identifier
+        subdir: Optional subdirectory within the operation directory
+        base_dir: Optional base directory override (defaults to ./outputs)
+
+    Returns:
+        Full path in format: {base_dir}/{target_name}/OP_{operation_id}/{subdir}
+    """
+    if base_dir is None:
+        base_dir = os.path.join(os.getcwd(), "outputs")
+
+    operation_dir = os.path.join(base_dir, target_name, f"OP_{operation_id}")
+    return os.path.join(operation_dir, subdir) if subdir else operation_dir
+
+
+def sanitize_target_name(target: str) -> str:
+    """Sanitize target string for safe filesystem usage.
+
+    Args:
+        target: Raw target string (URL, IP, domain, etc.)
+
+    Returns:
+        Sanitized string safe for filesystem usage
+    """
+    # Remove protocol prefixes
+    sanitized = re.sub(r"^https?://", "", target)
+    sanitized = re.sub(r"^ftp://", "", sanitized)
+
+    # Remove path components (keep only domain/host part)
+    sanitized = sanitized.split("/")[0]
+
+    # Remove query parameters
+    sanitized = sanitized.split("?")[0]
+
+    # Remove port numbers
+    sanitized = re.sub(r":\d+$", "", sanitized)
+
+    # Replace unsafe characters with underscores
+    sanitized = re.sub(r"[^\w\-.]", "_", sanitized)
+
+    # Remove consecutive underscores
+    sanitized = re.sub(r"_+", "_", sanitized)
+
+    # Remove leading/trailing underscores and dots
+    sanitized = sanitized.strip("_.")
+
+    # Ensure non-empty result
+    if not sanitized:
+        sanitized = "unknown_target"
+
+    return sanitized
+
+
+def validate_output_path(path: str, base_dir: str) -> bool:
+    """Validate that a path is within the allowed output directory.
+
+    Args:
+        path: Path to validate
+        base_dir: Base directory that should contain the path
+
+    Returns:
+        True if path is safe and within base_dir, False otherwise
+    """
+    try:
+        # Resolve both paths to absolute paths
+        abs_path = os.path.abspath(path)
+        abs_base = os.path.abspath(base_dir)
+
+        # Check if path is within base directory
+        common_path = os.path.commonpath([abs_path, abs_base])
+        return common_path == abs_base
+    except (ValueError, OSError):
+        return False
+
+
+def create_output_directory(path: str) -> bool:
+    """Create output directory if it doesn't exist.
+
+    Args:
+        path: Directory path to create
+
+    Returns:
+        True if directory was created or already exists, False on error
+    """
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 # ANSI color codes for terminal output
