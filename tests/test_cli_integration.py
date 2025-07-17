@@ -120,6 +120,31 @@ class TestCLIArguments:
         assert args.model == "custom-model"
         assert args.region == "us-west-2"
         assert args.confirmations is True
+        
+    def test_new_output_arguments(self):
+        """Test that new output configuration arguments are properly parsed"""
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--target", type=str, required=True)
+        parser.add_argument("--objective", type=str, required=True)
+        parser.add_argument("--output-dir", type=str)
+        parser.add_argument("--cleanup-memory", action="store_true")
+
+        args = parser.parse_args(
+            [
+                "--target",
+                "test.com", 
+                "--objective",
+                "test objective",
+                "--output-dir",
+                "/custom/output",
+                "--cleanup-memory",
+            ]
+        )
+
+        assert args.target == "test.com"
+        assert args.objective == "test objective"
+        assert args.output_dir == "/custom/output"
+        assert args.cleanup_memory is True
 
 
 class TestMainFunction:

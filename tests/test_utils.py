@@ -2,9 +2,7 @@
 """Tests for utils module functions."""
 
 import os
-import pytest
 import tempfile
-from unittest.mock import patch
 
 from modules.utils import (
     get_data_path,
@@ -50,13 +48,17 @@ class TestGetOutputPath:
     def test_get_output_path_default(self):
         """Test get_output_path with default parameters."""
         result = get_output_path("example_com", "20240101_120000")
-        expected = os.path.join(os.getcwd(), "outputs", "example_com", "OP_20240101_120000")
+        expected = os.path.join(
+            os.getcwd(), "outputs", "example_com", "OP_20240101_120000"
+        )
         assert result == expected
 
     def test_get_output_path_with_subdir(self):
         """Test get_output_path with subdirectory."""
         result = get_output_path("example_com", "20240101_120000", "logs")
-        expected = os.path.join(os.getcwd(), "outputs", "example_com", "OP_20240101_120000", "logs")
+        expected = os.path.join(
+            os.getcwd(), "outputs", "example_com", "OP_20240101_120000", "logs"
+        )
         assert result == expected
 
     def test_get_output_path_with_base_dir(self):
@@ -69,7 +71,9 @@ class TestGetOutputPath:
     def test_get_output_path_no_subdir(self):
         """Test get_output_path without subdirectory."""
         result = get_output_path("example_com", "20240101_120000", "")
-        expected = os.path.join(os.getcwd(), "outputs", "example_com", "OP_20240101_120000")
+        expected = os.path.join(
+            os.getcwd(), "outputs", "example_com", "OP_20240101_120000"
+        )
         assert result == expected
 
 
@@ -223,7 +227,9 @@ class TestAnalyzeObjectiveCompletion:
         messages = [
             {
                 "role": "assistant",
-                "content": [{"text": "objective achieved: SQL injection vulnerability found"}]
+                "content": [
+                    {"text": "objective achieved: SQL injection vulnerability found"}
+                ],
             }
         ]
         is_complete, summary, metadata = analyze_objective_completion(messages)
@@ -236,7 +242,11 @@ class TestAnalyzeObjectiveCompletion:
         messages = [
             {
                 "role": "assistant",
-                "content": [{"text": "objective achieved: Target compromised with 95% confidence"}]
+                "content": [
+                    {
+                        "text": "objective achieved: Target compromised with 95% confidence"
+                    }
+                ],
             }
         ]
         is_complete, summary, metadata = analyze_objective_completion(messages)
@@ -249,7 +259,7 @@ class TestAnalyzeObjectiveCompletion:
         messages = [
             {
                 "role": "assistant",
-                "content": [{"text": "Success! Found the flag: FLAG{test_flag_123}"}]
+                "content": [{"text": "Success! Found the flag: FLAG{test_flag_123}"}],
             }
         ]
         is_complete, summary, metadata = analyze_objective_completion(messages)
@@ -262,7 +272,7 @@ class TestAnalyzeObjectiveCompletion:
         messages = [
             {
                 "role": "assistant",
-                "content": [{"text": "Challenge complete - all objectives met"}]
+                "content": [{"text": "Challenge complete - all objectives met"}],
             }
         ]
         is_complete, summary, metadata = analyze_objective_completion(messages)
@@ -275,7 +285,11 @@ class TestAnalyzeObjectiveCompletion:
         messages = [
             {
                 "role": "assistant",
-                "content": [{"text": "Still working on the target, found some interesting ports"}]
+                "content": [
+                    {
+                        "text": "Still working on the target, found some interesting ports"
+                    }
+                ],
             }
         ]
         is_complete, summary, metadata = analyze_objective_completion(messages)
