@@ -25,14 +25,16 @@ import atexit
 import re
 import base64
 from datetime import datetime
-from opentelemetry import trace
 import requests
+from opentelemetry import trace as opentelemetry_trace
 
+# Optional telemetry import
 try:
     from strands.telemetry import StrandsTelemetry
 except ImportError:
     StrandsTelemetry = None
 
+# Local imports
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
 from modules.config import get_config_manager

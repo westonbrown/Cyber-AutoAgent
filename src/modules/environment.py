@@ -128,7 +128,11 @@ class TeeOutput:
         with self.lock:
             try:
                 self.log.close()
+<<<<<<< HEAD
             except (OSError, AttributeError):
+=======
+            except OSError:
+>>>>>>> release/0.1.3
                 pass
 
     # Additional methods to fully mimic file objects

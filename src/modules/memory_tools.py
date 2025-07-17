@@ -79,6 +79,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import boto3
+import faiss
 from mem0 import Memory as Mem0Memory
 from mem0 import MemoryClient
 from opensearchpy import AWSV4SignerAuth, RequestsHttpConnection
@@ -192,6 +193,7 @@ class Mem0ServiceClient:
         2. OpenSearch if OPENSEARCH_HOST is set
         3. FAISS (default) if neither MEM0_API_KEY nor OPENSEARCH_HOST is set
         """
+        self.region = None  # Initialize region attribute
         self.mem0 = self._initialize_client(config)
 
     def _initialize_client(self, config: Optional[Dict] = None) -> Any:
@@ -290,13 +292,6 @@ class Mem0ServiceClient:
         Raises:
             ImportError: If faiss-cpu package is not installed.
         """
-        try:
-            import faiss  # noqa: F401
-        except ImportError as err:
-            raise ImportError(
-                "The faiss-cpu package is required for using FAISS as the vector store backend for Mem0."
-                "Please install it using: pip install faiss-cpu"
-            ) from err
 
         merged_config = self._merge_config(config, server)
 
