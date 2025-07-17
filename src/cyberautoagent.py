@@ -25,10 +25,8 @@ import atexit
 import re
 import base64
 from datetime import datetime
-
-# Third-party imports
 import requests
-from opentelemetry import trace as opentelemetry_trace
+from opentelemetry import trace
 
 # Optional telemetry import
 try:
@@ -39,6 +37,7 @@ except ImportError:
 # Local imports
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
+from modules.config import get_config_manager
 from modules.utils import (
     Colors,
     print_banner,
@@ -61,57 +60,58 @@ def setup_observability(logger):
     if os.getenv("ENABLE_OBSERVABILITY", "true").lower() != "true":
         logger.debug("Observability is disabled (set ENABLE_OBSERVABILITY=false)")
         return False
-    
+
     # Get configuration from environment with defaults for self-hosted Langfuse
     host = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public")
     secret_key = os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret")
-    
+
     # Create auth token for Langfuse
-    auth_token = base64.b64encode(
-        f"{public_key}:{secret_key}".encode()
-    ).decode()
-    
+    auth_token = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
+
     # Set OpenTelemetry environment variables that Strands SDK will use
     # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
     # Note: Some OTLP endpoints expect base URL, others expect full path
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
-    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = f"{host}/api/public/otel/v1/traces"
+    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = (
+        f"{host}/api/public/otel/v1/traces"
+    )
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
     os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
-    
+
     # Override service name for OpenTelemetry to show as Cyber-AutoAgent
     os.environ["OTEL_SERVICE_NAME"] = "Cyber-AutoAgent"
-    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = "service.name=Cyber-AutoAgent,service.version=0.1.1,gen_ai.system=Cyber-AutoAgent"
-    
+    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = (
+        "service.name=Cyber-AutoAgent,service.version=0.1.1,gen_ai.system=Cyber-AutoAgent"
+    )
+
     # According to Strands documentation, there are multiple ways to enable OTLP export:
     # Option 1: If OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTLP by default
     # Option 2: Use StrandsTelemetry class (requires strands-agents[otel])
-    
-    try:
+
+    if StrandsTelemetry:
         # Try to use StrandsTelemetry for explicit setup
-        if StrandsTelemetry is None:
-            raise ImportError("StrandsTelemetry not available")
-        
         logger.debug("StrandsTelemetry available - setting up OTLP exporter")
         strands_telemetry = StrandsTelemetry()
         strands_telemetry.setup_otlp_exporter()  # Send traces to OTLP endpoint
-        
+
         # Also setup console exporter for debugging if requested
         if os.getenv("DEBUG_TRACES", "false").lower() == "true":
             strands_telemetry.setup_console_exporter()
             logger.info("Console trace exporter enabled for debugging")
-            
+
         logger.info("OTLP exporter initialized via StrandsTelemetry")
-        
-    except ImportError:
+
+    else:
         # StrandsTelemetry not available - rely on environment variables
-        logger.info("StrandsTelemetry not available - using environment variable configuration")
+        logger.info(
+            "StrandsTelemetry not available - using environment variable configuration"
+        )
         logger.info("Strands will use OTEL_EXPORTER_OTLP_ENDPOINT for trace export")
-        
+
         # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
         # We've already set all necessary environment variables above
-    
+
     # Test OTLP endpoint connectivity
     try:
         test_url = f"{host}/api/public/otel/v1/traces"
@@ -120,17 +120,22 @@ def setup_observability(logger):
         if response.status_code == 405:  # Method not allowed is expected for GET
             logger.info("OTLP endpoint is reachable at %s", test_url)
         else:
-            logger.warning("OTLP endpoint returned unexpected status %d", response.status_code)
+            logger.warning(
+                "OTLP endpoint returned unexpected status %d", response.status_code
+            )
     except requests.exceptions.ConnectionError:
-        logger.error("Cannot connect to OTLP endpoint at %s - traces will not be exported!", test_url)
+        logger.error(
+            "Cannot connect to OTLP endpoint at %s - traces will not be exported!",
+            test_url,
+        )
         logger.error("  Check that Langfuse is running and accessible")
     except Exception as e:
         logger.warning("Could not test OTLP endpoint: %s", str(e))
-    
+
     logger.info("Langfuse observability enabled at %s", host)
     logger.info("OTLP endpoint: %s", os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"])
     logger.info("View traces at %s (login: admin@cyber-autoagent.com/changeme)", host)
-    
+
     return True
 
 
@@ -165,13 +170,13 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        help="Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)",
+        help="Model ID to use (defaults configured in config.py)",
     )
     parser.add_argument(
         "--region",
         type=str,
         default="us-east-1",
-        help="AWS region for Bedrock (default: us-east-1)",
+        help="AWS region for Bedrock (default: from AWS_REGION or us-east-1)",
     )
     parser.add_argument(
         "--server",
@@ -205,49 +210,61 @@ def main():
         os.environ.pop("BYPASS_TOOL_CONSENT", None)
 
     os.environ["DEV"] = "true"
-    
+
+    # Get centralized region configuration if not provided
+    if args.region is None:
+        config_manager = get_config_manager()
+        args.region = config_manager.get_default_region()
+
     os.environ["AWS_REGION"] = args.region
-    
+
+    # Get configuration from ConfigManager
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(args.server)
+
+    # Set mem0 environment variables based on configuration
     if args.server == "local":
         os.environ["MEM0_LLM_PROVIDER"] = "ollama"
-        os.environ["MEM0_LLM_MODEL"] = "llama3.2:3b"  # mem0 always uses the smaller model
-        os.environ["MEM0_EMBEDDING_MODEL"] = "mxbai-embed-large"
+        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
+        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
     else:
         os.environ["MEM0_LLM_PROVIDER"] = "aws_bedrock"
-        os.environ["MEM0_LLM_MODEL"] = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"  # mem0 uses Claude 3.5 Sonnet
-        os.environ["MEM0_EMBEDDING_MODEL"] = "amazon.titan-embed-text-v2:0"
+        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
+        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
 
     # Initialize logger with volume path
     logger = setup_logging(
         log_file=os.path.join(get_data_path("logs"), "cyber_operations.log"),
         verbose=args.verbose,
     )
-    
+
     # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
     setup_observability(logger)
-    
+
     # Register cleanup function to properly close log files
     def cleanup_logging():
         """Ensure log files are properly closed on exit"""
         try:
             # Write session end marker before closing
-            print("\n" + "="*80)
-            print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("="*80 + "\n")
+            print("\n" + "=" * 80)
+            print(
+                f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            print("=" * 80 + "\n")
         except Exception:
             pass
-        
-        if hasattr(sys.stdout, 'close') and callable(sys.stdout.close):
+
+        if hasattr(sys.stdout, "close") and callable(sys.stdout.close):
             try:
                 sys.stdout.close()
             except Exception:
                 pass
-        if hasattr(sys.stderr, 'close') and callable(sys.stderr.close):
+        if hasattr(sys.stderr, "close") and callable(sys.stderr.close):
             try:
                 sys.stderr.close()
             except Exception:
                 pass
-    
+
     atexit.register(cleanup_logging)
 
     # Display banner
@@ -260,7 +277,7 @@ def main():
 {Colors.RED}{Colors.BOLD}EXPERIMENTAL SOFTWARE - AUTHORIZED USE ONLY{Colors.RESET}
 
 • This tool is for {Colors.BOLD}authorized security testing only{Colors.RESET}
-• Use only in {Colors.BOLD}safe, sandboxed environments{Colors.RESET}  
+• Use only in {Colors.BOLD}safe, sandboxed environments{Colors.RESET}
 • Ensure you have {Colors.BOLD}explicit written permission{Colors.RESET} for target testing
 • Users are {Colors.BOLD}fully responsible{Colors.RESET} for compliance with applicable laws
 • Misuse may result in {Colors.BOLD}legal consequences{Colors.RESET}
@@ -300,7 +317,6 @@ def main():
     start_time = time.time()
     callback_handler = None
 
-
     try:
         # Create agent
         agent, callback_handler = create_agent(
@@ -321,7 +337,7 @@ def main():
             args.target, args.objective, args.iterations, available_tools
         )
 
-        print("\n%s%s%s\n" % (Colors.DIM, "─" * 80, Colors.RESET))
+        print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
 
         # Execute autonomous operation
         try:
@@ -342,25 +358,22 @@ def main():
 
                     # Update conversation history
                     # Structure content properly for Strands integration
-                    messages.append({
-                        "role": "user", 
-                        "content": [{"text": current_message}]
-                    })
-                    
+                    messages.append(
+                        {"role": "user", "content": [{"text": current_message}]}
+                    )
+
                     # For thinking-enabled models, preserve the original response structure
                     # For non-thinking models, wrap in text block
-                    if hasattr(result, 'content') and isinstance(result.content, list):
+                    if hasattr(result, "content") and isinstance(result.content, list):
                         # Result already has proper structure (thinking + text blocks)
-                        messages.append({
-                            "role": "assistant", 
-                            "content": result.content
-                        })
+                        messages.append(
+                            {"role": "assistant", "content": result.content}
+                        )
                     else:
                         # Fallback for simple text responses
-                        messages.append({
-                            "role": "assistant", 
-                            "content": [{"text": str(result)}]
-                        })
+                        messages.append(
+                            {"role": "assistant", "content": [{"text": str(result)}]}
+                        )
 
                 except (StopIteration, Exception) as error:
                     # Handle termination scenarios
@@ -373,22 +386,32 @@ def main():
                         # Check if this was from the stop tool
                         if "event loop cycle stop requested" in error_str:
                             # Extract the reason from the error message
-                            reason_match = re.search(r'Reason: (.+?)(?:\n|$)', str(error))
-                            reason = reason_match.group(1) if reason_match else "Objective achieved"
+                            reason_match = re.search(
+                                r"Reason: (.+?)(?:\n|$)", str(error)
+                            )
+                            reason = (
+                                reason_match.group(1)
+                                if reason_match
+                                else "Objective achieved"
+                            )
                             print_status(f"Agent terminated: {reason}", "SUCCESS")
-                        
+
                         if callback_handler:
                             callback_handler.generate_final_report(
                                 agent, args.target, args.objective
                             )
                             # Trigger evaluation after clean termination
                             try:
-                                logger.info("Triggering evaluation after clean termination")
+                                logger.info(
+                                    "Triggering evaluation after clean termination"
+                                )
                                 callback_handler.trigger_evaluation_on_completion()
                             except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
+                                logger.warning(
+                                    "Error triggering evaluation: %s", eval_error
+                                )
                     else:
-                        print_status("Agent error: %s" % str(error), "ERROR")
+                        print_status(f"Agent error: {str(error)}", "ERROR")
                         logger.exception("Unexpected agent error occurred")
                         if callback_handler:
                             callback_handler.generate_final_report(
@@ -399,7 +422,9 @@ def main():
                                 logger.info("Triggering evaluation after error")
                                 callback_handler.trigger_evaluation_on_completion()
                             except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
+                                logger.warning(
+                                    "Error triggering evaluation: %s", eval_error
+                                )
                     break
 
                 # Check if agent has determined objective completion
@@ -417,16 +442,15 @@ def main():
                     if callback_handler:
                         summary = callback_handler.get_summary()
                         print_status(
-                            "Memory operations: %d" % summary["memory_operations"],
+                            f"Memory operations: {summary['memory_operations']}",
                             "INFO",
                         )
                         print_status(
-                            "Capabilities created: %d" % summary["tools_created"],
+                            f"Capabilities created: {summary['tools_created']}",
                             "INFO",
                         )
                         print_status(
-                            "Evidence collected: %d items"
-                            % summary["evidence_collected"],
+                            f"Evidence collected: {summary['evidence_collected']} items",
                             "INFO",
                         )
                         callback_handler.generate_final_report(
@@ -434,10 +458,14 @@ def main():
                         )
                         # Trigger evaluation after successful completion
                         try:
-                            logger.info("Triggering evaluation after successful completion")
+                            logger.info(
+                                "Triggering evaluation after successful completion"
+                            )
                             callback_handler.trigger_evaluation_on_completion()
                         except Exception as eval_error:
-                            logger.warning("Error triggering evaluation: %s", eval_error)
+                            logger.warning(
+                                "Error triggering evaluation: %s", eval_error
+                            )
                     break
 
                 # Check if step limit reached or stop tool was used
@@ -451,7 +479,9 @@ def main():
                     )
                     # Trigger evaluation after completion
                     try:
-                        logger.info("Triggering evaluation after step limit/stop completion")
+                        logger.info(
+                            "Triggering evaluation after step limit/stop completion"
+                        )
                         callback_handler.trigger_evaluation_on_completion()
                     except Exception as eval_error:
                         logger.warning("Error triggering evaluation: %s", eval_error)
@@ -477,9 +507,9 @@ def main():
             raise
 
         # Display comprehensive results
-        print("\n%s" % ("=" * 80))
-        print("%sOPERATION SUMMARY%s" % (Colors.BOLD, Colors.RESET))
-        print("%s" % ("=" * 80))
+        print(f"\n{'=' * 80}")
+        print(f"{Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
+        print(f"{'=' * 80}")
 
         # Operation summary
         if callback_handler:
@@ -488,56 +518,44 @@ def main():
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
 
-            print(
-                "%sOperation ID:%s      %s"
-                % (Colors.BOLD, Colors.RESET, local_operation_id)
-            )
+            print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
 
             # Determine status based on completion
             if analyze_objective_completion(messages):
-                status_text = "%sObjective Achieved%s" % (Colors.GREEN, Colors.RESET)
+                status_text = f"{Colors.GREEN}Objective Achieved{Colors.RESET}"
             elif callback_handler.has_reached_limit():
-                status_text = "%sStep Limit Reached - Final Report Generated%s" % (
-                    Colors.YELLOW,
-                    Colors.RESET,
-                )
+                status_text = f"{Colors.YELLOW}Step Limit Reached - Final Report Generated{Colors.RESET}"
             else:
-                status_text = "%sOperation Completed%s" % (Colors.BLUE, Colors.RESET)
+                status_text = f"{Colors.BLUE}Operation Completed{Colors.RESET}"
 
+            print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
             print(
-                "%sStatus:%s            %s" % (Colors.BOLD, Colors.RESET, status_text)
-            )
-            print(
-                "%sDuration:%s          %dm %ds"
-                % (Colors.BOLD, Colors.RESET, minutes, seconds)
+                f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s"
             )
 
-            print("\n%sExecution Metrics:%s" % (Colors.BOLD, Colors.RESET))
-            print("  • Total Steps: %d/%d" % (summary["total_steps"], args.iterations))
-            print("  • Tools Created: %d" % summary["tools_created"])
-            print("  • Evidence Collected: %d items" % summary["evidence_collected"])
-            print("  • Memory Operations: %d total" % summary["memory_operations"])
+            print(f"\n{Colors.BOLD}Execution Metrics:{Colors.RESET}")
+            print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
+            print(f"  • Tools Created: {summary['tools_created']}")
+            print(f"  • Evidence Collected: {summary['evidence_collected']} items")
+            print(f"  • Memory Operations: {summary['memory_operations']} total")
 
             if summary["capability_expansion"]:
-                print("\n%sCapabilities Created:%s" % (Colors.BOLD, Colors.RESET))
+                print(f"\n{Colors.BOLD}Capabilities Created:{Colors.RESET}")
                 for tool in summary["capability_expansion"]:
-                    print("  • %s%s%s" % (Colors.GREEN, tool, Colors.RESET))
+                    print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
 
             # Show evidence summary if available
             if callback_handler:
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
-                    print("\n%sKey Evidence:%s" % (Colors.BOLD, Colors.RESET))
+                    print(f"\n{Colors.BOLD}Key Evidence:{Colors.RESET}")
                     if isinstance(evidence_summary[0], dict):
                         for ev in evidence_summary[:5]:
                             cat = ev.get("category", "unknown")
                             content = ev.get("content", "")[:60]
-                            print("  • [%s] %s..." % (cat, content))
+                            print(f"  • [{cat}] {content}...")
                         if len(evidence_summary) > 5:
-                            print(
-                                "  • ... and %d more items"
-                                % (len(evidence_summary) - 5)
-                            )
+                            print(f"  • ... and {len(evidence_summary) - 5} more items")
 
             # Show where evidence and memories are stored
             # Determine memory location based on backend and operation ID
@@ -547,18 +565,14 @@ def main():
                 memory_location = f"OpenSearch: {os.getenv('OPENSEARCH_HOST')}"
             else:
                 memory_location = f"./mem0_faiss_{local_operation_id}"
-            
+
             evidence_location = f"./evidence/evidence_{local_operation_id}"
-            
+
             print(
-                "\n%sEvidence stored in:%s %s"
-                % (Colors.BOLD, Colors.RESET, evidence_location)
+                f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}"
             )
-            print(
-                "%sMemory stored in:%s %s"
-                % (Colors.BOLD, Colors.RESET, memory_location)
-            )
-            print("%s" % ("=" * 80))
+            print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
+            print(f"{'=' * 80}")
 
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")
@@ -586,11 +600,11 @@ def main():
             try:
                 logger.info("Triggering evaluation on completion")
                 callback_handler.trigger_evaluation_on_completion()
-                
+
                 # Wait for evaluation to complete if running
                 if os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
                     callback_handler.wait_for_evaluation_completion(timeout=300)
-                    
+
             except Exception as eval_error:
                 logger.warning("Error triggering evaluation: %s", eval_error)
         else:
@@ -607,11 +621,11 @@ def main():
         end_time = time.time()
         total_time = end_time - start_time
         logger.info("Operation %s ended after %.2fs", local_operation_id, total_time)
-        
+
         # Flush OpenTelemetry traces before exit
         try:
-            tracer_provider = opentelemetry_trace.get_tracer_provider()
-            if hasattr(tracer_provider, 'force_flush'):
+            tracer_provider = trace.get_tracer_provider()
+            if hasattr(tracer_provider, "force_flush"):
                 logger.debug("Flushing OpenTelemetry traces...")
                 tracer_provider.force_flush()
                 # Give a moment for traces to be sent
