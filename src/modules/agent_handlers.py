@@ -928,9 +928,6 @@ Format this as a professional penetration testing report."""
         if eval_enabled == "true":
             self.evaluation_triggered = True  # Mark as triggered
             try:
-                # Lazy import evaluation module
-                from .evaluation import CyberAgentEvaluator
-                from langfuse import Langfuse
                 
                 # Configure Langfuse connection
                 langfuse = Langfuse(
@@ -955,7 +952,7 @@ Format this as a professional penetration testing report."""
                         print(f"\n{Colors.CYAN}Fetching traces for evaluation...{Colors.RESET}")
                         
                         # Fetch traces from Langfuse API
-                        logger.info(f"Attempting to fetch traces from Langfuse API")
+                        logger.info("Attempting to fetch traces from Langfuse API")
                         
                         try:
                             # First, try to get all recent traces without filtering
