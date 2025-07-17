@@ -15,7 +15,7 @@ from strands.handlers import PrintingCallbackHandler
 
 from .evaluation import CyberAgentEvaluator
 from .memory_tools import get_memory_client
-from .utils import Colors, get_data_path, get_output_path, sanitize_target_name
+from .utils import Colors, get_output_path, sanitize_target_name
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -30,7 +30,9 @@ FALLBACK_EVIDENCE_PREVIEW_LENGTH = 200
 class ReasoningHandler(PrintingCallbackHandler):
     """Callback handler for cyber security assessment operations with step tracking and reporting."""
 
-    def __init__(self, max_steps=100, operation_id=None, target=None, output_base_dir=None):
+    def __init__(
+        self, max_steps=100, operation_id=None, target=None, output_base_dir=None
+    ):
         super().__init__()
         self.steps = 0
         self.max_steps = max_steps
@@ -996,12 +998,9 @@ Format this as a professional penetration testing report."""
             # Use unified output system for reports (no subdirectory - reports go in root)
             sanitized_target = sanitize_target_name(self.target)
             reports_dir = get_output_path(
-                sanitized_target, 
-                self.operation_id, 
-                "", 
-                self.output_base_dir
+                sanitized_target, self.operation_id, "", self.output_base_dir
             )
-            
+
             os.makedirs(reports_dir, exist_ok=True)
 
             # Write report file

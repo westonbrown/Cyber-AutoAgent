@@ -220,8 +220,9 @@ class OutputConfig:
 
     base_dir: str = field(default_factory=get_default_base_dir)
     target_name: Optional[str] = None
-    enable_unified_output: bool = False
+    enable_unified_output: bool = True  # Default to enabled for new unified structure
     cleanup_memory: bool = False
+    operation_id: Optional[str] = None  # Current operation ID for path generation
 
 
 @dataclass
@@ -463,6 +464,58 @@ class ConfigManager:
         server_config = self.get_server_config(server, **overrides)
         return server_config.output
 
+    def get_unified_output_path(
+        self,
+        server: str,
+        target_name: str,
+        operation_id: str,
+        subdir: str = "",
+        **overrides,
+    ) -> str:
+        """Get unified output path using configuration system.
+
+        Args:
+            server: Server type for configuration
+            target_name: Target name for organization
+            operation_id: Operation ID for uniqueness
+            subdir: Optional subdirectory within operation
+            **overrides: Configuration overrides
+
+        Returns:
+            Full unified output path
+        """
+        from .utils import get_output_path, sanitize_target_name
+
+        output_config = self.get_output_config(server, **overrides)
+        sanitized_target = sanitize_target_name(target_name)
+
+        return get_output_path(
+            target_name=sanitized_target,
+            operation_id=operation_id,
+            subdir=subdir,
+            base_dir=output_config.base_dir,
+        )
+
+    def get_unified_memory_path(
+        self, server: str, target_name: str, **overrides
+    ) -> str:
+        """Get unified memory path for target.
+
+        Args:
+            server: Server type for configuration
+            target_name: Target name for organization
+            **overrides: Configuration overrides
+
+        Returns:
+            Memory path for the target
+        """
+        from .utils import sanitize_target_name
+
+        output_config = self.get_output_config(server, **overrides)
+        sanitized_target = sanitize_target_name(target_name)
+
+        return os.path.join(output_config.base_dir, sanitized_target, "memory")
+
     def get_mem0_service_config(self, server: str, **overrides) -> Dict[str, Any]:
         """Get complete Mem0 service configuration."""
         server_config = self.get_server_config(server, **overrides)
@@ -694,10 +747,13 @@ class ConfigManager:
         # Get target name
         target_name = overrides.get("target_name")
 
-        # Get feature flags
+        # Get operation ID
+        operation_id = overrides.get("operation_id")
+
+        # Get feature flags - unified output is now enabled by default
         enable_unified_output = (
-            overrides.get("enable_unified_output", False)
-            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "false").lower() == "true"
+            overrides.get("enable_unified_output", True)
+            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
         )
 
         cleanup_memory = (
@@ -710,6 +766,7 @@ class ConfigManager:
             target_name=target_name,
             enable_unified_output=enable_unified_output,
             cleanup_memory=cleanup_memory,
+            operation_id=operation_id,
         )
 
     def _validate_ollama_requirements(self) -> None:

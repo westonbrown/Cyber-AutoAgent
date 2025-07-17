@@ -120,7 +120,7 @@ class TestCLIArguments:
         assert args.model == "custom-model"
         assert args.region == "us-west-2"
         assert args.confirmations is True
-        
+
     def test_new_output_arguments(self):
         """Test that new output configuration arguments are properly parsed"""
         parser = argparse.ArgumentParser()
@@ -132,7 +132,7 @@ class TestCLIArguments:
         args = parser.parse_args(
             [
                 "--target",
-                "test.com", 
+                "test.com",
                 "--objective",
                 "test objective",
                 "--output-dir",

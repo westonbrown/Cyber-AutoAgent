@@ -29,6 +29,31 @@ When using swarm, always set:
 """
 
 
+def _get_output_directory_guidance(output_config: Dict, operation_id: str) -> str:
+    """Generate output directory guidance based on configuration."""
+    if not output_config:
+        return ""
+
+    base_dir = output_config.get("base_dir", "./outputs")
+    target_name = output_config.get("target_name", "target")
+    enable_unified = output_config.get("enable_unified_output", True)
+
+    if not enable_unified:
+        return ""
+
+    return f"""## OUTPUT DIRECTORY STRUCTURE
+All file operations and tool outputs should follow the unified output structure:
+- Base directory: {base_dir}
+- Target organization: {base_dir}/{target_name}/
+- Current operation: {base_dir}/{target_name}/OP_{operation_id}/
+- Ad-hoc files (when using file_writer or editor tools): {base_dir}/{target_name}/OP_{operation_id}/utils/
+- Saving and loading tools (when using load_tools): {output_config.get("base_dir", "./tools")}
+
+**CRITICAL: All file-writing operations must use the unified output paths above.**
+When creating files, writing evidence, or saving tool outputs, always use the appropriate subdirectory within the current operation.
+"""
+
+
 def get_system_prompt(
     target: str,
     objective: str,
@@ -37,6 +62,7 @@ def get_system_prompt(
     tools_context: str = "",
     server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
+    output_config: Dict = None,  # Add output configuration
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
@@ -44,6 +70,9 @@ def get_system_prompt(
     full_tools_context = (
         f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
     )
+
+    # Generate output directory guidance
+    output_guidance = _get_output_directory_guidance(output_config, operation_id)
 
     # Dynamic memory instruction based on whether continuing previous operation
     memory_instruction = (
@@ -77,6 +106,8 @@ Procedural Memory: Tool registry + dynamic tool creation capability
   - System: `apt-get install [package]` or `apt install [package]`
   - Python: `pip install [package]` or `pip3 install [package]`
 </mission_parameters>
+
+{output_guidance}
 
 <metacognitive_framework>
 Continuous Assessment: Before actions, evaluate confidence (High >80%, Medium 50-80%, Low <50%)
