@@ -15,7 +15,7 @@ from strands.handlers import PrintingCallbackHandler
 
 from .evaluation import CyberAgentEvaluator
 from .memory_tools import get_memory_client
-from .utils import Colors, get_data_path
+from .utils import Colors, get_data_path, get_output_path, sanitize_target_name
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -30,7 +30,7 @@ FALLBACK_EVIDENCE_PREVIEW_LENGTH = 200
 class ReasoningHandler(PrintingCallbackHandler):
     """Callback handler for cyber security assessment operations with step tracking and reporting."""
 
-    def __init__(self, max_steps=100, operation_id=None):
+    def __init__(self, max_steps=100, operation_id=None, target=None, output_base_dir=None):
         super().__init__()
         self.steps = 0
         self.max_steps = max_steps
@@ -49,6 +49,8 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.report_generated = False
         self.evaluation_triggered = False  # Prevent multiple evaluation triggers
         self.evaluation_thread = None  # Store evaluation thread reference
+        self.target = target  # Store target for unified output
+        self.output_base_dir = output_base_dir  # Store output base directory
 
         # Initialize operation ID
         if operation_id:
@@ -989,18 +991,23 @@ Format this as a professional penetration testing report."""
     def _save_report_to_file(
         self, report_content: str, target: str, objective: str
     ) -> None:
-        """Save report to file in evidence directory."""
+        """Save report to file in unified output directory."""
         try:
-            # Create evidence directory
-            evidence_dir = os.path.join(
-                get_data_path("evidence"), f"evidence_{self.operation_id}"
+            # Use unified output system for reports (no subdirectory - reports go in root)
+            sanitized_target = sanitize_target_name(self.target)
+            reports_dir = get_output_path(
+                sanitized_target, 
+                self.operation_id, 
+                "", 
+                self.output_base_dir
             )
-            os.makedirs(evidence_dir, exist_ok=True)
+            
+            os.makedirs(reports_dir, exist_ok=True)
 
             # Write report file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"final_report_{timestamp}.md"
-            report_path = os.path.join(evidence_dir, report_filename)
+            report_path = os.path.join(reports_dir, report_filename)
 
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write("# Cybersecurity Assessment Report\n\n")
@@ -1285,7 +1292,7 @@ Format this as a professional penetration testing report."""
         """Send operation completion metadata to Langfuse."""
         try:
             # Initialize Langfuse client
-            langfuse = Langfuse(
+            _langfuse = Langfuse(
                 public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
                 secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
                 host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),

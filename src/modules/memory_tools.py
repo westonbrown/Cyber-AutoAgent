@@ -299,6 +299,7 @@ class Mem0ServiceClient:
             faiss_path = merged_config["vector_store"]["config"]["path"]
         else:
             # Create operation-specific path in current directory for persistence
+            # Keep simple naming for compatibility - unified output handles other artifacts
             faiss_path = f"./mem0_faiss_{_OPERATION_ID or 'default'}"
 
         merged_config["vector_store"]["config"]["path"] = faiss_path

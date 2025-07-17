@@ -171,8 +171,13 @@ Leverage these tools directly via shell.
         has_memory_path=bool(memory_path),
     )
 
-    # Create callback handler with operation_id
-    callback_handler = ReasoningHandler(max_steps=max_steps, operation_id=operation_id)
+    # Create callback handler with operation_id and target information
+    callback_handler = ReasoningHandler(
+        max_steps=max_steps, 
+        operation_id=operation_id, 
+        target=target, 
+        output_base_dir=server_config.output.base_dir
+    )
 
     # Create model based on server type
     try:
