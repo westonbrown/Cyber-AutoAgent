@@ -23,7 +23,6 @@ def clean_operation_memory(operation_id: str):
         except Exception as e:
             print("%s[!] Failed to clean %s: %s%s" % (Colors.RED, mem0_path, str(e), Colors.RESET))
 
-
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
     # Create necessary directories in proper locations
@@ -45,19 +44,21 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         'netcat': 'Network utility for reading/writing data',
         'curl': 'HTTP client for web requests',
         'metasploit': 'Penetration testing framework',
+        'tcpdump': 'Network packet capture',
         'iproute2': 'Provides modern networking tools (ip, ss, tc, etc.)',
         'net-tools': 'Provides classic networking utilities (netstat, ifconfig, route, etc.)',
     }
-
+    
     available_tools = []
 
     # Check existing tools using subprocess for security
     for tool_name, description in cyber_tools.items():
-        check_cmd = (
-            ["which", tool_name]
-            if tool_name != "metasploit"
-            else ["which", "msfconsole"]
-        )
+        tool_commands = {
+            "metasploit": "msfconsole",
+            "iproute2": "ip",
+            "net-tools": "netstat"
+        }
+        check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
         try:
             subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
             available_tools.append(tool_name)
@@ -86,7 +87,6 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         "\n%s[+] Environment ready. %d cyber tools available.%s\n"
         % (Colors.GREEN, len(available_tools), Colors.RESET)
     )
-
     return available_tools
 
 
@@ -120,7 +120,7 @@ class TeeOutput:
         with self.lock:
             try:
                 self.log.close()
-            except:
+            except OSError:
                 pass
     
     # Additional methods to fully mimic file objects

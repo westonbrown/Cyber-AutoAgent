@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gobuster \
     curl \
     netcat-traditional \
+    tcpdump \
     # Tools needed for nikto and metasploit installation
     git \
     perl \
@@ -37,6 +38,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
     iproute2 \
     net-tools \
+    # Additional essential tools
+    jq \
+    unzip \
+    tree \
     # Clean up to reduce layer size
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \

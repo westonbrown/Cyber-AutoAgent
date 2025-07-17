@@ -162,7 +162,8 @@ class TestMemoryConfig:
                             # Verify local config structure
                             assert config["embedder"]["provider"] == "ollama"
                             assert config["llm"]["provider"] == "ollama"
-                            assert "base_url" in config["embedder"]["config"]
+                            assert "ollama_base_url" in config["embedder"]["config"]
+                            assert "ollama_base_url" in config["llm"]["config"]
 
     @patch("modules.agent.initialize_memory_system")
     def test_memory_config_remote(self, mock_init_memory):
