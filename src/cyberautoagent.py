@@ -44,7 +44,6 @@ from modules.utils import (
     print_section,
     print_status,
     analyze_objective_completion,
-    get_data_path,
     get_output_path,
     sanitize_target_name,
 )
