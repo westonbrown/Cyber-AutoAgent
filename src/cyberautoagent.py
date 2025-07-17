@@ -26,7 +26,7 @@ import re
 import base64
 from datetime import datetime
 import requests
-from opentelemetry import trace as opentelemetry_trace
+from opentelemetry import trace
 
 # Optional telemetry import
 try:
@@ -529,7 +529,9 @@ def main():
                 status_text = f"{Colors.BLUE}Operation Completed{Colors.RESET}"
 
             print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
-            print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
+            print(
+                f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s"
+            )
 
             print(f"\n{Colors.BOLD}Execution Metrics:{Colors.RESET}")
             print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
@@ -566,7 +568,9 @@ def main():
 
             evidence_location = f"./evidence/evidence_{local_operation_id}"
 
-            print(f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}")
+            print(
+                f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}"
+            )
             print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
             print(f"{'=' * 80}")
 

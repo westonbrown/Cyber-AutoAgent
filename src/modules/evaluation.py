@@ -7,12 +7,10 @@ Evaluation system using Ragas metrics integrated with Langfuse.
 Evaluates agent performance on cybersecurity assessment tasks.
 """
 
-import asyncio
 import logging
 import os
 import time
-import traceback
-from typing import Dict, Any, Union
+from typing import Dict
 
 from langchain_aws import ChatBedrock, BedrockEmbeddings
 from langchain_ollama import ChatOllama, OllamaEmbeddings

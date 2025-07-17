@@ -79,7 +79,6 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 import boto3
-import faiss
 from mem0 import Memory as Mem0Memory
 from mem0 import MemoryClient
 from opensearchpy import AWSV4SignerAuth, RequestsHttpConnection
@@ -87,7 +86,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from strands.types.tools import ToolResult, ToolResultContent, ToolUse
 from strands import tool
 from .config import get_config_manager
 

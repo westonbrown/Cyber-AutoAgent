@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Dict, List
 
 from langfuse import Langfuse
-from opentelemetry import trace as otel_trace, context as otel_context
 from strands.handlers import PrintingCallbackHandler
 
 from .evaluation import CyberAgentEvaluator
@@ -1036,7 +1035,6 @@ Format this as a professional penetration testing report."""
         if eval_enabled == "true":
             self.evaluation_triggered = True  # Mark as triggered
             try:
-                
                 # Configure Langfuse connection
                 langfuse = Langfuse(
                     public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
@@ -1069,7 +1067,7 @@ Format this as a professional penetration testing report."""
 
                         # Fetch traces from Langfuse API
                         logger.info("Attempting to fetch traces from Langfuse API")
-                        
+
                         try:
                             # First, try to get all recent traces without filtering
                             all_traces = langfuse.api.trace.list(limit=20)
