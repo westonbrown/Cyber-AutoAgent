@@ -72,8 +72,6 @@ def _create_local_model(
     )
 
 
-
-
 def _handle_model_creation_error(server: str, error: Exception) -> None:
     """Provide helpful error messages based on server type"""
     if server == "local":
