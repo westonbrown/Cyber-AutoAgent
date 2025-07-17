@@ -5,41 +5,12 @@ import os
 import tempfile
 
 from modules.utils import (
-    get_data_path,
     get_output_path,
     sanitize_target_name,
     validate_output_path,
     create_output_directory,
     analyze_objective_completion,
 )
-
-
-class TestGetDataPath:
-    """Test get_data_path function."""
-
-    def test_get_data_path_default(self):
-        """Test get_data_path with default parameters."""
-        result = get_data_path()
-        assert result == os.getcwd()
-
-    def test_get_data_path_with_subdir(self):
-        """Test get_data_path with subdirectory."""
-        result = get_data_path("logs")
-        expected = os.path.join(os.getcwd(), "logs")
-        assert result == expected
-
-    def test_get_data_path_with_base_dir(self):
-        """Test get_data_path with custom base directory."""
-        base_dir = "/tmp/test"
-        result = get_data_path("logs", base_dir)
-        expected = os.path.join(base_dir, "logs")
-        assert result == expected
-
-    def test_get_data_path_empty_subdir(self):
-        """Test get_data_path with empty subdirectory."""
-        base_dir = "/tmp/test"
-        result = get_data_path("", base_dir)
-        assert result == base_dir
 
 
 class TestGetOutputPath:
