@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from .utils import Colors, get_data_path
+from .utils import Colors
 
 
 def clean_operation_memory(operation_id: str):
@@ -34,7 +34,6 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
     # Create necessary directories in proper locations
     Path("tools").mkdir(exist_ok=True)  # Local tools directory for custom tools
-    Path(get_data_path("logs")).mkdir(exist_ok=True)  # Logs directory
 
     # Each operation uses its own isolated memory path: /tmp/mem0_{operation_id}
     if skip_mem0_cleanup:
