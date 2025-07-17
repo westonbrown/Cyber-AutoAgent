@@ -6,20 +6,6 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 
 
-def get_data_path(subdir: str = "", base_dir: Optional[str] = None) -> str:
-    """Get the appropriate data path with optional base directory override.
-
-    Args:
-        subdir: Subdirectory to append to base path
-        base_dir: Optional base directory override (defaults to current working directory)
-
-    Returns:
-        Full path combining base directory and subdirectory
-    """
-    base = base_dir if base_dir is not None else os.getcwd()
-    return os.path.join(base, subdir) if subdir else base
-
-
 def get_output_path(
     target_name: str,
     operation_id: str,
