@@ -25,11 +25,20 @@ import atexit
 import re
 import base64
 from datetime import datetime
-from opentelemetry import trace
 
+# Third-party imports
+import requests
+from opentelemetry import trace as opentelemetry_trace
+
+# Optional telemetry import
+try:
+    from strands.telemetry import StrandsTelemetry
+except ImportError:
+    StrandsTelemetry = None
+
+# Local imports
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
-
 from modules.utils import (
     Colors,
     print_banner,
@@ -81,7 +90,8 @@ def setup_observability(logger):
     
     try:
         # Try to use StrandsTelemetry for explicit setup
-        from strands.telemetry import StrandsTelemetry
+        if StrandsTelemetry is None:
+            raise ImportError("StrandsTelemetry not available")
         
         logger.debug("StrandsTelemetry available - setting up OTLP exporter")
         strands_telemetry = StrandsTelemetry()
@@ -104,7 +114,6 @@ def setup_observability(logger):
     
     # Test OTLP endpoint connectivity
     try:
-        import requests
         test_url = f"{host}/api/public/otel/v1/traces"
         headers = {"Authorization": f"Basic {auth_token}"}
         response = requests.get(test_url, headers=headers, timeout=5)
@@ -601,8 +610,7 @@ def main():
         
         # Flush OpenTelemetry traces before exit
         try:
-            from opentelemetry import trace
-            tracer_provider = trace.get_tracer_provider()
+            tracer_provider = opentelemetry_trace.get_tracer_provider()
             if hasattr(tracer_provider, 'force_flush'):
                 logger.debug("Flushing OpenTelemetry traces...")
                 tracer_provider.force_flush()

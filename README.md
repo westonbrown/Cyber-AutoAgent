@@ -130,7 +130,7 @@ graph LR
 - **User Interface**: Command-line interface with target and objective specification
 - **Agent Core**: Strands framework orchestration with metacognitive reasoning and tool selection
 - **AI Models**: GenAI tool use models (AWS Bedrock remote) or local models (Ollama) 
-- **Security Tools**: Pentesting tools (nmap, sqlmap, nikto, metasploit, custom tools)
+- **Security Tools**: Pentesting tools (nmap, sqlmap, nikto, metasploit, custom tools, etc.)
 - **Evidence Storage**: Persistent memory with FAISS, OpenSearch, or Mem0 Platform backends
 - **Observability**: Real-time tracing with Langfuse and automated evaluation with Ragas metrics
 
@@ -421,7 +421,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -e .
 
-# Optional: Install security tools
+# Optional: Install security tools (non-exhaustive list)
 sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 
@@ -466,8 +466,9 @@ python src/cyberautoagent.py \
   --objective "Find SQL injection vulnerabilities" \
   --iterations 50
 
-# Docker with Full Observability & Evaluation
+# Docker with full observability, evaluation and root access (for package installation)
 docker run --rm \
+  --user root \ 
   --network cyber-autoagent_default \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
@@ -483,6 +484,17 @@ docker run --rm \
   --objective "Comprehensive SQL injection and XSS assessment" \
   --iterations 25
 ```
+
+## Security
+
+By default, the agent runs as a non-root user (`cyberagent`) for security. This limits the agent's ability to install additional tools on the fly during execution. If you need the agent to install packages dynamically, you can override this at container start:
+
+```bash
+# Small example, full command above
+docker run --user root cyber-autoagent
+```
+
+**Note**: Running as root reduces security isolation but enables full system access for tool installation.
 
 ## Configuration
 
