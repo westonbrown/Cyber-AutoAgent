@@ -88,8 +88,6 @@ from rich.table import Table
 from rich.text import Text
 from strands import tool
 from .config import get_config_manager
-# Import not needed yet but will be used in future enhancements
-# from .utils import get_output_path, sanitize_target_name
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -297,7 +295,7 @@ class Mem0ServiceClient:
         # Use provided path or create unified output structure path
         if merged_config.get("vector_store", {}).get("config", {}).get("path"):
             # Path already set in config (from args.memory_path)
-            faiss_path = merged_config["vector_store"]["config"]["path"]
+            memory_base_path = merged_config["vector_store"]["config"]["path"]
         else:
             # Create memory path using unified output structure
             # Memory is stored at: ./outputs/<target-name>/memory/
@@ -307,16 +305,15 @@ class Mem0ServiceClient:
             
             # Use unified output structure for memory
             memory_base_path = os.path.join("outputs", target_name, "memory")
-            faiss_path = os.path.join(memory_base_path, f"mem0_faiss_{operation_id}")
             
             # Ensure the memory directory exists
             os.makedirs(memory_base_path, exist_ok=True)
 
-        merged_config["vector_store"]["config"]["path"] = faiss_path
+        merged_config["vector_store"]["config"]["path"] = memory_base_path
 
         # Display FAISS configuration
         print("[+] Memory Backend: FAISS (local)")
-        print(f"    Store Location: {faiss_path}")
+        print(f"    Store Location: {memory_base_path}")
 
         # Display embedder configuration
         embedder_config = merged_config.get("embedder", {})
@@ -340,10 +337,10 @@ class Mem0ServiceClient:
             print(f"    LLM: AWS Bedrock - {llm_model}")
 
         # Check if loading existing store
-        if os.path.exists(faiss_path):
-            print(f"• Loading existing FAISS store from: {faiss_path}")
+        if os.path.exists(memory_base_path):
+            print(f"• Loading existing FAISS store from: {memory_base_path}")
         else:
-            print(f"• Creating new FAISS store at: {faiss_path}")
+            print(f"• Creating new FAISS store at: {memory_base_path}")
 
         return Mem0Memory.from_config(config_dict=merged_config)
 
