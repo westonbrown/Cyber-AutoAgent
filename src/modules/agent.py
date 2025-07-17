@@ -17,7 +17,7 @@ from strands_tools.swarm import swarm
 from .system_prompts import get_system_prompt
 from .config import get_config_manager
 from .agent_handlers import ReasoningHandler
-from .utils import Colors
+from .utils import Colors, sanitize_target_name
 from .memory_tools import mem0_memory, initialize_memory_system
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -145,7 +145,9 @@ def create_agent(
         )
 
     # Initialize the memory system with configuration
-    initialize_memory_system(memory_config, operation_id)
+    # Extract and sanitize target name for unified output structure
+    target_name = sanitize_target_name(target)
+    initialize_memory_system(memory_config, operation_id, target_name)
     print(
         f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
     )

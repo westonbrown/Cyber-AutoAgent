@@ -88,6 +88,8 @@ from rich.table import Table
 from rich.text import Text
 from strands import tool
 from .config import get_config_manager
+# Import not needed yet but will be used in future enhancements
+# from .utils import get_output_path, sanitize_target_name
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -98,7 +100,6 @@ console = Console()
 # Global configuration and client
 _MEMORY_CONFIG = None
 _MEMORY_CLIENT = None
-_OPERATION_ID = None
 
 
 TOOL_SPEC = {
@@ -293,14 +294,23 @@ class Mem0ServiceClient:
 
         merged_config = self._merge_config(config, server)
 
-        # Use provided path or create operation-specific path
+        # Use provided path or create unified output structure path
         if merged_config.get("vector_store", {}).get("config", {}).get("path"):
             # Path already set in config (from args.memory_path)
             faiss_path = merged_config["vector_store"]["config"]["path"]
         else:
-            # Create operation-specific path in current directory for persistence
-            # Keep simple naming for compatibility - unified output handles other artifacts
-            faiss_path = f"./mem0_faiss_{_OPERATION_ID or 'default'}"
+            # Create memory path using unified output structure
+            # Memory is stored at: ./outputs/<target-name>/memory/
+            # Get target_name and operation_id from config
+            target_name = merged_config.get("target_name", "default_target")
+            operation_id = merged_config.get("operation_id", "default")
+            
+            # Use unified output structure for memory
+            memory_base_path = os.path.join("outputs", target_name, "memory")
+            faiss_path = os.path.join(memory_base_path, f"mem0_faiss_{operation_id}")
+            
+            # Ensure the memory directory exists
+            os.makedirs(memory_base_path, exist_ok=True)
 
         merged_config["vector_store"]["config"]["path"] = faiss_path
 
@@ -621,19 +631,28 @@ def format_store_response(results: List[Dict]) -> Panel:
 
 
 def initialize_memory_system(
-    config: Optional[Dict] = None, operation_id: Optional[str] = None
+    config: Optional[Dict] = None, 
+    operation_id: Optional[str] = None,
+    target_name: Optional[str] = None
 ) -> None:
     """Initialize the memory system with custom configuration.
 
     Args:
         config: Optional configuration dictionary with embedder, llm, vector_store settings
         operation_id: Unique operation identifier
+        target_name: Sanitized target name for organizing memory by target
     """
-    global _MEMORY_CONFIG, _MEMORY_CLIENT, _OPERATION_ID
-    _MEMORY_CONFIG = config
-    _OPERATION_ID = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    _MEMORY_CLIENT = Mem0ServiceClient(config)
-    logger.info("Memory system initialized for operation %s", _OPERATION_ID)
+    global _MEMORY_CONFIG, _MEMORY_CLIENT
+    
+    # Create enhanced config with operation context
+    enhanced_config = config.copy() if config else {}
+    enhanced_config["operation_id"] = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    enhanced_config["target_name"] = target_name or "default_target"
+    
+    _MEMORY_CONFIG = enhanced_config
+    _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config)
+    logger.info("Memory system initialized for operation %s, target: %s", 
+                enhanced_config["operation_id"], enhanced_config["target_name"])
 
 
 def get_memory_client() -> Optional[Mem0ServiceClient]:
@@ -678,7 +697,7 @@ def mem0_memory(
     Returns:
         Formatted string response with operation results
     """
-    global _MEMORY_CLIENT, _OPERATION_ID
+    global _MEMORY_CLIENT
 
     if _MEMORY_CLIENT is None:
         # Initialize with default config if not already initialized
