@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict, Any
+from typing import Dict
 
 # Import the new configuration system
 from .config import get_config_manager

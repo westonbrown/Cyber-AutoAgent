@@ -13,7 +13,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from modules.agent import (
     create_agent,
 )
-from modules.config import get_config_manager, get_default_model_configs, get_ollama_host
+from modules.config import (
+    get_config_manager,
+    get_default_model_configs,
+    get_ollama_host,
+)
 
 
 class TestModelConfigs:
@@ -62,7 +66,7 @@ class TestOllamaHostDetection:
     def test_get_ollama_host_native_execution(self, mock_exists):
         """Test host detection for native execution (not in Docker)"""
         mock_exists.return_value = False  # /.dockerenv doesn't exist
-        
+
         host = get_ollama_host()
         # Should use localhost for native execution
         assert host == "http://localhost:11434"
@@ -76,16 +80,18 @@ class TestOllamaHostDetection:
         # Mock localhost works, host.docker.internal doesn't
         mock_response = Mock()
         mock_response.status_code = 200
+
         def side_effect(url, timeout=None):
             if "localhost" in url:
                 return mock_response
             else:
                 raise Exception("Connection failed")
+
         mock_test.side_effect = side_effect
-        
+
         host = get_ollama_host()
         assert host == "http://localhost:11434"
-        
+
         # Verify it tested localhost first and found it working
         assert mock_test.call_count >= 1
         mock_test.assert_any_call("http://localhost:11434/api/version", timeout=2)
@@ -99,20 +105,24 @@ class TestOllamaHostDetection:
         # Mock localhost fails, host.docker.internal works
         mock_response = Mock()
         mock_response.status_code = 200
+
         def side_effect(url, timeout=None):
             if "host.docker.internal" in url:
                 return mock_response
             else:
                 raise requests.exceptions.ConnectionError("Connection failed")
+
         mock_test.side_effect = side_effect
-        
+
         host = get_ollama_host()
         assert host == "http://host.docker.internal:11434"
-        
+
         # Verify it tested both options
         assert mock_test.call_count >= 2
         mock_test.assert_any_call("http://localhost:11434/api/version", timeout=2)
-        mock_test.assert_any_call("http://host.docker.internal:11434/api/version", timeout=2)
+        mock_test.assert_any_call(
+            "http://host.docker.internal:11434/api/version", timeout=2
+        )
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
@@ -120,13 +130,13 @@ class TestOllamaHostDetection:
     def test_get_ollama_host_docker_no_connection(self, mock_test, mock_exists):
         """Test Docker environment where neither option works"""
         mock_exists.return_value = True  # /app exists
-        mock_test.side_effect = requests.exceptions.ConnectionError("Connection failed")  # Neither option works
-        
+        mock_test.side_effect = requests.exceptions.ConnectionError(
+            "Connection failed"
+        )  # Neither option works
+
         host = get_ollama_host()
         # Should fallback to host.docker.internal
         assert host == "http://host.docker.internal:11434"
-
-
 
 
 class TestMemoryConfig:
@@ -147,15 +157,13 @@ class TestMemoryConfig:
                         with patch("modules.agent.get_system_prompt"):
                             # Call create_agent with local server
                             create_agent(
-                                target="test.com",
-                                objective="test",
-                                server="local"
+                                target="test.com", objective="test", server="local"
                             )
-                            
+
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
                             config = mock_init_memory.call_args[0][0]
-                            
+
                             # Verify local config structure
                             assert config["embedder"]["provider"] == "ollama"
                             assert config["llm"]["provider"] == "ollama"
@@ -174,15 +182,13 @@ class TestMemoryConfig:
                         with patch("modules.agent.get_system_prompt"):
                             # Call create_agent with remote server
                             create_agent(
-                                target="test.com",
-                                objective="test",
-                                server="remote"
+                                target="test.com", objective="test", server="remote"
                             )
-                            
+
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
                             config = mock_init_memory.call_args[0][0]
-                            
+
                             # Verify remote config structure
                             assert config["embedder"]["provider"] == "aws_bedrock"
                             assert config["llm"]["provider"] == "aws_bedrock"
@@ -209,7 +215,7 @@ class TestServerValidation:
 
         # Should not raise any exception
         get_config_manager().validate_requirements("local")
-        
+
         # Verify client was created (host is now dynamic)
         mock_ollama_client.assert_called_once()
 
