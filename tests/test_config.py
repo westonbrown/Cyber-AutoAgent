@@ -19,12 +19,14 @@ from modules.config import (
     MemoryVectorStoreConfig,
     EvaluationConfig,
     SwarmConfig,
+    OutputConfig,
     ServerConfig,
     ConfigManager,
     get_config_manager,
     get_model_config,
     get_default_model_configs,
     get_ollama_host,
+    get_default_base_dir,
 )
 
 
@@ -675,3 +677,109 @@ class TestEnvironmentIntegration:
         assert "aws_region" in remote_config["llm"]["config"]
         assert "ollama_base_url" not in remote_config["embedder"]["config"]
         assert "ollama_base_url" not in remote_config["llm"]["config"]
+
+
+class TestOutputConfig:
+    """Test OutputConfig dataclass."""
+
+    def test_default_output_config(self):
+        """Test default output configuration."""
+        config = OutputConfig()
+        assert config.base_dir == get_default_base_dir()
+        assert config.target_name is None
+        assert config.enable_unified_output is False
+        assert config.cleanup_memory is False
+
+    def test_custom_output_config(self):
+        """Test custom output configuration."""
+        config = OutputConfig(
+            base_dir="/tmp/custom_outputs",
+            target_name="test_target",
+            enable_unified_output=True,
+            cleanup_memory=True,
+        )
+        assert config.base_dir == "/tmp/custom_outputs"
+        assert config.target_name == "test_target"
+        assert config.enable_unified_output is True
+        assert config.cleanup_memory is True
+
+    def test_get_default_base_dir_project_root(self):
+        """Test get_default_base_dir when in project root."""
+        # Since we're running tests from project root, this should return ./outputs
+        base_dir = get_default_base_dir()
+        assert base_dir.endswith("outputs")
+
+    def test_get_default_base_dir_detects_project_root(self):
+        """Test that get_default_base_dir can detect project root."""
+        # The method should find the project root by looking for pyproject.toml
+        base_dir = get_default_base_dir()
+        project_root = os.path.dirname(base_dir)
+        assert os.path.exists(os.path.join(project_root, "pyproject.toml"))
+
+
+class TestOutputConfigIntegration:
+    """Test output configuration integration with ConfigManager."""
+
+    def test_get_output_config_default(self):
+        """Test getting default output configuration."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config("remote")
+
+        assert isinstance(output_config, OutputConfig)
+        assert output_config.base_dir == get_default_base_dir()
+        assert output_config.target_name is None
+        assert output_config.enable_unified_output is False
+        assert output_config.cleanup_memory is False
+
+    def test_get_output_config_with_overrides(self):
+        """Test getting output configuration with overrides."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config(
+            "remote",
+            output_dir="/tmp/custom",
+            target_name="test_target",
+            enable_unified_output=True,
+            cleanup_memory=True,
+        )
+
+        assert output_config.base_dir == "/tmp/custom"
+        assert output_config.target_name == "test_target"
+        assert output_config.enable_unified_output is True
+        assert output_config.cleanup_memory is True
+
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_AGENT_OUTPUT_DIR": "/env/outputs",
+            "CYBER_AGENT_ENABLE_UNIFIED_OUTPUT": "true",
+            "CYBER_AGENT_CLEANUP_MEMORY": "true",
+        },
+    )
+    def test_get_output_config_with_env_vars(self):
+        """Test getting output configuration with environment variables."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config("remote")
+
+        assert output_config.base_dir == "/env/outputs"
+        assert output_config.enable_unified_output is True
+        assert output_config.cleanup_memory is True
+
+    def test_output_config_in_server_config(self):
+        """Test that output configuration is included in server configuration."""
+        config_manager = ConfigManager()
+        server_config = config_manager.get_server_config("remote")
+
+        assert hasattr(server_config, "output")
+        assert isinstance(server_config.output, OutputConfig)
+        assert server_config.output.base_dir == get_default_base_dir()
+
+    def test_output_config_precedence(self):
+        """Test that overrides take precedence over environment variables."""
+        with patch.dict(os.environ, {"CYBER_AGENT_OUTPUT_DIR": "/env/outputs"}):
+            config_manager = ConfigManager()
+            output_config = config_manager.get_output_config(
+                "remote", output_dir="/override/outputs"
+            )
+
+            # Override should take precedence over environment variable
+            assert output_config.base_dir == "/override/outputs"
