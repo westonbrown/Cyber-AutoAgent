@@ -688,7 +688,6 @@ class TestOutputConfig:
         assert config.base_dir == get_default_base_dir()
         assert config.target_name is None
         assert config.enable_unified_output is True
-        assert config.cleanup_memory is False
 
     def test_custom_output_config(self):
         """Test custom output configuration."""
@@ -696,12 +695,10 @@ class TestOutputConfig:
             base_dir="/tmp/custom_outputs",
             target_name="test_target",
             enable_unified_output=True,
-            cleanup_memory=True,
         )
         assert config.base_dir == "/tmp/custom_outputs"
         assert config.target_name == "test_target"
         assert config.enable_unified_output is True
-        assert config.cleanup_memory is True
 
     def test_get_default_base_dir_project_root(self):
         """Test get_default_base_dir when in project root."""
@@ -729,7 +726,6 @@ class TestOutputConfigIntegration:
         assert output_config.base_dir == get_default_base_dir()
         assert output_config.target_name is None
         assert output_config.enable_unified_output is True
-        assert output_config.cleanup_memory is False
 
     def test_get_output_config_with_overrides(self):
         """Test getting output configuration with overrides."""
@@ -739,20 +735,17 @@ class TestOutputConfigIntegration:
             output_dir="/tmp/custom",
             target_name="test_target",
             enable_unified_output=True,
-            cleanup_memory=True,
         )
 
         assert output_config.base_dir == "/tmp/custom"
         assert output_config.target_name == "test_target"
         assert output_config.enable_unified_output is True
-        assert output_config.cleanup_memory is True
 
     @patch.dict(
         os.environ,
         {
             "CYBER_AGENT_OUTPUT_DIR": "/env/outputs",
             "CYBER_AGENT_ENABLE_UNIFIED_OUTPUT": "true",
-            "CYBER_AGENT_CLEANUP_MEMORY": "true",
         },
     )
     def test_get_output_config_with_env_vars(self):
@@ -762,7 +755,6 @@ class TestOutputConfigIntegration:
 
         assert output_config.base_dir == "/env/outputs"
         assert output_config.enable_unified_output is True
-        assert output_config.cleanup_memory is True
 
     def test_output_config_in_server_config(self):
         """Test that output configuration is included in server configuration."""
