@@ -8,13 +8,13 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from langfuse import Langfuse
 from strands.handlers import PrintingCallbackHandler
 
 from .evaluation import CyberAgentEvaluator
-from .memory_tools import get_memory_client
+from .memory_tools import get_memory_client, Mem0ServiceClient
 from .utils import Colors, get_output_path, sanitize_target_name
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
@@ -31,7 +31,12 @@ class ReasoningHandler(PrintingCallbackHandler):
     """Callback handler for cyber security assessment operations with step tracking and reporting."""
 
     def __init__(
-        self, max_steps=100, operation_id=None, target=None, output_base_dir=None
+        self,
+        max_steps=100,
+        operation_id=None,
+        target=None,
+        output_base_dir=None,
+        memory_config=None,
     ):
         super().__init__()
         self.steps = 0
@@ -51,8 +56,11 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.report_generated = False
         self.evaluation_triggered = False  # Prevent multiple evaluation triggers
         self.evaluation_thread = None  # Store evaluation thread reference
-        self.target = target  # Store target for unified output
-        self.output_base_dir = output_base_dir  # Store output base directory
+        self.target = target
+        self.output_base_dir = output_base_dir
+        self.memory_config = (
+            memory_config
+        )
 
         # Initialize operation ID
         if operation_id:
@@ -782,12 +790,40 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         # Note: Evaluation is triggered from cyberautoagent.py, not here to avoid duplicates
 
+    def _get_memory_client_for_report(self) -> Optional[Mem0ServiceClient]:
+        """Get memory client configured for report generation with correct paths."""
+        try:
+            # If we have stored memory configuration, use it
+            if self.memory_config:
+                logger.info("Using stored memory configuration for report generation")
+                logger.debug("Memory config: %s", self.memory_config)
+
+                # Ensure config includes target and operation context
+                enhanced_config = self.memory_config.copy()
+                if not enhanced_config.get("target_name") and self.target:
+                    from .utils import sanitize_target_name
+
+                    enhanced_config["target_name"] = sanitize_target_name(self.target)
+                if not enhanced_config.get("operation_id"):
+                    enhanced_config["operation_id"] = self.operation_id
+
+                return Mem0ServiceClient(enhanced_config)
+            else:
+                # Fallback to global memory client
+                logger.warning(
+                    "No stored memory configuration, using global memory client"
+                )
+                return get_memory_client()
+        except Exception as e:
+            logger.error("Failed to initialize memory client for report: %s", str(e))
+            return None
+
     def _retrieve_evidence(self) -> List[Dict]:
         """Retrieve all collected evidence from memory system."""
         evidence = []
 
-        # Initialize memory client
-        memory_client = get_memory_client()
+        # Initialize memory client with proper configuration
+        memory_client = self._get_memory_client_for_report()
         if memory_client is None:
             logger.error("Memory client is not initialized!")
             print(
@@ -804,6 +840,13 @@ class ReasoningHandler(PrintingCallbackHandler):
             logger.info(
                 "Attempting to retrieve memories for user_id: %s", agent_user_id
             )
+
+            # Debug: Log which memory backend is being used
+            backend_info = "Unknown"
+            if hasattr(memory_client, "mem0"):
+                if hasattr(memory_client.mem0, "__class__"):
+                    backend_info = memory_client.mem0.__class__.__name__
+            logger.info("Using memory backend: %s", backend_info)
 
             # Fetch memory list
             memories_response = memory_client.list_memories(user_id=agent_user_id)
@@ -842,32 +885,40 @@ class ReasoningHandler(PrintingCallbackHandler):
                 # Process memory entry
                 logger.debug("Processing memory: %s", mem)
 
+                memory_content = mem.get("memory", "N/A")
+                memory_id = mem.get("id", "N/A")
+
                 if metadata and metadata.get("category") == "finding":
+                    # Include security findings
                     evidence.append(
                         {
                             "category": metadata.get("category"),
-                            "content": mem.get("memory", "N/A"),
-                            "id": mem.get("id", "N/A"),
+                            "content": memory_content,
+                            "id": memory_id,
+                            "severity": metadata.get("severity", "unknown"),
+                            "confidence": metadata.get("confidence", "unknown"),
                         }
                     )
                     logger.info(
                         "Added finding to evidence: %s...",
-                        mem.get("memory", "N/A")[:50],
+                        memory_content[:50],
                     )
-                # Include uncategorized memories
+                # Include uncategorized memories that might contain findings
                 elif "memory" in mem and "category" not in metadata:
-                    # Include concise memories
-                    if len(mem.get("memory", "").split()) < 50:
+                    # Include concise memories that might contain important findings
+                    if len(memory_content.split()) < 100:  # Increased threshold
                         evidence.append(
                             {
                                 "category": "general",
-                                "content": mem.get("memory", "N/A"),
-                                "id": mem.get("id", "N/A"),
+                                "content": memory_content,
+                                "id": memory_id,
+                                "severity": "unknown",
+                                "confidence": "unknown",
                             }
                         )
                         logger.info(
                             "Added general memory to evidence: %s...",
-                            mem.get("memory", "N/A")[:50],
+                            memory_content[:50],
                         )
 
             # Only show retrieval message if evidence was found
@@ -895,9 +946,21 @@ class ReasoningHandler(PrintingCallbackHandler):
     ) -> str:
         """Generate assessment report using LLM analysis."""
         # Prepare evidence for analysis
-        evidence_text = [
-            f"[{item['category'].upper()}] {item['content']}" for item in evidence
-        ]
+        evidence_text = []
+        for item in evidence:
+            category = item.get("category", "unknown").upper()
+            content = item.get("content", "N/A")
+            severity = item.get("severity", "unknown")
+            confidence = item.get("confidence", "unknown")
+
+            if severity != "unknown" and confidence != "unknown":
+                evidence_text.append(
+                    f"[{category} | {severity.upper()} | {confidence}] {content}"
+                )
+            elif severity != "unknown":
+                evidence_text.append(f"[{category} | {severity.upper()}] {content}")
+            else:
+                evidence_text.append(f"[{category}] {content}")
 
         report_prompt = f"""Based on the evidence collected during this cyber security assessment, generate a comprehensive final report.
 
