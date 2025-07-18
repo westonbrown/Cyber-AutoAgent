@@ -193,7 +193,7 @@ class Mem0ServiceClient:
         self.region = None  # Initialize region attribute
         self.mem0 = self._initialize_client(config)
         self.config = config  # Store config for later use
-        
+
         # Display memory overview if existing memories are detected
         self._display_startup_overview()
 
@@ -304,11 +304,11 @@ class Mem0ServiceClient:
             # Create memory path using unified output structure
             # Memory is stored at: ./outputs/<target-name>/memory/mem0_faiss_<target-name>
             target_name = merged_config.get("target_name", "default_target")
-            
+
             # Use unified output structure for memory - per-target, not per-operation
             memory_base_path = os.path.join("outputs", target_name, "memory")
             faiss_path = memory_base_path
-            
+
             # Ensure the memory directory exists
             os.makedirs(memory_base_path, exist_ok=True)
 
@@ -443,7 +443,7 @@ class Mem0ServiceClient:
         try:
             # Check if we should display overview based on backend and existing data
             should_display = self._should_display_overview()
-            
+
             if should_display:
                 display_memory_overview(self, user_id="cyber_agent")
         except Exception as e:
@@ -456,21 +456,23 @@ class Mem0ServiceClient:
             # For Mem0 Platform - always try to display (cloud-based)
             if os.environ.get("MEM0_API_KEY"):
                 return True
-                
+
             # For OpenSearch - always try to display (remote service)
             if os.environ.get("OPENSEARCH_HOST"):
                 return True
-                
+
             # For FAISS - check if local store exists
             # Need to get the merged config to check the actual path
             server_type = "local"  # FAISS is local
             merged_config = self._merge_config(self.config, server_type)
-            
+
             if merged_config and "vector_store" in merged_config:
-                faiss_path = merged_config.get("vector_store", {}).get("config", {}).get("path")
+                faiss_path = (
+                    merged_config.get("vector_store", {}).get("config", {}).get("path")
+                )
                 if faiss_path and os.path.exists(faiss_path):
                     return True
-                    
+
             return False
         except Exception as e:
             logger.debug("Error checking if should display overview: %s", str(e))
@@ -478,55 +480,61 @@ class Mem0ServiceClient:
 
     def get_memory_overview(self, user_id: str = "cyber_agent") -> Dict:
         """Get overview of memories for startup display.
-        
+
         Args:
             user_id: User ID to retrieve memories for
-            
+
         Returns:
             Dictionary containing memory overview data
         """
         try:
             # Get all memories for the user
             memories_response = self.list_memories(user_id=user_id)
-            
+
             # Parse response format
             if isinstance(memories_response, dict):
-                raw_memories = memories_response.get("memories", memories_response.get("results", []))
+                raw_memories = memories_response.get(
+                    "memories", memories_response.get("results", [])
+                )
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
             else:
                 raw_memories = []
-            
+
             # Analyze memories
             total_count = len(raw_memories)
             categories = {}
             recent_findings = []
-            
+
             for memory in raw_memories:
                 # Extract metadata
                 metadata = memory.get("metadata", {})
                 category = metadata.get("category", "general")
-                
+
                 # Count by category
                 categories[category] = categories.get(category, 0) + 1
-                
+
                 # Collect recent findings
                 if category == "finding":
-                    recent_findings.append({
-                        "content": memory.get("memory", "")[:100] + "..." if len(memory.get("memory", "")) > 100 else memory.get("memory", ""),
-                        "created_at": memory.get("created_at", "Unknown")
-                    })
-            
+                    recent_findings.append(
+                        {
+                            "content": memory.get("memory", "")[:100] + "..."
+                            if len(memory.get("memory", "")) > 100
+                            else memory.get("memory", ""),
+                            "created_at": memory.get("created_at", "Unknown"),
+                        }
+                    )
+
             # Sort recent findings by creation date (most recent first)
             recent_findings.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            
+
             return {
                 "total_count": total_count,
                 "categories": categories,
                 "recent_findings": recent_findings[:3],  # Top 3 most recent
-                "has_memories": total_count > 0
+                "has_memories": total_count > 0,
             }
-            
+
         except Exception as e:
             logger.error("Error getting memory overview: %s", str(e))
             return {
@@ -534,42 +542,46 @@ class Mem0ServiceClient:
                 "categories": {},
                 "recent_findings": [],
                 "has_memories": False,
-                "error": str(e)
+                "error": str(e),
             }
 
 
-def display_memory_overview(memory_client: Mem0ServiceClient, user_id: str = "cyber_agent") -> None:
+def display_memory_overview(
+    memory_client: Mem0ServiceClient, user_id: str = "cyber_agent"
+) -> None:
     """Display memory overview at startup.
-    
+
     Args:
         memory_client: Initialized memory client
         user_id: User ID to check memories for
     """
     try:
         overview = memory_client.get_memory_overview(user_id=user_id)
-        
+
         if overview.get("error"):
-            print(f"    Warning: Could not retrieve memory overview: {overview['error']}")
+            print(
+                f"    Warning: Could not retrieve memory overview: {overview['error']}"
+            )
             return
-            
+
         if not overview.get("has_memories"):
             print("    No existing memories found - starting fresh")
             return
-            
+
         # Display overview
         total = overview.get("total_count", 0)
         categories = overview.get("categories", {})
         recent_findings = overview.get("recent_findings", [])
-        
+
         print(f"    Found {total} existing memories:")
-        
+
         # Show category breakdown
         if categories:
             category_parts = []
             for category, count in categories.items():
                 category_parts.append(f"{count} {category}")
             print(f"      Categories: {', '.join(category_parts)}")
-        
+
         # Show recent findings
         if recent_findings:
             print("      Recent findings:")
@@ -579,9 +591,9 @@ def display_memory_overview(memory_client: Mem0ServiceClient, user_id: str = "cy
                 if len(content) > 80:
                     content = content[:77] + "..."
                 print(f"        {i}. {content}")
-        
+
         print("    Memory will be loaded as first action to avoid duplicate work")
-        
+
     except Exception as e:
         logger.error("Error displaying memory overview: %s", str(e))
         print(f"    Warning: Could not display memory overview: {str(e)}")
@@ -781,9 +793,9 @@ def format_store_response(results: List[Dict]) -> Panel:
 
 
 def initialize_memory_system(
-    config: Optional[Dict] = None, 
+    config: Optional[Dict] = None,
     operation_id: Optional[str] = None,
-    target_name: Optional[str] = None
+    target_name: Optional[str] = None,
 ) -> None:
     """Initialize the memory system with custom configuration.
 
@@ -793,16 +805,21 @@ def initialize_memory_system(
         target_name: Sanitized target name for organizing memory by target
     """
     global _MEMORY_CONFIG, _MEMORY_CLIENT
-    
+
     # Create enhanced config with operation context
     enhanced_config = config.copy() if config else {}
-    enhanced_config["operation_id"] = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    enhanced_config["operation_id"] = (
+        operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
     enhanced_config["target_name"] = target_name or "default_target"
-    
+
     _MEMORY_CONFIG = enhanced_config
     _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config)
-    logger.info("Memory system initialized for operation %s, target: %s", 
-                enhanced_config["operation_id"], enhanced_config["target_name"])
+    logger.info(
+        "Memory system initialized for operation %s, target: %s",
+        enhanced_config["operation_id"],
+        enhanced_config["target_name"],
+    )
 
 
 def get_memory_client() -> Optional[Mem0ServiceClient]:
