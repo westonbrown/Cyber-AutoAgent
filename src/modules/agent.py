@@ -224,6 +224,7 @@ Leverage these tools directly via shell.
         operation_id=operation_id,
         target=target,
         output_base_dir=server_config.output.base_dir,
+        memory_config=memory_config,
     )
 
     # Create model based on server type
