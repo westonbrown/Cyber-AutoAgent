@@ -127,7 +127,7 @@ class TestCLIArguments:
         parser.add_argument("--target", type=str, required=True)
         parser.add_argument("--objective", type=str, required=True)
         parser.add_argument("--output-dir", type=str)
-        parser.add_argument("--cleanup-memory", action="store_true")
+        parser.add_argument("--keep-memory", action="store_true", default=True)
 
         args = parser.parse_args(
             [
@@ -137,14 +137,13 @@ class TestCLIArguments:
                 "test objective",
                 "--output-dir",
                 "/custom/output",
-                "--cleanup-memory",
             ]
         )
 
         assert args.target == "test.com"
         assert args.objective == "test objective"
         assert args.output_dir == "/custom/output"
-        assert args.cleanup_memory is True
+        assert args.keep_memory is True  # Default is now True
 
 
 class TestMainFunction:
