@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.agent import (
     create_agent,
+    check_existing_memories,
 )
 from modules.config import (
     get_config_manager,
@@ -364,6 +365,91 @@ class TestCreateAgent:
             create_agent(target="test.com", objective="test objective", server="local")
 
         mock_handle_error.assert_called_once()
+
+
+class TestCheckExistingMemories:
+    """Test the check_existing_memories function"""
+
+    @patch("modules.agent.os.environ.get")
+    def test_check_existing_memories_mem0_platform(self, mock_env_get):
+        """Test check_existing_memories with Mem0 Platform"""
+        mock_env_get.side_effect = lambda key, default=None: (
+            "test-key" if key == "MEM0_API_KEY" else default
+        )
+        
+        result = check_existing_memories("test.com", "remote")
+        assert result is True
+
+    @patch("modules.agent.os.environ.get")
+    def test_check_existing_memories_opensearch(self, mock_env_get):
+        """Test check_existing_memories with OpenSearch"""
+        mock_env_get.side_effect = lambda key, default=None: (
+            "test-host" if key == "OPENSEARCH_HOST" else default
+        )
+        
+        result = check_existing_memories("test.com", "remote")
+        assert result is True
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.listdir")
+    def test_check_existing_memories_faiss_exists(self, mock_listdir, mock_exists, mock_env_get):
+        """Test check_existing_memories with FAISS backend - directory exists with content"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = True
+        mock_listdir.return_value = ["mem0.faiss", "mem0.pkl"]
+        
+        result = check_existing_memories("test.com", "local")
+        assert result is True
+        mock_exists.assert_called_with("outputs/test.com/memory")
+        mock_listdir.assert_called_with("outputs/test.com/memory")
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_faiss_not_exists(self, mock_exists, mock_env_get):
+        """Test check_existing_memories with FAISS backend - directory doesn't exist"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = False
+        
+        result = check_existing_memories("test.com", "local")
+        assert result is False
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.listdir")
+    def test_check_existing_memories_faiss_empty(self, mock_listdir, mock_exists, mock_env_get):
+        """Test check_existing_memories with FAISS backend - directory exists but empty"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = True
+        mock_listdir.return_value = []
+        
+        result = check_existing_memories("test.com", "local")
+        assert result is False
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_sanitizes_target(self, mock_exists, mock_env_get):
+        """Test check_existing_memories properly sanitizes target names"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = False
+        
+        result = check_existing_memories("https://test.com/path", "local")
+        assert result is False
+        mock_exists.assert_called_with("outputs/test.com/memory")
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_exception_handling(self, mock_exists, mock_env_get):
+        """Test check_existing_memories handles exceptions gracefully"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.side_effect = Exception("File system error")
+        
+        with patch("modules.agent.logger") as mock_logger:
+            result = check_existing_memories("test.com", "local")
+            assert result is False
+            mock_logger.debug.assert_called_once()
+
+
 
 
 if __name__ == "__main__":
