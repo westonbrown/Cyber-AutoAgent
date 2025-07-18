@@ -644,14 +644,20 @@ def main():
             and not args.memory_path
         )
 
+        logger.debug("Cleanup evaluation: keep_memory=%s, memory_path=%s, should_cleanup=%s", 
+                    args.keep_memory, args.memory_path, should_cleanup)
+
         if should_cleanup:
             try:
                 # Extract target name for unified output structure cleanup
                 target_name = sanitize_target_name(args.target)
+                logger.debug("Calling clean_operation_memory with target_name=%s", target_name)
                 clean_operation_memory(local_operation_id, target_name)
                 logger.info("Memory cleaned up for operation %s", local_operation_id)
             except Exception as cleanup_error:
                 logger.warning("Error cleaning up memory: %s", cleanup_error)
+        else:
+            logger.debug("Skipping cleanup - memory will be preserved")
 
         # Log operation end
         end_time = time.time()
