@@ -302,7 +302,7 @@ class Mem0ServiceClient:
             target_name = merged_config.get("target_name", "default_target")
             
             # Use unified output structure for memory - per-target, not per-operation
-            memory_base_path = os.path.join("outputs", target_name, "memory")
+            memory_base_path = os.path.join("outputs", "memory")
             faiss_path = os.path.join(memory_base_path, f"mem0_faiss_{target_name}")
             
             # Ensure the memory directory exists
