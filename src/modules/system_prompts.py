@@ -50,7 +50,8 @@ All file operations and tool outputs should follow the unified output structure:
 - Saving and loading tools (when using load_tools): {output_config.get("base_dir", "./tools")}
 
 **CRITICAL: All file-writing operations must use the unified output paths above.**
-When creating files, writing evidence, or saving tool outputs, always use the appropriate subdirectory within the current operation.
+**NEVER write any files in other directories than stated above. Examples of NOT PERMITTED locations are: cwd, $HOME etc.**
+When creating files, writing evidence, or saving tool outputs, ALWAYS use the appropriate subdirectory within the current operation.
 """
 
 
