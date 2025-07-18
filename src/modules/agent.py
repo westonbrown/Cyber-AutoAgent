@@ -22,6 +22,47 @@ from .memory_tools import mem0_memory, initialize_memory_system
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+logger = logging.getLogger(__name__)
+
+
+def check_existing_memories(target: str, server: str = "remote") -> bool:
+    """Check if existing memories exist for a target.
+
+    Args:
+        target: Target system being assessed
+        server: Server type for configuration
+
+    Returns:
+        True if existing memories are detected, False otherwise
+    """
+    try:
+        # Sanitize target name for consistent path handling
+        target_name = sanitize_target_name(target)
+
+        # Check based on backend type
+        if os.environ.get("MEM0_API_KEY"):
+            # Mem0 Platform - always check (cloud-based)
+            return True
+
+        elif os.environ.get("OPENSEARCH_HOST"):
+            # OpenSearch - always check (remote service)
+            return True
+
+        else:
+            # FAISS - check if local store exists
+            # Create unified output structure path
+            memory_base_path = os.path.join("outputs", target_name, "memory")
+
+            # Check if memory directory exists and has content
+            if os.path.exists(memory_base_path) and os.listdir(memory_base_path):
+                return True
+
+        return False
+
+    except Exception as e:
+        logger.debug("Error checking existing memories: %s", str(e))
+        return False
+
 
 def _create_remote_model(
     model_id: str,
@@ -152,6 +193,9 @@ def create_agent(
         f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
     )
 
+    # Check for existing memories (in addition to explicit memory_path)
+    has_existing_memories = check_existing_memories(target, server)
+
     tools_context = ""
     if available_tools:
         tools_context = f"""
@@ -171,6 +215,7 @@ Leverage these tools directly via shell.
         tools_context,
         server,
         has_memory_path=bool(memory_path),
+        has_existing_memories=has_existing_memories,
     )
 
     # Create callback handler with operation_id and target information
