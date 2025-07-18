@@ -20,37 +20,38 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
         operation_id: The operation identifier
         target_name: The sanitized target name (optional, for unified output structure)
     """
-    # Try to clean up both old and new memory locations
-    cleanup_paths = []
+    logger = logging.getLogger(__name__)
+    logger.debug("clean_operation_memory called with operation_id=%s, target_name=%s", operation_id, target_name)
     
-    # Old path structure (for backward compatibility)
-    old_mem0_path = f"/tmp/mem0_{operation_id}"
-    if os.path.exists(old_mem0_path):
-        cleanup_paths.append(old_mem0_path)
+    if not target_name:
+        logger.warning("No target_name provided, skipping memory cleanup")
+        return
     
-    # New unified output structure - per-target memory
-    if target_name:
-        # Clean up the target's memory (now per-target, not per-operation)
-        new_mem0_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
-        if os.path.exists(new_mem0_path):
-            cleanup_paths.append(new_mem0_path)
+    # Unified output structure - per-target memory
+    memory_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
+    logger.debug("Checking memory path: %s", memory_path)
     
-    # Clean up all found paths
-    for path in cleanup_paths:
+    if os.path.exists(memory_path):
         try:
-            if os.path.isdir(path):
-                shutil.rmtree(path)
+            # Safety check - ensure we're only removing memory directories
+            if "mem0_faiss_" not in memory_path:
+                logger.error("SAFETY CHECK FAILED: Path does not contain expected memory patterns: %s", memory_path)
+                return
+                
+            logger.debug("About to remove memory path: %s", memory_path)
+            if os.path.isdir(memory_path):
+                shutil.rmtree(memory_path)
             else:
-                os.remove(path)
-            print(
-                "%s[*] Cleaned up operation memory: %s%s"
-                % (Colors.GREEN, path, Colors.RESET)
-            )
+                os.remove(memory_path)
+            
+            logger.info("Cleaned up operation memory: %s", memory_path)
+            print(f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}")
+            
         except Exception as e:
-            print(
-                "%s[!] Failed to clean %s: %s%s"
-                % (Colors.RED, path, str(e), Colors.RESET)
-            )
+            logger.error("Failed to clean %s: %s", memory_path, e)
+            print(f"{Colors.RED}[!] Failed to clean {memory_path}: {e}{Colors.RESET}")
+    else:
+        logger.debug("Memory path does not exist: %s", memory_path)
 
 
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
