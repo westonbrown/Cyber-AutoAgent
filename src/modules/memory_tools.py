@@ -648,7 +648,7 @@ def format_list_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = content[:100] + "..." if len(content) > 100 else content
+        content_preview = content[:100] + "..." if content and len(content) > 100 else content
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -695,7 +695,7 @@ def format_retrieve_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = content[:100] + "..." if len(content) > 100 else content
+        content_preview = content[:100] + "..." if content and len(content) > 100 else content
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -786,7 +786,7 @@ def format_store_response(results: List[Dict]) -> Panel:
         event = memory.get("event")
         text = memory.get("memory")
         # Truncate content if too long
-        content_preview = text[:100] + "..." if len(text) > 100 else text
+        content_preview = text[:100] + "..." if text and len(text) > 100 else text
         table.add_row(event, content_preview)
 
     return Panel(table, title="[bold green]Memory Stored", border_style="green")
@@ -869,6 +869,9 @@ def mem0_memory(
     if _MEMORY_CLIENT is None:
         # Initialize with default config if not already initialized
         initialize_memory_system()
+
+    if _MEMORY_CLIENT is None:
+        return "Error: Memory client could not be initialized"
 
     try:
         # Use simple user_id if not provided
@@ -1032,7 +1035,7 @@ def mem0_memory(
 
     except Exception as e:
         error_msg = f"Error: {str(e)}"
-        if not strands_dev:
+        if not os.environ.get("BYPASS_TOOL_CONSENT", "").lower() == "true":
             error_panel = Panel(
                 Text(str(e), style="red"),
                 title="❌ Memory Operation Error",

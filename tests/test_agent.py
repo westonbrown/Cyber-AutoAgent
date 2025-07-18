@@ -376,7 +376,7 @@ class TestCheckExistingMemories:
         mock_env_get.side_effect = lambda key, default=None: (
             "test-key" if key == "MEM0_API_KEY" else default
         )
-        
+
         result = check_existing_memories("test.com", "remote")
         assert result is True
 
@@ -386,19 +386,21 @@ class TestCheckExistingMemories:
         mock_env_get.side_effect = lambda key, default=None: (
             "test-host" if key == "OPENSEARCH_HOST" else default
         )
-        
+
         result = check_existing_memories("test.com", "remote")
         assert result is True
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
     @patch("modules.agent.os.listdir")
-    def test_check_existing_memories_faiss_exists(self, mock_listdir, mock_exists, mock_env_get):
+    def test_check_existing_memories_faiss_exists(
+        self, mock_listdir, mock_exists, mock_env_get
+    ):
         """Test check_existing_memories with FAISS backend - directory exists with content"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = True
         mock_listdir.return_value = ["mem0.faiss", "mem0.pkl"]
-        
+
         result = check_existing_memories("test.com", "local")
         assert result is True
         mock_exists.assert_called_with("outputs/test.com/memory")
@@ -410,19 +412,21 @@ class TestCheckExistingMemories:
         """Test check_existing_memories with FAISS backend - directory doesn't exist"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = False
-        
+
         result = check_existing_memories("test.com", "local")
         assert result is False
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
     @patch("modules.agent.os.listdir")
-    def test_check_existing_memories_faiss_empty(self, mock_listdir, mock_exists, mock_env_get):
+    def test_check_existing_memories_faiss_empty(
+        self, mock_listdir, mock_exists, mock_env_get
+    ):
         """Test check_existing_memories with FAISS backend - directory exists but empty"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = True
         mock_listdir.return_value = []
-        
+
         result = check_existing_memories("test.com", "local")
         assert result is False
 
@@ -432,24 +436,24 @@ class TestCheckExistingMemories:
         """Test check_existing_memories properly sanitizes target names"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = False
-        
+
         result = check_existing_memories("https://test.com/path", "local")
         assert result is False
         mock_exists.assert_called_with("outputs/test.com/memory")
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
-    def test_check_existing_memories_exception_handling(self, mock_exists, mock_env_get):
+    def test_check_existing_memories_exception_handling(
+        self, mock_exists, mock_env_get
+    ):
         """Test check_existing_memories handles exceptions gracefully"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.side_effect = Exception("File system error")
-        
+
         with patch("modules.agent.logger") as mock_logger:
             result = check_existing_memories("test.com", "local")
             assert result is False
             mock_logger.debug.assert_called_once()
-
-
 
 
 if __name__ == "__main__":

@@ -135,7 +135,7 @@ def create_agent(
     available_tools: Optional[List[str]] = None,
     op_id: Optional[str] = None,
     model_id: Optional[str] = None,
-    region_name: str = None,
+    region_name: Optional[str] = None,
     server: str = "remote",
     memory_path: Optional[str] = None,
 ) -> Tuple[Agent, ReasoningHandler]:
