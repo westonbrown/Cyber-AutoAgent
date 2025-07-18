@@ -221,7 +221,6 @@ class OutputConfig:
     base_dir: str = field(default_factory=get_default_base_dir)
     target_name: Optional[str] = None
     enable_unified_output: bool = True  # Default to enabled for new unified structure
-    cleanup_memory: bool = False
     operation_id: Optional[str] = None  # Current operation ID for path generation
 
 
@@ -756,16 +755,12 @@ class ConfigManager:
             or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
         )
 
-        cleanup_memory = (
-            overrides.get("cleanup_memory", False)
-            or os.getenv("CYBER_AGENT_CLEANUP_MEMORY", "false").lower() == "true"
-        )
+        # cleanup_memory removed as part of memory management simplification
 
         return OutputConfig(
             base_dir=base_dir,
             target_name=target_name,
             enable_unified_output=enable_unified_output,
-            cleanup_memory=cleanup_memory,
             operation_id=operation_id,
         )
 
