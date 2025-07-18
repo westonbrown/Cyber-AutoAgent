@@ -13,20 +13,43 @@ from typing import List
 from .utils import Colors
 
 
-def clean_operation_memory(operation_id: str):
-    """Clean up memory data for a specific operation."""
-    mem0_path = f"/tmp/mem0_{operation_id}"
-    if os.path.exists(mem0_path):
+def clean_operation_memory(operation_id: str, target_name: str = None):
+    """Clean up memory data for a specific operation.
+    
+    Args:
+        operation_id: The operation identifier
+        target_name: The sanitized target name (optional, for unified output structure)
+    """
+    # Try to clean up both old and new memory locations
+    cleanup_paths = []
+    
+    # Old path structure (for backward compatibility)
+    old_mem0_path = f"/tmp/mem0_{operation_id}"
+    if os.path.exists(old_mem0_path):
+        cleanup_paths.append(old_mem0_path)
+    
+    # New unified output structure - per-target memory
+    if target_name:
+        # Clean up the target's memory (now per-target, not per-operation)
+        new_mem0_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
+        if os.path.exists(new_mem0_path):
+            cleanup_paths.append(new_mem0_path)
+    
+    # Clean up all found paths
+    for path in cleanup_paths:
         try:
-            shutil.rmtree(mem0_path)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
             print(
                 "%s[*] Cleaned up operation memory: %s%s"
-                % (Colors.GREEN, mem0_path, Colors.RESET)
+                % (Colors.GREEN, path, Colors.RESET)
             )
         except Exception as e:
             print(
                 "%s[!] Failed to clean %s: %s%s"
-                % (Colors.RED, mem0_path, str(e), Colors.RESET)
+                % (Colors.RED, path, str(e), Colors.RESET)
             )
 
 
