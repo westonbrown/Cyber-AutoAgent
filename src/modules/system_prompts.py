@@ -63,6 +63,7 @@ def get_system_prompt(
     tools_context: str = "",
     server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
+    has_existing_memories: bool = False,  # Add existing memories detection
     output_config: Dict = None,  # Add output configuration
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
@@ -75,12 +76,12 @@ def get_system_prompt(
     # Generate output directory guidance
     output_guidance = _get_output_directory_guidance(output_config, operation_id)
 
-    # Dynamic memory instruction based on whether continuing previous operation
+    # Dynamic memory instruction based on whether continuing previous operation or existing memories
     memory_instruction = (
         """
 - FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
 - Build upon previous discoveries and avoid repeating completed work"""
-        if has_memory_path
+        if has_memory_path or has_existing_memories
         else """
 - Begin with reconnaissance - do NOT check memory on fresh operations
 - Focus first step on target information gathering"""
