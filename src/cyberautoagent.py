@@ -199,18 +199,15 @@ def main():
     parser.add_argument(
         "--keep-memory",
         action="store_true",
-        help="Keep memory data after operation completes (default: remove)",
+        default=True,
+        help="Keep memory data after operation completes (default: true)",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         help="Base directory for output artifacts (default: ./outputs)",
     )
-    parser.add_argument(
-        "--cleanup-memory",
-        action="store_true",
-        help="Enable automatic memory cleanup after operations",
-    )
+    # --cleanup-memory flag removed as part of memory management simplification
 
     args = parser.parse_args()
 
@@ -234,9 +231,6 @@ def main():
     config_overrides = {}
     if args.output_dir:
         config_overrides["output_dir"] = args.output_dir
-    if args.cleanup_memory:
-        config_overrides["cleanup_memory"] = args.cleanup_memory
-
     # Always enable unified output system
     config_overrides["enable_unified_output"] = True
 
@@ -648,7 +642,6 @@ def main():
         should_cleanup = (
             not args.keep_memory
             and not args.memory_path
-            and server_config.output.cleanup_memory
         )
 
         if should_cleanup:
