@@ -249,7 +249,7 @@ def main():
     log_path = get_output_path(
         sanitize_target_name(args.target),
         operation_timestamp,
-        "logs",
+        "",
         server_config.output.base_dir,
     )
     log_file = os.path.join(log_path, "cyber_operations.log")
@@ -581,23 +581,25 @@ def main():
                             print(f"  • ... and {len(evidence_summary) - 5} more items")
 
             # Show where evidence and memories are stored
-            # Determine memory location based on backend and operation ID
+            # Determine memory location based on backend and unified output structure
+            target_name = sanitize_target_name(args.target)
             if os.getenv("MEM0_API_KEY"):
                 memory_location = "Mem0 Platform (cloud)"
             elif os.getenv("OPENSEARCH_HOST"):
                 memory_location = f"OpenSearch: {os.getenv('OPENSEARCH_HOST')}"
             else:
-                memory_location = f"./mem0_faiss_{local_operation_id}"
+                memory_location = f"./outputs/{target_name}/memory"
 
             # Use unified output paths for evidence storage
             evidence_location = get_output_path(
                 sanitize_target_name(args.target),
                 operation_timestamp,
+                "",  # No subdirectory - show the operation root
                 server_config.output.base_dir,
             )
 
             print(
-                f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}"
+                f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}"
             )
             print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
             print(f"{'=' * 80}")
