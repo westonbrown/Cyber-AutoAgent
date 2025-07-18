@@ -194,7 +194,7 @@ def main():
     parser.add_argument(
         "--memory-path",
         type=str,
-        help="Path to existing FAISS memory store to load past memories (e.g., /tmp/mem0_OP_20240320_101530)",
+        help="Path to existing FAISS memory store to load past memories (e.g., /outputs/target_name/OP_20240320_101530)",
     )
     parser.add_argument(
         "--keep-memory",
@@ -207,7 +207,6 @@ def main():
         type=str,
         help="Base directory for output artifacts (default: ./outputs)",
     )
-    # --cleanup-memory flag removed as part of memory management simplification
 
     args = parser.parse_args()
 
