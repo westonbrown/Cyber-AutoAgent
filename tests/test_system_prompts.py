@@ -3,7 +3,6 @@
 import pytest
 import os
 import sys
-from unittest.mock import Mock, patch
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -22,7 +21,7 @@ class TestGetSystemPrompt:
             max_steps=100,
             operation_id="OP_20240101_120000",
         )
-        
+
         assert "test.com" in prompt
         assert "test objective" in prompt
         assert "100" in prompt
@@ -38,9 +37,9 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             has_memory_path=True,
         )
-        
+
         assert "FIRST ACTION: Retrieve past findings" in prompt
-        assert "mem0_memory(action=\"list\"" in prompt
+        assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
     def test_get_system_prompt_with_existing_memories(self):
@@ -52,9 +51,9 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             has_existing_memories=True,
         )
-        
+
         assert "FIRST ACTION: Retrieve past findings" in prompt
-        assert "mem0_memory(action=\"list\"" in prompt
+        assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
     def test_get_system_prompt_with_both_memory_flags(self):
@@ -67,9 +66,9 @@ class TestGetSystemPrompt:
             has_memory_path=True,
             has_existing_memories=True,
         )
-        
+
         assert "FIRST ACTION: Retrieve past findings" in prompt
-        assert "mem0_memory(action=\"list\"" in prompt
+        assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
     def test_get_system_prompt_no_memory_flags(self):
@@ -82,7 +81,7 @@ class TestGetSystemPrompt:
             has_memory_path=False,
             has_existing_memories=False,
         )
-        
+
         assert "Begin with reconnaissance" in prompt
         assert "do NOT check memory on fresh operations" in prompt
         assert "Focus first step on target information gathering" in prompt
@@ -90,7 +89,7 @@ class TestGetSystemPrompt:
     def test_get_system_prompt_with_tools_context(self):
         """Test system prompt with tools context"""
         tools_context = "## ENVIRONMENTAL CONTEXT\n\nTools: nmap, curl"
-        
+
         prompt = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -98,7 +97,7 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             tools_context=tools_context,
         )
-        
+
         assert "ENVIRONMENTAL CONTEXT" in prompt
         assert "nmap, curl" in prompt
 
@@ -109,7 +108,7 @@ class TestGetSystemPrompt:
             "target_name": "test_target",
             "enable_unified_output": True,
         }
-        
+
         prompt = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -117,7 +116,7 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             output_config=output_config,
         )
-        
+
         assert "OUTPUT DIRECTORY STRUCTURE" in prompt
         assert "/custom/output" in prompt
 
@@ -131,7 +130,7 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             server="local",
         )
-        
+
         # Test remote server
         prompt_remote = get_system_prompt(
             target="test.com",
@@ -140,7 +139,7 @@ class TestGetSystemPrompt:
             operation_id="OP_20240101_120000",
             server="remote",
         )
-        
+
         # Both should contain the basic elements
         assert "test.com" in prompt_local
         assert "test.com" in prompt_remote
@@ -161,7 +160,7 @@ class TestMemoryInstructions:
             has_memory_path=True,
             has_existing_memories=False,  # Should be ignored
         )
-        
+
         assert "FIRST ACTION: Retrieve past findings" in prompt
 
     def test_memory_instruction_existing_only(self):
@@ -174,7 +173,7 @@ class TestMemoryInstructions:
             has_memory_path=False,
             has_existing_memories=True,
         )
-        
+
         assert "FIRST ACTION: Retrieve past findings" in prompt
 
     def test_memory_instruction_fresh_operation(self):
@@ -187,7 +186,7 @@ class TestMemoryInstructions:
             has_memory_path=False,
             has_existing_memories=False,
         )
-        
+
         assert "Begin with reconnaissance" in prompt
         assert "do NOT check memory on fresh operations" in prompt
 

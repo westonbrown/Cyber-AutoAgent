@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict
+from typing import Dict, Optional
 
 # Import the new configuration system
 from .config import get_config_manager
@@ -29,7 +29,7 @@ When using swarm, always set:
 """
 
 
-def _get_output_directory_guidance(output_config: Dict, operation_id: str) -> str:
+def _get_output_directory_guidance(output_config: Optional[Dict], operation_id: str) -> str:
     """Generate output directory guidance based on configuration."""
     if not output_config:
         return ""
@@ -64,7 +64,7 @@ def get_system_prompt(
     server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
     has_existing_memories: bool = False,  # Add existing memories detection
-    output_config: Dict = None,  # Add output configuration
+    output_config: Optional[Dict] = None,  # Add output configuration
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
@@ -311,7 +311,7 @@ def get_initial_prompt(
     objective: str,
     iterations: int,
     available_tools: list,
-    assessment_plan: Dict = None,
+    assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
     return f"""Initializing penetration testing operation.
@@ -322,7 +322,7 @@ Beginning with reconnaissance to build target model and identify optimal attack 
 
 
 def get_continuation_prompt(
-    remaining: int, total: int, objective_status: Dict = None, next_task: str = None
+    remaining: int, total: int, objective_status: Optional[Dict] = None, next_task: Optional[str] = None
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
