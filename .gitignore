@@ -135,6 +135,7 @@ evidence_*
 experimentation/
 memory/
 tools/
+epics/
 
 # IDE
 .vscode/
