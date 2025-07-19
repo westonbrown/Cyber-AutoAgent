@@ -35,9 +35,9 @@ services:
       - MIN_CONTEXT_PRECISION_SCORE=${MIN_CONTEXT_PRECISION_SCORE:-0.8}
     
     volumes:
-      # Evidence persistence
-      - ./evidence:/app/evidence
-      - ./logs:/app/logs
+      # Unified output structure persistence
+      - ./outputs:/app/outputs
+      - ./tools:/app/tools
       
     
     # Network configuration - bridge mode to allow Langfuse communication
@@ -309,10 +309,6 @@ services:
 
 # Named volumes for better control
 volumes:
-  evidence_data:
-    driver: local
-  logs_data:
-    driver: local
   langfuse_postgres_data:
     driver: local
   langfuse_clickhouse_data:

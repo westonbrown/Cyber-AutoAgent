@@ -1,67 +1,123 @@
 #!/usr/bin/env python3
 
-import os
-from typing import Dict, Any
+from typing import Dict, Optional
 
-import requests
-
-
-def _get_default_model_configs(server: str) -> Dict[str, Any]:
-    """Get default model configurations based on server type"""
-    if server == "local":
-        return {
-            "llm_model": "llama3.2:3b",
-            "embedding_model": "mxbai-embed-large",
-            "embedding_dims": 1024,
-        }
-    else:  # remote
-        return {
-            "llm_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-            "embedding_model": "amazon.titan-embed-text-v2:0",
-            "embedding_dims": 1024,
-        }
-
-
-def _get_ollama_host() -> str:
-    """
-    Determine appropriate Ollama host based on environment.
-    """
-    env_host = os.getenv("OLLAMA_HOST")
-    if env_host:
-        return env_host
-    
-    # Check if running in Docker
-    if os.path.exists('/app'): 
-        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
-        for host in candidates:
-            try:
-                response = requests.get(f"{host}/api/version", timeout=2)
-                if response.status_code == 200:
-                    return host
-            except Exception:
-                pass
-        # Fallback to host.docker.internal if no connection works (Docker on Windows/ Macos)
-        return "http://host.docker.internal:11434"
-    else:
-        # Native execution - use localhost (Docker on Linux & non-docker)
-        return "http://localhost:11434"
+# Import the new configuration system
+from .config import get_config_manager
 
 
 def _get_swarm_model_guidance(server: str) -> str:
     """Generate swarm model configuration guidance based on server type."""
+    # Use the new configuration system
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(server)
+    swarm_config = server_config.swarm
+
     if server == "local":
-        ollama_host = _get_ollama_host()
+        ollama_host = config_manager.get_ollama_host()
         return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
 When using swarm, always set:
 - model_provider: "ollama"
-- model_settings: {{\"model_id\": \"llama3.2:3b\", \"host\": \"{ollama_host}\"}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"host\": \"{ollama_host}\", \"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}
 """
     else:
-        return """## SWARM MODEL CONFIGURATION (REMOTE MODE)
+        # Use dedicated swarm LLM configuration
+        return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
 When using swarm, always set:
 - model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"us.anthropic.claude-3-7-sonnet-20250219-v1:0\", \"params\": {{\"temperature\": 0.7, \"max_tokens\": 500}}}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"params\": {{\"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}}}
 """
+
+
+def _get_output_directory_guidance(
+    output_config: Optional[Dict], operation_id: str
+) -> str:
+    """Generate output directory guidance based on configuration."""
+    if not output_config:
+        return ""
+
+    base_dir = output_config.get("base_dir", "./outputs")
+    target_name = output_config.get("target_name", "target")
+    enable_unified = output_config.get("enable_unified_output", True)
+
+    if not enable_unified:
+        return ""
+
+    return f"""## OUTPUT DIRECTORY STRUCTURE
+All file operations and tool outputs should follow the unified output structure:
+- Base directory: {base_dir}
+- Target organization: {base_dir}/{target_name}/
+- Current operation: {base_dir}/{target_name}/OP_{operation_id}/
+- Ad-hoc files (when using file_writer or editor tools): {base_dir}/{target_name}/OP_{operation_id}/utils/
+- Saving and loading tools (when using load_tools): {output_config.get("base_dir", "./tools")}
+
+**CRITICAL: All file-writing operations must use the unified output paths above.**
+**NEVER write any files in other directories than stated above. Examples of NOT PERMITTED locations are: cwd, $HOME etc.**
+When creating files, writing evidence, or saving tool outputs, ALWAYS use the appropriate subdirectory within the current operation.
+"""
+
+
+def _get_memory_context_guidance(
+    has_memory_path: bool,
+    has_existing_memories: bool,
+    memory_overview: Optional[Dict] = None,
+) -> str:
+    """Generate memory-aware context and guidance."""
+    if not has_memory_path and not has_existing_memories:
+        return """## MEMORY CONTEXT
+Starting fresh assessment with no previous context.
+- Begin with reconnaissance and target information gathering
+- Store all findings immediately with category="finding"
+- Build comprehensive knowledge base for this target
+"""
+
+    # Generate memory context based on overview data
+    memory_context = "## MEMORY CONTEXT\n"
+
+    if memory_overview and memory_overview.get("has_memories"):
+        total_memories = memory_overview.get("total_count", 0)
+        categories = memory_overview.get("categories", {})
+        recent_findings = memory_overview.get("recent_findings", [])
+
+        memory_context += (
+            f"Continuing assessment with {total_memories} existing memories:\n"
+        )
+
+        # Add category breakdown
+        if categories:
+            category_summary = []
+            for category, count in categories.items():
+                category_summary.append(f"{count} {category}")
+            memory_context += f"- Memory categories: {', '.join(category_summary)}\n"
+
+        # Add recent findings preview
+        if recent_findings:
+            memory_context += "- Recent findings:\n"
+            for i, finding in enumerate(recent_findings[:2], 1):
+                content = finding.get("content", "")[:80] + "..."
+                memory_context += f"  {i}. {content}\n"
+
+        memory_context += '\n**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Analyze retrieved memories before taking any actions\n"
+        memory_context += "- Avoid repeating work already completed\n"
+        memory_context += "- Build upon previous discoveries\n"
+        memory_context += "- Focus on unexplored areas or failed attempts\n"
+
+    elif has_memory_path:
+        memory_context += "Loading from explicit memory path - previous operation context available.\n"
+        memory_context += '**FIRST ACTION**: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Review previous work to avoid duplication\n"
+        memory_context += "- Continue from where previous operation left off\n"
+
+    else:
+        memory_context += (
+            "Memory system indicates existing data but overview unavailable.\n"
+        )
+        memory_context += '**FIRST ACTION**: Check for existing memories with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Determine if this is a continuation or fresh start\n"
+        memory_context += "- Adapt strategy based on retrieved context\n"
+
+    return memory_context
 
 
 def get_system_prompt(
@@ -70,21 +126,38 @@ def get_system_prompt(
     max_steps: int,
     operation_id: str,
     tools_context: str = "",
-    server: str = "remote", # Add server parameter
+    server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
+    has_existing_memories: bool = False,  # Add existing memories detection
+    output_config: Optional[Dict] = None,  # Add output configuration
+    memory_overview: Optional[Dict] = None,  # Add memory overview data
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
     swarm_guidance = _get_swarm_model_guidance(server)
-    full_tools_context = f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
-    
-    # Dynamic memory instruction based on whether continuing previous operation
-    memory_instruction = """
+    full_tools_context = (
+        f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
+    )
+
+    # Generate output directory guidance
+    output_guidance = _get_output_directory_guidance(output_config, operation_id)
+
+    # Generate memory-aware context and guidance
+    memory_context = _get_memory_context_guidance(
+        has_memory_path, has_existing_memories, memory_overview
+    )
+
+    # Dynamic memory instruction based on whether continuing previous operation or existing memories
+    memory_instruction = (
+        """
 - FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
-- Build upon previous discoveries and avoid repeating completed work""" if has_memory_path else """
+- Build upon previous discoveries and avoid repeating completed work"""
+        if has_memory_path or has_existing_memories
+        else """
 - Begin with reconnaissance - do NOT check memory on fresh operations
 - Focus first step on target information gathering"""
-    
+    )
+
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
 </role>
@@ -100,12 +173,16 @@ Procedural Memory: Tool registry + dynamic tool creation capability
 - Target: {target}
 - Objective: {objective}
 - Operation ID: {operation_id}
-- Budget: {max_steps} steps (Urgency: {'HIGH' if max_steps < 30 else 'MEDIUM'})
+- Budget: {max_steps} steps (Urgency: {"HIGH" if max_steps < 30 else "MEDIUM"})
 - Available Tools: {full_tools_context}
 - Package Installation: You can install packages without sudo:
   - System: `apt-get install [package]` or `apt install [package]`
   - Python: `pip install [package]` or `pip3 install [package]`
 </mission_parameters>
+
+{output_guidance}
+
+{memory_context}
 
 <metacognitive_framework>
 Continuous Assessment: Before actions, evaluate confidence (High >80%, Medium 50-80%, Low <50%)
@@ -305,9 +382,9 @@ Remember: Assess confidence→Select optimal tools→Execute→Learn→Adapt
 def get_initial_prompt(
     target: str,
     objective: str,
-    iterations: int,
-    available_tools: list,
-    assessment_plan: Dict = None,
+    _iterations: int,
+    _available_tools: list,
+    _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
     return f"""Initializing penetration testing operation.
@@ -318,11 +395,14 @@ Beginning with reconnaissance to build target model and identify optimal attack 
 
 
 def get_continuation_prompt(
-    remaining: int, total: int, objective_status: Dict = None, next_task: str = None
+    remaining: int,
+    total: int,
+    _objective_status: Optional[Dict] = None,
+    _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
-    
+
     return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}
 Reassessing strategy based on current knowledge and confidence levels.
 Continuing adaptive execution toward objective completion."""

@@ -7,12 +7,12 @@ from simple_stack import CAATestHarnessStack
 app = cdk.App()
 
 CAATestHarnessStack(
-    app, 
+    app,
     "CAATestHarnessStack",
     env=cdk.Environment(
         account=os.environ.get("CDK_DEFAULT_ACCOUNT"),
-        region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1")
-    )
+        region=os.environ.get("CDK_DEFAULT_REGION", "us-east-1"),
+    ),
 )
 
 app.synth()

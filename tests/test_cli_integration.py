@@ -121,6 +121,30 @@ class TestCLIArguments:
         assert args.region == "us-west-2"
         assert args.confirmations is True
 
+    def test_new_output_arguments(self):
+        """Test that new output configuration arguments are properly parsed"""
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--target", type=str, required=True)
+        parser.add_argument("--objective", type=str, required=True)
+        parser.add_argument("--output-dir", type=str)
+        parser.add_argument("--keep-memory", action="store_true", default=True)
+
+        args = parser.parse_args(
+            [
+                "--target",
+                "test.com",
+                "--objective",
+                "test objective",
+                "--output-dir",
+                "/custom/output",
+            ]
+        )
+
+        assert args.target == "test.com"
+        assert args.objective == "test objective"
+        assert args.output_dir == "/custom/output"
+        assert args.keep_memory is True  # Default is now True
+
 
 class TestMainFunction:
     """Test main function execution flow"""
