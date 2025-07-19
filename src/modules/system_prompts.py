@@ -382,9 +382,9 @@ Remember: Assess confidence→Select optimal tools→Execute→Learn→Adapt
 def get_initial_prompt(
     target: str,
     objective: str,
-    iterations: int,
-    available_tools: list,
-    assessment_plan: Optional[Dict] = None,
+    _iterations: int,
+    _available_tools: list,
+    _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
     return f"""Initializing penetration testing operation.
@@ -397,8 +397,8 @@ Beginning with reconnaissance to build target model and identify optimal attack 
 def get_continuation_prompt(
     remaining: int,
     total: int,
-    objective_status: Optional[Dict] = None,
-    next_task: Optional[str] = None,
+    _objective_status: Optional[Dict] = None,
+    _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
