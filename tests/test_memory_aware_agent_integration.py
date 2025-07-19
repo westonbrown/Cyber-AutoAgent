@@ -3,7 +3,7 @@
 import pytest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -198,8 +198,9 @@ class TestMemoryAwareAgentIntegration:
         mock_create_model.return_value = mock_model
 
         # Mock path validation
-        with patch("os.path.exists", return_value=True), patch(
-            "os.path.isdir", return_value=True
+        with (
+            patch("os.path.exists", return_value=True),
+            patch("os.path.isdir", return_value=True),
         ):
             # Create agent with memory path
             agent, handler = create_agent(
@@ -347,7 +348,7 @@ class TestMemoryAwareAgentIntegration:
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 1 existing memories" in system_prompt
         assert "Local scan completed" in system_prompt
-        assert "model_provider: \"ollama\"" in system_prompt
+        assert 'model_provider: "ollama"' in system_prompt
 
 
 if __name__ == "__main__":

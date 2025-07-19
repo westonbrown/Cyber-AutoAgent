@@ -3,7 +3,6 @@
 import pytest
 import os
 import sys
-from unittest.mock import Mock, patch, MagicMock
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -20,11 +19,9 @@ class TestMemoryContextGuidance:
     def test_fresh_start_guidance(self):
         """Test memory context guidance for fresh start"""
         result = _get_memory_context_guidance(
-            has_memory_path=False, 
-            has_existing_memories=False, 
-            memory_overview=None
+            has_memory_path=False, has_existing_memories=False, memory_overview=None
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment" in result
         assert "Begin with reconnaissance" in result
@@ -33,25 +30,21 @@ class TestMemoryContextGuidance:
     def test_memory_path_guidance(self):
         """Test memory context guidance with explicit memory path"""
         result = _get_memory_context_guidance(
-            has_memory_path=True, 
-            has_existing_memories=False, 
-            memory_overview=None
+            has_memory_path=True, has_existing_memories=False, memory_overview=None
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Loading from explicit memory path" in result
         assert "**FIRST ACTION**" in result
-        assert "mem0_memory(action=\"list\"" in result
+        assert 'mem0_memory(action="list"' in result
         assert "Review previous work" in result
 
     def test_existing_memories_guidance(self):
         """Test memory context guidance with existing memories"""
         result = _get_memory_context_guidance(
-            has_memory_path=False, 
-            has_existing_memories=True, 
-            memory_overview=None
+            has_memory_path=False, has_existing_memories=True, memory_overview=None
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Memory system indicates existing data" in result
         assert "**FIRST ACTION**" in result
@@ -64,17 +57,23 @@ class TestMemoryContextGuidance:
             "total_count": 5,
             "categories": {"finding": 3, "general": 2},
             "recent_findings": [
-                {"content": "SQL injection found in login form", "created_at": "2024-01-01"},
-                {"content": "XSS vulnerability in search parameter", "created_at": "2024-01-02"}
-            ]
+                {
+                    "content": "SQL injection found in login form",
+                    "created_at": "2024-01-01",
+                },
+                {
+                    "content": "XSS vulnerability in search parameter",
+                    "created_at": "2024-01-02",
+                },
+            ],
         }
-        
+
         result = _get_memory_context_guidance(
-            has_memory_path=False, 
-            has_existing_memories=True, 
-            memory_overview=memory_overview
+            has_memory_path=False,
+            has_existing_memories=True,
+            memory_overview=memory_overview,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 5 existing memories" in result
         assert "Memory categories: 3 finding, 2 general" in result
@@ -90,15 +89,15 @@ class TestMemoryContextGuidance:
             "has_memories": False,
             "total_count": 0,
             "categories": {},
-            "recent_findings": []
+            "recent_findings": [],
         }
-        
+
         result = _get_memory_context_guidance(
-            has_memory_path=False, 
-            has_existing_memories=True, 
-            memory_overview=memory_overview
+            has_memory_path=False,
+            has_existing_memories=True,
+            memory_overview=memory_overview,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Memory system indicates existing data" in result
         assert "**FIRST ACTION**" in result
@@ -118,9 +117,9 @@ class TestMemoryAwareSystemPrompts:
             server="remote",
             has_memory_path=False,
             has_existing_memories=False,
-            memory_overview=None
+            memory_overview=None,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment" in result
         assert "Begin with reconnaissance" in result
@@ -139,13 +138,13 @@ class TestMemoryAwareSystemPrompts:
             server="remote",
             has_memory_path=True,
             has_existing_memories=False,
-            memory_overview=None
+            memory_overview=None,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Loading from explicit memory path" in result
         assert "**FIRST ACTION**" in result
-        assert "mem0_memory(action=\"list\"" in result
+        assert 'mem0_memory(action="list"' in result
         assert "FIRST ACTION: Retrieve past findings" in result
 
     def test_system_prompt_with_existing_memories(self):
@@ -159,9 +158,9 @@ class TestMemoryAwareSystemPrompts:
             server="remote",
             has_memory_path=False,
             has_existing_memories=True,
-            memory_overview=None
+            memory_overview=None,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Memory system indicates existing data" in result
         assert "**FIRST ACTION**" in result
@@ -174,11 +173,17 @@ class TestMemoryAwareSystemPrompts:
             "total_count": 8,
             "categories": {"finding": 5, "general": 3},
             "recent_findings": [
-                {"content": "Critical SQL injection vulnerability found in /admin/login endpoint", "created_at": "2024-01-01"},
-                {"content": "RCE vulnerability discovered in file upload functionality", "created_at": "2024-01-02"}
-            ]
+                {
+                    "content": "Critical SQL injection vulnerability found in /admin/login endpoint",
+                    "created_at": "2024-01-01",
+                },
+                {
+                    "content": "RCE vulnerability discovered in file upload functionality",
+                    "created_at": "2024-01-02",
+                },
+            ],
         }
-        
+
         result = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -188,9 +193,9 @@ class TestMemoryAwareSystemPrompts:
             server="remote",
             has_memory_path=False,
             has_existing_memories=True,
-            memory_overview=memory_overview
+            memory_overview=memory_overview,
         )
-        
+
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 8 existing memories" in result
         assert "Memory categories: 5 finding, 3 general" in result
@@ -210,7 +215,7 @@ nmap, nikto, sqlmap, metasploit
 
 Leverage these tools directly via shell. 
 """
-        
+
         result = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -220,9 +225,9 @@ Leverage these tools directly via shell.
             server="remote",
             has_memory_path=False,
             has_existing_memories=False,
-            memory_overview=None
+            memory_overview=None,
         )
-        
+
         assert "Professional tools discovered" in result
         assert "nmap, nikto, sqlmap, metasploit" in result
         assert "## MEMORY CONTEXT" in result
@@ -232,9 +237,9 @@ Leverage these tools directly via shell.
         output_config = {
             "base_dir": "./outputs",
             "target_name": "test.com",
-            "enable_unified_output": True
+            "enable_unified_output": True,
         }
-        
+
         result = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -245,9 +250,9 @@ Leverage these tools directly via shell.
             has_memory_path=False,
             has_existing_memories=False,
             output_config=output_config,
-            memory_overview=None
+            memory_overview=None,
         )
-        
+
         assert "## OUTPUT DIRECTORY STRUCTURE" in result
         assert "Base directory: ./outputs" in result
         assert "Target organization: ./outputs/test.com/" in result
@@ -261,21 +266,21 @@ Leverage these tools directly via shell.
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            server="remote"
+            server="remote",
         )
-        
-        assert "model_provider: \"bedrock\"" in result_remote
-        
+
+        assert 'model_provider: "bedrock"' in result_remote
+
         # Test local server
         result_local = get_system_prompt(
             target="test.com",
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            server="local"
+            server="local",
         )
-        
-        assert "model_provider: \"ollama\"" in result_local
+
+        assert 'model_provider: "ollama"' in result_local
 
     def test_system_prompt_urgency_levels(self):
         """Test system prompt generation with different urgency levels"""
@@ -284,20 +289,20 @@ Leverage these tools directly via shell.
             target="test.com",
             objective="test objective",
             max_steps=20,
-            operation_id="OP_20240101_120000"
+            operation_id="OP_20240101_120000",
         )
-        
+
         assert "Budget: 20 steps" in result_high
         assert "Urgency: HIGH" in result_high
-        
+
         # Medium urgency (>= 30 steps)
         result_medium = get_system_prompt(
             target="test.com",
             objective="test objective",
             max_steps=50,
-            operation_id="OP_20240101_120000"
+            operation_id="OP_20240101_120000",
         )
-        
+
         assert "Budget: 50 steps" in result_medium
         assert "Urgency: MEDIUM" in result_medium
 
@@ -309,22 +314,22 @@ Leverage these tools directly via shell.
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            has_existing_memories=True
+            has_existing_memories=True,
         )
-        
+
         # Should have both memory context and dynamic instruction
         assert "**FIRST ACTION**" in result_with_memories
         assert "FIRST ACTION: Retrieve past findings" in result_with_memories
-        
+
         # Without existing memories - should have fresh start instructions
         result_fresh = get_system_prompt(
             target="test.com",
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            has_existing_memories=False
+            has_existing_memories=False,
         )
-        
+
         assert "Starting fresh assessment" in result_fresh
         assert "Begin with reconnaissance" in result_fresh
 
@@ -339,19 +344,22 @@ class TestMemoryAwarePromptIntegration:
             "total_count": 3,
             "categories": {"finding": 2, "general": 1},
             "recent_findings": [
-                {"content": "Port 22 SSH open with weak credentials", "created_at": "2024-01-01"},
-            ]
+                {
+                    "content": "Port 22 SSH open with weak credentials",
+                    "created_at": "2024-01-01",
+                },
+            ],
         }
-        
+
         result = get_system_prompt(
             target="vulnerable.com",
             objective="comprehensive penetration test",
             max_steps=100,
             operation_id="OP_20240101_120000",
             has_existing_memories=True,
-            memory_overview=memory_overview
+            memory_overview=memory_overview,
         )
-        
+
         # Verify all components are present
         assert "Target: vulnerable.com" in result
         assert "comprehensive penetration test" in result
@@ -360,7 +368,7 @@ class TestMemoryAwarePromptIntegration:
         assert "Memory categories: 2 finding, 1 general" in result
         assert "Port 22 SSH open with weak credentials" in result
         assert "**CRITICAL FIRST ACTION**" in result
-        
+
         # Verify memory-aware instructions are included
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
