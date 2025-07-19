@@ -498,21 +498,22 @@ docker run --user root cyber-autoagent
 
 ## Configuration
 
-### Environment Variables
+The agent uses a centralized configuration system defined in `src/modules/config.py`. All settings can be customized through environment variables, with sensible defaults provided.
+
+Copy the example environment file and customize it for your needs:
 
 ```bash
-# AWS Bedrock (Remote Mode)
-export AWS_ACCESS_KEY_ID=your_key
-export AWS_SECRET_ACCESS_KEY=your_secret
-export AWS_REGION=us-east-1
-
-# Ollama (Local Mode)
-export OLLAMA_HOST=http://localhost:11434  # Optional
-
-# Memory Storage (Optional)
-export MEM0_API_KEY=your_key               # Mem0 Platform
-export OPENSEARCH_HOST=your-host.com       # OpenSearch
+cp .env.example .env
 ```
+
+The `.env.example` file contains detailed configuration options with inline comments for all supported features including model providers, memory systems, and observability settings. Key environment variables include:
+
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` for remote mode (AWS Bedrock)
+- `OLLAMA_HOST` for local mode (Ollama)
+- `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` for observability
+- `MEM0_API_KEY` or `OPENSEARCH_HOST` for memory backends
+
+See `.env.example` for complete configuration options and usage examples.
 
 ## Development & Testing
 
@@ -542,10 +543,12 @@ cyber-autoagent/
 │   ├── cyberautoagent.py      # Main entry point and CLI
 │   └── modules/               # Core modules
 │       ├── agent.py           # Agent creation (Strands + models)
+│       ├── config.py          # Centralized configuration system
 │       ├── memory_tools.py    # Mem0 memory management
 │       ├── system_prompts.py  # AI prompts and configurations
 │       ├── agent_handlers.py  # Reasoning and callback handlers
 │       ├── environment.py     # Tool discovery and logging
+│       ├── evaluation.py      # Ragas evaluation system
 │       └── utils.py           # UI utilities and analysis
 ├── docs/                      # Documentation
 │   ├── architecture.md       # Agent architecture and tools
@@ -556,6 +559,7 @@ cyber-autoagent/
 ├── Dockerfile                # Agent container build
 ├── pyproject.toml            # Dependencies and project config
 ├── uv.lock                   # Dependency lockfile
+├── .env.example              # Environment configuration template
 ├── evidence/                 # Generated evidence (auto-created)
 ├── logs/                     # Operation logs (auto-created)
 └── README.md                 # This file
@@ -567,7 +571,10 @@ cyber-autoagent/
 |------|---------|
 | `src/cyberautoagent.py` | CLI entry point, observability setup |
 | `src/modules/agent.py` | Strands agent creation, model configuration |
+| `src/modules/config.py` | Centralized configuration system |
 | `src/modules/memory_tools.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
+| `src/modules/evaluation.py` | Ragas evaluation system |
+| `.env.example` | Environment configuration template |
 | `docker-compose.yml` | Complete observability stack |
 | `docs/architecture.md` | Technical architecture deep dive |
 
