@@ -407,8 +407,13 @@ python src/cyberautoagent.py \
 
 ```bash
 # AWS Bedrock (Remote Mode)
+# Option 1: Traditional IAM credentials
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=us-east-1
+
+# Option 2: Bearer token authentication (recommended)
+export AWS_BEARER_TOKEN_BEDROCK=your_api_key
 export AWS_REGION=us-east-1
 
 # Ollama (Local Mode)

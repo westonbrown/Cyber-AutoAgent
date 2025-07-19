@@ -119,10 +119,11 @@ def _validate_server_requirements(server: str) -> None:
             raise ConnectionError(f"Could not verify Ollama models: {e}")
 
     elif server == "remote":
-        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE") or os.getenv("AWS_BEARER_TOKEN_BEDROCK")):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
-                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
+                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, configure AWS_PROFILE, "
+                "or set AWS_BEARER_TOKEN_BEDROCK for API key authentication"
             )
 
 
@@ -138,9 +139,11 @@ def _handle_model_creation_error(server: str, error: Exception) -> None:
         print("       ollama pull mxbai-embed-large")
     else:
         print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
-        print(
-            f"{Colors.YELLOW}[?] Check AWS credentials and region settings{Colors.RESET}"
-        )
+        print(f"{Colors.YELLOW}[?] Check AWS credentials and region settings{Colors.RESET}")
+        print("    Ensure one of the following is configured:")
+        print("    - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+        print("    - AWS_PROFILE")
+        print("    - AWS_BEARER_TOKEN_BEDROCK (for API key authentication)")
 
 
 def create_agent(
