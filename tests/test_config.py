@@ -467,7 +467,14 @@ class TestConfigManager:
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
             self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test", "AWS_REGION": "us-east-1"})
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
     @patch("boto3.client")
     def test_validate_bedrock_model_access_success(self, mock_boto_client):
         """Test successful Bedrock model validation."""
@@ -476,14 +483,14 @@ class TestConfigManager:
         mock_bedrock.list_foundation_models.return_value = {
             "modelSummaries": [
                 {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
-                {"modelId": "amazon.titan-embed-text-v2:0"}
+                {"modelId": "amazon.titan-embed-text-v2:0"},
             ]
         }
-        
+
         # Mock bedrock-runtime client
         mock_runtime = MagicMock()
         mock_runtime.invoke_model.return_value = {"statusCode": 200}
-        
+
         # Configure boto3.client to return appropriate mocks
         def client_side_effect(service_name, **kwargs):
             if service_name == "bedrock":
@@ -491,92 +498,120 @@ class TestConfigManager:
             elif service_name == "bedrock-runtime":
                 return mock_runtime
             return MagicMock()
-        
+
         mock_boto_client.side_effect = client_side_effect
-        
+
         # Should not raise an exception
         self.config_manager.validate_requirements("remote")
-        
+
         # Verify calls were made
         mock_bedrock.list_foundation_models.assert_called()
         mock_runtime.invoke_model.assert_called()
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test", "AWS_REGION": "us-east-1"})
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
     @patch("boto3.client")
     def test_validate_bedrock_service_access_denied(self, mock_boto_client):
         """Test Bedrock validation when service access is denied."""
         from botocore.exceptions import ClientError
-        
+
         mock_bedrock = MagicMock()
         mock_bedrock.list_foundation_models.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
-            "ListFoundationModels"
+            "ListFoundationModels",
         )
-        
+
         mock_boto_client.return_value = mock_bedrock
-        
+
         with pytest.raises(ConnectionError, match="AWS Bedrock service access denied"):
             self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test", "AWS_REGION": "us-east-1"})
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
     @patch("boto3.client")
     def test_validate_bedrock_missing_models(self, mock_boto_client):
         """Test Bedrock validation when required models are missing."""
         mock_bedrock = MagicMock()
         mock_bedrock.list_foundation_models.return_value = {
-            "modelSummaries": [
-                {"modelId": "some.other.model:1.0"}
-            ]
+            "modelSummaries": [{"modelId": "some.other.model:1.0"}]
         }
-        
+
         mock_boto_client.return_value = mock_bedrock
-        
+
         with pytest.raises(ValueError, match="Required Bedrock models not available"):
             self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test", "AWS_REGION": "us-east-1"})
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
     @patch("boto3.client")
     def test_validate_bedrock_model_access_denied(self, mock_boto_client):
         """Test Bedrock validation when model access is denied."""
         from botocore.exceptions import ClientError
-        
+
         # Mock bedrock client (list models succeeds)
         mock_bedrock = MagicMock()
         mock_bedrock.list_foundation_models.return_value = {
             "modelSummaries": [
                 {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
-                {"modelId": "amazon.titan-embed-text-v2:0"}
+                {"modelId": "amazon.titan-embed-text-v2:0"},
             ]
         }
-        
+
         # Mock bedrock-runtime client (invoke fails)
         mock_runtime = MagicMock()
         mock_runtime.invoke_model.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
-            "InvokeModel"
+            "InvokeModel",
         )
-        
+
         def client_side_effect(service_name, **kwargs):
             if service_name == "bedrock":
                 return mock_bedrock
             elif service_name == "bedrock-runtime":
                 return mock_runtime
             return MagicMock()
-        
+
         mock_boto_client.side_effect = client_side_effect
-        
+
         with pytest.raises(ValueError, match="Access denied to Bedrock model"):
             self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
+    @patch.dict(
+        os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}
+    )
     @patch("boto3.client")
     def test_validate_bedrock_no_region(self, mock_boto_client):
         """Test Bedrock validation when region returns None."""
-        with patch.object(self.config_manager, 'get_default_region', return_value=None):
+        with patch.object(self.config_manager, "get_default_region", return_value=None):
             with pytest.raises(EnvironmentError, match="AWS region not configured"):
                 self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test-key", "AWS_SECRET_ACCESS_KEY": "test-secret", "AWS_REGION": "us-east-1"})
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test-key",
+            "AWS_SECRET_ACCESS_KEY": "test-secret",
+            "AWS_REGION": "us-east-1",
+        },
+    )
     @patch("boto3.client")
     def test_validate_aws_requirements_with_credentials(self, mock_boto_client):
         """Test AWS requirements validation with credentials."""
@@ -585,23 +620,23 @@ class TestConfigManager:
         mock_bedrock.list_foundation_models.return_value = {
             "modelSummaries": [
                 {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
-                {"modelId": "amazon.titan-embed-text-v2:0"}
+                {"modelId": "amazon.titan-embed-text-v2:0"},
             ]
         }
-        
+
         # Mock bedrock-runtime client
         mock_runtime = MagicMock()
         mock_runtime.invoke_model.return_value = {"statusCode": 200}
-        
+
         def client_side_effect(service_name, **kwargs):
             if service_name == "bedrock":
                 return mock_bedrock
             elif service_name == "bedrock-runtime":
                 return mock_runtime
             return MagicMock()
-        
+
         mock_boto_client.side_effect = client_side_effect
-        
+
         # Should not raise an exception
         self.config_manager.validate_requirements("remote")
 
@@ -614,23 +649,23 @@ class TestConfigManager:
         mock_bedrock.list_foundation_models.return_value = {
             "modelSummaries": [
                 {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
-                {"modelId": "amazon.titan-embed-text-v2:0"}
+                {"modelId": "amazon.titan-embed-text-v2:0"},
             ]
         }
-        
+
         # Mock bedrock-runtime client
         mock_runtime = MagicMock()
         mock_runtime.invoke_model.return_value = {"statusCode": 200}
-        
+
         def client_side_effect(service_name, **kwargs):
             if service_name == "bedrock":
                 return mock_bedrock
             elif service_name == "bedrock-runtime":
                 return mock_runtime
             return MagicMock()
-        
+
         mock_boto_client.side_effect = client_side_effect
-        
+
         # Should not raise an exception
         self.config_manager.validate_requirements("remote")
 

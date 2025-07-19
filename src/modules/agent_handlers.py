@@ -58,9 +58,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.evaluation_thread = None  # Store evaluation thread reference
         self.target = target
         self.output_base_dir = output_base_dir
-        self.memory_config = (
-            memory_config
-        )
+        self.memory_config = memory_config
 
         # Initialize operation ID
         if operation_id:
