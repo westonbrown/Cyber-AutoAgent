@@ -253,9 +253,42 @@ class TestServerValidation:
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
             get_config_manager().validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test_key"}, clear=True)
-    def test_validate_server_requirements_remote_success(self):
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test_key",
+            "AWS_SECRET_ACCESS_KEY": "test_secret",
+            "AWS_DEFAULT_REGION": "us-east-1",
+        },
+        clear=True,
+    )
+    @patch("boto3.client")
+    def test_validate_server_requirements_remote_success(self, mock_boto_client):
         """Test successful remote server validation"""
+        # Mock both Bedrock and Bedrock Runtime clients
+        mock_bedrock_client = Mock()
+        mock_bedrock_runtime_client = Mock()
+
+        def client_side_effect(service_name, **_kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock_client
+            elif service_name == "bedrock-runtime":
+                return mock_bedrock_runtime_client
+            return Mock()
+
+        mock_boto_client.side_effect = client_side_effect
+
+        # Mock successful foundation models list
+        mock_bedrock_client.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock successful model invocation
+        mock_bedrock_runtime_client.invoke_model.return_value = {"body": Mock()}
+
         # Should not raise any exception
         get_config_manager().validate_requirements("remote")
 

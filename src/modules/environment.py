@@ -15,38 +15,49 @@ from .utils import Colors
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
     """Clean up memory data for a specific operation.
-    
+
     Args:
         operation_id: The operation identifier
         target_name: The sanitized target name (optional, for unified output structure)
     """
     logger = logging.getLogger(__name__)
-    logger.debug("clean_operation_memory called with operation_id=%s, target_name=%s", operation_id, target_name)
-    
+    logger.debug(
+        "clean_operation_memory called with operation_id=%s, target_name=%s",
+        operation_id,
+        target_name,
+    )
+
     if not target_name:
         logger.warning("No target_name provided, skipping memory cleanup")
         return
-    
+
     # Unified output structure - per-target memory
-    memory_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
+    memory_path = os.path.join(
+        "outputs", target_name, "memory", f"mem0_faiss_{target_name}"
+    )
     logger.debug("Checking memory path: %s", memory_path)
-    
+
     if os.path.exists(memory_path):
         try:
             # Safety check - ensure we're only removing memory directories
             if "mem0_faiss_" not in memory_path:
-                logger.error("SAFETY CHECK FAILED: Path does not contain expected memory patterns: %s", memory_path)
+                logger.error(
+                    "SAFETY CHECK FAILED: Path does not contain expected memory patterns: %s",
+                    memory_path,
+                )
                 return
-                
+
             logger.debug("About to remove memory path: %s", memory_path)
             if os.path.isdir(memory_path):
                 shutil.rmtree(memory_path)
             else:
                 os.remove(memory_path)
-            
+
             logger.info("Cleaned up operation memory: %s", memory_path)
-            print(f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}")
-            
+            print(
+                f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}"
+            )
+
         except Exception as e:
             logger.error("Failed to clean %s: %s", memory_path, e)
             print(f"{Colors.RED}[!] Failed to clean {memory_path}: {e}{Colors.RESET}")
