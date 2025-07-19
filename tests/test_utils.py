@@ -18,7 +18,7 @@ class TestGetOutputPath:
 
     def test_get_output_path_default(self):
         """Test get_output_path with default parameters."""
-        result = get_output_path("example_com", "20240101_120000")
+        result = get_output_path("example_com", "OP_20240101_120000")
         expected = os.path.join(
             os.getcwd(), "outputs", "example_com", "OP_20240101_120000"
         )
@@ -26,7 +26,7 @@ class TestGetOutputPath:
 
     def test_get_output_path_with_subdir(self):
         """Test get_output_path with subdirectory."""
-        result = get_output_path("example_com", "20240101_120000", "logs")
+        result = get_output_path("example_com", "OP_20240101_120000", "logs")
         expected = os.path.join(
             os.getcwd(), "outputs", "example_com", "OP_20240101_120000", "logs"
         )
@@ -35,13 +35,13 @@ class TestGetOutputPath:
     def test_get_output_path_with_base_dir(self):
         """Test get_output_path with custom base directory."""
         base_dir = "/tmp/outputs"
-        result = get_output_path("example_com", "20240101_120000", "logs", base_dir)
+        result = get_output_path("example_com", "OP_20240101_120000", "logs", base_dir)
         expected = os.path.join(base_dir, "example_com", "OP_20240101_120000", "logs")
         assert result == expected
 
     def test_get_output_path_no_subdir(self):
         """Test get_output_path without subdirectory."""
-        result = get_output_path("example_com", "20240101_120000", "")
+        result = get_output_path("example_com", "OP_20240101_120000", "")
         expected = os.path.join(
             os.getcwd(), "outputs", "example_com", "OP_20240101_120000"
         )
