@@ -428,9 +428,8 @@ class Mem0ServiceClient:
             logger.debug("Memory stored successfully: %s", result)
             return result
         except Exception as e:
-            logger.error("Error storing memory: %s", e)
-            # Return empty result to prevent downstream errors
-            return {"results": []}
+            logger.error("Critical error storing memory: %s", e)
+            raise RuntimeError(f"Memory storage failed: {e}") from e
 
     def get_memory(self, memory_id: str):
         """Get a memory by ID."""
