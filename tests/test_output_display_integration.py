@@ -69,19 +69,19 @@ class TestOutputDisplayIntegration:
         test_cases = [
             {
                 "target": "https://example.com:8080/path",
-                "timestamp": "20250718_123456",
+                "operation_id": "OP_20250718_123456",
                 "base_dir": "/app/outputs",
                 "expected": "/app/outputs/example.com/OP_20250718_123456"  # Port removed by sanitize_target_name
             },
             {
                 "target": "192.168.1.1",
-                "timestamp": "20250718_000000",
+                "operation_id": "OP_20250718_000000",
                 "base_dir": "/custom/outputs",
                 "expected": "/custom/outputs/192.168.1.1/OP_20250718_000000"
             },
             {
                 "target": "sub.domain.com",
-                "timestamp": "20250718_235959",
+                "operation_id": "OP_20250718_235959",
                 "base_dir": "./outputs",
                 "expected": "./outputs/sub.domain.com/OP_20250718_235959"
             }
@@ -92,7 +92,7 @@ class TestOutputDisplayIntegration:
             sanitized_target = sanitize_target_name(case["target"])
             evidence_location = get_output_path(
                 sanitized_target,
-                case["timestamp"],
+                case["operation_id"],
                 "",  # No subdirectory - show the operation root
                 case["base_dir"],
             )
@@ -104,13 +104,13 @@ class TestOutputDisplayIntegration:
         test_cases = [
             {
                 "target": "example.com",
-                "timestamp": "20250718_123456",
+                "operation_id": "OP_20250718_123456",
                 "base_dir": "/app/outputs",
                 "expected": "/app/outputs/example.com/OP_20250718_123456"
             },
             {
                 "target": "192.168.1.1",
-                "timestamp": "20250718_000000",
+                "operation_id": "OP_20250718_000000",
                 "base_dir": "/custom/outputs",
                 "expected": "/custom/outputs/192.168.1.1/OP_20250718_000000"
             }
@@ -120,7 +120,7 @@ class TestOutputDisplayIntegration:
             # Simulate cyberautoagent.py log path logic
             log_path = get_output_path(
                 sanitize_target_name(case["target"]),
-                case["timestamp"],
+                case["operation_id"],
                 "",  # Empty subdirectory for base operation path
                 case["base_dir"],
             )
@@ -242,38 +242,38 @@ class TestPathConsistency:
     def test_operation_path_consistency(self):
         """Test that operation paths are consistent."""
         target = "https://example.com:8080"
-        timestamp = "20250718_123456"
+        operation_id = "OP_20250718_123456"
         base_dir = "/app/outputs"
         
         sanitized_target = sanitize_target_name(target)
         
         # Path from get_output_path
-        evidence_path = get_output_path(sanitized_target, timestamp, "", base_dir)
+        evidence_path = get_output_path(sanitized_target, operation_id, "", base_dir)
         
         # Path from log construction
-        log_path = get_output_path(sanitized_target, timestamp, "", base_dir)
+        log_path = get_output_path(sanitized_target, operation_id, "", base_dir)
         
         # They should be the same when no subdirectory is specified
         assert evidence_path == log_path
         
         # Both should match expected format
-        expected = f"{base_dir}/{sanitized_target}/OP_{timestamp}"
+        expected = f"{base_dir}/{sanitized_target}/{operation_id}"
         assert evidence_path == expected
         assert log_path == expected
     
     def test_subdirectory_path_consistency(self):
         """Test that subdirectory paths are consistent."""
         target = "example.com"
-        timestamp = "20250718_123456"
+        operation_id = "OP_20250718_123456"
         base_dir = "/app/outputs"
         
         # Different subdirectories
-        logs_path = get_output_path(target, timestamp, "logs", base_dir)
-        utils_path = get_output_path(target, timestamp, "utils", base_dir)
-        memory_path = get_output_path(target, timestamp, "memory", base_dir)
+        logs_path = get_output_path(target, operation_id, "logs", base_dir)
+        utils_path = get_output_path(target, operation_id, "utils", base_dir)
+        memory_path = get_output_path(target, operation_id, "memory", base_dir)
         
         # All should have the same base
-        base_operation_path = f"{base_dir}/{target}/OP_{timestamp}"
+        base_operation_path = f"{base_dir}/{target}/{operation_id}"
         
         assert logs_path == f"{base_operation_path}/logs"
         assert utils_path == f"{base_operation_path}/utils"
@@ -307,12 +307,12 @@ class TestErrorHandling:
         """Test get_output_path with edge cases."""
         # Test with empty components
         result = get_output_path("", "", "", "")
-        assert result == "OP_"
+        assert result == ""
         
         # Test with None components (should not crash)
         with pytest.raises(TypeError):
             get_output_path(None, None, None, None)
         
         # Test with special characters in base_dir
-        result = get_output_path("example.com", "20250718_123456", "logs", "/app/outputs with spaces")
+        result = get_output_path("example.com", "OP_20250718_123456", "logs", "/app/outputs with spaces")
         assert result == "/app/outputs with spaces/example.com/OP_20250718_123456/logs"

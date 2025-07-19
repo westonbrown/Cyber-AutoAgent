@@ -16,17 +16,17 @@ def get_output_path(
 
     Args:
         target_name: Sanitized target name for organization
-        operation_id: Unique operation identifier
+        operation_id: Unique operation identifier (should include OP_ prefix)
         subdir: Optional subdirectory within the operation directory
         base_dir: Optional base directory override (defaults to ./outputs)
 
     Returns:
-        Full path in format: {base_dir}/{target_name}/OP_{operation_id}/{subdir}
+        Full path in format: {base_dir}/{target_name}/{operation_id}/{subdir}
     """
     if base_dir is None:
         base_dir = os.path.join(os.getcwd(), "outputs")
 
-    operation_dir = os.path.join(base_dir, target_name, f"OP_{operation_id}")
+    operation_dir = os.path.join(base_dir, target_name, operation_id)
     return os.path.join(operation_dir, subdir) if subdir else operation_dir
 
 

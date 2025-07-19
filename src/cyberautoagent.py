@@ -247,7 +247,7 @@ def main():
     # Initialize logger using unified output system
     log_path = get_output_path(
         sanitize_target_name(args.target),
-        operation_timestamp,
+        local_operation_id,
         "",
         server_config.output.base_dir,
     )

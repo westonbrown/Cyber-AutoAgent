@@ -135,13 +135,13 @@ class TestMemoryPathIntegration:
     def test_get_output_path_integration(self):
         """Test that get_output_path works correctly with the unified structure."""
         test_cases = [
-            ("example.com", "20250718_123456", "logs", "/app/outputs", "/app/outputs/example.com/OP_20250718_123456/logs"),
-            ("192.168.1.1", "20250718_123456", "", "/app/outputs", "/app/outputs/192.168.1.1/OP_20250718_123456"),
-            ("test.org", "20250718_123456", "utils", "/custom/path", "/custom/path/test.org/OP_20250718_123456/utils"),
+            ("example.com", "OP_20250718_123456", "logs", "/app/outputs", "/app/outputs/example.com/OP_20250718_123456/logs"),
+            ("192.168.1.1", "OP_20250718_123456", "", "/app/outputs", "/app/outputs/192.168.1.1/OP_20250718_123456"),
+            ("test.org", "OP_20250718_123456", "utils", "/custom/path", "/custom/path/test.org/OP_20250718_123456/utils"),
         ]
         
-        for target, timestamp, subdir, base_dir, expected in test_cases:
-            result = get_output_path(target, timestamp, subdir, base_dir)
+        for target, operation_id, subdir, base_dir, expected in test_cases:
+            result = get_output_path(target, operation_id, subdir, base_dir)
             assert result == expected
     
     def test_memory_backend_path_display(self):
@@ -166,12 +166,12 @@ class TestMemoryPathIntegration:
     def test_evidence_path_display(self):
         """Test the evidence path display logic."""
         target = "https://example.com:8080"
-        timestamp = "20250718_123456"
+        operation_id = "OP_20250718_123456"
         base_dir = "/app/outputs"
         
         # Test evidence location construction
         sanitized_target = sanitize_target_name(target)
-        evidence_location = get_output_path(sanitized_target, timestamp, "", base_dir)
+        evidence_location = get_output_path(sanitized_target, operation_id, "", base_dir)
         
         # Port is removed by sanitize_target_name
         expected = "/app/outputs/example.com/OP_20250718_123456"
