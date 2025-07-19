@@ -19,9 +19,16 @@ def clean_operation_memory(operation_id: str):
     if os.path.exists(mem0_path):
         try:
             shutil.rmtree(mem0_path)
-            print("%s[*] Cleaned up operation memory: %s%s" % (Colors.GREEN, mem0_path, Colors.RESET))
+            print(
+                "%s[*] Cleaned up operation memory: %s%s"
+                % (Colors.GREEN, mem0_path, Colors.RESET)
+            )
         except Exception as e:
-            print("%s[!] Failed to clean %s: %s%s" % (Colors.RED, mem0_path, str(e), Colors.RESET))
+            print(
+                "%s[!] Failed to clean %s: %s%s"
+                % (Colors.RED, mem0_path, str(e), Colors.RESET)
+            )
+
 
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
@@ -37,18 +44,18 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
 
     # Just check which tools are available
     cyber_tools = {
-        'nmap': 'Network discovery and security auditing',
-        'nikto': 'Web server scanner',
-        'sqlmap': 'SQL injection detection and exploitation',
-        'gobuster': 'Directory/file brute-forcer',
-        'netcat': 'Network utility for reading/writing data',
-        'curl': 'HTTP client for web requests',
-        'metasploit': 'Penetration testing framework',
-        'tcpdump': 'Network packet capture',
-        'iproute2': 'Provides modern networking tools (ip, ss, tc, etc.)',
-        'net-tools': 'Provides classic networking utilities (netstat, ifconfig, route, etc.)',
+        "nmap": "Network discovery and security auditing",
+        "nikto": "Web server scanner",
+        "sqlmap": "SQL injection detection and exploitation",
+        "gobuster": "Directory/file brute-forcer",
+        "netcat": "Network utility for reading/writing data",
+        "curl": "HTTP client for web requests",
+        "metasploit": "Penetration testing framework",
+        "tcpdump": "Network packet capture",
+        "iproute2": "Provides modern networking tools (ip, ss, tc, etc.)",
+        "net-tools": "Provides classic networking utilities (netstat, ifconfig, route, etc.)",
     }
-    
+
     available_tools = []
 
     # Check existing tools using subprocess for security
@@ -56,7 +63,7 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         tool_commands = {
             "metasploit": "msfconsole",
             "iproute2": "ip",
-            "net-tools": "netstat"
+            "net-tools": "netstat",
         }
         check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
         try:
@@ -92,11 +99,12 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
 
 class TeeOutput:
     """Thread-safe output duplicator to both terminal and log file"""
+
     def __init__(self, stream, log_file):
         self.terminal = stream
-        self.log = open(log_file, 'a', encoding='utf-8', buffering=1) 
+        self.log = open(log_file, "a", encoding="utf-8", buffering=1)
         self.lock = threading.Lock()
-        
+
     def write(self, message):
         with self.lock:
             self.terminal.write(message)
@@ -107,7 +115,7 @@ class TeeOutput:
             except (ValueError, OSError):
                 # Handle closed file gracefully
                 pass
-        
+
     def flush(self):
         with self.lock:
             self.terminal.flush()
@@ -115,18 +123,18 @@ class TeeOutput:
                 self.log.flush()
             except (ValueError, OSError):
                 pass
-        
+
     def close(self):
         with self.lock:
             try:
                 self.log.close()
-            except OSError:
+            except (OSError, AttributeError):
                 pass
-    
+
     # Additional methods to fully mimic file objects
     def fileno(self):
         return self.terminal.fileno()
-    
+
     def isatty(self):
         return self.terminal.isatty()
 
@@ -137,17 +145,19 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     log_dir = os.path.dirname(log_file)
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir, exist_ok=True)
-    
+
     # Create header in log file
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write("\n" + "="*80 + "\n")
-        f.write(f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write("="*80 + "\n\n")
-    
+    with open(log_file, "a", encoding="utf-8") as f:
+        f.write("\n" + "=" * 80 + "\n")
+        f.write(
+            f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
+        f.write("=" * 80 + "\n\n")
+
     # Set up stdout and stderr redirection to capture ALL terminal output
     sys.stdout = TeeOutput(sys.stdout, log_file)
     sys.stderr = TeeOutput(sys.stderr, log_file)
-    
+
     # Traditional logger setup for structured logging
     formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
@@ -176,7 +186,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     strands_event_loop_logger.setLevel(
         logging.CRITICAL
     )  # Only show critical errors, not our expected StopIteration
-    
+
     # Capture all other loggers at INFO level to file
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
