@@ -15,7 +15,7 @@ class TestMemoryAwareAgentIntegration:
     """Test memory-aware system prompt integration with agent creation"""
 
     @patch("modules.agent.initialize_memory_system")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.agent.get_memory_client")
     @patch("modules.agent.check_existing_memories")
     @patch("modules.agent._create_remote_model")
     @patch("modules.agent.get_config_manager")
@@ -91,7 +91,7 @@ class TestMemoryAwareAgentIntegration:
         assert "**CRITICAL FIRST ACTION**" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.agent.get_memory_client")
     @patch("modules.agent.check_existing_memories")
     @patch("modules.agent._create_remote_model")
     @patch("modules.agent.get_config_manager")
@@ -152,7 +152,7 @@ class TestMemoryAwareAgentIntegration:
         assert "Store all findings immediately" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.agent.get_memory_client")
     @patch("modules.agent.check_existing_memories")
     @patch("modules.agent._create_remote_model")
     @patch("modules.agent.get_config_manager")
@@ -226,7 +226,7 @@ class TestMemoryAwareAgentIntegration:
         assert "Port scan completed" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.agent.get_memory_client")
     @patch("modules.agent.check_existing_memories")
     @patch("modules.agent._create_remote_model")
     @patch("modules.agent.get_config_manager")
@@ -285,7 +285,7 @@ class TestMemoryAwareAgentIntegration:
         assert "Memory system indicates existing data" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.agent.get_memory_client")
     @patch("modules.agent.check_existing_memories")
     @patch("modules.agent._create_local_model")
     @patch("modules.agent.get_config_manager")
