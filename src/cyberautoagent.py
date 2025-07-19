@@ -592,7 +592,7 @@ def main():
             # Use unified output paths for evidence storage
             evidence_location = get_output_path(
                 sanitize_target_name(args.target),
-                operation_timestamp,
+                local_operation_id,
                 "",  # No subdirectory - show the operation root
                 server_config.output.base_dir,
             )
