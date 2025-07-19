@@ -18,14 +18,14 @@ from .system_prompts import get_system_prompt
 from .config import get_config_manager
 from .agent_handlers import ReasoningHandler
 from .utils import Colors, sanitize_target_name
-from .memory_tools import mem0_memory, initialize_memory_system
+from .memory_tools import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
 
 
-def check_existing_memories(target: str, server: str = "remote") -> bool:
+def check_existing_memories(target: str, _server: str = "remote") -> bool:
     """Check if existing memories exist for a target.
 
     Args:
@@ -151,8 +151,8 @@ def create_agent(
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
-    logger = logging.getLogger("CyberAutoAgent")
-    logger.debug(
+    agent_logger = logging.getLogger("CyberAutoAgent")
+    agent_logger.debug(
         "Creating agent for target: %s, objective: %s, server: %s",
         target,
         objective,
@@ -213,15 +213,13 @@ def create_agent(
     # Get memory overview for system prompt enhancement
     if has_existing_memories or memory_path:
         try:
-            from .memory_tools import get_memory_client
-
             memory_client = get_memory_client()
             if memory_client:
                 memory_overview = memory_client.get_memory_overview(
                     user_id="cyber_agent"
                 )
         except Exception as e:
-            logger.debug("Could not get memory overview for system prompt: %s", str(e))
+            agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
     tools_context = ""
     if available_tools:
@@ -258,13 +256,13 @@ Leverage these tools directly via shell.
     # Create model based on server type
     try:
         if server == "local":
-            logger.debug("Configuring OllamaModel")
+            agent_logger.debug("Configuring OllamaModel")
             model = _create_local_model(model_id, server)
             print(
                 f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
             )
         else:
-            logger.debug("Configuring BedrockModel")
+            agent_logger.debug("Configuring BedrockModel")
             model = _create_remote_model(model_id, region_name, server)
             print(
                 f"{Colors.GREEN}[+] Remote agent model initialized: {model_id}{Colors.RESET}"
@@ -274,7 +272,7 @@ Leverage these tools directly via shell.
         _handle_model_creation_error(server, e)
         raise
 
-    logger.debug("Creating autonomous agent")
+    agent_logger.debug("Creating autonomous agent")
     agent = Agent(
         model=model,
         tools=[
@@ -338,5 +336,5 @@ Leverage these tools directly via shell.
         },
     )
 
-    logger.debug("Agent initialized successfully")
+    agent_logger.debug("Agent initialized successfully")
     return agent, callback_handler

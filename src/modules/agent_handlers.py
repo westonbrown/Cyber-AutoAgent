@@ -799,8 +799,6 @@ class ReasoningHandler(PrintingCallbackHandler):
                 # Ensure config includes target and operation context
                 enhanced_config = self.memory_config.copy()
                 if not enhanced_config.get("target_name") and self.target:
-                    from .utils import sanitize_target_name
-
                     enhanced_config["target_name"] = sanitize_target_name(self.target)
                 if not enhanced_config.get("operation_id"):
                     enhanced_config["operation_id"] = self.operation_id
@@ -1098,7 +1096,7 @@ Format this as a professional penetration testing report."""
             return
 
         eval_enabled = os.getenv("ENABLE_AUTO_EVALUATION", "false").lower()
-        logger.debug(f"Evaluation check: ENABLE_AUTO_EVALUATION='{eval_enabled}'")
+        logger.debug("Evaluation check: ENABLE_AUTO_EVALUATION='%s'", eval_enabled)
         if eval_enabled == "true":
             self.evaluation_triggered = True  # Mark as triggered
             try:
@@ -1219,7 +1217,7 @@ Format this as a professional penetration testing report."""
                             )
                             return
 
-                        logger.info(f"Found {len(traces.data)} traces to evaluate")
+                        logger.info("Found %d traces to evaluate", len(traces.data))
                         print(
                             f"\n{Colors.GREEN}✓ Found {len(traces.data)} trace(s) to evaluate{Colors.RESET}"
                         )
@@ -1254,7 +1252,7 @@ Format this as a professional penetration testing report."""
                                             evaluator.evaluate_trace(trace_id)
                                         )
                                 except RuntimeError as e:
-                                    logger.debug(f"RuntimeError in asyncio: {str(e)}")
+                                    logger.debug("RuntimeError in asyncio: %s", str(e))
                                     # No event loop in thread, create a new one
                                     loop = asyncio.new_event_loop()
                                     asyncio.set_event_loop(loop)
@@ -1342,7 +1340,7 @@ Format this as a professional penetration testing report."""
                 self.evaluation_thread = eval_thread
 
             except Exception as e:
-                logger.warning(f"Failed to trigger automatic evaluation: {str(e)}")
+                logger.warning("Failed to trigger automatic evaluation: %s", str(e))
         else:
             logger.debug(
                 "Automatic evaluation disabled (set ENABLE_AUTO_EVALUATION=true to enable)"
@@ -1390,9 +1388,9 @@ Format this as a professional penetration testing report."""
                 if self.steps > 0
                 else 0,
             }
-            logger.debug(f"Operation metadata: {operation_metadata}")
+            logger.debug("Operation metadata: %s", operation_metadata)
 
-            logger.debug(f"Operation {self.operation_id} metadata logged successfully")
+            logger.debug("Operation %s metadata logged successfully", self.operation_id)
 
         except Exception as e:
             logger.warning(f"Failed to send operation metadata to Langfuse: {str(e)}")
