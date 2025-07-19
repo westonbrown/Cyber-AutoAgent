@@ -136,6 +136,7 @@ experimentation/
 memory/
 tools/
 epics/
+outputs/
 
 # IDE
 .vscode/
