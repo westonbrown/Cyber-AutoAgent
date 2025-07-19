@@ -1,66 +1,31 @@
 #!/usr/bin/env python3
 
-import os
-from typing import Dict, Any
+from typing import Dict
 
-import requests
-
-
-def _get_default_model_configs(server: str) -> Dict[str, Any]:
-    """Get default model configurations based on server type"""
-    if server == "local":
-        return {
-            "llm_model": "llama3.2:3b",
-            "embedding_model": "mxbai-embed-large",
-            "embedding_dims": 1024,
-        }
-    else:  # remote
-        return {
-            "llm_model": "us.anthropic.claude-sonnet-4-20250514-v1:0",
-            "embedding_model": "amazon.titan-embed-text-v2:0",
-            "embedding_dims": 1024,
-        }
-
-
-def _get_ollama_host() -> str:
-    """
-    Determine appropriate Ollama host based on environment.
-    """
-    env_host = os.getenv("OLLAMA_HOST")
-    if env_host:
-        return env_host
-    
-    # Check if running in Docker
-    if os.path.exists('/app'): 
-        candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
-        for host in candidates:
-            try:
-                response = requests.get(f"{host}/api/version", timeout=2)
-                if response.status_code == 200:
-                    return host
-            except Exception:
-                pass
-        # Fallback to host.docker.internal if no connection works (Docker on Windows/ Macos)
-        return "http://host.docker.internal:11434"
-    else:
-        # Native execution - use localhost (Docker on Linux & non-docker)
-        return "http://localhost:11434"
+# Import the new configuration system
+from .config import get_config_manager
 
 
 def _get_swarm_model_guidance(server: str) -> str:
     """Generate swarm model configuration guidance based on server type."""
+    # Use the new configuration system
+    config_manager = get_config_manager()
+    server_config = config_manager.get_server_config(server)
+    swarm_config = server_config.swarm
+
     if server == "local":
-        ollama_host = _get_ollama_host()
+        ollama_host = config_manager.get_ollama_host()
         return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
 When using swarm, always set:
 - model_provider: "ollama"
-- model_settings: {{\"model_id\": \"llama3.2:3b\", \"host\": \"{ollama_host}\"}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"host\": \"{ollama_host}\", \"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}
 """
     else:
-        return """## SWARM MODEL CONFIGURATION (REMOTE MODE)
+        # Use dedicated swarm LLM configuration
+        return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
 When using swarm, always set:
 - model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"us.anthropic.claude-3-7-sonnet-20250219-v1:0\", \"params\": {{\"temperature\": 0.7, \"max_tokens\": 500}}}}
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"params\": {{\"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}}}
 """
 
 
@@ -70,21 +35,27 @@ def get_system_prompt(
     max_steps: int,
     operation_id: str,
     tools_context: str = "",
-    server: str = "remote", # Add server parameter
+    server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
     swarm_guidance = _get_swarm_model_guidance(server)
-    full_tools_context = f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
-    
+    full_tools_context = (
+        f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
+    )
+
     # Dynamic memory instruction based on whether continuing previous operation
-    memory_instruction = """
+    memory_instruction = (
+        """
 - FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
-- Build upon previous discoveries and avoid repeating completed work""" if has_memory_path else """
+- Build upon previous discoveries and avoid repeating completed work"""
+        if has_memory_path
+        else """
 - Begin with reconnaissance - do NOT check memory on fresh operations
 - Focus first step on target information gathering"""
-    
+    )
+
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
 </role>
@@ -100,7 +71,7 @@ Procedural Memory: Tool registry + dynamic tool creation capability
 - Target: {target}
 - Objective: {objective}
 - Operation ID: {operation_id}
-- Budget: {max_steps} steps (Urgency: {'HIGH' if max_steps < 30 else 'MEDIUM'})
+- Budget: {max_steps} steps (Urgency: {"HIGH" if max_steps < 30 else "MEDIUM"})
 - Available Tools: {full_tools_context}
 - Package Installation: You can install packages without sudo:
   - System: `apt-get install [package]` or `apt install [package]`
@@ -322,7 +293,7 @@ def get_continuation_prompt(
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
-    
+
     return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}
 Reassessing strategy based on current knowledge and confidence levels.
 Continuing adaptive execution toward objective completion."""
