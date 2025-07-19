@@ -49,13 +49,23 @@ def check_existing_memories(target: str, server: str = "remote") -> bool:
             return True
 
         else:
-            # FAISS - check if local store exists
+            # FAISS - check if local store exists with actual memory content
             # Create unified output structure path
             memory_base_path = os.path.join("outputs", target_name, "memory")
 
-            # Check if memory directory exists and has content
-            if os.path.exists(memory_base_path) and os.listdir(memory_base_path):
-                return True
+            # Check if memory directory exists and has FAISS index files
+            if os.path.exists(memory_base_path):
+                faiss_file = os.path.join(memory_base_path, "mem0.faiss")
+                pkl_file = os.path.join(memory_base_path, "mem0.pkl")
+
+                # Verify both FAISS index files exist and have non-zero size
+                if (
+                    os.path.exists(faiss_file)
+                    and os.path.getsize(faiss_file) > 0
+                    and os.path.exists(pkl_file)
+                    and os.path.getsize(pkl_file) > 0
+                ):
+                    return True
 
         return False
 
@@ -185,16 +195,33 @@ def create_agent(
             f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}"
         )
 
+    # Check for existing memories BEFORE initializing memory system
+    # to avoid race condition with directory creation
+    has_existing_memories = check_existing_memories(target, server)
+
     # Initialize the memory system with configuration
     # Extract and sanitize target name for unified output structure
     target_name = sanitize_target_name(target)
-    initialize_memory_system(memory_config, operation_id, target_name)
+    initialize_memory_system(
+        memory_config, operation_id, target_name, has_existing_memories
+    )
     print(
         f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
     )
+    memory_overview = None
 
-    # Check for existing memories (in addition to explicit memory_path)
-    has_existing_memories = check_existing_memories(target, server)
+    # Get memory overview for system prompt enhancement
+    if has_existing_memories or memory_path:
+        try:
+            from .memory_tools import get_memory_client
+
+            memory_client = get_memory_client()
+            if memory_client:
+                memory_overview = memory_client.get_memory_overview(
+                    user_id="cyber_agent"
+                )
+        except Exception as e:
+            logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
     tools_context = ""
     if available_tools:
@@ -216,6 +243,7 @@ Leverage these tools directly via shell.
         server,
         has_memory_path=bool(memory_path),
         has_existing_memories=has_existing_memories,
+        memory_overview=memory_overview,
     )
 
     # Create callback handler with operation_id and target information
