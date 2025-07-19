@@ -392,19 +392,17 @@ class TestCheckExistingMemories:
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
-    @patch("modules.agent.os.listdir")
+    @patch("modules.agent.os.path.getsize")
     def test_check_existing_memories_faiss_exists(
-        self, mock_listdir, mock_exists, mock_env_get
+        self, mock_getsize, mock_exists, mock_env_get
     ):
         """Test check_existing_memories with FAISS backend - directory exists with content"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
-        mock_exists.return_value = True
-        mock_listdir.return_value = ["mem0.faiss", "mem0.pkl"]
+        mock_exists.side_effect = lambda path: True  # All paths exist
+        mock_getsize.return_value = 100  # Non-zero file size
 
         result = check_existing_memories("test.com", "local")
         assert result is True
-        mock_exists.assert_called_with("outputs/test.com/memory")
-        mock_listdir.assert_called_with("outputs/test.com/memory")
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
@@ -429,6 +427,20 @@ class TestCheckExistingMemories:
 
         result = check_existing_memories("test.com", "local")
         assert result is False
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.path.getsize")
+    def test_check_existing_memories_faiss_zero_size_files(
+        self, mock_getsize, mock_exists, mock_env_get
+    ):
+        """Test check_existing_memories with FAISS backend - files exist but are zero size"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.side_effect = lambda path: True  # All paths exist
+        mock_getsize.return_value = 0  # Zero file size
+
+        result = check_existing_memories("test.com", "local")
+        assert result is False  # Should return False for zero-size files
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
