@@ -16,6 +16,7 @@ Key Components:
 """
 
 import os
+import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -809,13 +810,134 @@ class ConfigManager:
                 raise e
             raise ConnectionError(f"Could not verify Ollama models: {e}") from e
 
+    def _validate_bedrock_model_access(self) -> None:
+        """Validate AWS Bedrock model access and availability.
+        
+        Tests access to required LLM and embedding models configured for the remote server.
+        
+        Raises:
+            ConnectionError: If AWS Bedrock service is not accessible
+            ValueError: If required models are not available or accessible
+            EnvironmentError: If AWS region is not configured
+        """
+        import boto3
+        from botocore.exceptions import ClientError, NoCredentialsError
+        
+        server_config = self.get_server_config("remote")
+        region = self.get_default_region()
+        
+        if not region:
+            raise EnvironmentError(
+                "AWS region not configured. Set AWS_REGION environment variable or configure default region."
+            )
+        
+        # Required models from configuration
+        llm_model = server_config.llm.model_id
+        embedding_model = server_config.embedding.model_id
+        required_models = [llm_model, embedding_model]
+        
+        try:
+            bedrock_client = boto3.client('bedrock', region_name=region)
+            
+            # Test Bedrock service connectivity
+            try:
+                bedrock_client.list_foundation_models()
+            except ClientError as e:
+                error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+                if error_code == 'UnauthorizedOperation':
+                    raise ConnectionError(
+                        f"AWS Bedrock access denied in region {region}. "
+                        "Check IAM permissions for bedrock:ListFoundationModels"
+                    ) from e
+                elif error_code == 'AccessDeniedException':
+                    raise ConnectionError(
+                        f"AWS Bedrock service access denied in region {region}. "
+                        "Ensure Bedrock is enabled and IAM permissions are configured."
+                    ) from e
+                else:
+                    raise ConnectionError(
+                        f"AWS Bedrock service not accessible in region {region}: {e}"
+                    ) from e
+            
+            # Get available foundation models
+            try:
+                response = bedrock_client.list_foundation_models()
+                available_models = [model['modelId'] for model in response.get('modelSummaries', [])]
+            except ClientError as e:
+                raise ConnectionError(f"Failed to list Bedrock models: {e}") from e
+            
+            missing_models = []
+            for model in required_models:
+                if model not in available_models:
+                    missing_models.append(model)
+            
+            if missing_models:
+                raise ValueError(
+                    f"Required Bedrock models not available in region {region}: {missing_models}. "
+                    f"Available models: {available_models[:10]}... "
+                    f"(showing first 10 of {len(available_models)} total)"
+                )
+            
+            bedrock_runtime = boto3.client('bedrock-runtime', region_name=region)
+            
+            for model in required_models:
+                try:
+                    # Try a minimal test request to verify model access
+                    if "embed" in model.lower() or "titan-embed" in model.lower():
+                        # Test embedding model
+                        test_payload = {
+                            "inputText": "test"
+                        }
+                        bedrock_runtime.invoke_model(
+                            modelId=model,
+                            body=json.dumps(test_payload),
+                            contentType='application/json'
+                        )
+                    else:
+                        # Test LLM model
+                        test_payload = {
+                            "inputText": "test",
+                            "textGenerationConfig": {
+                                "maxTokenCount": 1,
+                                "temperature": 0.1
+                            }
+                        }
+                        bedrock_runtime.invoke_model(
+                            modelId=model,
+                            body=json.dumps(test_payload),
+                            contentType='application/json'
+                        )
+                except ClientError as e:
+                    error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+                    if error_code == 'AccessDeniedException':
+                        raise ValueError(
+                            f"Access denied to Bedrock model {model}. "
+                            f"Check IAM permissions for bedrock-runtime:InvokeModel"
+                        ) from e
+                    elif error_code == 'ValidationException':
+                        # This actually confirms the model is accessible
+                        continue
+                    else:
+                        raise ValueError(f"Model {model} not accessible: {e}") from e
+                        
+        except NoCredentialsError as e:
+            raise EnvironmentError(
+                "AWS credentials not found. Configure AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY "
+                "or set up AWS profile."
+            ) from e
+        except Exception as e:
+            if isinstance(e, (ConnectionError, ValueError, EnvironmentError)):
+                raise
+            raise ConnectionError(f"Unexpected error validating Bedrock access: {e}") from e
+
     def _validate_aws_requirements(self) -> None:
-        """Validate AWS requirements."""
+        """Validate AWS requirements including Bedrock model access."""
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
                 "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
             )
+        self._validate_bedrock_model_access()
 
 
 # Global configuration manager instance
