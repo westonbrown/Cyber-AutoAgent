@@ -461,7 +461,6 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--memory-path`: Path to existing FAISS memory store to load past memories
 - `--keep-memory`: Keep memory data after operation completes (default: true)
 - `--output-dir`: Custom output directory (default: ./outputs)
-- `--enable-unified-output`: Use unified output structure (default: true)
 
 ### Usage Examples
 
