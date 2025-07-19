@@ -178,12 +178,15 @@ class Mem0ServiceClient:
 
         return mem0_config
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(
+        self, config: Optional[Dict] = None, has_existing_memories: bool = False
+    ):
         """Initialize the Mem0 service client.
 
         Args:
             config: Optional configuration dictionary to override defaults.
                    If provided, it will be merged with the default configuration.
+            has_existing_memories: Whether memories already existed before initialization
 
         The client will use one of three backends based on environment variables:
         1. Mem0 Platform if MEM0_API_KEY is set
@@ -191,6 +194,7 @@ class Mem0ServiceClient:
         3. FAISS (default) if neither MEM0_API_KEY nor OPENSEARCH_HOST is set
         """
         self.region = None  # Initialize region attribute
+        self.has_existing_memories = has_existing_memories  # Store existing memory info
         self.mem0 = self._initialize_client(config)
         self.config = config  # Store config for later use
 
@@ -237,7 +241,9 @@ class Mem0ServiceClient:
 
         # FAISS backend
         logger.debug("Using FAISS backend (Mem0Memory with FAISS)")
-        return self._initialize_faiss_client(config, server_type)
+        return self._initialize_faiss_client(
+            config, server_type, self.has_existing_memories
+        )
 
     def _initialize_opensearch_client(
         self, config: Optional[Dict] = None, server: str = "remote"
@@ -279,7 +285,10 @@ class Mem0ServiceClient:
         return Mem0Memory.from_config(config_dict=merged_config)
 
     def _initialize_faiss_client(
-        self, config: Optional[Dict] = None, server: str = "local"
+        self,
+        config: Optional[Dict] = None,
+        server: str = "local",
+        has_existing_memories: bool = False,
     ) -> Mem0Memory:
         """Initialize a Mem0 client with FAISS backend.
 
@@ -296,10 +305,15 @@ class Mem0ServiceClient:
 
         merged_config = self._merge_config(config, server)
 
+        # Initialize store existence flag
+        store_existed_before = False
+
         # Use provided path or create unified output structure path
         if merged_config.get("vector_store", {}).get("config", {}).get("path"):
             # Path already set in config (from args.memory_path)
             faiss_path = merged_config["vector_store"]["config"]["path"]
+            # For custom paths, assume it's an existing store (like --memory-path flag)
+            store_existed_before = os.path.exists(faiss_path)
         else:
             # Create memory path using unified output structure
             # Memory is stored at: ./outputs/<target-name>/memory/mem0_faiss_<target-name>
@@ -308,6 +322,9 @@ class Mem0ServiceClient:
             # Use unified output structure for memory - per-target, not per-operation
             memory_base_path = os.path.join("outputs", target_name, "memory")
             faiss_path = memory_base_path
+
+            # Check if store existed before we create directories
+            store_existed_before = os.path.exists(memory_base_path)
 
             # Ensure the memory directory exists
             os.makedirs(memory_base_path, exist_ok=True)
@@ -339,15 +356,22 @@ class Mem0ServiceClient:
             print(f"    Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
             print(f"    LLM: AWS Bedrock - {llm_model}")
 
-        # Check if loading existing store
-        if os.path.exists(faiss_path):
-            print(f"• Loading existing FAISS store from: {faiss_path}")
-            print("• Memory will persist across operations for this target")
+        # Display appropriate message based on whether store existed before initialization
+        if store_existed_before:
+            print(f"    Loading existing FAISS store from: {faiss_path}")
+            print("    Memory will persist across operations for this target")
         else:
-            print(f"• Creating new FAISS store at: {faiss_path}")
-            print("• Memory will persist across operations for this target")
+            # For fresh starts, just show the persistence message
+            print("    Memory will persist across operations for this target")
 
-        return Mem0Memory.from_config(config_dict=merged_config)
+        logger.debug(f"Initializing Mem0Memory with config: {merged_config}")
+        try:
+            mem0_client = Mem0Memory.from_config(config_dict=merged_config)
+            logger.debug("Mem0Memory client initialized successfully")
+            return mem0_client
+        except Exception as e:
+            logger.error(f"Failed to initialize Mem0Memory client: {e}")
+            raise
 
     def _merge_config(
         self, config: Optional[Dict] = None, server: str = "remote"
@@ -419,7 +443,19 @@ class Mem0ServiceClient:
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
-        return self.mem0.get_all(user_id=user_id, agent_id=agent_id)
+        logger = logging.getLogger("CyberAutoAgent")
+        logger.debug(
+            f"Calling mem0.get_all with user_id={user_id}, agent_id={agent_id}"
+        )
+
+        try:
+            result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
+            logger.debug(f"mem0.get_all returned type: {type(result)}")
+            logger.debug(f"mem0.get_all returned: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error in mem0.get_all: {e}")
+            raise
 
     def search_memories(
         self, query: str, user_id: Optional[str] = None, agent_id: Optional[str] = None
@@ -489,17 +525,27 @@ class Mem0ServiceClient:
         """
         try:
             # Get all memories for the user
+            logger = logging.getLogger("CyberAutoAgent")
+            logger.debug(f"Getting memory overview for user_id: {user_id}")
+
             memories_response = self.list_memories(user_id=user_id)
+            logger.debug(
+                f"Memory overview raw response type: {type(memories_response)}"
+            )
+            logger.debug(f"Memory overview raw response: {memories_response}")
 
             # Parse response format
             if isinstance(memories_response, dict):
                 raw_memories = memories_response.get(
                     "memories", memories_response.get("results", [])
                 )
+                logger.debug(f"Dict response: found {len(raw_memories)} memories")
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
+                logger.debug(f"List response: found {len(raw_memories)} memories")
             else:
                 raw_memories = []
+                logger.debug("Unexpected response type, using empty list")
 
             # Analyze memories
             total_count = len(raw_memories)
@@ -648,7 +694,9 @@ def format_list_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = content[:100] + "..." if content and len(content) > 100 else content
+        content_preview = (
+            content[:100] + "..." if content and len(content) > 100 else content
+        )
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -695,7 +743,9 @@ def format_retrieve_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = content[:100] + "..." if content and len(content) > 100 else content
+        content_preview = (
+            content[:100] + "..." if content and len(content) > 100 else content
+        )
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -796,6 +846,7 @@ def initialize_memory_system(
     config: Optional[Dict] = None,
     operation_id: Optional[str] = None,
     target_name: Optional[str] = None,
+    has_existing_memories: bool = False,
 ) -> None:
     """Initialize the memory system with custom configuration.
 
@@ -803,6 +854,7 @@ def initialize_memory_system(
         config: Optional configuration dictionary with embedder, llm, vector_store settings
         operation_id: Unique operation identifier
         target_name: Sanitized target name for organizing memory by target
+        has_existing_memories: Whether memories already existed before initialization
     """
     global _MEMORY_CONFIG, _MEMORY_CLIENT
 
@@ -814,7 +866,7 @@ def initialize_memory_system(
     enhanced_config["target_name"] = target_name or "default_target"
 
     _MEMORY_CONFIG = enhanced_config
-    _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config)
+    _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config, has_existing_memories)
     logger.info(
         "Memory system initialized for operation %s, target: %s",
         enhanced_config["operation_id"],
@@ -977,15 +1029,37 @@ def mem0_memory(
 
         elif action == "list":
             memories = _MEMORY_CLIENT.list_memories(user_id, agent_id)
+
+            # Debug logging to understand the response structure
+            logger = logging.getLogger("CyberAutoAgent")
+            logger.debug(f"Memory list raw response type: {type(memories)}")
+            logger.debug(f"Memory list raw response: {memories}")
+
             # Normalize to list with better error handling
             if memories is None:
                 results_list = []
+                logger.debug("memories is None, returning empty list")
             elif isinstance(memories, list):
                 results_list = memories
+                logger.debug(f"memories is list with {len(memories)} items")
             elif isinstance(memories, dict):
-                results_list = memories.get("results", [])
+                # Check for different possible dict structures
+                if "results" in memories:
+                    results_list = memories.get("results", [])
+                    logger.debug(f"Found 'results' key with {len(results_list)} items")
+                elif "memories" in memories:
+                    results_list = memories.get("memories", [])
+                    logger.debug(f"Found 'memories' key with {len(results_list)} items")
+                else:
+                    # If dict doesn't have expected keys, treat as single memory
+                    results_list = [memories] if memories else []
+                    logger.debug(
+                        f"Dict without expected keys, treating as single memory: {len(results_list)} items"
+                    )
             else:
                 results_list = []
+                logger.debug(f"Unexpected response type: {type(memories)}")
+
             if not strands_dev:
                 panel = format_list_response(results_list)
                 console.print(panel)

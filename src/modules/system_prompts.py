@@ -29,7 +29,9 @@ When using swarm, always set:
 """
 
 
-def _get_output_directory_guidance(output_config: Optional[Dict], operation_id: str) -> str:
+def _get_output_directory_guidance(
+    output_config: Optional[Dict], operation_id: str
+) -> str:
     """Generate output directory guidance based on configuration."""
     if not output_config:
         return ""
@@ -55,6 +57,69 @@ When creating files, writing evidence, or saving tool outputs, ALWAYS use the ap
 """
 
 
+def _get_memory_context_guidance(
+    has_memory_path: bool,
+    has_existing_memories: bool,
+    memory_overview: Optional[Dict] = None,
+) -> str:
+    """Generate memory-aware context and guidance."""
+    if not has_memory_path and not has_existing_memories:
+        return """## MEMORY CONTEXT
+Starting fresh assessment with no previous context.
+- Begin with reconnaissance and target information gathering
+- Store all findings immediately with category="finding"
+- Build comprehensive knowledge base for this target
+"""
+
+    # Generate memory context based on overview data
+    memory_context = "## MEMORY CONTEXT\n"
+
+    if memory_overview and memory_overview.get("has_memories"):
+        total_memories = memory_overview.get("total_count", 0)
+        categories = memory_overview.get("categories", {})
+        recent_findings = memory_overview.get("recent_findings", [])
+
+        memory_context += (
+            f"Continuing assessment with {total_memories} existing memories:\n"
+        )
+
+        # Add category breakdown
+        if categories:
+            category_summary = []
+            for category, count in categories.items():
+                category_summary.append(f"{count} {category}")
+            memory_context += f"- Memory categories: {', '.join(category_summary)}\n"
+
+        # Add recent findings preview
+        if recent_findings:
+            memory_context += "- Recent findings:\n"
+            for i, finding in enumerate(recent_findings[:2], 1):
+                content = finding.get("content", "")[:80] + "..."
+                memory_context += f"  {i}. {content}\n"
+
+        memory_context += '\n**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Analyze retrieved memories before taking any actions\n"
+        memory_context += "- Avoid repeating work already completed\n"
+        memory_context += "- Build upon previous discoveries\n"
+        memory_context += "- Focus on unexplored areas or failed attempts\n"
+
+    elif has_memory_path:
+        memory_context += "Loading from explicit memory path - previous operation context available.\n"
+        memory_context += '**FIRST ACTION**: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Review previous work to avoid duplication\n"
+        memory_context += "- Continue from where previous operation left off\n"
+
+    else:
+        memory_context += (
+            "Memory system indicates existing data but overview unavailable.\n"
+        )
+        memory_context += '**FIRST ACTION**: Check for existing memories with mem0_memory(action="list", user_id="cyber_agent")\n'
+        memory_context += "- Determine if this is a continuation or fresh start\n"
+        memory_context += "- Adapt strategy based on retrieved context\n"
+
+    return memory_context
+
+
 def get_system_prompt(
     target: str,
     objective: str,
@@ -65,6 +130,7 @@ def get_system_prompt(
     has_memory_path: bool = False,
     has_existing_memories: bool = False,  # Add existing memories detection
     output_config: Optional[Dict] = None,  # Add output configuration
+    memory_overview: Optional[Dict] = None,  # Add memory overview data
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
@@ -75,6 +141,11 @@ def get_system_prompt(
 
     # Generate output directory guidance
     output_guidance = _get_output_directory_guidance(output_config, operation_id)
+
+    # Generate memory-aware context and guidance
+    memory_context = _get_memory_context_guidance(
+        has_memory_path, has_existing_memories, memory_overview
+    )
 
     # Dynamic memory instruction based on whether continuing previous operation or existing memories
     memory_instruction = (
@@ -110,6 +181,8 @@ Procedural Memory: Tool registry + dynamic tool creation capability
 </mission_parameters>
 
 {output_guidance}
+
+{memory_context}
 
 <metacognitive_framework>
 Continuous Assessment: Before actions, evaluate confidence (High >80%, Medium 50-80%, Low <50%)
@@ -322,7 +395,10 @@ Beginning with reconnaissance to build target model and identify optimal attack 
 
 
 def get_continuation_prompt(
-    remaining: int, total: int, objective_status: Optional[Dict] = None, next_task: Optional[str] = None
+    remaining: int,
+    total: int,
+    objective_status: Optional[Dict] = None,
+    next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
