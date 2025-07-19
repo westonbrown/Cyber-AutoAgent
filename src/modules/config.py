@@ -23,6 +23,9 @@ from enum import Enum
 from typing import Dict, Any, Optional, List
 import requests
 import ollama
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
+from .utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
@@ -484,8 +487,6 @@ class ConfigManager:
         Returns:
             Full unified output path
         """
-        from .utils import get_output_path, sanitize_target_name
-
         output_config = self.get_output_config(server, **overrides)
         sanitized_target = sanitize_target_name(target_name)
 
@@ -509,8 +510,6 @@ class ConfigManager:
         Returns:
             Memory path for the target
         """
-        from .utils import sanitize_target_name
-
         output_config = self.get_output_config(server, **overrides)
         sanitized_target = sanitize_target_name(target_name)
 
@@ -624,7 +623,7 @@ class ConfigManager:
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
 
     def _apply_environment_overrides(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
         # Main LLM model override
@@ -698,7 +697,7 @@ class ConfigManager:
         return defaults
 
     def _get_memory_embedder_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
         embedding_config = defaults["embedding"]
@@ -710,31 +709,31 @@ class ConfigManager:
         )
 
     def _get_memory_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
 
     def _get_evaluation_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get evaluation LLM configuration."""
         return defaults["evaluation_llm"]
 
     def _get_evaluation_embedding_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
 
     def _get_swarm_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get swarm LLM configuration."""
         return defaults["swarm_llm"]
 
     def _get_output_config(
-        self, server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]
+        self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]
     ) -> OutputConfig:
         """Get output configuration with environment variable and override support."""
         # Get base output directory
@@ -820,9 +819,6 @@ class ConfigManager:
             ValueError: If required models are not available or accessible
             EnvironmentError: If AWS region is not configured
         """
-        import boto3
-        from botocore.exceptions import ClientError, NoCredentialsError
-
         server_config = self.get_server_config("remote")
         region = self.get_default_region()
 
@@ -849,15 +845,14 @@ class ConfigManager:
                         f"AWS Bedrock access denied in region {region}. "
                         "Check IAM permissions for bedrock:ListFoundationModels"
                     ) from e
-                elif error_code == "AccessDeniedException":
+                if error_code == "AccessDeniedException":
                     raise ConnectionError(
                         f"AWS Bedrock service access denied in region {region}. "
                         "Ensure Bedrock is enabled and IAM permissions are configured."
                     ) from e
-                else:
-                    raise ConnectionError(
-                        f"AWS Bedrock service not accessible in region {region}: {e}"
-                    ) from e
+                raise ConnectionError(
+                    f"AWS Bedrock service not accessible in region {region}: {e}"
+                ) from e
 
             # Get available foundation models
             try:
@@ -914,11 +909,10 @@ class ConfigManager:
                             f"Access denied to Bedrock model {model}. "
                             f"Check IAM permissions for bedrock-runtime:InvokeModel"
                         ) from e
-                    elif error_code == "ValidationException":
+                    if error_code == "ValidationException":
                         # This actually confirms the model is accessible
                         continue
-                    else:
-                        raise ValueError(f"Model {model} not accessible: {e}") from e
+                    raise ValueError(f"Model {model} not accessible: {e}") from e
 
         except NoCredentialsError as e:
             raise EnvironmentError(
