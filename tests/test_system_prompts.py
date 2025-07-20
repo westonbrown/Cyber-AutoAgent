@@ -38,7 +38,7 @@ class TestGetSystemPrompt:
             has_memory_path=True,
         )
 
-        assert "FIRST ACTION: Retrieve past findings" in prompt
+        assert "CRITICAL FIRST ACTION**: Load all memories" in prompt
         assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
@@ -52,7 +52,7 @@ class TestGetSystemPrompt:
             has_existing_memories=True,
         )
 
-        assert "FIRST ACTION: Retrieve past findings" in prompt
+        assert "CRITICAL FIRST ACTION**: Load all memories" in prompt
         assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
@@ -67,7 +67,7 @@ class TestGetSystemPrompt:
             has_existing_memories=True,
         )
 
-        assert "FIRST ACTION: Retrieve past findings" in prompt
+        assert "CRITICAL FIRST ACTION**: Load all memories" in prompt
         assert 'mem0_memory(action="list"' in prompt
         assert "Build upon previous discoveries" in prompt
 
@@ -83,8 +83,8 @@ class TestGetSystemPrompt:
         )
 
         assert "Begin with reconnaissance" in prompt
-        assert "do NOT check memory on fresh operations" in prompt
-        assert "Focus first step on target information gathering" in prompt
+        assert "Starting fresh assessment with no previous context" in prompt
+        assert "Do NOT check memory on fresh operations" in prompt
 
     def test_get_system_prompt_with_tools_context(self):
         """Test system prompt with tools context"""
@@ -161,7 +161,7 @@ class TestMemoryInstructions:
             has_existing_memories=False,  # Should be ignored
         )
 
-        assert "FIRST ACTION: Retrieve past findings" in prompt
+        assert "CRITICAL FIRST ACTION**: Load all memories" in prompt
 
     def test_memory_instruction_existing_only(self):
         """Test memory instruction when only existing memories are detected"""
@@ -174,7 +174,7 @@ class TestMemoryInstructions:
             has_existing_memories=True,
         )
 
-        assert "FIRST ACTION: Retrieve past findings" in prompt
+        assert "CRITICAL FIRST ACTION**: Load all memories" in prompt
 
     def test_memory_instruction_fresh_operation(self):
         """Test memory instruction for fresh operations"""
@@ -188,7 +188,7 @@ class TestMemoryInstructions:
         )
 
         assert "Begin with reconnaissance" in prompt
-        assert "do NOT check memory on fresh operations" in prompt
+        assert "Starting fresh assessment with no previous context" in prompt
 
 
 if __name__ == "__main__":
