@@ -63,61 +63,36 @@ def _get_memory_context_guidance(
     memory_overview: Optional[Dict] = None,
 ) -> str:
     """Generate memory-aware context and guidance."""
-    if not has_memory_path and not has_existing_memories:
+    # Check if we have any previous memories
+    has_previous_memories = (
+        has_existing_memories 
+        or has_memory_path 
+        or (memory_overview and memory_overview.get("has_memories"))
+    )
+    
+    if not has_previous_memories:
         return """## MEMORY CONTEXT
-Starting fresh assessment with no previous context.
-- Begin with reconnaissance and target information gathering
-- Store all findings immediately with category="finding"
-- Build comprehensive knowledge base for this target
-"""
-
-    # Generate memory context based on overview data
-    memory_context = "## MEMORY CONTEXT\n"
-
-    if memory_overview and memory_overview.get("has_memories"):
-        total_memories = memory_overview.get("total_count", 0)
-        categories = memory_overview.get("categories", {})
-        recent_findings = memory_overview.get("recent_findings", [])
-
-        memory_context += (
-            f"Continuing assessment with {total_memories} existing memories:\n"
-        )
-
-        # Add category breakdown
-        if categories:
-            category_summary = []
-            for category, count in categories.items():
-                category_summary.append(f"{count} {category}")
-            memory_context += f"- Memory categories: {', '.join(category_summary)}\n"
-
-        # Add recent findings preview
-        if recent_findings:
-            memory_context += "- Recent findings:\n"
-            for i, finding in enumerate(recent_findings[:2], 1):
-                content = finding.get("content", "")[:80] + "..."
-                memory_context += f"  {i}. {content}\n"
-
-        memory_context += '\n**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")\n'
-        memory_context += "- Analyze retrieved memories before taking any actions\n"
-        memory_context += "- Avoid repeating work already completed\n"
-        memory_context += "- Build upon previous discoveries\n"
-        memory_context += "- Focus on unexplored areas or failed attempts\n"
-
-    elif has_memory_path:
-        memory_context += "Loading from explicit memory path - previous operation context available.\n"
-        memory_context += '**FIRST ACTION**: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")\n'
-        memory_context += "- Review previous work to avoid duplication\n"
-        memory_context += "- Continue from where previous operation left off\n"
+    Starting fresh assessment with no previous context.
+    - Do NOT check memory on fresh operations
+    - Begin with reconnaissance and target information gathering
+    - Store all findings immediately with category="finding"
+    - Build comprehensive knowledge base for this target
+    """
 
     else:
-        memory_context += (
-            "Memory system indicates existing data but overview unavailable.\n"
-        )
-        memory_context += '**FIRST ACTION**: Check for existing memories with mem0_memory(action="list", user_id="cyber_agent")\n'
-        memory_context += "- Determine if this is a continuation or fresh start\n"
-        memory_context += "- Adapt strategy based on retrieved context\n"
-
-    return memory_context
+        total_memories = 0
+        if memory_overview and memory_overview.get("has_memories"):
+            total_memories = memory_overview.get("total_count", 0)
+            
+        return f"""## MEMORY CONTEXT
+    Continuing assessment with {total_memories} existing memories.
+    
+    **CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")
+    - Analyze retrieved memories before taking any actions
+    - Avoid repeating work already completed
+    - Build upon previous discoveries
+    - Focus on unexplored areas or failed attempts
+    """
 
 
 def get_system_prompt(
@@ -147,16 +122,6 @@ def get_system_prompt(
         has_memory_path, has_existing_memories, memory_overview
     )
 
-    # Dynamic memory instruction based on whether continuing previous operation or existing memories
-    memory_instruction = (
-        """
-- FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
-- Build upon previous discoveries and avoid repeating completed work"""
-        if has_memory_path or has_existing_memories
-        else """
-- Begin with reconnaissance - do NOT check memory on fresh operations
-- Focus first step on target information gathering"""
-    )
 
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
@@ -181,8 +146,6 @@ Procedural Memory: Tool registry + dynamic tool creation capability
 </mission_parameters>
 
 {output_guidance}
-
-{memory_context}
 
 <metacognitive_framework>
 Continuous Assessment: Before actions, evaluate confidence (High >80%, Medium 50-80%, Low <50%)
@@ -235,7 +198,7 @@ Continuous Loop: Assess→Plan with confidence→Execute→Reflect→Adapt
 Low Confidence Response: Deploy swarm, parallel tools, gather data, try alternatives
 Success Indicators: Vulnerability confirmed, access achieved, data extracted, objective advanced
 
-**Initial Approach:**{memory_instruction}
+**Initial Approach:**{memory_context}
 </dynamic_execution>
 
 <reasoning_patterns>
