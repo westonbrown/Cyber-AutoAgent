@@ -22,22 +22,24 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     
+    - name: Install UV
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+    
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install pylint pytest pytest-mock
-        pip install -e .
+        uv sync
+        uv add --dev pylint pytest pytest-mock
     
     - name: Run Pylint
       run: |
-        pylint src/ --fail-under=9.5 --exit-zero
+        uv run pylint src/ --fail-under=9.5 --exit-zero
         echo "Pylint score:"
-        pylint src/ --score=y | grep "Your code has been rated"
+        uv run pylint src/ --score=y | grep "Your code has been rated"
     
     - name: Run Tests
       run: |
-        pytest tests/ -v
+        uv run pytest tests/ -v
     
     - name: Check Pylint minimum score
       run: |
-        pylint src/ --fail-under=9.5
+        uv run pylint src/ --fail-under=9.5

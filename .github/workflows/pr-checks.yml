@@ -22,24 +22,26 @@ jobs:
       with:
         python-version: '3.11'
     
+    - name: Install UV
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+    
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install pylint pytest pytest-mock
-        pip install -e .
+        uv sync
+        uv add --dev pylint pytest pytest-mock
     
     - name: Run Pylint
       id: pylint
       run: |
-        output=$(pylint src/ --exit-zero --score=y)
+        output=$(uv run pylint src/ --exit-zero --score=y)
         score=$(echo "$output" | grep "Your code has been rated at" | sed -E 's/.*rated at ([0-9.]+).*/\1/')
         echo "score=$score" >> $GITHUB_OUTPUT
         echo "Pylint score: $score/10"
-        pylint src/ --fail-under=9.5
+        uv run pylint src/ --fail-under=9.5
     
     - name: Run Tests
       run: |
-        pytest tests/ -v --tb=short
+        uv run pytest tests/ -v --tb=short
     
     - name: Display Results Summary
       if: always()
