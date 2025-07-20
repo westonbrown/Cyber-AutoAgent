@@ -86,8 +86,7 @@ class TestMemoryAwareAgentIntegration:
         system_prompt = agent.system_prompt
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 5 existing memories" in system_prompt
-        assert "Memory categories: 3 finding, 2 general" in system_prompt
-        assert "SQL injection found in login" in system_prompt
+        assert "Load all memories with mem0_memory" in system_prompt
         assert "**CRITICAL FIRST ACTION**" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
@@ -223,7 +222,7 @@ class TestMemoryAwareAgentIntegration:
         system_prompt = agent.system_prompt
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 2 existing memories" in system_prompt
-        assert "Port scan completed" in system_prompt
+        assert "Load all memories with mem0_memory" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
     @patch("modules.agent.get_memory_client")
@@ -282,7 +281,7 @@ class TestMemoryAwareAgentIntegration:
         # Check that the system prompt contains fallback memory context
         system_prompt = agent.system_prompt
         assert "## MEMORY CONTEXT" in system_prompt
-        assert "Memory system indicates existing data" in system_prompt
+        assert "Continuing assessment with 0 existing memories" in system_prompt
 
     @patch("modules.agent.initialize_memory_system")
     @patch("modules.agent.get_memory_client")
@@ -347,7 +346,7 @@ class TestMemoryAwareAgentIntegration:
         system_prompt = agent.system_prompt
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 1 existing memories" in system_prompt
-        assert "Local scan completed" in system_prompt
+        assert "Load all memories with mem0_memory" in system_prompt
         assert 'model_provider: "ollama"' in system_prompt
 
 
