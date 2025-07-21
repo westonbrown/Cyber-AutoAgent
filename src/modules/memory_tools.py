@@ -275,7 +275,7 @@ class Mem0ServiceClient:
         # Set up AWS credentials
         session = boto3.Session()
         credentials = session.get_credentials()
-        auth = AWSV4SignerAuth(credentials, self.region, "aoss")
+        auth = AWSV4SignerAuth(credentials, self.region, "es")
 
         # Prepare configuration
         merged_config["vector_store"]["config"].update(
