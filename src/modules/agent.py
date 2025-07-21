@@ -17,10 +17,61 @@ from strands_tools.swarm import swarm
 from .system_prompts import get_system_prompt
 from .config import get_config_manager
 from .agent_handlers import ReasoningHandler
-from .utils import Colors
-from .memory_tools import mem0_memory, initialize_memory_system
+from .utils import Colors, sanitize_target_name
+from .memory_tools import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+logger = logging.getLogger(__name__)
+
+
+def check_existing_memories(target: str, _server: str = "remote") -> bool:
+    """Check if existing memories exist for a target.
+
+    Args:
+        target: Target system being assessed
+        server: Server type for configuration
+
+    Returns:
+        True if existing memories are detected, False otherwise
+    """
+    try:
+        # Sanitize target name for consistent path handling
+        target_name = sanitize_target_name(target)
+
+        # Check based on backend type
+        if os.environ.get("MEM0_API_KEY"):
+            # Mem0 Platform - always check (cloud-based)
+            return True
+
+        elif os.environ.get("OPENSEARCH_HOST"):
+            # OpenSearch - always check (remote service)
+            return True
+
+        else:
+            # FAISS - check if local store exists with actual memory content
+            # Create unified output structure path
+            memory_base_path = os.path.join("outputs", target_name, "memory")
+
+            # Check if memory directory exists and has FAISS index files
+            if os.path.exists(memory_base_path):
+                faiss_file = os.path.join(memory_base_path, "mem0.faiss")
+                pkl_file = os.path.join(memory_base_path, "mem0.pkl")
+
+                # Verify both FAISS index files exist and have non-zero size
+                if (
+                    os.path.exists(faiss_file)
+                    and os.path.getsize(faiss_file) > 0
+                    and os.path.exists(pkl_file)
+                    and os.path.getsize(pkl_file) > 0
+                ):
+                    return True
+
+        return False
+
+    except Exception as e:
+        logger.debug("Error checking existing memories: %s", str(e))
+        return False
 
 
 def _create_remote_model(
@@ -94,14 +145,14 @@ def create_agent(
     available_tools: Optional[List[str]] = None,
     op_id: Optional[str] = None,
     model_id: Optional[str] = None,
-    region_name: str = None,
+    region_name: Optional[str] = None,
     server: str = "remote",
     memory_path: Optional[str] = None,
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
-    logger = logging.getLogger("CyberAutoAgent")
-    logger.debug(
+    agent_logger = logging.getLogger("CyberAutoAgent")
+    agent_logger.debug(
         "Creating agent for target: %s, objective: %s, server: %s",
         target,
         objective,
@@ -144,11 +195,31 @@ def create_agent(
             f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}"
         )
 
+    # Check for existing memories BEFORE initializing memory system
+    # to avoid race condition with directory creation
+    has_existing_memories = check_existing_memories(target, server)
+
     # Initialize the memory system with configuration
-    initialize_memory_system(memory_config, operation_id)
+    # Extract and sanitize target name for unified output structure
+    target_name = sanitize_target_name(target)
+    initialize_memory_system(
+        memory_config, operation_id, target_name, has_existing_memories
+    )
     print(
         f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
     )
+    memory_overview = None
+
+    # Get memory overview for system prompt enhancement
+    if has_existing_memories or memory_path:
+        try:
+            memory_client = get_memory_client()
+            if memory_client:
+                memory_overview = memory_client.get_memory_overview(
+                    user_id="cyber_agent"
+                )
+        except Exception as e:
+            agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
     tools_context = ""
     if available_tools:
@@ -169,21 +240,29 @@ Leverage these tools directly via shell.
         tools_context,
         server,
         has_memory_path=bool(memory_path),
+        has_existing_memories=has_existing_memories,
+        memory_overview=memory_overview,
     )
 
-    # Create callback handler with operation_id
-    callback_handler = ReasoningHandler(max_steps=max_steps, operation_id=operation_id)
+    # Create callback handler with operation_id and target information
+    callback_handler = ReasoningHandler(
+        max_steps=max_steps,
+        operation_id=operation_id,
+        target=target,
+        output_base_dir=server_config.output.base_dir,
+        memory_config=memory_config,
+    )
 
     # Create model based on server type
     try:
         if server == "local":
-            logger.debug("Configuring OllamaModel")
+            agent_logger.debug("Configuring OllamaModel")
             model = _create_local_model(model_id, server)
             print(
                 f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
             )
         else:
-            logger.debug("Configuring BedrockModel")
+            agent_logger.debug("Configuring BedrockModel")
             model = _create_remote_model(model_id, region_name, server)
             print(
                 f"{Colors.GREEN}[+] Remote agent model initialized: {model_id}{Colors.RESET}"
@@ -193,7 +272,7 @@ Leverage these tools directly via shell.
         _handle_model_creation_error(server, e)
         raise
 
-    logger.debug("Creating autonomous agent")
+    agent_logger.debug("Creating autonomous agent")
     agent = Agent(
         model=model,
         tools=[
@@ -257,5 +336,5 @@ Leverage these tools directly via shell.
         },
     )
 
-    logger.debug("Agent initialized successfully")
+    agent_logger.debug("Agent initialized successfully")
     return agent, callback_handler
