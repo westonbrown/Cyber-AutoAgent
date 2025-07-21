@@ -51,7 +51,7 @@ sequenceDiagram
 ## Default Configuration
 
 ### FAISS Backend (Default)
-- **Storage**: `./mem0_faiss_OP_[TIMESTAMP]/`
+- **Storage**: `./outputs/<target-name>/memory/
 - **Embedder**: AWS Bedrock Titan (1024 dims)
 - **LLM**: Claude 3.5 Sonnet
 - **Benefits**: Fully local, no cloud dependencies
@@ -91,7 +91,7 @@ Categories used:
 
 ### FAISS (Local)
 ```
-./mem0_faiss_OP_20250712_155132/
+./outputs/example.com/memory/
 ├── config.json
 ├── graph_data/
 ├── key_value_data/
@@ -154,10 +154,11 @@ config = {
 
 ```bash
 # Use existing memory store
---memory-path ./mem0_faiss_OP_20250712_155132
+--memory-path ./outputs/example.com/memory/mem0_faiss_example.com
 
-# Keep memory after operation
+# Keep memory after operation (default: true)
 --keep-memory
 
-# Memory will be at: ./mem0_faiss_OP_[TIMESTAMP]/
+# Memory will be at: ./outputs/<target-name>/memory/mem0_faiss_<target-name>/
+# Note: Memory is now per-target and persists across operations by default
 ```

@@ -16,12 +16,16 @@ Key Components:
 """
 
 import os
+import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, Any, Optional, List
 import requests
 import ollama
+import boto3
+from botocore.exceptions import ClientError, NoCredentialsError
+from .utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +193,41 @@ class SwarmConfig:
     llm: ModelConfig
 
 
+def get_default_base_dir() -> str:
+    """Get the default base directory for outputs.
+
+    Returns:
+        Default base directory path, preferring project root if detectable
+    """
+    # Try to detect if we're in a project directory structure
+    cwd = os.getcwd()
+
+    # Check if we're in the project root (contains pyproject.toml)
+    if os.path.exists(os.path.join(cwd, "pyproject.toml")):
+        return os.path.join(cwd, "outputs")
+
+    # Check if we're in a subdirectory of the project
+    # Look for project root by traversing up the directory tree
+    current = cwd
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        if os.path.exists(os.path.join(current, "pyproject.toml")):
+            return os.path.join(current, "outputs")
+        current = os.path.dirname(current)
+
+    # Fallback to current working directory
+    return os.path.join(cwd, "outputs")
+
+
+@dataclass
+class OutputConfig:
+    """Configuration for output directory management."""
+
+    base_dir: str = field(default_factory=get_default_base_dir)
+    target_name: Optional[str] = None
+    enable_unified_output: bool = True  # Default to enabled for new unified structure
+    operation_id: Optional[str] = None  # Current operation ID for path generation
+
+
 @dataclass
 class ServerConfig:
     """Complete server configuration."""
@@ -199,6 +238,7 @@ class ServerConfig:
     memory: MemoryConfig
     evaluation: EvaluationConfig
     swarm: SwarmConfig
+    output: OutputConfig = field(default_factory=OutputConfig)
     host: Optional[str] = None
     region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
@@ -376,6 +416,9 @@ class ConfigManager:
         # Build swarm configuration
         swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(server, defaults))
 
+        # Build output configuration
+        output_config = self._get_output_config(server, defaults, overrides)
+
         # Resolve host for local server
         host = self.get_ollama_host() if server == "local" else None
 
@@ -386,6 +429,7 @@ class ConfigManager:
             memory=memory_config,
             evaluation=evaluation_config,
             swarm=swarm_config,
+            output=output_config,
             host=host,
             region=defaults["region"],
         )
@@ -417,6 +461,59 @@ class ConfigManager:
         """Get swarm configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.swarm
+
+    def get_output_config(self, server: str, **overrides) -> OutputConfig:
+        """Get output configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.output
+
+    def get_unified_output_path(
+        self,
+        server: str,
+        target_name: str,
+        operation_id: str,
+        subdir: str = "",
+        **overrides,
+    ) -> str:
+        """Get unified output path using configuration system.
+
+        Args:
+            server: Server type for configuration
+            target_name: Target name for organization
+            operation_id: Operation ID for uniqueness
+            subdir: Optional subdirectory within operation
+            **overrides: Configuration overrides
+
+        Returns:
+            Full unified output path
+        """
+        output_config = self.get_output_config(server, **overrides)
+        sanitized_target = sanitize_target_name(target_name)
+
+        return get_output_path(
+            target_name=sanitized_target,
+            operation_id=operation_id,
+            subdir=subdir,
+            base_dir=output_config.base_dir,
+        )
+
+    def get_unified_memory_path(
+        self, server: str, target_name: str, **overrides
+    ) -> str:
+        """Get unified memory path for target.
+
+        Args:
+            server: Server type for configuration
+            target_name: Target name for organization
+            **overrides: Configuration overrides
+
+        Returns:
+            Memory path for the target
+        """
+        output_config = self.get_output_config(server, **overrides)
+        sanitized_target = sanitize_target_name(target_name)
+
+        return os.path.join(output_config.base_dir, sanitized_target, "memory")
 
     def get_mem0_service_config(self, server: str, **overrides) -> Dict[str, Any]:
         """Get complete Mem0 service configuration."""
@@ -526,7 +623,7 @@ class ConfigManager:
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
 
     def _apply_environment_overrides(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
         # Main LLM model override
@@ -600,7 +697,7 @@ class ConfigManager:
         return defaults
 
     def _get_memory_embedder_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
         embedding_config = defaults["embedding"]
@@ -612,28 +709,60 @@ class ConfigManager:
         )
 
     def _get_memory_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
 
     def _get_evaluation_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get evaluation LLM configuration."""
         return defaults["evaluation_llm"]
 
     def _get_evaluation_embedding_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
 
     def _get_swarm_llm_config(
-        self, server: str, defaults: Dict[str, Any]
+        self, _server: str, defaults: Dict[str, Any]
     ) -> ModelConfig:
         """Get swarm LLM configuration."""
         return defaults["swarm_llm"]
+
+    def _get_output_config(
+        self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]
+    ) -> OutputConfig:
+        """Get output configuration with environment variable and override support."""
+        # Get base output directory
+        base_dir = (
+            overrides.get("output_dir")
+            or os.getenv("CYBER_AGENT_OUTPUT_DIR")
+            or get_default_base_dir()
+        )
+
+        # Get target name
+        target_name = overrides.get("target_name")
+
+        # Get operation ID
+        operation_id = overrides.get("operation_id")
+
+        # Get feature flags - unified output is now enabled by default
+        enable_unified_output = (
+            overrides.get("enable_unified_output", True)
+            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
+        )
+
+        # cleanup_memory removed as part of memory management simplification
+
+        return OutputConfig(
+            base_dir=base_dir,
+            target_name=target_name,
+            enable_unified_output=enable_unified_output,
+            operation_id=operation_id,
+        )
 
     def _validate_ollama_requirements(self) -> None:
         """Validate Ollama requirements."""
@@ -680,13 +809,131 @@ class ConfigManager:
                 raise e
             raise ConnectionError(f"Could not verify Ollama models: {e}") from e
 
+    def _validate_bedrock_model_access(self) -> None:
+        """Validate AWS Bedrock model access and availability.
+
+        Tests access to required LLM and embedding models configured for the remote server.
+
+        Raises:
+            ConnectionError: If AWS Bedrock service is not accessible
+            ValueError: If required models are not available or accessible
+            EnvironmentError: If AWS region is not configured
+        """
+        server_config = self.get_server_config("remote")
+        region = self.get_default_region()
+
+        if not region:
+            raise EnvironmentError(
+                "AWS region not configured. Set AWS_REGION environment variable or configure default region."
+            )
+
+        # Required models from configuration
+        llm_model = server_config.llm.model_id
+        embedding_model = server_config.embedding.model_id
+        required_models = [llm_model, embedding_model]
+
+        try:
+            bedrock_client = boto3.client("bedrock", region_name=region)
+
+            # Test Bedrock service connectivity
+            try:
+                bedrock_client.list_foundation_models()
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "Unknown")
+                if error_code == "UnauthorizedOperation":
+                    raise ConnectionError(
+                        f"AWS Bedrock access denied in region {region}. "
+                        "Check IAM permissions for bedrock:ListFoundationModels"
+                    ) from e
+                if error_code == "AccessDeniedException":
+                    raise ConnectionError(
+                        f"AWS Bedrock service access denied in region {region}. "
+                        "Ensure Bedrock is enabled and IAM permissions are configured."
+                    ) from e
+                raise ConnectionError(
+                    f"AWS Bedrock service not accessible in region {region}: {e}"
+                ) from e
+
+            # Get available foundation models
+            try:
+                response = bedrock_client.list_foundation_models()
+                available_models = [
+                    model["modelId"] for model in response.get("modelSummaries", [])
+                ]
+            except ClientError as e:
+                raise ConnectionError(f"Failed to list Bedrock models: {e}") from e
+
+            missing_models = []
+            for model in required_models:
+                if model not in available_models:
+                    missing_models.append(model)
+
+            if missing_models:
+                raise ValueError(
+                    f"Required Bedrock models not available in region {region}: {missing_models}. "
+                    f"Available models: {available_models[:10]}... "
+                    f"(showing first 10 of {len(available_models)} total)"
+                )
+
+            bedrock_runtime = boto3.client("bedrock-runtime", region_name=region)
+
+            for model in required_models:
+                try:
+                    # Try a minimal test request to verify model access
+                    if "embed" in model.lower() or "titan-embed" in model.lower():
+                        # Test embedding model
+                        test_payload = {"inputText": "test"}
+                        bedrock_runtime.invoke_model(
+                            modelId=model,
+                            body=json.dumps(test_payload),
+                            contentType="application/json",
+                        )
+                    else:
+                        # Test LLM model
+                        test_payload = {
+                            "inputText": "test",
+                            "textGenerationConfig": {
+                                "maxTokenCount": 1,
+                                "temperature": 0.1,
+                            },
+                        }
+                        bedrock_runtime.invoke_model(
+                            modelId=model,
+                            body=json.dumps(test_payload),
+                            contentType="application/json",
+                        )
+                except ClientError as e:
+                    error_code = e.response.get("Error", {}).get("Code", "Unknown")
+                    if error_code == "AccessDeniedException":
+                        raise ValueError(
+                            f"Access denied to Bedrock model {model}. "
+                            f"Check IAM permissions for bedrock-runtime:InvokeModel"
+                        ) from e
+                    if error_code == "ValidationException":
+                        # This actually confirms the model is accessible
+                        continue
+                    raise ValueError(f"Model {model} not accessible: {e}") from e
+
+        except NoCredentialsError as e:
+            raise EnvironmentError(
+                "AWS credentials not found. Configure AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY "
+                "or set up AWS profile."
+            ) from e
+        except Exception as e:
+            if isinstance(e, (ConnectionError, ValueError, EnvironmentError)):
+                raise
+            raise ConnectionError(
+                f"Unexpected error validating Bedrock access: {e}"
+            ) from e
+
     def _validate_aws_requirements(self) -> None:
-        """Validate AWS requirements."""
+        """Validate AWS requirements including Bedrock model access."""
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
                 "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
             )
+        self._validate_bedrock_model_access()
 
 
 # Global configuration manager instance

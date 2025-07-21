@@ -44,7 +44,8 @@ from modules.utils import (
     print_section,
     print_status,
     analyze_objective_completion,
-    get_data_path,
+    get_output_path,
+    sanitize_target_name,
 )
 from modules.environment import auto_setup, setup_logging, clean_operation_memory
 
@@ -193,12 +194,18 @@ def main():
     parser.add_argument(
         "--memory-path",
         type=str,
-        help="Path to existing FAISS memory store to load past memories (e.g., /tmp/mem0_OP_20240320_101530)",
+        help="Path to existing FAISS memory store to load past memories (e.g., /outputs/target_name/OP_20240320_101530)",
     )
     parser.add_argument(
         "--keep-memory",
         action="store_true",
-        help="Keep memory data after operation completes (default: remove)",
+        default=True,
+        help="Keep memory data after operation completes (default: true)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        help="Base directory for output artifacts (default: ./outputs)",
     )
 
     args = parser.parse_args()
@@ -218,25 +225,35 @@ def main():
 
     os.environ["AWS_REGION"] = args.region
 
-    # Get configuration from ConfigManager
+    # Get configuration from ConfigManager with CLI overrides
     config_manager = get_config_manager()
-    server_config = config_manager.get_server_config(args.server)
+    config_overrides = {}
+    if args.output_dir:
+        config_overrides["output_dir"] = args.output_dir
+    # Always enable unified output system
+    config_overrides["enable_unified_output"] = True
+
+    server_config = config_manager.get_server_config(args.server, **config_overrides)
 
     # Set mem0 environment variables based on configuration
-    if args.server == "local":
-        os.environ["MEM0_LLM_PROVIDER"] = "ollama"
-        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
-        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
-    else:
-        os.environ["MEM0_LLM_PROVIDER"] = "aws_bedrock"
-        os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
-        os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
+    os.environ["MEM0_LLM_PROVIDER"] = server_config.memory.llm.provider.value
+    os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
+    os.environ["MEM0_EMBEDDING_MODEL"] = server_config.embedding.model_id
 
-    # Initialize logger with volume path
-    logger = setup_logging(
-        log_file=os.path.join(get_data_path("logs"), "cyber_operations.log"),
-        verbose=args.verbose,
+    # Log operation start
+    operation_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    local_operation_id = f"OP_{operation_timestamp}"
+
+    # Initialize logger using unified output system
+    log_path = get_output_path(
+        sanitize_target_name(args.target),
+        local_operation_id,
+        "",
+        server_config.output.base_dir,
     )
+    log_file = os.path.join(log_path, "cyber_operations.log")
+
+    logger = setup_logging(log_file=log_file, verbose=args.verbose)
 
     # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
     setup_observability(logger)
@@ -292,22 +309,27 @@ def main():
     # Pass memory_path to auto_setup to skip cleanup if using existing memory
     available_tools = auto_setup(skip_mem0_cleanup=bool(args.memory_path))
 
-    # Log operation start
-    local_operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     logger.info("Operation %s initiated", local_operation_id)
     logger.info("Objective: %s", args.objective)
     logger.info("Target: %s", args.target)
     logger.info("Max steps: %d", args.iterations)
 
-    # Display operation details
+    # Display operation details with unified output information
+    target_sanitized = sanitize_target_name(args.target)
+    output_base_path = get_output_path(
+        target_sanitized, operation_timestamp, "", server_config.output.base_dir
+    )
+
     print_section(
         "MISSION PARAMETERS",
         f"""
 {Colors.BOLD}Operation ID:{Colors.RESET} {Colors.CYAN}{local_operation_id}{Colors.RESET}
 {Colors.BOLD}Objective:{Colors.RESET}    {Colors.YELLOW}{args.objective}{Colors.RESET}
-{Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET}
+{Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET} (sanitized: {target_sanitized})
 {Colors.BOLD}Max Iterations:{Colors.RESET} {args.iterations} steps
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
+{Colors.BOLD}Output Base:{Colors.RESET} {server_config.output.base_dir}
+{Colors.BOLD}Operation Path:{Colors.RESET} {output_base_path}
 """,
         Colors.CYAN,
         "🎯",
@@ -558,18 +580,25 @@ def main():
                             print(f"  • ... and {len(evidence_summary) - 5} more items")
 
             # Show where evidence and memories are stored
-            # Determine memory location based on backend and operation ID
+            # Determine memory location based on backend and unified output structure
+            target_name = sanitize_target_name(args.target)
             if os.getenv("MEM0_API_KEY"):
                 memory_location = "Mem0 Platform (cloud)"
             elif os.getenv("OPENSEARCH_HOST"):
                 memory_location = f"OpenSearch: {os.getenv('OPENSEARCH_HOST')}"
             else:
-                memory_location = f"./mem0_faiss_{local_operation_id}"
+                memory_location = f"./outputs/{target_name}/memory"
 
-            evidence_location = f"./evidence/evidence_{local_operation_id}"
+            # Use unified output paths for evidence storage
+            evidence_location = get_output_path(
+                sanitize_target_name(args.target),
+                local_operation_id,
+                "",  # No subdirectory - show the operation root
+                server_config.output.base_dir,
+            )
 
             print(
-                f"\n{Colors.BOLD}Evidence stored in:{Colors.RESET} {evidence_location}"
+                f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}"
             )
             print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
             print(f"{'=' * 80}")
@@ -611,11 +640,28 @@ def main():
             logger.warning("No callback_handler available for evaluation trigger")
 
         # Clean up resources
-        if not args.keep_memory and not args.memory_path:
+        should_cleanup = not args.keep_memory and not args.memory_path
+
+        logger.debug(
+            "Cleanup evaluation: keep_memory=%s, memory_path=%s, should_cleanup=%s",
+            args.keep_memory,
+            args.memory_path,
+            should_cleanup,
+        )
+
+        if should_cleanup:
             try:
-                clean_operation_memory(local_operation_id)
+                # Extract target name for unified output structure cleanup
+                target_name = sanitize_target_name(args.target)
+                logger.debug(
+                    "Calling clean_operation_memory with target_name=%s", target_name
+                )
+                clean_operation_memory(local_operation_id, target_name)
+                logger.info("Memory cleaned up for operation %s", local_operation_id)
             except Exception as cleanup_error:
                 logger.warning("Error cleaning up memory: %s", cleanup_error)
+        else:
+            logger.debug("Skipping cleanup - memory will be preserved")
 
         # Log operation end
         end_time = time.time()

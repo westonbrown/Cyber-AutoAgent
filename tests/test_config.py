@@ -19,12 +19,14 @@ from modules.config import (
     MemoryVectorStoreConfig,
     EvaluationConfig,
     SwarmConfig,
+    OutputConfig,
     ServerConfig,
     ConfigManager,
     get_config_manager,
     get_model_config,
     get_default_model_configs,
     get_ollama_host,
+    get_default_base_dir,
 )
 
 
@@ -465,15 +467,205 @@ class TestConfigManager:
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
             self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test-key"})
-    def test_validate_aws_requirements_with_credentials(self):
-        """Test AWS requirements validation with credentials."""
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
+    @patch("boto3.client")
+    def test_validate_bedrock_model_access_success(self, mock_boto_client):
+        """Test successful Bedrock model validation."""
+        # Mock bedrock client
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock bedrock-runtime client
+        mock_runtime = MagicMock()
+        mock_runtime.invoke_model.return_value = {"statusCode": 200}
+
+        # Configure boto3.client to return appropriate mocks
+        def client_side_effect(service_name, **kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock
+            elif service_name == "bedrock-runtime":
+                return mock_runtime
+            return MagicMock()
+
+        mock_boto_client.side_effect = client_side_effect
+
         # Should not raise an exception
         self.config_manager.validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_PROFILE": "test-profile"})
-    def test_validate_aws_requirements_with_profile(self):
+        # Verify calls were made
+        mock_bedrock.list_foundation_models.assert_called()
+        mock_runtime.invoke_model.assert_called()
+
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
+    @patch("boto3.client")
+    def test_validate_bedrock_service_access_denied(self, mock_boto_client):
+        """Test Bedrock validation when service access is denied."""
+        from botocore.exceptions import ClientError
+
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
+            "ListFoundationModels",
+        )
+
+        mock_boto_client.return_value = mock_bedrock
+
+        with pytest.raises(ConnectionError, match="AWS Bedrock service access denied"):
+            self.config_manager.validate_requirements("remote")
+
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
+    @patch("boto3.client")
+    def test_validate_bedrock_missing_models(self, mock_boto_client):
+        """Test Bedrock validation when required models are missing."""
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [{"modelId": "some.other.model:1.0"}]
+        }
+
+        mock_boto_client.return_value = mock_bedrock
+
+        with pytest.raises(ValueError, match="Required Bedrock models not available"):
+            self.config_manager.validate_requirements("remote")
+
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test",
+            "AWS_SECRET_ACCESS_KEY": "test",
+            "AWS_REGION": "us-east-1",
+        },
+    )
+    @patch("boto3.client")
+    def test_validate_bedrock_model_access_denied(self, mock_boto_client):
+        """Test Bedrock validation when model access is denied."""
+        from botocore.exceptions import ClientError
+
+        # Mock bedrock client (list models succeeds)
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock bedrock-runtime client (invoke fails)
+        mock_runtime = MagicMock()
+        mock_runtime.invoke_model.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
+            "InvokeModel",
+        )
+
+        def client_side_effect(service_name, **kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock
+            elif service_name == "bedrock-runtime":
+                return mock_runtime
+            return MagicMock()
+
+        mock_boto_client.side_effect = client_side_effect
+
+        with pytest.raises(ValueError, match="Access denied to Bedrock model"):
+            self.config_manager.validate_requirements("remote")
+
+    @patch.dict(
+        os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}
+    )
+    @patch("boto3.client")
+    def test_validate_bedrock_no_region(self, mock_boto_client):
+        """Test Bedrock validation when region returns None."""
+        with patch.object(self.config_manager, "get_default_region", return_value=None):
+            with pytest.raises(EnvironmentError, match="AWS region not configured"):
+                self.config_manager.validate_requirements("remote")
+
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test-key",
+            "AWS_SECRET_ACCESS_KEY": "test-secret",
+            "AWS_REGION": "us-east-1",
+        },
+    )
+    @patch("boto3.client")
+    def test_validate_aws_requirements_with_credentials(self, mock_boto_client):
+        """Test AWS requirements validation with credentials."""
+        # Mock bedrock client
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock bedrock-runtime client
+        mock_runtime = MagicMock()
+        mock_runtime.invoke_model.return_value = {"statusCode": 200}
+
+        def client_side_effect(service_name, **kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock
+            elif service_name == "bedrock-runtime":
+                return mock_runtime
+            return MagicMock()
+
+        mock_boto_client.side_effect = client_side_effect
+
+        # Should not raise an exception
+        self.config_manager.validate_requirements("remote")
+
+    @patch.dict(os.environ, {"AWS_PROFILE": "test-profile", "AWS_REGION": "us-east-1"})
+    @patch("boto3.client")
+    def test_validate_aws_requirements_with_profile(self, mock_boto_client):
         """Test AWS requirements validation with profile."""
+        # Mock bedrock client
+        mock_bedrock = MagicMock()
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock bedrock-runtime client
+        mock_runtime = MagicMock()
+        mock_runtime.invoke_model.return_value = {"statusCode": 200}
+
+        def client_side_effect(service_name, **kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock
+            elif service_name == "bedrock-runtime":
+                return mock_runtime
+            return MagicMock()
+
+        mock_boto_client.side_effect = client_side_effect
+
         # Should not raise an exception
         self.config_manager.validate_requirements("remote")
 
@@ -675,3 +867,101 @@ class TestEnvironmentIntegration:
         assert "aws_region" in remote_config["llm"]["config"]
         assert "ollama_base_url" not in remote_config["embedder"]["config"]
         assert "ollama_base_url" not in remote_config["llm"]["config"]
+
+
+class TestOutputConfig:
+    """Test OutputConfig dataclass."""
+
+    def test_default_output_config(self):
+        """Test default output configuration."""
+        config = OutputConfig()
+        assert config.base_dir == get_default_base_dir()
+        assert config.target_name is None
+        assert config.enable_unified_output is True
+
+    def test_custom_output_config(self):
+        """Test custom output configuration."""
+        config = OutputConfig(
+            base_dir="/tmp/custom_outputs",
+            target_name="test_target",
+            enable_unified_output=True,
+        )
+        assert config.base_dir == "/tmp/custom_outputs"
+        assert config.target_name == "test_target"
+        assert config.enable_unified_output is True
+
+    def test_get_default_base_dir_project_root(self):
+        """Test get_default_base_dir when in project root."""
+        # Since we're running tests from project root, this should return ./outputs
+        base_dir = get_default_base_dir()
+        assert base_dir.endswith("outputs")
+
+    def test_get_default_base_dir_detects_project_root(self):
+        """Test that get_default_base_dir can detect project root."""
+        # The method should find the project root by looking for pyproject.toml
+        base_dir = get_default_base_dir()
+        project_root = os.path.dirname(base_dir)
+        assert os.path.exists(os.path.join(project_root, "pyproject.toml"))
+
+
+class TestOutputConfigIntegration:
+    """Test output configuration integration with ConfigManager."""
+
+    def test_get_output_config_default(self):
+        """Test getting default output configuration."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config("remote")
+
+        assert isinstance(output_config, OutputConfig)
+        assert output_config.base_dir == get_default_base_dir()
+        assert output_config.target_name is None
+        assert output_config.enable_unified_output is True
+
+    def test_get_output_config_with_overrides(self):
+        """Test getting output configuration with overrides."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config(
+            "remote",
+            output_dir="/tmp/custom",
+            target_name="test_target",
+            enable_unified_output=True,
+        )
+
+        assert output_config.base_dir == "/tmp/custom"
+        assert output_config.target_name == "test_target"
+        assert output_config.enable_unified_output is True
+
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_AGENT_OUTPUT_DIR": "/env/outputs",
+            "CYBER_AGENT_ENABLE_UNIFIED_OUTPUT": "true",
+        },
+    )
+    def test_get_output_config_with_env_vars(self):
+        """Test getting output configuration with environment variables."""
+        config_manager = ConfigManager()
+        output_config = config_manager.get_output_config("remote")
+
+        assert output_config.base_dir == "/env/outputs"
+        assert output_config.enable_unified_output is True
+
+    def test_output_config_in_server_config(self):
+        """Test that output configuration is included in server configuration."""
+        config_manager = ConfigManager()
+        server_config = config_manager.get_server_config("remote")
+
+        assert hasattr(server_config, "output")
+        assert isinstance(server_config.output, OutputConfig)
+        assert server_config.output.base_dir == get_default_base_dir()
+
+    def test_output_config_precedence(self):
+        """Test that overrides take precedence over environment variables."""
+        with patch.dict(os.environ, {"CYBER_AGENT_OUTPUT_DIR": "/env/outputs"}):
+            config_manager = ConfigManager()
+            output_config = config_manager.get_output_config(
+                "remote", output_dir="/override/outputs"
+            )
+
+            # Override should take precedence over environment variable
+            assert output_config.base_dir == "/override/outputs"

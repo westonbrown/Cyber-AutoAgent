@@ -66,7 +66,7 @@
 # Using Docker (Recommended)
 docker run --rm \
   -v ~/.aws:/home/cyberagent/.aws:ro \
-  -v $(pwd)/evidence:/app/evidence \
+  -v $(pwd)/outputs:/app/outputs \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify SQL injection vulnerabilities"
@@ -399,8 +399,8 @@ docker run --rm \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
-  -v $(pwd)/evidence:/app/evidence \
-  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/tools:/app/tools \
   cyber-autoagent \
   --target "x.x.x.x" \
   --objective "Identify vulnerabilities" \
@@ -433,13 +433,17 @@ python src/cyberautoagent.py \
 
 ### Data Storage
 
+**Unified Output Structure** (default, enabled by `CYBER_AGENT_ENABLE_UNIFIED_OUTPUT=true`):
 | Data Type | Location |
 |-----------|----------|
-| Evidence  | `./evidence/evidence_OP_*` |
-| Logs      | `./logs/cyber_operations.log` |
-| Reports   | `./evidence/evidence_OP_*/` |
+| Evidence  | `./outputs/<target>/OP_<id>/` |
+| Logs      | `./outputs/<target>/OP_<id>/logs/` |
+| Reports   | `./outputs/<target>/OP_<id>/` |
+| Tools     | `./tools/` |
+| Utils     | `./outputs/<target>/OP_<id>/utils/` |
+| Memory    | `./outputs/<target>/memory/` |
 
-Directories are created automatically on first run.
+The unified structure organizes all artifacts under operation-specific directories with unique IDs (`OP_YYYYMMDD_HHMMSS`), making it easy to track and manage results from multiple assessment runs. All directories are created automatically.
 
 ### Command-Line Arguments
 
@@ -455,7 +459,8 @@ Directories are created automatically on first run.
 - `--verbose`: Enable verbose output with detailed debug logging
 - `--confirmations`: Enable tool confirmation prompts (default: disabled)
 - `--memory-path`: Path to existing FAISS memory store to load past memories
-- `--keep-memory`: Keep memory data after operation completes (default: remove)
+- `--keep-memory`: Keep memory data after operation completes (default: true)
+- `--output-dir`: Custom output directory (default: ./outputs)
 
 ### Usage Examples
 
@@ -477,8 +482,8 @@ docker run --rm \
   -e LANGFUSE_PUBLIC_KEY=cyber-public \
   -e LANGFUSE_SECRET_KEY=cyber-secret \
   -e ENABLE_AUTO_EVALUATION=true \
-  -v $(pwd)/evidence:/app/evidence \
-  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/tools:/app/tools \
   cyber-autoagent:dev \
   --target "http://testphp.vulnweb.com" \
   --objective "Comprehensive SQL injection and XSS assessment" \
@@ -498,7 +503,12 @@ docker run --user root cyber-autoagent
 
 ## Configuration
 
-The agent uses a centralized configuration system defined in `src/modules/config.py`. All settings can be customized through environment variables, with sensible defaults provided.
+The agent uses a **centralized configuration system** defined in `src/modules/config.py`. All settings can be customized through environment variables, with sensible defaults provided.
+
+**Recent Improvements**:
+- **Unified output structure** for better organization (enabled by default)
+- **Standardized paths** for logs, reports, and evidence collection  
+- **Enhanced memory management** with cross-operation persistence
 
 Copy the example environment file and customize it for your needs:
 
@@ -509,7 +519,8 @@ cp .env.example .env
 The `.env.example` file contains detailed configuration options with inline comments for all supported features including model providers, memory systems, and observability settings. Key environment variables include:
 
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` for remote mode (AWS Bedrock)
-- `OLLAMA_HOST` for local mode (Ollama)
+- `OLLAMA_HOST` for local mode (Ollama)  
+- `CYBER_AGENT_OUTPUT_DIR`, `CYBER_AGENT_ENABLE_UNIFIED_OUTPUT` for output management
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` for observability
 - `MEM0_API_KEY` or `OPENSEARCH_HOST` for memory backends
 
@@ -560,8 +571,14 @@ cyber-autoagent/
 ├── pyproject.toml            # Dependencies and project config
 ├── uv.lock                   # Dependency lockfile
 ├── .env.example              # Environment configuration template
-├── evidence/                 # Generated evidence (auto-created)
-├── logs/                     # Operation logs (auto-created)
+├── outputs/                  # Unified output directory (auto-created)
+│   ├── <target>/            # Target-specific organization
+│   │   ├── OP_<id>/        # Operation-specific files
+│   │   │   ├── report.md   # Security findings
+│   │   │   ├── utils/      # Ad-hoc files
+│   │   │   └── logs.log    # Operation logs
+│   │   └── memory/         # Cross-operation memory
+│   └── tools/              # Custom tools created by agent
 └── README.md                 # This file
 ```
 
