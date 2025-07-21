@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.agent import (
     create_agent,
+    check_existing_memories,
 )
 from modules.config import (
     get_config_manager,
@@ -252,9 +253,42 @@ class TestServerValidation:
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
             get_config_manager().validate_requirements("remote")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test_key"}, clear=True)
-    def test_validate_server_requirements_remote_success(self):
+    @patch.dict(
+        os.environ,
+        {
+            "AWS_ACCESS_KEY_ID": "test_key",
+            "AWS_SECRET_ACCESS_KEY": "test_secret",
+            "AWS_DEFAULT_REGION": "us-east-1",
+        },
+        clear=True,
+    )
+    @patch("boto3.client")
+    def test_validate_server_requirements_remote_success(self, mock_boto_client):
         """Test successful remote server validation"""
+        # Mock both Bedrock and Bedrock Runtime clients
+        mock_bedrock_client = Mock()
+        mock_bedrock_runtime_client = Mock()
+
+        def client_side_effect(service_name, **_kwargs):
+            if service_name == "bedrock":
+                return mock_bedrock_client
+            elif service_name == "bedrock-runtime":
+                return mock_bedrock_runtime_client
+            return Mock()
+
+        mock_boto_client.side_effect = client_side_effect
+
+        # Mock successful foundation models list
+        mock_bedrock_client.list_foundation_models.return_value = {
+            "modelSummaries": [
+                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
+                {"modelId": "amazon.titan-embed-text-v2:0"},
+            ]
+        }
+
+        # Mock successful model invocation
+        mock_bedrock_runtime_client.invoke_model.return_value = {"body": Mock()}
+
         # Should not raise any exception
         get_config_manager().validate_requirements("remote")
 
@@ -364,6 +398,107 @@ class TestCreateAgent:
             create_agent(target="test.com", objective="test objective", server="local")
 
         mock_handle_error.assert_called_once()
+
+
+class TestCheckExistingMemories:
+    """Test the check_existing_memories function"""
+
+    @patch("modules.agent.os.environ.get")
+    def test_check_existing_memories_mem0_platform(self, mock_env_get):
+        """Test check_existing_memories with Mem0 Platform"""
+        mock_env_get.side_effect = lambda key, default=None: (
+            "test-key" if key == "MEM0_API_KEY" else default
+        )
+
+        result = check_existing_memories("test.com", "remote")
+        assert result is True
+
+    @patch("modules.agent.os.environ.get")
+    def test_check_existing_memories_opensearch(self, mock_env_get):
+        """Test check_existing_memories with OpenSearch"""
+        mock_env_get.side_effect = lambda key, default=None: (
+            "test-host" if key == "OPENSEARCH_HOST" else default
+        )
+
+        result = check_existing_memories("test.com", "remote")
+        assert result is True
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.path.getsize")
+    def test_check_existing_memories_faiss_exists(
+        self, mock_getsize, mock_exists, mock_env_get
+    ):
+        """Test check_existing_memories with FAISS backend - directory exists with content"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.side_effect = lambda path: True  # All paths exist
+        mock_getsize.return_value = 100  # Non-zero file size
+
+        result = check_existing_memories("test.com", "local")
+        assert result is True
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_faiss_not_exists(self, mock_exists, mock_env_get):
+        """Test check_existing_memories with FAISS backend - directory doesn't exist"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = False
+
+        result = check_existing_memories("test.com", "local")
+        assert result is False
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.listdir")
+    def test_check_existing_memories_faiss_empty(
+        self, mock_listdir, mock_exists, mock_env_get
+    ):
+        """Test check_existing_memories with FAISS backend - directory exists but empty"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = True
+        mock_listdir.return_value = []
+
+        result = check_existing_memories("test.com", "local")
+        assert result is False
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    @patch("modules.agent.os.path.getsize")
+    def test_check_existing_memories_faiss_zero_size_files(
+        self, mock_getsize, mock_exists, mock_env_get
+    ):
+        """Test check_existing_memories with FAISS backend - files exist but are zero size"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.side_effect = lambda path: True  # All paths exist
+        mock_getsize.return_value = 0  # Zero file size
+
+        result = check_existing_memories("test.com", "local")
+        assert result is False  # Should return False for zero-size files
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_sanitizes_target(self, mock_exists, mock_env_get):
+        """Test check_existing_memories properly sanitizes target names"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.return_value = False
+
+        result = check_existing_memories("https://test.com/path", "local")
+        assert result is False
+        mock_exists.assert_called_with("outputs/test.com/memory")
+
+    @patch("modules.agent.os.environ.get")
+    @patch("modules.agent.os.path.exists")
+    def test_check_existing_memories_exception_handling(
+        self, mock_exists, mock_env_get
+    ):
+        """Test check_existing_memories handles exceptions gracefully"""
+        mock_env_get.return_value = None  # No Mem0 or OpenSearch
+        mock_exists.side_effect = Exception("File system error")
+
+        with patch("modules.agent.logger") as mock_logger:
+            result = check_existing_memories("test.com", "local")
+            assert result is False
+            mock_logger.debug.assert_called_once()
 
 
 if __name__ == "__main__":

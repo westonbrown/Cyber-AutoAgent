@@ -134,6 +134,9 @@ evidence_*
 # Local experimentation and memory files
 experimentation/
 memory/
+tools/
+epics/
+outputs/
 
 # IDE
 .vscode/

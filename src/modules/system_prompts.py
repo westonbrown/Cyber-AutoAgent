@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Dict
+from typing import Dict, Optional
 
 # Import the new configuration system
 from .config import get_config_manager
@@ -29,6 +29,72 @@ When using swarm, always set:
 """
 
 
+def _get_output_directory_guidance(
+    output_config: Optional[Dict], operation_id: str
+) -> str:
+    """Generate output directory guidance based on configuration."""
+    if not output_config:
+        return ""
+
+    base_dir = output_config.get("base_dir", "./outputs")
+    target_name = output_config.get("target_name", "target")
+    enable_unified = output_config.get("enable_unified_output", True)
+
+    if not enable_unified:
+        return ""
+
+    return f"""## OUTPUT DIRECTORY STRUCTURE
+All file operations and tool outputs should follow the unified output structure:
+- Base directory: {base_dir}
+- Target organization: {base_dir}/{target_name}/
+- Current operation: {base_dir}/{target_name}/OP_{operation_id}/
+- Ad-hoc files (when using file_writer or editor tools): {base_dir}/{target_name}/OP_{operation_id}/utils/
+- Saving and loading tools (when using load_tools): {output_config.get("base_dir", "./tools")}
+
+**CRITICAL: All file-writing operations must use the unified output paths above.**
+**NEVER write any files in other directories than stated above. Examples of NOT PERMITTED locations are: cwd, $HOME etc.**
+When creating files, writing evidence, or saving tool outputs, ALWAYS use the appropriate subdirectory within the current operation.
+"""
+
+
+def _get_memory_context_guidance(
+    has_memory_path: bool,
+    has_existing_memories: bool,
+    memory_overview: Optional[Dict] = None,
+) -> str:
+    """Generate memory-aware context and guidance."""
+    # Check if we have any previous memories
+    has_previous_memories = (
+        has_existing_memories 
+        or has_memory_path 
+        or (memory_overview and memory_overview.get("has_memories"))
+    )
+    
+    if not has_previous_memories:
+        return """## MEMORY CONTEXT
+    Starting fresh assessment with no previous context.
+    - Do NOT check memory on fresh operations
+    - Begin with reconnaissance and target information gathering
+    - Store all findings immediately with category="finding"
+    - Build comprehensive knowledge base for this target
+    """
+
+    else:
+        total_memories = 0
+        if memory_overview and memory_overview.get("has_memories"):
+            total_memories = memory_overview.get("total_count", 0)
+            
+        return f"""## MEMORY CONTEXT
+    Continuing assessment with {total_memories} existing memories.
+    
+    **CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")
+    - Analyze retrieved memories before taking any actions
+    - Avoid repeating work already completed
+    - Build upon previous discoveries
+    - Focus on unexplored areas or failed attempts
+    """
+
+
 def get_system_prompt(
     target: str,
     objective: str,
@@ -37,6 +103,9 @@ def get_system_prompt(
     tools_context: str = "",
     server: str = "remote",  # Add server parameter
     has_memory_path: bool = False,
+    has_existing_memories: bool = False,  # Add existing memories detection
+    output_config: Optional[Dict] = None,  # Add output configuration
+    memory_overview: Optional[Dict] = None,  # Add memory overview data
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
@@ -45,16 +114,14 @@ def get_system_prompt(
         f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
     )
 
-    # Dynamic memory instruction based on whether continuing previous operation
-    memory_instruction = (
-        """
-- FIRST ACTION: Retrieve past findings with mem0_memory(action="list", user_id="cyber_agent")
-- Build upon previous discoveries and avoid repeating completed work"""
-        if has_memory_path
-        else """
-- Begin with reconnaissance - do NOT check memory on fresh operations
-- Focus first step on target information gathering"""
+    # Generate output directory guidance
+    output_guidance = _get_output_directory_guidance(output_config, operation_id)
+
+    # Generate memory-aware context and guidance
+    memory_context = _get_memory_context_guidance(
+        has_memory_path, has_existing_memories, memory_overview
     )
+
 
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
@@ -77,6 +144,8 @@ Procedural Memory: Tool registry + dynamic tool creation capability
   - System: `apt-get install [package]` or `apt install [package]`
   - Python: `pip install [package]` or `pip3 install [package]`
 </mission_parameters>
+
+{output_guidance}
 
 <metacognitive_framework>
 Continuous Assessment: Before actions, evaluate confidence (High >80%, Medium 50-80%, Low <50%)
@@ -129,7 +198,7 @@ Continuous Loop: Assess→Plan with confidence→Execute→Reflect→Adapt
 Low Confidence Response: Deploy swarm, parallel tools, gather data, try alternatives
 Success Indicators: Vulnerability confirmed, access achieved, data extracted, objective advanced
 
-**Initial Approach:**{memory_instruction}
+**Initial Approach:**{memory_context}
 </dynamic_execution>
 
 <reasoning_patterns>
@@ -276,9 +345,9 @@ Remember: Assess confidence→Select optimal tools→Execute→Learn→Adapt
 def get_initial_prompt(
     target: str,
     objective: str,
-    iterations: int,
-    available_tools: list,
-    assessment_plan: Dict = None,
+    _iterations: int,
+    _available_tools: list,
+    _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
     return f"""Initializing penetration testing operation.
@@ -289,7 +358,10 @@ Beginning with reconnaissance to build target model and identify optimal attack 
 
 
 def get_continuation_prompt(
-    remaining: int, total: int, objective_status: Dict = None, next_task: str = None
+    remaining: int,
+    total: int,
+    _objective_status: Optional[Dict] = None,
+    _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
