@@ -17,21 +17,21 @@ def _get_swarm_model_guidance(provider: str) -> str:
         return f"""## SWARM MODEL CONFIGURATION (OLLAMA PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "ollama" 
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}} 
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
 """
     elif provider == "bedrock":
         # Use dedicated swarm LLM configuration
         return f"""## SWARM MODEL CONFIGURATION (BEDROCK PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "bedrock" 
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}} 
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
 """
     else:  # litellm
         # LiteLLM provider configuration
         return f"""## SWARM MODEL CONFIGURATION (LITELLM PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "litellm" 
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}}
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}}
 """
 
 
@@ -185,8 +185,8 @@ mem0_memory(
 
 **SWARM DEPLOYMENT**:
 Model configuration provided below in operational protocols
-MANDATORY: Each agent MUST call mem0_memory first to retrieve past findings
-Always include: tools=["shell", "editor", "load_tool", "http_request", "mem0_memory"]
+IMPORTANT: Sub-agents currently only have access to handoff_to_agent for coordination
+DO NOT mention tool access in agent system prompts - they cannot directly use parent tools
 Use when: uncertainty exists, complex target, multiple valid approaches
 
 **PARALLEL SHELL EXECUTION**:
@@ -279,71 +279,74 @@ Remember: Debug before recreating, pip install without sudo, use existing tools 
 **[Protocol: Swarm Deployment - Cognitive Parallelization]**
 **Purpose:** Deploy multiple agents when cognitive complexity exceeds single-agent capacity.
 
-**MANDATORY: All swarm agents inherit parent agent's tools and MUST use mem0_memory to prevent repetition.**
+**HOW SWARM WORKS:**
+1. Main agent deploys specialized sub-agents for parallel analysis
+2. Sub-agents use handoff_to_agent to share findings and coordinate
+3. Main agent receives handoffs and executes actual commands
+4. Sub-agents act as specialized advisors, not executors
 
-**Metacognitive Triggers for Swarm Use:**
+**When to Use Swarm (Metacognitive Triggers):**
 - Confidence in any single approach <70%
-- Multiple equally-valid attack vectors identified
-- Target complexity requires diverse perspectives
-- Time constraints demand parallel exploration
-- Need different "mental models" analyzing same data
-
-**Configuration:** <50% confidence: 4-5 agents | 50-70%: 3-4 agents | Complex: 3-5 agents
+- Multiple attack vectors need parallel exploration
+- Target has >3 services or complex architecture
+- Time pressure requires concurrent operations
+- Previous single-agent attempts failed
 
 {swarm_guidance}
 
-**Agent Specification Format:**
-Each agent in the swarm requires:
-- name: Unique identifier for the agent
-- system_prompt: Agent's specialized role and instructions (mention available tools in the prompt)
-- model_provider: Provider type (optional - inherits from parent)
-- model_settings: Model configuration (optional - inherits from parent)
+**Dynamic Parameter Decision Framework:**
+Analyze task complexity FIRST, then select parameters:
 
-**IMPORTANT:** Do NOT specify "tools" parameter. Agents automatically inherit all tools from parent agent.
-
-**Task Format (KEEP CONCISE - Max 120 words):**
-```
-FIRST ACTION: mem0_memory(action="list", user_id="cyber_agent") to retrieve all past findings
-CONTEXT: [What has been done: tools used, vulns found, access gained]
-OBJECTIVE: [ONE specific goal, not general exploration]
-AVOID: [List what NOT to repeat based on memory retrieval]
-FOCUS: [Specific area/technique to explore]
-SUCCESS: [Clear, measurable outcome]
+```python
+# ANALYZE TASK → DECIDE PARAMETERS
+agents: 2-5 based on attack vectors (warn if >10)
+max_handoffs: 10 (simple) | 20 (default) | 30 (complex collaboration)
+max_iterations: 15 (simple) | 20 (default) | 35 (complex multi-phase)
+execution_timeout: 600.0 (10min simple) | 900.0 (15min default) | 1800.0 (30min complex)
+node_timeout: 180.0 (3min fast) | 300.0 (5min default) | 600.0 (10min thorough)
+repetitive_handoff_detection_window: 8 (default) | 4 (strict) | 12 (flexible)
+repetitive_handoff_min_unique_agents: 3 (default) | 2 (small team) | 4 (large team)
 ```
 
-**CRITICAL: Each swarm agent MUST:**
-1. First retrieve memories with mem0_memory to understand completed work
-2. Analyze retrieved findings before taking any actions
-3. Avoid repeating any attacks/scans found in memory
-4. Store new findings with category="finding"
+**CRITICAL:** The main agent provides relevant context in the task. Sub-agents focus on their specialization.
 
-**Why Memory Retrieval First:** Without checking past findings, swarm agents waste resources repeating identical attacks, creating noise, and potentially alerting defenses. Memory provides context for intelligent, non-redundant exploration.
+**WARNING:** NEVER include 'tools' parameter in agent specs! Sub-agents inherit tools from parent agent.
 
-**Usage Example (Minimal - Recommended):** 
+**SUB-AGENT LIMITATIONS:**
+- Sub-agents can ONLY use handoff_to_agent to coordinate
+- They CANNOT directly execute shell, editor, or other tools
+- Main agent must execute all actual commands after receiving handoffs
+- Design prompts for analysis and planning, not direct execution
 
+**Task Format (Max 100 words):**
+```
+STATE: [Current access/findings]
+GOAL: [ONE specific objective]
+AVOID: [What not to repeat]
+FOCUS: [Specific technique]
+STRATEGY: [How agents should collaborate]
+```
+
+**Decision Example:**
+Task: "Complex web app with API, uploads, auth"
+Analysis: 3 attack vectors, medium confidence (60%), time-sensitive
+Decision: 
+```python
 swarm(
-    task="FIRST ACTION: mem0_memory(action='list', user_id='cyber_agent'). CONTEXT: Found SQLi on /login, extracted DB creds. OBJECTIVE: Exploit file upload on /admin. AVOID: Re-testing SQLi, re-scanning ports. FOCUS: Bypass upload filters, achieve RCE. SUCCESS: Shell access via uploaded file.",
+    task="STATE: Found login page, API endpoints mapped. GOAL: Exploit any vector for initial access. AVOID: Basic SQLi already tested. FOCUS: API auth bypass, file upload RCE, session flaws. STRATEGY: Parallel testing of all vectors, share exploitable findings immediately.",
     agents=[
-        {
-            "name": "upload_specialist",
-            "system_prompt": "You are a file upload exploitation specialist. Focus on bypassing filters and achieving code execution through file uploads. Always check mem0_memory first to avoid repeating work. You have access to all parent agent tools including shell, editor, load_tool, http_request, and mem0_memory."
-        },
-        {
-            "name": "payload_crafter", 
-            "system_prompt": "You are a payload crafting expert. Create sophisticated payloads to bypass security controls. Always check mem0_memory first to understand what has been tried. You have access to all parent agent tools."
-        },
-        {
-            "name": "recon_analyst",
-            "system_prompt": "You are a reconnaissance specialist. Analyze the upload mechanism and identify weaknesses. Always check mem0_memory first for existing findings. You have access to all parent agent tools."
-        }
-    ]
+        {{"name": "api_specialist", "system_prompt": "You are an API security expert. Test auth bypasses, JWT flaws, IDOR, rate limits. Focus on API-specific vulnerabilities. Coordinate with other agents via handoff_to_agent when you find exploitable endpoints."}},
+        {{"name": "upload_expert", "system_prompt": "You are a file upload exploitation specialist. Test for unrestricted upload, filter bypasses, path traversal. Create custom payloads as needed. Share successful techniques with the team via handoff_to_agent."}},
+        {{"name": "session_analyst", "system_prompt": "You are a session security analyst. Test session fixation, prediction, hijacking, and cookie vulnerabilities. When you discover session flaws, coordinate exploitation with other agents via handoff_to_agent."}}
+    ],
+    max_handoffs=25,  # 3 agents × 8 rounds of collaboration  
+    max_iterations=30,  # Complex multi-vector testing
+    execution_timeout=900.0,  # 15 min (default)
+    node_timeout=180.0,  # 3 min per agent (fast)
+    repetitive_handoff_detection_window=8,  # Standard detection
+    repetitive_handoff_min_unique_agents=3   # All 3 agents must participate
 )
 ```
-
-**Note:** 
-- Do NOT specify "tools" parameter - agents inherit all tools from parent
-- model_provider and model_settings are optional - agents inherit from parent if not specified
-- max_handoffs and max_iterations have sensible defaults (20 each)
 
 **[Protocol: Continuous Learning]**
 After actions: Assess outcome→Update confidence→Extract insights→Adapt strategy
