@@ -364,11 +364,15 @@ LANGFUSE_ADMIN_PASSWORD=strong-password-here
 
 **Remote Mode (AWS Bedrock)**
 ```bash
-# Configure AWS credentials
+# Option 1: Configure AWS credentials
 aws configure
 # Or set environment variables:
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=your_region
+
+# Option 2: Use AWS Bedrock API key (bearer token)
+export AWS_BEARER_TOKEN_BEDROCK=your_bearer_token
 export AWS_REGION=your_region
 ```
 
@@ -397,7 +401,7 @@ docker build -t cyber-autoagent .
 docker run --rm \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/tools:/app/tools \
@@ -518,7 +522,7 @@ cp .env.example .env
 
 The `.env.example` file contains detailed configuration options with inline comments for all supported features including model providers, memory systems, and observability settings. Key environment variables include:
 
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` for remote mode (AWS Bedrock)
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION` for remote mode (AWS Bedrock)
 - `OLLAMA_HOST` for local mode (Ollama)  
 - `CYBER_AGENT_OUTPUT_DIR`, `CYBER_AGENT_ENABLE_UNIFIED_OUTPUT` for output management
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` for observability
@@ -601,12 +605,16 @@ cyber-autoagent/
 
 #### AWS Credentials Not Found
 ```bash
-# Configure AWS CLI
+# Option 1: Configure AWS CLI
 aws configure
 
-# Or set environment variables
+# Option 2: Set traditional environment variables
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=us-east-1
+
+# Option 3: Use AWS Bedrock API key (bearer token)
+export AWS_BEARER_TOKEN_BEDROCK=your_bearer_token
 export AWS_REGION=us-east-1
 ```
 

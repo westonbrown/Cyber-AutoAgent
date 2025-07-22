@@ -29,11 +29,11 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "strands-agents[ollama,otel]==0.1.8",
-    "strands-agents-tools @ git+https://github.com/cagataycali/tools.git@feat/model-switch-clean", 
+    "strands-agents[ollama,otel]==1.0.1",
+    "strands-agents-tools==0.2.0", 
     "mem0ai",
-    "boto3",
-    "botocore",
+    "boto3>=1.39.10",
+    "botocore>=1.39.10",
     "faiss-cpu",
     "ollama>=0.1.0",
     "requests>=2.25.0",
