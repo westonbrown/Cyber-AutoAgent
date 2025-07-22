@@ -6,26 +6,32 @@ from typing import Dict, Optional
 from .config import get_config_manager
 
 
-def _get_swarm_model_guidance(server: str) -> str:
-    """Generate swarm model configuration guidance based on server type."""
+def _get_swarm_model_guidance(provider: str) -> str:
+    """Generate swarm model configuration guidance based on provider type."""
     # Use the new configuration system
     config_manager = get_config_manager()
-    server_config = config_manager.get_server_config(server)
-    swarm_config = server_config.swarm
+    provider_config = config_manager.get_server_config(provider)
+    swarm_config = provider_config.swarm
 
-    if server == "local":
-        ollama_host = config_manager.get_ollama_host()
-        return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
-When using swarm, always set:
-- model_provider: "ollama"
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"host\": \"{ollama_host}\", \"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}
+    if provider == "ollama":
+        return f"""## SWARM MODEL CONFIGURATION (OLLAMA PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "ollama" 
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}} 
 """
-    else:
+    elif provider == "bedrock":
         # Use dedicated swarm LLM configuration
-        return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
-When using swarm, always set:
-- model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"params\": {{\"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}}}
+        return f"""## SWARM MODEL CONFIGURATION (BEDROCK PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "bedrock" 
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}} 
+"""
+    else:  # litellm
+        # LiteLLM provider configuration
+        return f"""## SWARM MODEL CONFIGURATION (LITELLM PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "litellm" 
+- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\"}}
 """
 
 
@@ -101,7 +107,7 @@ def get_system_prompt(
     max_steps: int,
     operation_id: str,
     tools_context: str = "",
-    server: str = "remote",  # Add server parameter
+    provider: str = "bedrock",  # Provider type parameter
     has_memory_path: bool = False,
     has_existing_memories: bool = False,  # Add existing memories detection
     output_config: Optional[Dict] = None,  # Add output configuration
@@ -109,7 +115,7 @@ def get_system_prompt(
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
-    swarm_guidance = _get_swarm_model_guidance(server)
+    swarm_guidance = _get_swarm_model_guidance(provider)
     full_tools_context = (
         f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
     )
@@ -273,7 +279,7 @@ Remember: Debug before recreating, pip install without sudo, use existing tools 
 **[Protocol: Swarm Deployment - Cognitive Parallelization]**
 **Purpose:** Deploy multiple agents when cognitive complexity exceeds single-agent capacity.
 
-**MANDATORY: All swarm agents inherit mem0_memory access and MUST use it to prevent repetition.**
+**MANDATORY: All swarm agents inherit parent agent's tools and MUST use mem0_memory to prevent repetition.**
 
 **Metacognitive Triggers for Swarm Use:**
 - Confidence in any single approach <70%
@@ -282,10 +288,18 @@ Remember: Debug before recreating, pip install without sudo, use existing tools 
 - Time constraints demand parallel exploration
 - Need different "mental models" analyzing same data
 
-**Configuration:** <50% confidence: 4-5 agents competitive | 50-70%: 3-4 hybrid | Complex: 3-5 collaborative
+**Configuration:** <50% confidence: 4-5 agents | 50-70%: 3-4 agents | Complex: 3-5 agents
 
 {swarm_guidance}
 
+**Agent Specification Format:**
+Each agent in the swarm requires:
+- name: Unique identifier for the agent
+- system_prompt: Agent's specialized role and instructions (mention available tools in the prompt)
+- model_provider: Provider type (optional - inherits from parent)
+- model_settings: Model configuration (optional - inherits from parent)
+
+**IMPORTANT:** Do NOT specify "tools" parameter. Agents automatically inherit all tools from parent agent.
 
 **Task Format (KEEP CONCISE - Max 120 words):**
 ```
@@ -305,17 +319,31 @@ SUCCESS: [Clear, measurable outcome]
 
 **Why Memory Retrieval First:** Without checking past findings, swarm agents waste resources repeating identical attacks, creating noise, and potentially alerting defenses. Memory provides context for intelligent, non-redundant exploration.
 
-**Usage Example:** 
+**Usage Example (Minimal - Recommended):** 
 
 swarm(
-    task=f"FIRST ACTION: mem0_memory(action='list', user_id='cyber_agent'). CONTEXT: Found SQLi on /login, extracted DB creds. OBJECTIVE: Exploit file upload on /admin. AVOID: Re-testing SQLi, re-scanning ports, any attacks in retrieved memory. FOCUS: Bypass upload filters, achieve RCE. SUCCESS: Shell access via uploaded file.",
-    swarm_size=3,
-    coordination_pattern="collaborative",
-    model_provider="[USE CONFIG ABOVE]",
-    model_settings=[USE CONFIG ABOVE],
-    tools=["shell", "editor", "load_tool", "http_request", "mem0_memory"]  # REQUIRED TOOLS
+    task="FIRST ACTION: mem0_memory(action='list', user_id='cyber_agent'). CONTEXT: Found SQLi on /login, extracted DB creds. OBJECTIVE: Exploit file upload on /admin. AVOID: Re-testing SQLi, re-scanning ports. FOCUS: Bypass upload filters, achieve RCE. SUCCESS: Shell access via uploaded file.",
+    agents=[
+        {
+            "name": "upload_specialist",
+            "system_prompt": "You are a file upload exploitation specialist. Focus on bypassing filters and achieving code execution through file uploads. Always check mem0_memory first to avoid repeating work. You have access to all parent agent tools including shell, editor, load_tool, http_request, and mem0_memory."
+        },
+        {
+            "name": "payload_crafter", 
+            "system_prompt": "You are a payload crafting expert. Create sophisticated payloads to bypass security controls. Always check mem0_memory first to understand what has been tried. You have access to all parent agent tools."
+        },
+        {
+            "name": "recon_analyst",
+            "system_prompt": "You are a reconnaissance specialist. Analyze the upload mechanism and identify weaknesses. Always check mem0_memory first for existing findings. You have access to all parent agent tools."
+        }
+    ]
 )
 ```
+
+**Note:** 
+- Do NOT specify "tools" parameter - agents inherit all tools from parent
+- model_provider and model_settings are optional - agents inherit from parent if not specified
+- max_handoffs and max_iterations have sensible defaults (20 each)
 
 **[Protocol: Continuous Learning]**
 After actions: Assess outcome→Update confidence→Extract insights→Adapt strategy

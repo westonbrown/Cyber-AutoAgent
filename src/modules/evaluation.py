@@ -56,13 +56,13 @@ class CyberAgentEvaluator:
 
     def setup_models(self):
         """Configure evaluation models based on server type."""
-        server_type = os.getenv("SERVER", "remote").lower()
+        server_type = os.getenv("PROVIDER", "bedrock").lower()
 
         # Get configuration from ConfigManager
         config_manager = get_config_manager()
         server_config = config_manager.get_server_config(server_type)
 
-        if server_type == "local":
+        if server_type == "ollama":
             # Local mode using Ollama
             langchain_chat = ChatOllama(
                 model=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.llm.model_id),

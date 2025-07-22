@@ -180,11 +180,11 @@ def main():
         help="AWS region for Bedrock (default: from AWS_REGION or us-east-1)",
     )
     parser.add_argument(
-        "--server",
+        "--provider",
         type=str,
-        choices=["remote", "local"],
-        default="remote",
-        help="Model provider: 'remote' for AWS Bedrock, 'local' for Ollama (default: remote)",
+        choices=["bedrock", "ollama", "litellm"],
+        default="bedrock",
+        help="Model provider: 'bedrock' for AWS Bedrock, 'ollama' for local models, 'litellm' for universal access (default: bedrock)",
     )
     parser.add_argument(
         "--confirmations",
@@ -233,7 +233,7 @@ def main():
     # Always enable unified output system
     config_overrides["enable_unified_output"] = True
 
-    server_config = config_manager.get_server_config(args.server, **config_overrides)
+    server_config = config_manager.get_server_config(args.provider, **config_overrides)
 
     # Set mem0 environment variables based on configuration
     os.environ["MEM0_LLM_PROVIDER"] = server_config.memory.llm.provider.value
@@ -349,7 +349,7 @@ def main():
             op_id=local_operation_id,
             model_id=args.model,
             region_name=args.region,
-            server=args.server,
+            provider=args.provider,
             memory_path=args.memory_path,
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
