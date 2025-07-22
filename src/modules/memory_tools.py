@@ -165,7 +165,7 @@ class Mem0ServiceClient:
     """Client for interacting with Mem0 service."""
 
     @staticmethod
-    def get_default_config(server: str = "remote") -> Dict:
+    def get_default_config(server: str = "bedrock") -> Dict:
         """Get default configuration from ConfigManager."""
         config_manager = get_config_manager()
         mem0_config = config_manager.get_mem0_service_config(server)
@@ -216,9 +216,9 @@ class Mem0ServiceClient:
             logger.debug("Using Mem0 Platform backend (MemoryClient)")
             return MemoryClient()
 
-        # Determine server type based on environment
-        # Use remote if OpenSearch is available, otherwise local
-        server_type = "remote" if os.environ.get("OPENSEARCH_HOST") else "local"
+        # Determine provider type based on environment
+        # Use bedrock if OpenSearch is available, otherwise ollama
+        server_type = "bedrock" if os.environ.get("OPENSEARCH_HOST") else "ollama"
 
         if os.environ.get("OPENSEARCH_HOST"):
             merged_config = self._merge_config(config, server_type)
@@ -246,7 +246,7 @@ class Mem0ServiceClient:
         )
 
     def _initialize_opensearch_client(
-        self, config: Optional[Dict] = None, server: str = "remote"
+        self, config: Optional[Dict] = None, server: str = "bedrock"
     ) -> Mem0Memory:
         """Initialize a Mem0 client with OpenSearch backend.
 
@@ -287,7 +287,7 @@ class Mem0ServiceClient:
     def _initialize_faiss_client(
         self,
         config: Optional[Dict] = None,
-        server: str = "local",
+        server: str = "ollama",
         has_existing_memories: bool = False,
     ) -> Mem0Memory:
         """Initialize a Mem0 client with FAISS backend.
@@ -374,7 +374,7 @@ class Mem0ServiceClient:
             raise
 
     def _merge_config(
-        self, config: Optional[Dict] = None, server: str = "remote"
+        self, config: Optional[Dict] = None, server: str = "bedrock"
     ) -> Dict:
         """Merge user-provided configuration with default configuration.
 
