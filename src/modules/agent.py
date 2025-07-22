@@ -288,7 +288,6 @@ Leverage these tools directly via shell.
         callback_handler=callback_handler,
         conversation_manager=SlidingWindowConversationManager(window_size=120),
         load_tools_from_directory=True,
-        max_parallel_tools=8,
         trace_attributes={
             # Session and user identification
             "session.id": operation_id,
