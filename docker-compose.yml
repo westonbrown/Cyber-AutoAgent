@@ -10,7 +10,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       # - AWS_PROFILE=${AWS_PROFILE}
       
-      # Ollama Configuration (Local Mode) 
+      # Ollama Configuration (Ollama Provider) 
       - OLLAMA_HOST=${OLLAMA_HOST}
       
       # Python configuration

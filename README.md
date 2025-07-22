@@ -267,27 +267,33 @@ This meta-architecture allows the system to transcend static tool limitations an
 
 Cyber-AutoAgent supports two model providers for maximum flexibility:
 
-### Remote Mode (AWS Bedrock)
+### Bedrock Provider (Direct AWS)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
 - **Default Model**: Claude Sonnet 4 (us.anthropic.claude-sonnet-4-20250514-v1:0)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
-### Local Mode (Ollama)
+### Ollama Provider (Local)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
 - **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
+### LiteLLM Provider (Universal)
+- **Best for**: Multi-provider flexibility, unified interface
+- **Requirements**: API keys for desired providers
+- **Supported**: 100+ models from OpenAI, Anthropic, Cohere, Google, Azure, etc.
+- **Benefits**: Switch providers easily, fallback support, unified API
+
 ### Comparison
 
-| Feature | Remote (AWS Bedrock) | Local (Ollama) |
-|---------|---------------------|----------------|
-| Cost | Pay per API call | One-time setup |
-| Performance | High (managed) | Depends on hardware |
-| Offline Use | No | Yes |
-| Setup Complexity | Moderate | Higher |
-| Model Quality | Highest | Low |
+| Feature | Bedrock | Ollama | LiteLLM |
+|---------|---------|--------|----------|
+| Cost | Pay per call | Free | Varies by provider |
+| Performance | High | Hardware dependent | Provider dependent |
+| Offline Use | No | Yes | No |
+| Setup | Easy | Higher | Easy |
+| Model Selection | AWS only | Limited | 100+ models |
 
 ## Observability & Evaluation
 
@@ -362,7 +368,7 @@ LANGFUSE_ADMIN_PASSWORD=strong-password-here
 
 ### Prerequisites
 
-**Remote Mode (AWS Bedrock)**
+**Bedrock Provider**
 ```bash
 # Option 1: Configure AWS credentials
 aws configure
@@ -376,7 +382,35 @@ export AWS_BEARER_TOKEN_BEDROCK=your_bearer_token
 export AWS_REGION=your_region
 ```
 
-**Local Mode (Ollama)**
+> **Note**: Bearer token authentication is only supported with the native Bedrock provider. LiteLLM does not currently support AWS bearer tokens - use standard AWS credentials instead.
+
+**LiteLLM Provider (Universal Gateway)**
+
+LiteLLM supports 100+ model providers. Set the appropriate environment variables for your chosen provider:
+
+```bash
+# For OpenAI models (GPT-4, GPT-3.5, etc.)
+export OPENAI_API_KEY=your_openai_key
+# Usage: --model "openai/gpt-4"
+
+# For Google models (Gemini)
+export GEMINI_API_KEY=your_gemini_key
+# Usage: --model "gemini/gemini-pro"
+
+# For Azure OpenAI
+export AZURE_API_KEY=your_azure_key
+export AZURE_API_BASE=https://your-resource.openai.azure.com
+export AZURE_API_VERSION=2024-02-15-preview
+# Usage: --model "azure/your-deployment-name"
+
+# For Hugging Face
+export HUGGINGFACE_API_KEY=your_hf_key
+# Usage: --model "huggingface/meta-llama/Llama-2-7b-chat-hf"
+```
+
+> **Important**: When using LiteLLM with Bedrock models, AWS bearer tokens (AWS_BEARER_TOKEN_BEDROCK) are NOT supported. Use standard AWS credentials only.
+
+**Ollama Provider**
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
@@ -456,7 +490,7 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--target`: Target system/network to assess (ensure you have permission!)
 
 **Optional Arguments**: 
-- `--server`: Model provider - `remote` (AWS Bedrock) or `local` (Ollama), default: remote
+- `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
 - `--iterations`: Maximum tool executions before stopping, default: 100
 - `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
 - `--region`: AWS region for Bedrock, default: us-east-1
@@ -469,11 +503,20 @@ The unified structure organizes all artifacts under operation-specific directori
 ### Usage Examples
 
 ```bash
-# Basic Python Usage (Remote Mode)
+# Basic Python Usage (Bedrock Provider)
 python src/cyberautoagent.py \
   --target "http://testphp.vulnweb.com" \
   --objective "Find SQL injection vulnerabilities" \
+  --provider bedrock \
   --iterations 50
+
+# Using LiteLLM with OpenAI
+export OPENAI_API_KEY=your_key
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Security assessment" \
+  --provider litellm \
+  --model "openai/gpt-4o"
 
 # Docker with full observability, evaluation and root access (for package installation)
 docker run --rm \
