@@ -454,65 +454,41 @@ class ReasoningHandler(PrintingCallbackHandler):
         else:
             # Process custom tools
             if tool_name == "swarm":
-                # Display swarm configuration
+                # Display swarm configuration for new interface
                 task = tool_input.get("task", "")
-                swarm_size = tool_input.get("swarm_size", 1)
-                pattern = tool_input.get("coordination_pattern", "collaborative")
-                tools = tool_input.get("tools", [])
-                model_provider = tool_input.get("model_provider", "default")
+                agents = tool_input.get("agents", [])
+                max_handoffs = tool_input.get("max_handoffs", 20)
+                max_iterations = tool_input.get("max_iterations", 20)
+                execution_timeout = tool_input.get("execution_timeout", 900.0)
+                node_timeout = tool_input.get("node_timeout", 300.0)
+                
+                # Get repetitive handoff detection parameters
+                repetitive_window = tool_input.get("repetitive_handoff_detection_window", 8)
+                repetitive_min_agents = tool_input.get("repetitive_handoff_min_unique_agents", 3)
 
                 print(
                     "↳ %sOrchestrating Swarm Intelligence%s"
                     % (Colors.BOLD, Colors.RESET)
                 )
 
-                # Parse task format
-                task_parts = task.split(". ")
-                if len(task_parts) >= 4 and any(
-                    keyword in task
-                    for keyword in ["Objective:", "Scope:", "Success:", "Context:"]
-                ):
-                    # Display structured task
-                    for part in task_parts:
-                        if part.strip():
-                            if "Objective:" in part:
-                                print(
-                                    "  %sObjective:%s %s"
-                                    % (
-                                        Colors.CYAN,
-                                        Colors.RESET,
-                                        part.replace("Objective:", "").strip(),
-                                    )
-                                )
-                            elif "Scope:" in part:
-                                print(
-                                    "  %sScope:%s %s"
-                                    % (
-                                        Colors.YELLOW,
-                                        Colors.RESET,
-                                        part.replace("Scope:", "").strip(),
-                                    )
-                                )
-                            elif "Success:" in part:
-                                print(
-                                    "  %sSuccess:%s %s"
-                                    % (
-                                        Colors.GREEN,
-                                        Colors.RESET,
-                                        part.replace("Success:", "").strip(),
-                                    )
-                                )
-                            elif "Context:" in part:
-                                print(
-                                    "  %sContext:%s %s"
-                                    % (
-                                        Colors.DIM,
-                                        Colors.RESET,
-                                        part.replace("Context:", "").strip(),
-                                    )
-                                )
+                # Parse and display task using new format
+                if "STATE:" in task and "GOAL:" in task:
+                    # New format: STATE, GOAL, AVOID, FOCUS, STRATEGY
+                    task_lines = task.split(". ")
+                    for line in task_lines:
+                        line = line.strip()
+                        if line.startswith("STATE:"):
+                            print("  %sState:%s %s" % (Colors.DIM, Colors.RESET, line[6:].strip()))
+                        elif line.startswith("GOAL:"):
+                            print("  %sGoal:%s %s" % (Colors.CYAN, Colors.RESET, line[5:].strip()))
+                        elif line.startswith("AVOID:"):
+                            print("  %sAvoid:%s %s" % (Colors.YELLOW, Colors.RESET, line[6:].strip()))
+                        elif line.startswith("FOCUS:"):
+                            print("  %sFocus:%s %s" % (Colors.GREEN, Colors.RESET, line[6:].strip()))
+                        elif line.startswith("STRATEGY:"):
+                            print("  %sStrategy:%s %s" % (Colors.MAGENTA, Colors.RESET, line[9:].strip()))
                 else:
-                    # Display task description
+                    # Display full task for other formats
                     print(
                         "  Task: %s%s%s"
                         % (
@@ -522,27 +498,44 @@ class ReasoningHandler(PrintingCallbackHandler):
                         )
                     )
 
-                print("  %sConfiguration:%s" % (Colors.BOLD, Colors.RESET))
-                print(
-                    "    Agents: %s%d%s" % (Colors.CYAN, int(swarm_size), Colors.RESET)
-                )
-                print("    Pattern: %s%s%s" % (Colors.MAGENTA, pattern, Colors.RESET))
-                if tools:
-                    print(
-                        "    Tools: %s%s%s"
-                        % (
-                            Colors.GREEN,
-                            ", ".join(tools) if isinstance(tools, list) else str(tools),
-                            Colors.RESET,
-                        )
-                    )
-                if model_provider and model_provider != "default":
-                    print(
-                        "    Model: %s%s%s"
-                        % (Colors.BLUE, model_provider, Colors.RESET)
-                    )
+                print("\n  %sSwarm Configuration:%s" % (Colors.BOLD, Colors.RESET))
+                
+                # Display agent specifications if using new interface
+                if agents:
+                    print("    %sAgents (%d):%s" % (Colors.CYAN, len(agents), Colors.RESET))
+                    for i, agent_spec in enumerate(agents):
+                        agent_name = agent_spec.get("name", f"agent_{i+1}")
+                        agent_prompt = agent_spec.get("system_prompt", "")
+                        model_provider = agent_spec.get("model_provider", "inherited")
+                        model_id = ""
+                        if "model_settings" in agent_spec and isinstance(agent_spec["model_settings"], dict):
+                            model_id = agent_spec["model_settings"].get("model_id", "")
+                        
+                        print("      %s• %s%s%s" % (Colors.GREEN, Colors.BOLD, agent_name, Colors.RESET))
+                        # Show full system prompt
+                        print("        %sRole:%s %s" % (Colors.DIM, Colors.RESET, agent_prompt))
+                        if model_provider != "inherited" or model_id:
+                            model_info = f"{model_provider}"
+                            if model_id:
+                                model_info += f" ({model_id})"
+                            print("        %sModel:%s %s" % (Colors.DIM, Colors.RESET, model_info))
+                else:
+                    # No agents specified - error condition
+                    print("    %sError: No agents specified!%s" % (Colors.RED, Colors.RESET))
 
-                self.tools_used.append(f"swarm: {int(swarm_size)} agents, {pattern}")
+                # Display execution parameters
+                print("\n    %sExecution Parameters:%s" % (Colors.BOLD, Colors.RESET))
+                print("      Max Handoffs: %s%d%s" % (Colors.DIM, max_handoffs, Colors.RESET))
+                print("      Max Iterations: %s%d%s" % (Colors.DIM, max_iterations, Colors.RESET))
+                print("      Execution Timeout: %s%.1fs%s" % (Colors.DIM, execution_timeout, Colors.RESET))
+                print("      Node Timeout: %s%.1fs%s" % (Colors.DIM, node_timeout, Colors.RESET))
+                
+                # Display repetitive handoff detection if non-default
+                if repetitive_window != 8 or repetitive_min_agents != 3:
+                    print("      Detection Window: %s%d%s" % (Colors.DIM, repetitive_window, Colors.RESET))
+                    print("      Min Unique Agents: %s%d%s" % (Colors.DIM, repetitive_min_agents, Colors.RESET))
+
+                self.tools_used.append(f"swarm: {len(agents)} agents")
             elif tool_name == "http_request":
                 # Display HTTP request details
                 method = tool_input.get("method", "GET")
@@ -571,10 +564,10 @@ class ReasoningHandler(PrintingCallbackHandler):
                 self.tools_used.append(f"think: {cycle_count} cycles")
             elif tool_input:
                 # Display tool parameters
-                key_params = list(tool_input.keys())[:2]
+                key_params = list(tool_input.keys())
                 if key_params:
                     params_str = ", ".join(
-                        f"{k}={str(tool_input[k])[:50]}{'...' if len(str(tool_input[k])) > 50 else ''}"
+                        f"{k}={str(tool_input[k])}"
                         for k in key_params
                     )
                     print(
@@ -983,6 +976,9 @@ Format this as a professional penetration testing report."""
 
         if not (agent and callable(agent)):
             raise ValueError("Agent not available for report generation")
+
+        # Add small delay to ensure tool results are processed
+        time.sleep(0.5)
 
         # Suppress output during generation
         original_stdout = sys.stdout
