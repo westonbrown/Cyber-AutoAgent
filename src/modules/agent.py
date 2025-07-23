@@ -17,8 +17,8 @@ from strands_tools.swarm import swarm
 
 from .system_prompts import get_system_prompt
 from .config import get_config_manager
-from .agent_handlers import ReasoningHandler
-from .utils import Colors, sanitize_target_name
+from .handlers import ReasoningHandler
+from .handlers.utils import Colors, sanitize_target_name
 from .memory_tools import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)

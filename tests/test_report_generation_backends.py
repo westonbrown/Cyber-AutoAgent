@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.agent_handlers import ReasoningHandler
+from modules.handlers import ReasoningHandler
 
 
 class TestReportGenerationWithFAISS:
@@ -42,7 +42,7 @@ class TestReportGenerationWithFAISS:
             }
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": mock_memories}
             mock_mem0_client.return_value = mock_client
@@ -85,7 +85,7 @@ class TestReportGenerationWithFAISS:
             "llm": {"provider": "ollama", "config": {"model": "llama3.2:3b"}},
         }
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": []}
             mock_mem0_client.return_value = mock_client
@@ -151,7 +151,7 @@ class TestReportGenerationWithOpenSearch:
             }
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": mock_memories}
             mock_mem0_client.return_value = mock_client
@@ -219,7 +219,7 @@ class TestReportGenerationWithMem0Platform:
             },
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": mock_memories}
             mock_mem0_client.return_value = mock_client
@@ -257,7 +257,7 @@ class TestReportGenerationBackendFallback:
             }
         ]
 
-        with patch("modules.agent_handlers.get_memory_client") as mock_get_client:
+        with patch("modules.handlers.reporting.get_memory_client") as mock_get_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": mock_memories}
             mock_get_client.return_value = mock_client
@@ -285,7 +285,7 @@ class TestReportGenerationBackendFallback:
             },
         }
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_mem0_client.side_effect = Exception("Invalid backend configuration")
 
             handler = ReasoningHandler(
@@ -319,7 +319,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": mock_memories}
             mock_mem0_client.return_value = mock_client
@@ -351,7 +351,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_client
@@ -383,7 +383,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.agent_handlers.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = mock_memories
             mock_mem0_client.return_value = mock_client

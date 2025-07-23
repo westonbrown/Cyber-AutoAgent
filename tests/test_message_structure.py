@@ -7,7 +7,7 @@ import os
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.utils import analyze_objective_completion
+from modules.handlers.utils import analyze_objective_completion
 
 
 class TestMessageStructure:
