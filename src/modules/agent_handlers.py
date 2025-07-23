@@ -82,6 +82,12 @@ class ReasoningHandler(PrintingCallbackHandler):
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
 
+        # Check for interrupt
+        if 'cyberautoagent' in sys.modules:
+            cyberautoagent = sys.modules['cyberautoagent']
+            if hasattr(cyberautoagent, 'interrupted') and cyberautoagent.interrupted:
+                raise KeyboardInterrupt("User interrupted operation")
+            
         # Check step limit
         if self.step_limit_reached:
             return
