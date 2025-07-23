@@ -59,6 +59,11 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.target = target
         self.output_base_dir = output_base_dir
         self.memory_config = memory_config
+        
+        # Swarm operation tracking
+        self.in_swarm_operation = False
+        self.swarm_agents = []  # List of agent names in current swarm
+        self.swarm_step_count = 0  # Track steps within swarm operation
 
         # Initialize operation ID
         if operation_id:
@@ -271,12 +276,23 @@ class ReasoningHandler(PrintingCallbackHandler):
         if self.last_was_reasoning:
             print()
 
-        # Display step header
+        # Display step header with swarm context
         print("%s" % ("─" * 80))
-        print(
-            "Step %d/%d: %s%s%s"
-            % (self.steps, self.max_steps, Colors.CYAN, tool_name, Colors.RESET)
-        )
+        
+        if self.in_swarm_operation:
+            self.swarm_step_count += 1
+            # Show swarm context in step header
+            print(
+                "Step %d/%d: %s%s%s %s[Swarm Sub-Step %d]%s"
+                % (self.steps, self.max_steps, Colors.CYAN, tool_name, Colors.RESET,
+                   Colors.DIM, self.swarm_step_count, Colors.RESET)
+            )
+        else:
+            print(
+                "Step %d/%d: %s%s%s"
+                % (self.steps, self.max_steps, Colors.CYAN, tool_name, Colors.RESET)
+            )
+        
         print("%s" % ("─" * 80))
 
         # Display tool execution details
@@ -472,6 +488,11 @@ class ReasoningHandler(PrintingCallbackHandler):
                 repetitive_window = tool_input.get("repetitive_handoff_detection_window", 8)
                 repetitive_min_agents = tool_input.get("repetitive_handoff_min_unique_agents", 3)
 
+                # Track swarm operation start
+                self.in_swarm_operation = True
+                self.swarm_agents = [agent.get("name", f"agent_{i+1}") for i, agent in enumerate(agents)]
+                self.swarm_step_count = 0
+                
                 print(
                     "↳ %sOrchestrating Swarm Intelligence%s"
                     % (Colors.BOLD, Colors.RESET)
@@ -546,10 +567,56 @@ class ReasoningHandler(PrintingCallbackHandler):
                 # Display HTTP request details
                 method = tool_input.get("method", "GET")
                 url = tool_input.get("url", "")
+                auth_type = tool_input.get("auth_type", "")
+                headers = tool_input.get("headers", {})
+                body = tool_input.get("body", "")
+                
                 print(
                     "↳ HTTP Request: %s%s %s%s"
                     % (Colors.MAGENTA, method, url, Colors.RESET)
                 )
+                
+                # Display authentication type if present
+                if auth_type:
+                    auth_display = auth_type
+                    if auth_type in ["Bearer", "token"] and tool_input.get("auth_env_var"):
+                        auth_display = f"{auth_type} (from {tool_input['auth_env_var']})"
+                    print("  %sAuth:%s %s" % (Colors.DIM, Colors.RESET, auth_display))
+                
+                # Display headers if present (excluding sensitive auth headers)
+                if headers:
+                    safe_headers = {}
+                    for key, value in headers.items():
+                        if key.lower() in ["authorization", "x-api-key", "cookie"]:
+                            # Mask sensitive values
+                            if len(str(value)) > 12:
+                                safe_headers[key] = f"{str(value)[:4]}...{str(value)[-4:]}"
+                            else:
+                                safe_headers[key] = "****"
+                        else:
+                            safe_headers[key] = value
+                    if safe_headers:
+                        print("  %sHeaders:%s %s" % (Colors.DIM, Colors.RESET, safe_headers))
+                
+                # Display body preview if present
+                if body:
+                    try:
+                        # Try to parse as JSON for better display
+                        import json
+                        json_body = json.loads(body)
+                        body_preview = json.dumps(json_body, indent=2)
+                        if len(body_preview) > 200:
+                            body_preview = body_preview[:200] + "..."
+                        print("  %sBody (JSON):%s" % (Colors.DIM, Colors.RESET))
+                        for line in body_preview.split('\n')[:5]:
+                            print("    %s" % line)
+                        if len(body_preview.split('\n')) > 5:
+                            print("    %s...%s" % (Colors.DIM, Colors.RESET))
+                    except:
+                        # Not JSON, show plain preview
+                        body_preview = body[:100] + "..." if len(body) > 100 else body
+                        print("  %sBody:%s %s" % (Colors.DIM, Colors.RESET, body_preview))
+                
                 self.tools_used.append(f"http_request: {method} {url}")
             elif tool_name == "think":
                 # Display thinking process
@@ -650,12 +717,16 @@ class ReasoningHandler(PrintingCallbackHandler):
                     if isinstance(content_block, dict) and "text" in content_block:
                         output_text = content_block.get("text", "")
                         if output_text.strip():
-                            # Display full swarm output
+                            # Enhanced display for swarm output
                             if tool_name == "swarm":
-                                print(
-                                    "%s[Swarm Output]%s" % (Colors.CYAN, Colors.RESET)
-                                )
-                                print(output_text)
+                                self._display_swarm_result(output_text, tool_result)
+                                # Mark end of swarm operation
+                                self.in_swarm_operation = False
+                                self.swarm_agents = []
+                                self.swarm_step_count = 0
+                            # Enhanced display for HTTP responses
+                            elif tool_name == "http_request":
+                                self._display_http_response(output_text, tool_result)
                             # Display truncated output
                             else:
                                 # Truncate long outputs
@@ -678,6 +749,280 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         # Display separator
         print("%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
+
+    def _display_http_response(self, output_text, tool_result):
+        """Display HTTP response in a structured, readable format"""
+        import json
+        import re
+        
+        # Parse the response text to extract components
+        lines = output_text.strip().split("\n")
+        status_code = None
+        headers = {}
+        body = ""
+        metrics = {}
+        redirects = None
+        
+        for i, line in enumerate(lines):
+            if line.startswith("Status Code:"):
+                status_code = line.split(":", 1)[1].strip()
+            elif line.startswith("Redirects:"):
+                redirects = line.split(":", 1)[1].strip()
+            elif line.startswith("Headers:"):
+                # Try to parse headers dict
+                headers_str = line.split(":", 1)[1].strip()
+                try:
+                    headers = eval(headers_str)  # Safe in this context as it's our own output
+                except:
+                    headers = {"raw": headers_str}
+            elif line.startswith("Body:"):
+                # Get everything after "Body: "
+                first_body_line = line.split(":", 1)[1].strip() if ":" in line else ""
+                if first_body_line:
+                    body = first_body_line
+                if i + 1 < len(lines):
+                    # Join all remaining lines as body
+                    body = "\n".join([first_body_line] + lines[i+1:])
+                    # Remove metrics if they were included
+                    if "\nMetrics:" in body:
+                        body = body.split("\nMetrics:")[0]
+                break
+            elif line.startswith("Metrics:"):
+                metrics_str = line.split(":", 1)[1].strip()
+                try:
+                    metrics = eval(metrics_str)
+                except:
+                    metrics = {"raw": metrics_str}
+        
+        # Display formatted response
+        if status_code:
+            # Determine status color
+            try:
+                code = int(status_code)
+                if 200 <= code < 300:
+                    status_color = Colors.GREEN
+                    status_icon = "✅"
+                elif 300 <= code < 400:
+                    status_color = Colors.YELLOW
+                    status_icon = "↻"
+                elif 400 <= code < 500:
+                    status_color = Colors.YELLOW
+                    status_icon = "⚠️"
+                else:
+                    status_color = Colors.RED
+                    status_icon = "❌"
+            except:
+                status_color = Colors.CYAN
+                status_icon = "ℹ️"
+            
+            print("%s %sHTTP %s%s" % (status_icon, status_color, status_code, Colors.RESET))
+        
+        # Display redirects if any
+        if redirects and "followed" in redirects:
+            print("  %s↻ %s%s" % (Colors.YELLOW, redirects, Colors.RESET))
+        
+        # Display headers
+        if headers and isinstance(headers, dict):
+            print("  %sHeaders:%s" % (Colors.DIM, Colors.RESET))
+            for key, value in headers.items():
+                if key != "raw":
+                    print("    %s%s:%s %s" % (Colors.DIM, key, Colors.RESET, value))
+        
+        # Display body
+        if body.strip():
+            print("  %sResponse:%s" % (Colors.DIM, Colors.RESET))
+            
+            # Try to detect and format JSON
+            try:
+                # Check if body looks like JSON
+                if body.strip().startswith('{') or body.strip().startswith('['):
+                    json_obj = json.loads(body)
+                    json_str = json.dumps(json_obj, indent=2)
+                    lines = json_str.split('\n')
+                    
+                    # Display formatted JSON with syntax highlighting
+                    for line in lines[:30]:  # Limit to 30 lines
+                        # Simple JSON syntax highlighting
+                        if '"' in line:
+                            # Highlight keys in cyan
+                            line = re.sub(r'"([^"]+)":', f'"{Colors.CYAN}\\1{Colors.RESET}":', line)
+                            # Highlight string values in green
+                            line = re.sub(r': "([^"]*)"', f': "{Colors.GREEN}\\1{Colors.RESET}"', line)
+                        # Highlight numbers in yellow
+                        line = re.sub(r': (\d+)', f': {Colors.YELLOW}\\1{Colors.RESET}', line)
+                        # Highlight booleans in magenta
+                        line = re.sub(r': (true|false)', f': {Colors.MAGENTA}\\1{Colors.RESET}', line)
+                        # Highlight null in red
+                        line = re.sub(r': (null)', f': {Colors.RED}\\1{Colors.RESET}', line)
+                        
+                        print("    %s" % line)
+                    
+                    if len(lines) > 30:
+                        print("    %s... (%d more lines)%s" % (Colors.DIM, len(lines) - 30, Colors.RESET))
+                else:
+                    # Not JSON, display as text
+                    body_lines = body.strip().split('\n')
+                    for line in body_lines[:20]:  # Limit to 20 lines
+                        print("    %s" % line)
+                    if len(body_lines) > 20:
+                        print("    %s... (%d more lines)%s" % (Colors.DIM, len(body_lines) - 20, Colors.RESET))
+            except:
+                # Failed to parse as JSON, display as plain text
+                body_lines = body.strip().split('\n')
+                for line in body_lines[:20]:  # Limit to 20 lines
+                    if len(line) > 120:
+                        print("    %s..." % line[:120])
+                    else:
+                        print("    %s" % line)
+                if len(body_lines) > 20:
+                    print("    %s... (%d more lines)%s" % (Colors.DIM, len(body_lines) - 20, Colors.RESET))
+        
+        # Display metrics if available
+        if metrics and isinstance(metrics, dict) and metrics.get("duration"):
+            print("  %s⏱ Duration: %.3fs%s" % (Colors.DIM, metrics["duration"], Colors.RESET))
+
+    def _display_swarm_result(self, output_text, tool_result):
+        """Display swarm execution results in a structured, readable format"""
+        import re
+        
+        lines = output_text.strip().split("\n")
+        
+        # Parse swarm result components
+        status = None
+        execution_time = None
+        team_size = None
+        iterations = None
+        collaboration_chain = None
+        agent_contributions = {}
+        final_result = ""
+        resource_usage = {}
+        
+        current_agent = None
+        current_content = []
+        in_agent_section = False
+        in_final_result = False
+        in_resource_section = False
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Parse status and metrics
+            if "**Status:**" in line:
+                status = line.split("**Status:**")[1].strip()
+            elif "**Execution Time:**" in line:
+                execution_time = line.split("**Execution Time:**")[1].strip()
+            elif "**Team Size:**" in line:
+                team_size = line.split("**Team Size:**")[1].strip()
+            elif "**Iterations:**" in line:
+                iterations = line.split("**Iterations:**")[1].strip()
+            elif "**Collaboration Chain:**" in line:
+                collaboration_chain = line.split("**Collaboration Chain:**")[1].strip()
+            
+            # Parse agent contributions
+            elif line.startswith("**") and line.endswith(":**") and "Individual Agent Contributions" not in line:
+                # Start of agent section
+                if current_agent and current_content:
+                    agent_contributions[current_agent] = "\n".join(current_content)
+                
+                # Extract agent name
+                agent_match = re.match(r'\*\*([^*]+):\*\*', line)
+                if agent_match:
+                    current_agent = agent_match.group(1).strip()
+                    current_content = []
+                    in_agent_section = True
+                    in_final_result = False
+                    in_resource_section = False
+                elif "Final Team Result" in line:
+                    if current_agent and current_content:
+                        agent_contributions[current_agent] = "\n".join(current_content)
+                    current_agent = None
+                    current_content = []
+                    in_final_result = True
+                    in_agent_section = False
+                    in_resource_section = False
+                elif "Team Resource Usage" in line:
+                    if current_agent and current_content:
+                        agent_contributions[current_agent] = "\n".join(current_content)
+                    elif in_final_result and current_content:
+                        final_result = "\n".join(current_content)
+                    current_agent = None
+                    current_content = []
+                    in_resource_section = True
+                    in_agent_section = False
+                    in_final_result = False
+            
+            elif in_agent_section and current_agent and line and not line.startswith("**"):
+                current_content.append(line)
+            elif in_final_result and line and not line.startswith("**"):
+                current_content.append(line)
+            elif in_resource_section and line.startswith("•"):
+                # Parse resource usage
+                if "Input tokens:" in line:
+                    resource_usage["input"] = line.split(":")[1].strip()
+                elif "Output tokens:" in line:
+                    resource_usage["output"] = line.split(":")[1].strip()
+                elif "Total tokens:" in line:
+                    resource_usage["total"] = line.split(":")[1].strip()
+        
+        # Handle remaining content
+        if current_agent and current_content:
+            agent_contributions[current_agent] = "\n".join(current_content)
+        elif in_final_result and current_content:
+            final_result = "\n".join(current_content)
+        
+        # Display formatted swarm results
+        print("%s🤖 Swarm Execution Complete%s" % (Colors.BOLD, Colors.RESET))
+        
+        # Display execution summary
+        if status:
+            status_color = Colors.GREEN if status == "completed" else Colors.YELLOW
+            print("  %sStatus:%s %s%s%s" % (Colors.DIM, Colors.RESET, status_color, status, Colors.RESET))
+        
+        if execution_time:
+            print("  %s⏱ Duration:%s %s" % (Colors.DIM, Colors.RESET, execution_time))
+        
+        if team_size and iterations:
+            print("  %s👥 Team:%s %s (%s iterations)" % (Colors.DIM, Colors.RESET, team_size, iterations))
+        
+        # Display collaboration chain
+        if collaboration_chain:
+            print("  %s🔗 Flow:%s %s" % (Colors.DIM, Colors.RESET, collaboration_chain))
+        
+        # Display individual agent contributions
+        if agent_contributions:
+            print("\n  %sAgent Contributions:%s" % (Colors.DIM, Colors.RESET))
+            for agent_name, content in agent_contributions.items():
+                # Format agent name nicely
+                display_name = agent_name.replace("_", " ").title()
+                print("    %s• %s:%s" % (Colors.CYAN, display_name, Colors.RESET))
+                
+                # Display content with proper indentation
+                content_lines = content.strip().split("\n")
+                for line in content_lines[:3]:  # Limit to first 3 lines per agent
+                    if line.strip():
+                        print("      %s" % line.strip())
+                if len(content_lines) > 3:
+                    print("      %s... (%d more lines)%s" % (Colors.DIM, len(content_lines) - 3, Colors.RESET))
+        
+        # Display final consolidated result
+        if final_result.strip():
+            print("\n  %sFinal Result:%s" % (Colors.DIM, Colors.RESET))
+            result_lines = final_result.strip().split("\n")
+            for line in result_lines[:5]:  # Limit to first 5 lines
+                if line.strip():
+                    print("    %s" % line.strip())
+            if len(result_lines) > 5:
+                print("    %s... (%d more lines)%s" % (Colors.DIM, len(result_lines) - 5, Colors.RESET))
+        
+        # Display resource usage
+        if resource_usage:
+            print("\n  %s📊 Resource Usage:%s" % (Colors.DIM, Colors.RESET))
+            if "input" in resource_usage:
+                print("    Input: %s" % resource_usage["input"])
+            if "output" in resource_usage:
+                print("    Output: %s" % resource_usage["output"])
+            if "total" in resource_usage:
+                print("    Total: %s" % resource_usage["total"])
 
     def _track_tool_effectiveness(self, tool_id, tool_result):
         """Track tool effectiveness for analysis"""

@@ -27,6 +27,7 @@ import re
 import base64
 from datetime import datetime
 import requests
+import threading
 from opentelemetry import trace
 
 # Optional telemetry import
@@ -148,15 +149,44 @@ def signal_handler(signum, frame):
     """Handle interrupt signals gracefully"""
     global interrupted
     interrupted = True
-    print("\n\033[93m[!] Interrupt received. Stopping agent gracefully...\033[0m")
-    # Don't raise KeyboardInterrupt immediately, let the current operation finish
+    
+    # Determine signal type for appropriate message
+    if signum == signal.SIGINT:
+        signal_name = "SIGINT (Ctrl+C)"
+    elif signum == signal.SIGTSTP:
+        signal_name = "SIGTSTP (Ctrl+Z)"
+    else:
+        signal_name = f"Signal {signum}"
+    
+    print(f"\n\033[93m[!] {signal_name} received. Stopping agent gracefully...\033[0m")
+    
+    # For swarm operations, we need to be more forceful
+    # Check if we're in a swarm operation by looking at the call stack
+    import traceback
+    stack = traceback.extract_stack()
+    in_swarm = any('swarm' in str(frame_info.filename).lower() or 
+                   'swarm' in str(frame_info.name).lower() 
+                   for frame_info in stack)
+    
+    if in_swarm:
+        print("\033[91m[!] Swarm operation detected - forcing immediate termination\033[0m")
+        # Force exit after a short delay to allow cleanup
+        def force_exit():
+            time.sleep(2)
+            print("\033[91m[!] Force terminating swarm operation\033[0m")
+            os._exit(1)
+        threading.Thread(target=force_exit, daemon=True).start()
+    
+    # Raise KeyboardInterrupt to interrupt current operation
+    raise KeyboardInterrupt("User interrupted operation")
 
 def main():
     """Main execution function"""
     global interrupted
     
-    # Set up signal handler
+    # Set up signal handlers for both Ctrl+C and Ctrl+Z
     signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTSTP, signal_handler)
 
     # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
@@ -209,7 +239,14 @@ def main():
     parser.add_argument(
         "--memory-path",
         type=str,
-        help="Path to memory store. Use 'none' to start fresh without loading previous memory. Default: auto-loads from outputs/<target>/memory if exists",
+        help="Path to existing FAISS memory store to load past memories (e.g., /outputs/target_name/OP_20240320_101530)",
+    )
+    parser.add_argument(
+        "--memory-mode",
+        type=str,
+        choices=["auto", "fresh"],
+        default="auto",
+        help="Memory initialization mode: 'auto' loads existing memory if found (default), 'fresh' starts with new memory",
     )
     parser.add_argument(
         "--keep-memory",
@@ -366,6 +403,7 @@ def main():
             region_name=args.region,
             provider=args.provider,
             memory_path=args.memory_path,
+            memory_mode=args.memory_mode,
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 
