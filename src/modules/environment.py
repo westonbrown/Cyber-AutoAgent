@@ -139,6 +139,7 @@ class TeeOutput:
         self.terminal = stream
         self.log = open(log_file, "a", encoding="utf-8", buffering=1)
         self.lock = threading.Lock()
+        self.line_buffer = ""  # Buffer for incomplete lines
 
     def write(self, message):
         with self.lock:
@@ -152,11 +153,34 @@ class TeeOutput:
                 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
                 clean_message = ansi_escape.sub('', message)
                 
-                # Replace carriage returns with newlines for proper log formatting
-                clean_message = clean_message.replace('\r\n', '\n').replace('\r', '\n')
+                # Handle carriage returns properly
+                # If message contains \r without \n, it's likely overwriting the same line
+                if '\r' in clean_message and '\r\n' not in clean_message:
+                    # Split by \r and take the last part (what would be visible on screen)
+                    parts = clean_message.split('\r')
+                    # Keep only the last part after all overwrites
+                    clean_message = parts[-1]
+                    # If we had buffered content, clear it as it's being overwritten
+                    self.line_buffer = ""
                 
-                self.log.write(clean_message)
-                self.log.flush()
+                # Add to line buffer
+                self.line_buffer += clean_message
+                
+                # Write complete lines to log
+                if '\n' in self.line_buffer:
+                    lines = self.line_buffer.split('\n')
+                    # Write all complete lines
+                    for line in lines[:-1]:
+                        # Strip any leading spaces that might cause indentation issues
+                        # but preserve intentional indentation (2+ spaces)
+                        if line and len(line) - len(line.lstrip()) > 30:
+                            # This line has excessive leading spaces, likely from positioning
+                            line = line.lstrip()
+                        self.log.write(line + '\n')
+                    # Keep the incomplete line in buffer
+                    self.line_buffer = lines[-1]
+                    self.log.flush()
+                    
             except (ValueError, OSError):
                 # Handle closed file gracefully
                 pass
@@ -172,6 +196,13 @@ class TeeOutput:
     def close(self):
         with self.lock:
             try:
+                # Flush any remaining buffered content
+                if self.line_buffer:
+                    # Strip excessive leading spaces from final buffer
+                    if len(self.line_buffer) - len(self.line_buffer.lstrip()) > 30:
+                        self.line_buffer = self.line_buffer.lstrip()
+                    self.log.write(self.line_buffer)
+                    self.log.flush()
                 self.log.close()
             except (OSError, AttributeError):
                 pass
