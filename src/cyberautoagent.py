@@ -19,6 +19,7 @@ License: MIT
 import warnings
 import os
 import sys
+import signal
 import argparse
 import time
 import atexit
@@ -140,8 +141,22 @@ def setup_observability(logger):
     return True
 
 
+# Global flag for interrupt handling
+interrupted = False
+
+def signal_handler(signum, frame):
+    """Handle interrupt signals gracefully"""
+    global interrupted
+    interrupted = True
+    print("\n\033[93m[!] Interrupt received. Stopping agent gracefully...\033[0m")
+    # Don't raise KeyboardInterrupt immediately, let the current operation finish
+
 def main():
     """Main execution function"""
+    global interrupted
+    
+    # Set up signal handler
+    signal.signal(signal.SIGINT, signal_handler)
 
     # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
@@ -194,7 +209,7 @@ def main():
     parser.add_argument(
         "--memory-path",
         type=str,
-        help="Path to existing FAISS memory store to load past memories (e.g., /outputs/target_name/OP_20240320_101530)",
+        help="Path to memory store. Use 'none' to start fresh without loading previous memory. Default: auto-loads from outputs/<target>/memory if exists",
     )
     parser.add_argument(
         "--keep-memory",
@@ -368,7 +383,7 @@ def main():
             current_message = initial_prompt
 
             # Main autonomous execution loop
-            while True:
+            while not interrupted:
                 try:
                     # For newer strands versions, pass the prompt directly without messages on first call
                     if not messages:
@@ -605,7 +620,8 @@ def main():
 
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")
-        sys.exit(1)
+        # Skip cleanup on interrupt for faster exit
+        os._exit(1)
 
     except Exception as e:
         print_status(f"\nOperation failed: {str(e)}", "ERROR")
@@ -613,6 +629,11 @@ def main():
         sys.exit(1)
 
     finally:
+        # Skip cleanup if interrupted
+        if interrupted:
+            print_status("Exiting immediately due to interrupt", "WARNING")
+            os._exit(1)
+            
         # Ensure final report is generated if callback_handler exists and report not yet generated
         if callback_handler and not getattr(
             callback_handler, "report_generated", False
