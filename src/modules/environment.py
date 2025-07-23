@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -141,10 +142,20 @@ class TeeOutput:
 
     def write(self, message):
         with self.lock:
+            # Write to terminal as-is
             self.terminal.write(message)
             self.terminal.flush()
+            
+            # Clean message for log file
             try:
-                self.log.write(message)
+                # Remove ANSI escape sequences for log file
+                ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                clean_message = ansi_escape.sub('', message)
+                
+                # Replace carriage returns with newlines for proper log formatting
+                clean_message = clean_message.replace('\r\n', '\n').replace('\r', '\n')
+                
+                self.log.write(clean_message)
                 self.log.flush()
             except (ValueError, OSError):
                 # Handle closed file gracefully
