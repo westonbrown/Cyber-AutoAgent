@@ -108,15 +108,19 @@ def create_output_directory(path: str) -> bool:
 
 # ANSI color codes for terminal output
 class Colors:
-    BLUE = "\033[94m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    CYAN = "\033[96m"
-    MAGENTA = "\033[95m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RESET = "\033[0m"
+    # Check if output is to a terminal (not redirected)
+    _is_terminal = hasattr(os.sys.stdout, 'isatty') and os.sys.stdout.isatty()
+    
+    # Define colors only if outputting to terminal
+    BLUE = "\033[94m" if _is_terminal else ""
+    GREEN = "\033[92m" if _is_terminal else ""
+    YELLOW = "\033[93m" if _is_terminal else ""
+    RED = "\033[91m" if _is_terminal else ""
+    CYAN = "\033[96m" if _is_terminal else ""
+    MAGENTA = "\033[95m" if _is_terminal else ""
+    BOLD = "\033[1m" if _is_terminal else ""
+    DIM = "\033[2m" if _is_terminal else ""
+    RESET = "\033[0m" if _is_terminal else ""
 
 
 def print_banner():

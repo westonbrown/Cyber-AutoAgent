@@ -194,6 +194,7 @@ def create_agent(
     region_name: Optional[str] = None,
     provider: str = "bedrock",
     memory_path: Optional[str] = None,
+    memory_mode: str = "auto",
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
@@ -242,7 +243,14 @@ def create_agent(
         )
 
     # Check for existing memories before initializing to avoid race conditions
-    has_existing_memories = check_existing_memories(target, provider)
+    # Skip check if user explicitly wants fresh memory
+    if memory_mode == "fresh":
+        has_existing_memories = False
+        print(
+            f"{Colors.YELLOW}[*] Using fresh memory mode - ignoring any existing memories{Colors.RESET}"
+        )
+    else:
+        has_existing_memories = check_existing_memories(target, provider)
 
     # Initialize memory system
     target_name = sanitize_target_name(target)
