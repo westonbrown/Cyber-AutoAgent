@@ -604,10 +604,15 @@ cyber-autoagent/
 │       ├── config.py          # Centralized configuration system
 │       ├── memory_tools.py    # Mem0 memory management
 │       ├── system_prompts.py  # AI prompts and configurations
-│       ├── agent_handlers.py  # Reasoning and callback handlers
 │       ├── environment.py     # Tool discovery and logging
 │       ├── evaluation.py      # Ragas evaluation system
-│       └── utils.py           # UI utilities and analysis
+│       └── handlers/          # Callback handling and UI utilities
+│           ├── base.py        # Base classes and constants
+│           ├── callback.py    # Main ReasoningHandler class
+│           ├── display.py     # Result display formatting
+│           ├── tools.py       # Tool execution handling
+│           ├── reporting.py   # Report generation
+│           └── utils.py       # UI utilities and analysis
 ├── docs/                      # Documentation
 │   ├── architecture.md       # Agent architecture and tools
 │   ├── memory.md             # Memory system (Mem0 backends)

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Utility functions for the handlers module.
+
+This module contains general utility functions for file operations,
+output formatting, and message analysis.
+"""
 
 import os
 import re
@@ -108,9 +114,11 @@ def create_output_directory(path: str) -> bool:
 
 # ANSI color codes for terminal output
 class Colors:
+    """ANSI color codes for terminal output formatting."""
+
     # Check if output is to a terminal (not redirected)
-    _is_terminal = hasattr(os.sys.stdout, 'isatty') and os.sys.stdout.isatty()
-    
+    _is_terminal = hasattr(os.sys.stdout, "isatty") and os.sys.stdout.isatty()
+
     # Define colors only if outputting to terminal
     BLUE = "\033[94m" if _is_terminal else ""
     GREEN = "\033[92m" if _is_terminal else ""
@@ -158,7 +166,7 @@ def print_banner():
 
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
-    """Print formatted section with optional emoji"""
+    """Print formatted section with optional emoji."""
     print("\n%s" % ("─" * 60))
     print("%s %s%s%s%s" % (emoji, color, Colors.BOLD, title, Colors.RESET))
     print("%s" % ("─" * 60))
@@ -166,7 +174,7 @@ def print_section(title, content, color=Colors.BLUE, emoji=""):
 
 
 def print_status(message, status="INFO"):
-    """Print status message with color coding and emojis"""
+    """Print status message with color coding and emojis."""
     status_config = {
         "INFO": (Colors.BLUE, "ℹ️"),
         "SUCCESS": (Colors.GREEN, "✅"),
@@ -226,9 +234,7 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
 
                     # Extract any confidence or completion percentage mentioned
                     confidence_match = re.search(r"(\d+)%", content)
-                    confidence = (
-                        int(confidence_match.group(1)) if confidence_match else 100
-                    )
+                    confidence = int(confidence_match.group(1)) if confidence_match else 100
 
                     return (
                         True,

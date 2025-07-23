@@ -40,7 +40,7 @@ except ImportError:
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
 from modules.config import get_config_manager
-from modules.utils import (
+from modules.handlers.utils import (
     Colors,
     print_banner,
     print_section,
