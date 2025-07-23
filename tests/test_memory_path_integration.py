@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 from modules.memory_tools import Mem0ServiceClient
 from modules.environment import clean_operation_memory
-from modules.utils import sanitize_target_name, get_output_path
+from modules.handlers.utils import sanitize_target_name, get_output_path
 
 
 class TestMemoryPathIntegration:

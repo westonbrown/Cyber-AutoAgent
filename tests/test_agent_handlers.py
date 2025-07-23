@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.agent_handlers import ReasoningHandler
+from modules.handlers import ReasoningHandler
 
 
 class TestReasoningHandlerMemoryConfig:

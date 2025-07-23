@@ -4,7 +4,7 @@
 import os
 import tempfile
 
-from modules.utils import (
+from modules.handlers.utils import (
     get_output_path,
     sanitize_target_name,
     validate_output_path,
