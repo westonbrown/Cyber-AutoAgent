@@ -29,13 +29,9 @@ import threading
 from datetime import datetime
 import requests
 from opentelemetry import trace
+from strands.telemetry import StrandsTelemetry
 
-# Optional telemetry import
-try:
-    from strands.telemetry import StrandsTelemetry
-except ImportError:
-    StrandsTelemetry = None
-
+from strands.telemetry.tracer import get_tracer
 # Local imports
 from modules.agent import create_agent
 from modules.system_prompts import get_initial_prompt, get_continuation_prompt
@@ -423,13 +419,29 @@ def main():
             # Main autonomous execution loop
             while not interrupted:
                 try:
-                    # For newer strands versions, pass the prompt directly without messages on first call
-                    if not messages:
-                        # First call - don't pass messages parameter
-                        result = agent(current_message)
-                    else:
-                        # Subsequent calls - pass messages
-                        result = agent(current_message, messages=messages)
+
+                    tracer = get_tracer()
+                    
+                    # Start agent span with our custom name
+                    agent_span = tracer.start_agent_span(
+                        message={"content": current_message},
+                        agent_name=f"Cyber-AutoAgent {local_operation_id}",
+                        model_id=agent.model.model_id if hasattr(agent.model, 'model_id') else None,
+                        tools=agent.tool_names,
+                    )
+                    
+                    try:
+                        # For newer strands versions, pass the prompt directly without messages on first call
+                        if not messages:
+                            # First call - don't pass messages parameter
+                            result = agent(current_message)
+                        else:
+                            # Subsequent calls - pass messages
+                            result = agent(current_message, messages=messages)
+                    finally:
+                        # End the agent span
+                        if agent_span:
+                            tracer.end_agent_span(agent_span, response=result)
 
                     # Update conversation history
                     # Structure content properly for Strands integration
