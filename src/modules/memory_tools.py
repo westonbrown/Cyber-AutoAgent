@@ -364,13 +364,13 @@ class Mem0ServiceClient:
             # For fresh starts, just show the persistence message
             print("    Memory will persist across operations for this target")
 
-        logger.debug(f"Initializing Mem0Memory with config: {merged_config}")
+        logger.debug("Initializing Mem0Memory with config: %s", merged_config)
         try:
             mem0_client = Mem0Memory.from_config(config_dict=merged_config)
             logger.debug("Mem0Memory client initialized successfully")
             return mem0_client
         except Exception as e:
-            logger.error(f"Failed to initialize Mem0Memory client: {e}")
+            logger.error("Failed to initialize Mem0Memory client: %s", e)
             raise
 
     def _merge_config(
@@ -449,11 +449,11 @@ class Mem0ServiceClient:
 
         try:
             result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
-            logger.debug(f"mem0.get_all returned type: {type(result)}")
-            logger.debug(f"mem0.get_all returned: {result}")
+            logger.debug("mem0.get_all returned type: %s", type(result))
+            logger.debug("mem0.get_all returned: %s", result)
             return result
         except Exception as e:
-            logger.error(f"Error in mem0.get_all: {e}")
+            logger.error("Error in mem0.get_all: %s", e)
             raise
 
     def search_memories(
@@ -525,23 +525,23 @@ class Mem0ServiceClient:
         try:
             # Get all memories for the user
             logger = logging.getLogger("CyberAutoAgent")
-            logger.debug(f"Getting memory overview for user_id: {user_id}")
+            logger.debug("Getting memory overview for user_id: %s", user_id)
 
             memories_response = self.list_memories(user_id=user_id)
             logger.debug(
                 f"Memory overview raw response type: {type(memories_response)}"
             )
-            logger.debug(f"Memory overview raw response: {memories_response}")
+            logger.debug("Memory overview raw response: %s", memories_response)
 
             # Parse response format
             if isinstance(memories_response, dict):
                 raw_memories = memories_response.get(
                     "memories", memories_response.get("results", [])
                 )
-                logger.debug(f"Dict response: found {len(raw_memories)} memories")
+                logger.debug("Dict response: found %d memories", len(raw_memories))
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
-                logger.debug(f"List response: found {len(raw_memories)} memories")
+                logger.debug("List response: found %d memories", len(raw_memories))
             else:
                 raw_memories = []
                 logger.debug("Unexpected response type, using empty list")
@@ -1031,8 +1031,8 @@ def mem0_memory(
 
             # Debug logging to understand the response structure
             logger = logging.getLogger("CyberAutoAgent")
-            logger.debug(f"Memory list raw response type: {type(memories)}")
-            logger.debug(f"Memory list raw response: {memories}")
+            logger.debug("Memory list raw response type: %s", type(memories))
+            logger.debug("Memory list raw response: %s", memories)
 
             # Normalize to list with better error handling
             if memories is None:
@@ -1040,15 +1040,15 @@ def mem0_memory(
                 logger.debug("memories is None, returning empty list")
             elif isinstance(memories, list):
                 results_list = memories
-                logger.debug(f"memories is list with {len(memories)} items")
+                logger.debug("memories is list with %d items", len(memories))
             elif isinstance(memories, dict):
                 # Check for different possible dict structures
                 if "results" in memories:
                     results_list = memories.get("results", [])
-                    logger.debug(f"Found 'results' key with {len(results_list)} items")
+                    logger.debug("Found 'results' key with %d items", len(results_list))
                 elif "memories" in memories:
                     results_list = memories.get("memories", [])
-                    logger.debug(f"Found 'memories' key with {len(results_list)} items")
+                    logger.debug("Found 'memories' key with %d items", len(results_list))
                 else:
                     # If dict doesn't have expected keys, treat as single memory
                     results_list = [memories] if memories else []
@@ -1057,7 +1057,7 @@ def mem0_memory(
                     )
             else:
                 results_list = []
-                logger.debug(f"Unexpected response type: {type(memories)}")
+                logger.debug("Unexpected response type: %s", type(memories))
 
             if not strands_dev:
                 panel = format_list_response(results_list)
@@ -1108,7 +1108,7 @@ def mem0_memory(
 
     except Exception as e:
         error_msg = f"Error: {str(e)}"
-        if not os.environ.get("BYPASS_TOOL_CONSENT", "").lower() == "true":
+        if os.environ.get("BYPASS_TOOL_CONSENT", "").lower() != "true":
             error_panel = Panel(
                 Text(str(e), style="red"),
                 title="❌ Memory Operation Error",

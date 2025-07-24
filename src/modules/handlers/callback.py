@@ -352,7 +352,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             objective: The operation objective
         """
         generate_final_report(
-            handler_state=self.state,
+            handler_state=self,  # Pass the full handler instead of just state
             agent=agent,
             target=self.target,
             objective=objective,
@@ -387,6 +387,31 @@ class ReasoningHandler(PrintingCallbackHandler):
             True if step limit has been reached
         """
         return self.state.step_limit_reached
+    
+    def get_summary(self) -> Dict[str, Any]:
+        """Generate operation summary.
+        
+        Returns:
+            Dictionary with operation summary statistics
+        """
+        return {
+            "total_steps": self.state.steps,
+            "tools_created": len(self.state.created_tools),
+            "evidence_collected": self.state.memory_operations,
+            "capability_expansion": self.state.created_tools,
+            "memory_operations": self.state.memory_operations,
+            "operation_id": self.state.operation_id,
+        }
+    
+    def get_evidence_summary(self) -> List[str]:
+        """Get a summary of key evidence collected.
+        
+        Returns:
+            List of evidence summary strings
+        """
+        # This would typically return actual evidence from memory
+        # For now, return empty list as placeholder
+        return []
 
     def trigger_evaluation(self, agent_trace_id: str) -> None:
         """Trigger evaluation for the operation if enabled.
@@ -418,14 +443,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                         trace_id=agent_trace_id
                     ))
                 except Exception as e:
-                    logger.error(f"Error running evaluation: {e}")
+                    logger.error("Error running evaluation: %s", e)
 
             self.state.evaluation_thread = threading.Thread(target=run_evaluation)
             self.state.evaluation_thread.daemon = True
             self.state.evaluation_thread.start()
 
         except Exception as e:
-            logger.error(f"Error triggering evaluation: {e}")
+            logger.error("Error triggering evaluation: %s", e)
 
     @property
     def operation_id(self) -> str:

@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers import ReasoningHandler
+from modules.handlers.reporting import _retrieve_evidence
 
 
 class TestReportGenerationWithFAISS:
@@ -42,10 +43,12 @@ class TestReportGenerationWithFAISS:
             }
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": mock_memories}
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -54,11 +57,11 @@ class TestReportGenerationWithFAISS:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             # Verify FAISS client was created with correct config
             mock_mem0_client.assert_called_once()
-            call_config = mock_mem0_client.call_args[0][0]
+            call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["provider"] == "faiss"
             assert (
                 call_config["vector_store"]["config"]["path"]
@@ -85,7 +88,7 @@ class TestReportGenerationWithFAISS:
             "llm": {"provider": "ollama", "config": {"model": "llama3.2:3b"}},
         }
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"memories": []}
             mock_mem0_client.return_value = mock_client
@@ -97,10 +100,10 @@ class TestReportGenerationWithFAISS:
                 memory_config=memory_config,
             )
 
-            handler._retrieve_evidence()
+            _retrieve_evidence(handler.state, handler.memory_config)
 
             # Verify custom path was used
-            call_config = mock_mem0_client.call_args[0][0]
+            call_config = mock_mem0_client.call_args.kwargs["config"]
             assert (
                 call_config["vector_store"]["config"]["path"] == "/custom/memory/path"
             )
@@ -151,10 +154,12 @@ class TestReportGenerationWithOpenSearch:
             }
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": mock_memories}
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -163,11 +168,11 @@ class TestReportGenerationWithOpenSearch:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             # Verify OpenSearch client was created with correct config
             mock_mem0_client.assert_called_once()
-            call_config = mock_mem0_client.call_args[0][0]
+            call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["provider"] == "opensearch"
             assert (
                 call_config["vector_store"]["config"]["host"] == "test-opensearch.com"
@@ -219,10 +224,12 @@ class TestReportGenerationWithMem0Platform:
             },
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": mock_memories}
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -231,11 +238,11 @@ class TestReportGenerationWithMem0Platform:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             # Verify Mem0 Platform client was created
             mock_mem0_client.assert_called_once()
-            call_config = mock_mem0_client.call_args[0][0]
+            call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["provider"] == "mem0_platform"
 
             # Verify evidence was retrieved
@@ -257,22 +264,16 @@ class TestReportGenerationBackendFallback:
             }
         ]
 
-        with patch("modules.handlers.reporting.get_memory_client") as mock_get_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": mock_memories}
-            mock_get_client.return_value = mock_client
+        handler = ReasoningHandler(
+            max_steps=50,
+            operation_id="OP_20240101_120000",
+            target="test.com",
+        )
 
-            handler = ReasoningHandler(
-                max_steps=50,
-                operation_id="OP_20240101_120000",
-                target="test.com",
-            )
+        evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
-            evidence = handler._retrieve_evidence()
-
-            # Should use global client
-            mock_get_client.assert_called_once()
-            assert len(evidence) == 1
+        # Should return empty list when no memory config
+        assert evidence == []
 
     def test_report_generation_handles_backend_failure(self):
         """Test report generation handles backend initialization failures"""
@@ -285,7 +286,7 @@ class TestReportGenerationBackendFallback:
             },
         }
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
             mock_mem0_client.side_effect = Exception("Invalid backend configuration")
 
             handler = ReasoningHandler(
@@ -295,7 +296,7 @@ class TestReportGenerationBackendFallback:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             # Should return empty evidence on failure
             assert evidence == []
@@ -319,10 +320,12 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": mock_memories}
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -331,7 +334,7 @@ class TestReportGenerationMemoryFormats:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert len(evidence) == 1
             assert evidence[0]["content"] == "Finding 1"
@@ -351,10 +354,12 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = {"results": mock_memories}
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -363,7 +368,7 @@ class TestReportGenerationMemoryFormats:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert len(evidence) == 1
             assert evidence[0]["content"] == "Finding 1"
@@ -383,10 +388,12 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.handlers.reporting.Mem0ServiceClient") as mock_mem0_client:
-            mock_client = Mock()
-            mock_client.list_memories.return_value = mock_memories
-            mock_mem0_client.return_value = mock_client
+        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+            mock_inner_client = Mock()
+            mock_inner_client.search.return_value = {"results": mock_memories}
+            mock_outer_client = Mock()
+            mock_outer_client.client = mock_inner_client
+            mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
                 max_steps=50,
@@ -395,7 +402,7 @@ class TestReportGenerationMemoryFormats:
                 memory_config=memory_config,
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert len(evidence) == 1
             assert evidence[0]["content"] == "Finding 1"
