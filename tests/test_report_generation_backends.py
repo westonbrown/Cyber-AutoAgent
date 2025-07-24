@@ -44,10 +44,8 @@ class TestReportGenerationWithFAISS:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
@@ -90,7 +88,7 @@ class TestReportGenerationWithFAISS:
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
-            mock_client.list_memories.return_value = {"memories": []}
+            mock_client.list_memories.return_value = {"results": []}
             mock_mem0_client.return_value = mock_client
 
             handler = ReasoningHandler(
@@ -155,10 +153,8 @@ class TestReportGenerationWithOpenSearch:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
@@ -225,10 +221,8 @@ class TestReportGenerationWithMem0Platform:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
@@ -321,10 +315,8 @@ class TestReportGenerationMemoryFormats:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
@@ -355,10 +347,8 @@ class TestReportGenerationMemoryFormats:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
@@ -389,10 +379,8 @@ class TestReportGenerationMemoryFormats:
         ]
 
         with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
-            mock_inner_client = Mock()
-            mock_inner_client.search.return_value = {"results": mock_memories}
             mock_outer_client = Mock()
-            mock_outer_client.client = mock_inner_client
+            mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
 
             handler = ReasoningHandler(
