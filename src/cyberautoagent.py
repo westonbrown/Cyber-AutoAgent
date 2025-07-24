@@ -33,9 +33,9 @@ from strands.telemetry import StrandsTelemetry
 
 from strands.telemetry.tracer import get_tracer
 # Local imports
-from modules.agent import create_agent
-from modules.system_prompts import get_initial_prompt, get_continuation_prompt
-from modules.config import get_config_manager
+from modules.agents.cyber_autoagent import create_agent
+from modules.prompts.system import get_initial_prompt, get_continuation_prompt
+from modules.config.manager import get_config_manager
 from modules.handlers.utils import (
     Colors,
     print_banner,
@@ -45,7 +45,7 @@ from modules.handlers.utils import (
     get_output_path,
     sanitize_target_name,
 )
-from modules.environment import auto_setup, setup_logging, clean_operation_memory
+from modules.config.environment import auto_setup, setup_logging, clean_operation_memory
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 

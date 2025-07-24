@@ -43,7 +43,7 @@ class TestReportGenerationWithFAISS:
             }
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
@@ -86,7 +86,7 @@ class TestReportGenerationWithFAISS:
             "llm": {"provider": "ollama", "config": {"model": "llama3.2:3b"}},
         }
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_client = Mock()
             mock_client.list_memories.return_value = {"results": []}
             mock_mem0_client.return_value = mock_client
@@ -152,7 +152,7 @@ class TestReportGenerationWithOpenSearch:
             }
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
@@ -220,7 +220,7 @@ class TestReportGenerationWithMem0Platform:
             },
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
@@ -280,7 +280,7 @@ class TestReportGenerationBackendFallback:
             },
         }
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_mem0_client.side_effect = Exception("Invalid backend configuration")
 
             handler = ReasoningHandler(
@@ -314,7 +314,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
@@ -346,7 +346,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client
@@ -378,7 +378,7 @@ class TestReportGenerationMemoryFormats:
             }
         ]
 
-        with patch("modules.memory_tools.Mem0ServiceClient") as mock_mem0_client:
+        with patch("modules.tools.memory.Mem0ServiceClient") as mock_mem0_client:
             mock_outer_client = Mock()
             mock_outer_client.list_memories.return_value = {"results": mock_memories}
             mock_mem0_client.return_value = mock_outer_client

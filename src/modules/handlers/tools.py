@@ -438,19 +438,19 @@ def _display_handoff_tool(tool_input: Dict[str, Any], state: Any) -> None:
     """Display agent handoff details."""
     target_agent = tool_input.get("agent_name", "unknown")
     message = tool_input.get("message", "")
-    
+
     # Format target agent name for display
     target_display = target_agent.replace("_", " ").title()
-    
+
     print("↳ %sHandoff to: %s%s%s" % (Colors.MAGENTA, Colors.YELLOW, target_display, Colors.RESET))
-    
+
     # Show brief message preview
     if message:
         message_preview = message[:150]
         if len(message) > 150:
             message_preview += "..."
         print("  %sMessage:%s %s" % (Colors.DIM, Colors.RESET, message_preview))
-    
+
     state.tools_used.append(f"handoff_to_agent: {target_agent}")
 
 

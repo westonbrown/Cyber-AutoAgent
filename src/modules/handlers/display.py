@@ -192,7 +192,7 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
         # Skip the header emoji lines
         if line.strip().startswith("🎯") or line.strip().startswith("📊"):
             continue
-            
+
         # Status line - handle markdown bold format
         if "**Status:**" in line:
             status_match = re.search(r"\*\*Status:\*\*\s*(.+)", line)
@@ -209,7 +209,7 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             team_match = re.search(r"\*\*Team Size:\*\*\s*(\d+)\s*agents", line)
             if team_match:
                 team_size = int(team_match.group(1))
-            
+
         elif "**Iterations:**" in line:
             iter_match = re.search(r"\*\*Iterations:\*\*\s*(\d+)", line)
             if iter_match:
@@ -222,7 +222,14 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
                 collaboration_chain = chain_match.group(1).strip()
 
         # Agent sections - look for bold agent names in uppercase
-        elif line.strip().startswith("**") and line.strip().endswith(":**") and not any(header in line for header in ["Individual Agent Contributions", "Final Team Result", "Team Resource Usage"]):
+        elif (
+            line.strip().startswith("**")
+            and line.strip().endswith(":**")
+            and not any(
+                header in line
+                for header in ["Individual Agent Contributions", "Final Team Result", "Team Resource Usage"]
+            )
+        ):
             # Start of agent section
             if current_agent and current_content:
                 agent_contributions[current_agent] = "\n".join(current_content)
@@ -235,11 +242,11 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
                 in_agent_section = True
                 in_final_result = False
                 in_resource_section = False
-                
+
         elif "Individual Agent Contributions:" in line:
             # Just a header, continue
             pass
-            
+
         elif "Final Team Result:" in line:
             if current_agent and current_content:
                 agent_contributions[current_agent] = "\n".join(current_content)
@@ -248,7 +255,7 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             in_final_result = True
             in_agent_section = False
             in_resource_section = False
-            
+
         elif "Team Resource Usage:" in line:
             if current_agent and current_content:
                 agent_contributions[current_agent] = "\n".join(current_content)
@@ -277,7 +284,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
         agent_contributions[current_agent] = "\n".join(current_content)
     elif in_final_result and current_content:
         final_result = "\n".join(current_content)
-
 
     # Display formatted results
     print("\n%s🤖 Swarm Execution Complete%s" % (Colors.BOLD, Colors.RESET))
@@ -334,6 +340,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             print("    • Output tokens: %s%d%s" % (Colors.YELLOW, resource_usage["output_tokens"], Colors.RESET))
         if "total_tokens" in resource_usage:
             print("    • Total tokens: %s%d%s" % (Colors.BOLD, resource_usage["total_tokens"], Colors.RESET))
-    
+
     # Always print a separator at the end to clearly show completion
     print("\n%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))

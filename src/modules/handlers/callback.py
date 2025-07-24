@@ -239,7 +239,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             if agent_name in self.state.swarm_agents:
                 self.state.current_swarm_agent = agent_name
                 return
-                
+
         # Check for node_id which might contain agent name
         if "node_id" in event_data:
             node_id = event_data.get("node_id", "")
@@ -267,7 +267,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 if agent_name in str(agent_value):
                                     self.state.current_swarm_agent = agent_name
                                     return
-                
+
                 # Check for role-based agent identification
                 role = message.get("role", "")
                 if role == "assistant":
@@ -303,7 +303,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                             elif "toolUse" in block:
                                 tool_use = block["toolUse"]
                                 tool_name = tool_use.get("name", "")
-                                
+
                                 if tool_name == "handoff_to_agent":
                                     # Extract the target agent from handoff
                                     tool_input = tool_use.get("input", {})
@@ -313,14 +313,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                                             # The next message will be from this agent
                                             self.state.current_swarm_agent = next_agent
                                             return
-                                            
+
                                 elif tool_name == "complete_swarm_task":
                                     # Swarm is completing, clear the swarm state
                                     self.state.in_swarm_operation = False
                                     self.state.current_swarm_agent = None
                                     return
 
-        # Method 3: Track based on the execution flow  
+        # Method 3: Track based on the execution flow
         # If we're in swarm and no agent detected, cycle through agents
         if self.state.in_swarm_operation and not self.state.current_swarm_agent:
             # If this is the first step after swarm starts, use first agent
@@ -358,7 +358,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             objective=objective,
             memory_config=self.memory_config,
         )
-    
+
     def generate_final_report(self, agent: Any, target: str, objective: str) -> None:
         """Generate comprehensive final report using LLM analysis (legacy method name).
 
@@ -371,26 +371,26 @@ class ReasoningHandler(PrintingCallbackHandler):
         if not target and self.target:
             target = self.target
         self.generate_report(agent, objective)
-    
+
     def should_stop(self) -> bool:
         """Check if the handler should stop execution.
-        
+
         Returns:
             True if step limit reached or stop tool was used
         """
         return self.state.step_limit_reached or self.state.stop_tool_used
-    
+
     def has_reached_limit(self) -> bool:
         """Check if step limit has been reached.
-        
+
         Returns:
             True if step limit has been reached
         """
         return self.state.step_limit_reached
-    
+
     def get_summary(self) -> Dict[str, Any]:
         """Generate operation summary.
-        
+
         Returns:
             Dictionary with operation summary statistics
         """
@@ -402,10 +402,10 @@ class ReasoningHandler(PrintingCallbackHandler):
             "memory_operations": self.state.memory_operations,
             "operation_id": self.state.operation_id,
         }
-    
+
     def get_evidence_summary(self) -> List[str]:
         """Get a summary of key evidence collected.
-        
+
         Returns:
             List of evidence summary strings
         """
@@ -424,7 +424,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.state.evaluation_triggered = True
 
         # Import here to avoid circular imports
-        from ..evaluation import CyberAgentEvaluator
+        from ..evaluation.evaluation import CyberAgentEvaluator
 
         # Check if evaluation is enabled
         if not os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
@@ -439,9 +439,8 @@ class ReasoningHandler(PrintingCallbackHandler):
                     # Note: The actual evaluation method might be different
                     # This is a placeholder that might need adjustment
                     import asyncio
-                    asyncio.run(evaluator.evaluate_trace(
-                        trace_id=agent_trace_id
-                    ))
+
+                    asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
                 except Exception as e:
                     logger.error("Error running evaluation: %s", e)
 
