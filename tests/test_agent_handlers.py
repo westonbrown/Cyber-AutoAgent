@@ -79,10 +79,9 @@ class TestMemoryClientForReport:
 
         result = _get_memory_client_for_report(handler.memory_config)
 
-        # Should create new client with stored config
         mock_mem0_client.assert_called_once()
         mock_get_memory_client.assert_not_called()
-        assert result == mock_inner_client
+        assert result == mock_outer_client
 
     @patch("modules.memory_tools.Mem0ServiceClient")
     @patch("modules.memory_tools.get_memory_client")
@@ -101,21 +100,18 @@ class TestMemoryClientForReport:
 
         result = _get_memory_client_for_report(handler.memory_config)
 
-        # Should use global client
         mock_get_memory_client.assert_called_once()
         mock_mem0_client.assert_not_called()
         assert result == mock_global_client
 
     @patch("modules.memory_tools.Mem0ServiceClient")
-    def test_get_memory_client_enhances_config(self, mock_mem0_client):
-        """Test that memory client enhances config with missing context"""
+    def test_get_memory_client_with_simple_config(self, mock_mem0_client):
+        """Test that memory client uses config as-is without enhancement"""
         memory_config = {
             "vector_store": {"provider": "faiss", "config": {"path": "/test/path"}},
         }
 
-        mock_inner_client = Mock()
         mock_outer_client = Mock()
-        mock_outer_client.client = mock_inner_client
         mock_mem0_client.return_value = mock_outer_client
 
         handler = ReasoningHandler(
@@ -127,12 +123,10 @@ class TestMemoryClientForReport:
 
         result = _get_memory_client_for_report(handler.memory_config)
 
-        # Should enhance config with target_name and operation_id
         mock_mem0_client.assert_called_once()
         call_config = mock_mem0_client.call_args.kwargs["config"]
-        assert call_config["target_name"] == "test.com"
-        assert call_config["operation_id"] == "OP_20240101_120000"
-        assert result == mock_inner_client
+        assert call_config == memory_config  # Should be exactly the same
+        assert result == mock_outer_client
 
     @patch("modules.memory_tools.Mem0ServiceClient")
     @patch("modules.memory_tools.get_memory_client")
@@ -155,7 +149,6 @@ class TestMemoryClientForReport:
 
         result = _get_memory_client_for_report(handler.memory_config)
 
-        # Should return None on error
         assert result is None
 
 
@@ -256,7 +249,6 @@ class TestRetrieveEvidence:
 
             evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
-            # Should only include the short memory
             assert len(evidence) == 1
             assert evidence[0]["category"] == "general"
             assert evidence[0]["content"] == "Port 22 is open"
@@ -407,17 +399,15 @@ class TestGenerateReport:
 
             with patch("modules.handlers.reporting._display_final_report"):
                 with patch("modules.handlers.reporting._save_report_to_file"):
-                    # First call should execute
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
                     )
                     assert handler.report_generated is True
 
-                    # Second call should be skipped
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
                     )
-                    mock_retrieve.assert_called_once()  # Only called once
+                    mock_retrieve.assert_called_once()
 
     def test_format_evidence_with_metadata(self):
         """Test evidence formatting includes metadata"""
@@ -466,7 +456,6 @@ class TestGenerateReport:
                         mock_agent, "test.com", "security assessment"
                     )
 
-                    # Check the report prompt includes formatted evidence
                     mock_agent.assert_called_once()
                     report_prompt = mock_agent.call_args[0][0]
 
