@@ -53,8 +53,8 @@ class TestReasoningHandlerMemoryConfig:
 class TestMemoryClientForReport:
     """Test the memory client creation for report generation"""
 
-    @patch("modules.memory_tools.Mem0ServiceClient")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.tools.memory.Mem0ServiceClient")
+    @patch("modules.tools.memory.get_memory_client")
     def test_get_memory_client_with_stored_config(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -83,8 +83,8 @@ class TestMemoryClientForReport:
         mock_get_memory_client.assert_not_called()
         assert result == mock_outer_client
 
-    @patch("modules.memory_tools.Mem0ServiceClient")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.tools.memory.Mem0ServiceClient")
+    @patch("modules.tools.memory.get_memory_client")
     def test_get_memory_client_without_stored_config(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -104,7 +104,7 @@ class TestMemoryClientForReport:
         mock_mem0_client.assert_not_called()
         assert result == mock_global_client
 
-    @patch("modules.memory_tools.Mem0ServiceClient")
+    @patch("modules.tools.memory.Mem0ServiceClient")
     def test_get_memory_client_with_simple_config(self, mock_mem0_client):
         """Test that memory client uses config as-is without enhancement"""
         memory_config = {
@@ -128,8 +128,8 @@ class TestMemoryClientForReport:
         assert call_config == memory_config  # Should be exactly the same
         assert result == mock_outer_client
 
-    @patch("modules.memory_tools.Mem0ServiceClient")
-    @patch("modules.memory_tools.get_memory_client")
+    @patch("modules.tools.memory.Mem0ServiceClient")
+    @patch("modules.tools.memory.get_memory_client")
     def test_get_memory_client_handles_error(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -326,13 +326,7 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_result = Mock()
-        mock_result.message = {
-            "content": [
-                {"text": "Generated security report content"}
-            ]
-        }
-        mock_agent.return_value = mock_result
+        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -343,19 +337,26 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch("modules.handlers.reporting._display_final_report") as mock_display:
-                with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
-                    handler.generate_final_report(
-                        mock_agent, "test.com", "security assessment"
-                    )
+            # Mock the ReportAgent and its generate_report method
+            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
+                mock_report_agent = Mock()
+                mock_report_agent.generate_report.return_value = "Generated security report content"
+                mock_report_agent_class.return_value = mock_report_agent
 
-                    mock_display.assert_called_once()
-                    mock_save.assert_called_once()
-                    assert handler.report_generated is True
+                with patch("modules.handlers.reporting._display_final_report") as mock_display:
+                    with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
+                        handler.generate_final_report(
+                            mock_agent, "test.com", "security assessment"
+                        )
+
+                        mock_display.assert_called_once()
+                        mock_save.assert_called_once()
+                        assert handler.report_generated is True
 
     def test_generate_report_no_evidence(self):
         """Test report generation when no evidence is found"""
         mock_agent = Mock()
+        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = []
@@ -366,6 +367,7 @@ class TestGenerateReport:
                 target="test.com",
             )
 
+            # No need to mock ReportAgent since it won't be called with no evidence
             with patch("modules.handlers.reporting._display_final_report") as mock_display:
                 with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
                     handler.generate_final_report(
@@ -387,6 +389,7 @@ class TestGenerateReport:
             }
         ]
         mock_agent = Mock()
+        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -397,17 +400,22 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch("modules.handlers.reporting._display_final_report"):
-                with patch("modules.handlers.reporting._save_report_to_file"):
-                    handler.generate_final_report(
-                        mock_agent, "test.com", "security assessment"
-                    )
-                    assert handler.report_generated is True
+            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
+                mock_report_agent = Mock()
+                mock_report_agent.generate_report.return_value = "Generated report"
+                mock_report_agent_class.return_value = mock_report_agent
 
-                    handler.generate_final_report(
-                        mock_agent, "test.com", "security assessment"
-                    )
-                    mock_retrieve.assert_called_once()
+                with patch("modules.handlers.reporting._display_final_report"):
+                    with patch("modules.handlers.reporting._save_report_to_file"):
+                        handler.generate_final_report(
+                            mock_agent, "test.com", "security assessment"
+                        )
+                        assert handler.report_generated is True
+
+                        handler.generate_final_report(
+                            mock_agent, "test.com", "security assessment"
+                        )
+                        mock_retrieve.assert_called_once()
 
     def test_format_evidence_with_metadata(self):
         """Test evidence formatting includes metadata"""
@@ -433,13 +441,7 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_result = Mock()
-        mock_result.message = {
-            "content": [
-                {"text": "Generated report"}
-            ]
-        }
-        mock_agent.return_value = mock_result
+        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -450,18 +452,27 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch("modules.handlers.reporting._display_final_report"):
-                with patch("modules.handlers.reporting._save_report_to_file"):
-                    handler.generate_final_report(
-                        mock_agent, "test.com", "security assessment"
-                    )
+            # Mock the ReportAgent to check formatted evidence
+            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
+                mock_report_agent = Mock()
+                mock_report_agent.generate_report.return_value = "Generated report"
+                mock_report_agent_class.return_value = mock_report_agent
 
-                    mock_agent.assert_called_once()
-                    report_prompt = mock_agent.call_args[0][0]
+                with patch("modules.handlers.reporting._display_final_report"):
+                    with patch("modules.handlers.reporting._save_report_to_file"):
+                        handler.generate_final_report(
+                            mock_agent, "test.com", "security assessment"
+                        )
 
-                    assert "[FINDING | HIGH | 90%] SQL injection found" in report_prompt
-                    assert "[FINDING | MEDIUM] XSS vulnerability" in report_prompt
-                    assert "[GENERAL] Port scan results" in report_prompt
+                        # Check that report agent was created with proper model
+                        mock_report_agent_class.assert_called_once_with(model=mock_agent.model)
+                        
+                        # Check that generate_report was called with the evidence
+                        mock_report_agent.generate_report.assert_called_once()
+                        call_args = mock_report_agent.generate_report.call_args[1]
+                        assert call_args["evidence"] == evidence
+                        assert call_args["target"] == "test.com"
+                        assert call_args["objective"] == "security assessment"
 
 
 if __name__ == "__main__":

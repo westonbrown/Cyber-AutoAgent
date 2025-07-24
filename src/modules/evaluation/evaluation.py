@@ -27,7 +27,7 @@ from ragas.metrics import (
     RubricsScore,
 )
 from ragas.run_config import RunConfig
-from .config import get_config_manager
+from ..config.manager import get_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,7 @@ class CyberAgentEvaluator:
                 base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             )
             langchain_embeddings = OllamaEmbeddings(
-                model=os.getenv(
-                    "MEM0_EMBEDDING_MODEL", server_config.embedding.model_id
-                ),
+                model=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
                 base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             )
 
@@ -80,15 +78,11 @@ class CyberAgentEvaluator:
         else:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
-                model_id=os.getenv(
-                    "RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id
-                ),
+                model_id=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
                 region_name=config_manager.get_default_region(),
             )
             langchain_embeddings = BedrockEmbeddings(
-                model_id=os.getenv(
-                    "MEM0_EMBEDDING_MODEL", server_config.embedding.model_id
-                ),
+                model_id=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
                 region_name=config_manager.get_default_region(),
             )
 
@@ -142,19 +136,13 @@ class CyberAgentEvaluator:
         )
 
         # Agent goal accuracy without requiring ground truth
-        self.goal_accuracy = AgentGoalAccuracyWithoutReference(
-            llm=self.llm, name="penetration_test_goal_accuracy"
-        )
+        self.goal_accuracy = AgentGoalAccuracyWithoutReference(llm=self.llm, name="penetration_test_goal_accuracy")
 
         # Topic adherence to maintain cybersecurity focus
-        self.topic_adherence = TopicAdherenceScore(
-            llm=self.llm, mode="precision", name="cybersecurity_focus"
-        )
+        self.topic_adherence = TopicAdherenceScore(llm=self.llm, mode="precision", name="cybersecurity_focus")
 
         # Response grounding in actual tool outputs and evidence
-        self.response_grounding = ResponseGroundedness(
-            llm=self.llm, name="evidence_grounding"
-        )
+        self.response_grounding = ResponseGroundedness(llm=self.llm, name="evidence_grounding")
 
         # Graduated assessment using rubrics for penetration test quality
         penetration_test_rubrics = {
@@ -194,9 +182,7 @@ class CyberAgentEvaluator:
         logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
         logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
 
-    async def evaluate_trace(
-        self, trace_id: str, max_retries: int = 3
-    ) -> Dict[str, float]:
+    async def evaluate_trace(self, trace_id: str, max_retries: int = 3) -> Dict[str, float]:
         """
         Evaluate agent trace with configured metrics.
 
@@ -241,9 +227,7 @@ class CyberAgentEvaluator:
                     time.sleep(3)
                     continue
                 else:
-                    logger.error(
-                        f"Trace {trace_id} not found after {max_retries} attempts"
-                    )
+                    logger.error(f"Trace {trace_id} not found after {max_retries} attempts")
                     return {}
 
             # Create evaluation data from trace
@@ -256,13 +240,9 @@ class CyberAgentEvaluator:
             # Log evaluation data type for debugging
             if hasattr(eval_data, "user_input"):
                 if isinstance(eval_data.user_input, str):
-                    logger.info(
-                        f"Created SingleTurnSample: user_input={eval_data.user_input[:50]}..."
-                    )
+                    logger.info(f"Created SingleTurnSample: user_input={eval_data.user_input[:50]}...")
                 else:
-                    logger.info(
-                        f"Created MultiTurnSample with {len(eval_data.user_input)} messages"
-                    )
+                    logger.info(f"Created MultiTurnSample with {len(eval_data.user_input)} messages")
 
             # Evaluate all metrics
             logger.info("Starting metric evaluation for trace %s", trace_id)
@@ -325,9 +305,7 @@ class CyberAgentEvaluator:
             logger.debug("Trace output type: %s", type(trace.output))
             logger.debug("Trace output: %s...", str(trace.output)[:200])
             agent_responses.append(str(trace.output))
-            conversation_messages.append(
-                {"role": "assistant", "content": str(trace.output)}
-            )
+            conversation_messages.append({"role": "assistant", "content": str(trace.output)})
 
         # Extract detailed conversation flow from observations
         if hasattr(trace, "observations") and trace.observations:
@@ -335,17 +313,13 @@ class CyberAgentEvaluator:
 
             for obs in trace.observations:
                 if hasattr(obs, "type"):
-                    logger.debug(
-                        f"Observation type: {obs.type}, name: {getattr(obs, 'name', 'N/A')}"
-                    )
+                    logger.debug(f"Observation type: {obs.type}, name: {getattr(obs, 'name', 'N/A')}")
 
                     if obs.type == "GENERATION":
                         if hasattr(obs, "output") and obs.output:
                             response = str(obs.output)
                             agent_responses.append(response)
-                            conversation_messages.append(
-                                {"role": "assistant", "content": response}
-                            )
+                            conversation_messages.append({"role": "assistant", "content": response})
 
                     elif obs.type == "SPAN":
                         tool_name = getattr(obs, "name", "").lower()
@@ -365,9 +339,7 @@ class CyberAgentEvaluator:
         # Determine evaluation format based on conversation complexity
         if len(conversation_messages) > 2:
             # Multi-turn conversation - use MultiTurnSample for agent metrics
-            logger.info(
-                f"Creating MultiTurnSample with {len(conversation_messages)} messages"
-            )
+            logger.info(f"Creating MultiTurnSample with {len(conversation_messages)} messages")
 
             evaluation_data = MultiTurnSample(
                 user_input=conversation_messages,
@@ -380,14 +352,8 @@ class CyberAgentEvaluator:
         else:
             # Single-turn or simple interaction - use SingleTurnSample
             user_input = objective
-            agent_response = (
-                "\n".join(agent_responses[-3:])
-                if agent_responses
-                else "No agent response captured"
-            )
-            contexts = (
-                tool_outputs[-5:] if tool_outputs else ["No tool outputs captured"]
-            )
+            agent_response = "\n".join(agent_responses[-3:]) if agent_responses else "No agent response captured"
+            contexts = tool_outputs[-5:] if tool_outputs else ["No tool outputs captured"]
 
             logger.info(
                 f"Creating SingleTurnSample - user_input: '{user_input[:50]}...', response: '{agent_response[:50]}...', contexts: {len(contexts)}"
@@ -399,9 +365,7 @@ class CyberAgentEvaluator:
                 retrieved_contexts=contexts,
             )
 
-        logger.debug(
-            f"Evaluation data created successfully: {evaluation_data.to_dict()}"
-        )
+        logger.debug(f"Evaluation data created successfully: {evaluation_data.to_dict()}")
         return evaluation_data
 
     async def _evaluate_all_metrics(self, eval_data) -> Dict[str, float]:
@@ -435,9 +399,7 @@ class CyberAgentEvaluator:
             else:
                 # Handle metrics that don't support the current data type
                 if is_multi_turn:
-                    logger.warning(
-                        f"Metric {metric.name} doesn't support multi-turn evaluation, skipping"
-                    )
+                    logger.warning(f"Metric {metric.name} doesn't support multi-turn evaluation, skipping")
                     scores[metric.name] = 0.0
                     continue
                 logger.error("Metric %s missing evaluation method", metric.name)
@@ -491,9 +453,7 @@ class CyberAgentEvaluator:
                 logger.error("No score creation method found on Langfuse client")
                 return
 
-        logger.info(
-            f"Uploaded {len(scores)} evaluation scores to Langfuse trace {trace_id}"
-        )
+        logger.info(f"Uploaded {len(scores)} evaluation scores to Langfuse trace {trace_id}")
 
         # Flush to ensure scores are sent
         self.langfuse.flush()

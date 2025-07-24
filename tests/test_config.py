@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 # Import the modules we're testing
-from modules.config import (
+from modules.config.manager import (
     ModelProvider,
     ModelConfig,
     LLMConfig,
@@ -410,8 +410,8 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("ollama", custom_param="value")
         assert config.server_type == "ollama"
 
-    @patch("modules.config.os.path.exists")
-    @patch("modules.config.requests.get")
+    @patch("modules.config.manager.os.path.exists")
+    @patch("modules.config.manager.requests.get")
     def test_get_ollama_host_docker(self, mock_get, mock_exists):
         """Test Ollama host detection in Docker environment."""
         mock_exists.return_value = True  # Simulate Docker environment
@@ -422,7 +422,7 @@ class TestConfigManager:
         host = self.config_manager.get_ollama_host()
         assert host == "http://localhost:11434"
 
-    @patch("modules.config.os.path.exists")
+    @patch("modules.config.manager.os.path.exists")
     def test_get_ollama_host_native(self, mock_exists):
         """Test Ollama host detection in native environment."""
         mock_exists.return_value = False  # Simulate native environment
@@ -436,7 +436,7 @@ class TestConfigManager:
         host = self.config_manager.get_ollama_host()
         assert host == "http://custom:11434"
 
-    @patch("modules.config.requests.get")
+    @patch("modules.config.manager.requests.get")
     def test_validate_ollama_requirements_success(self, mock_get):
         """Test successful Ollama requirements validation."""
         mock_response = MagicMock()
@@ -453,7 +453,7 @@ class TestConfigManager:
                 # Should not raise an exception
                 self.config_manager.validate_requirements("ollama")
 
-    @patch("modules.config.requests.get")
+    @patch("modules.config.manager.requests.get")
     def test_validate_ollama_requirements_server_down(self, mock_get):
         """Test Ollama requirements validation when server is down."""
         mock_get.side_effect = ConnectionError("Connection refused")

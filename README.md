@@ -550,12 +550,15 @@ docker run --user root cyber-autoagent
 
 ## Configuration
 
-The agent uses a **centralized configuration system** defined in `src/modules/config.py`. All settings can be customized through environment variables, with sensible defaults provided.
+The agent uses a **centralized configuration system** defined in `src/modules/config/`. All settings can be customized through environment variables, with sensible defaults provided.
 
 **Recent Improvements**:
+- **Modular architecture** with organized agents/, config/, tools/, prompts/, and evaluation/ directories
+- **Langfuse prompt management** for dynamic prompt loading and versioning
 - **Unified output structure** for better organization (enabled by default)
 - **Standardized paths** for logs, reports, and evidence collection  
 - **Enhanced memory management** with cross-operation persistence
+- **Dedicated report agent** for improved report generation
 
 Copy the example environment file and customize it for your needs:
 
@@ -599,19 +602,26 @@ uv run pytest --cov=src
 cyber-autoagent/
 ├── src/                       # Source code
 │   ├── cyberautoagent.py      # Main entry point and CLI
-│   └── modules/               # Core modules
-│       ├── agent.py           # Agent creation (Strands + models)
-│       ├── config.py          # Centralized configuration system
-│       ├── memory_tools.py    # Mem0 memory management
-│       ├── system_prompts.py  # AI prompts and configurations
-│       ├── environment.py     # Tool discovery and logging
-│       ├── evaluation.py      # Ragas evaluation system
+│   └── modules/               # Core modules (modular architecture)
+│       ├── agents/            # Agent implementations
+│       │   ├── cyber_autoagent.py  # Main Strands agent creation
+│       │   └── report_agent.py     # Dedicated report generation
+│       ├── config/            # Configuration management
+│       │   ├── manager.py     # Centralized configuration system
+│       │   └── environment.py # Environment setup and validation
+│       ├── tools/             # Tool implementations
+│       │   └── memory.py      # Mem0 memory management tool
+│       ├── prompts/           # Prompt management
+│       │   ├── system.py      # AI prompts and configurations
+│       │   └── manager.py     # Langfuse prompt management
+│       ├── evaluation/        # Evaluation system
+│       │   └── evaluation.py  # Ragas evaluation metrics
 │       └── handlers/          # Callback handling and UI utilities
 │           ├── base.py        # Base classes and constants
 │           ├── callback.py    # Main ReasoningHandler class
 │           ├── display.py     # Result display formatting
 │           ├── tools.py       # Tool execution handling
-│           ├── reporting.py   # Report generation
+│           ├── reporting.py   # Report generation utilities
 │           └── utils.py       # UI utilities and analysis
 ├── docs/                      # Documentation
 │   ├── architecture.md       # Agent architecture and tools
@@ -639,10 +649,13 @@ cyber-autoagent/
 | File | Purpose |
 |------|---------|
 | `src/cyberautoagent.py` | CLI entry point, observability setup |
-| `src/modules/agent.py` | Strands agent creation, model configuration |
-| `src/modules/config.py` | Centralized configuration system |
-| `src/modules/memory_tools.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
-| `src/modules/evaluation.py` | Ragas evaluation system |
+| `src/modules/agents/cyber_autoagent.py` | Strands agent creation, model configuration |
+| `src/modules/agents/report_agent.py` | Report generation agent |
+| `src/modules/config/manager.py` | Centralized configuration system |
+| `src/modules/tools/memory.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
+| `src/modules/evaluation/evaluation.py` | Ragas evaluation system |
+| `src/modules/prompts/system.py` | AI prompts and configurations |
+| `src/modules/prompts/manager.py` | Langfuse prompt management |
 | `.env.example` | Environment configuration template |
 | `docker-compose.yml` | Complete observability stack |
 | `docs/architecture.md` | Technical architecture deep dive |
