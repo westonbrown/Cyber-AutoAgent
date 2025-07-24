@@ -427,7 +427,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         from ..evaluation import CyberAgentEvaluator
 
         # Check if evaluation is enabled
-        if not os.getenv("ENABLE_EVALUATION", "").lower() == "true":
+        if not os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
             logger.info("Evaluation disabled - skipping")
             return
 
@@ -451,6 +451,11 @@ class ReasoningHandler(PrintingCallbackHandler):
 
         except Exception as e:
             logger.error("Error triggering evaluation: %s", e)
+
+    def trigger_evaluation_on_completion(self) -> None:
+        """Trigger evaluation on operation completion using operation ID as trace ID."""
+        # Use operation_id as the trace_id since we don't have access to Langfuse trace ID
+        self.trigger_evaluation(self.state.operation_id)
 
     @property
     def operation_id(self) -> str:
