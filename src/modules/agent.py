@@ -335,6 +335,7 @@ Leverage these tools directly via shell.
     agent_logger.debug("Creating autonomous agent")
     agent = Agent(
         model=model,
+        name=f"Cyber-AutoAgent {op_id}",
         tools=[
             swarm,
             shell,
