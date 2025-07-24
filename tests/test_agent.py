@@ -26,7 +26,7 @@ class TestModelConfigs:
 
     def test_get_default_model_configs_local(self):
         """Test local model configuration defaults"""
-        config = get_default_model_configs("local")
+        config = get_default_model_configs("ollama")
 
         assert config["llm_model"] == "llama3.2:3b"
         assert config["embedding_model"] == "mxbai-embed-large"
@@ -34,7 +34,7 @@ class TestModelConfigs:
 
     def test_get_default_model_configs_remote(self):
         """Test remote model configuration defaults"""
-        config = get_default_model_configs("remote")
+        config = get_default_model_configs("bedrock")
 
         assert "us.anthropic.claude" in config["llm_model"]
         assert config["embedding_model"] == "amazon.titan-embed-text-v2:0"
@@ -43,7 +43,7 @@ class TestModelConfigs:
     def test_get_default_model_configs_invalid(self):
         """Test configuration for invalid server type"""
         # Should now raise an error for invalid server type
-        with pytest.raises(ValueError, match="Unsupported server type"):
+        with pytest.raises(ValueError, match="Unsupported provider type"):
             get_default_model_configs("invalid")
 
 
@@ -158,7 +158,7 @@ class TestMemoryConfig:
                         with patch("modules.agent.get_system_prompt"):
                             # Call create_agent with local server
                             create_agent(
-                                target="test.com", objective="test", server="local"
+                                target="test.com", objective="test", provider="ollama"
                             )
 
                             # Check that initialize_memory_system was called
@@ -183,7 +183,7 @@ class TestMemoryConfig:
                         with patch("modules.agent.get_system_prompt"):
                             # Call create_agent with remote server
                             create_agent(
-                                target="test.com", objective="test", server="remote"
+                                target="test.com", objective="test", provider="bedrock"
                             )
 
                             # Check that initialize_memory_system was called
@@ -215,7 +215,7 @@ class TestServerValidation:
         }
 
         # Should not raise any exception
-        get_config_manager().validate_requirements("local")
+        get_config_manager().validate_requirements("ollama")
 
         # Verify client was created (host is now dynamic)
         mock_ollama_client.assert_called_once()
@@ -227,7 +227,7 @@ class TestServerValidation:
         mock_requests.side_effect = Exception("Connection refused")
 
         with pytest.raises(ConnectionError, match="Ollama server not accessible"):
-            get_config_manager().validate_requirements("local")
+            get_config_manager().validate_requirements("ollama")
 
     @patch("modules.config.requests.get")
     @patch("modules.config.ollama.Client")
@@ -245,13 +245,13 @@ class TestServerValidation:
         }
 
         with pytest.raises(ValueError, match="Required models not found"):
-            get_config_manager().validate_requirements("local")
+            get_config_manager().validate_requirements("ollama")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_validate_server_requirements_remote_no_credentials(self):
         """Test remote server validation without AWS credentials"""
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
-            get_config_manager().validate_requirements("remote")
+            get_config_manager().validate_requirements("bedrock")
 
     @patch.dict(
         os.environ,
@@ -290,7 +290,7 @@ class TestServerValidation:
         mock_bedrock_runtime_client.invoke_model.return_value = {"body": Mock()}
 
         # Should not raise any exception
-        get_config_manager().validate_requirements("remote")
+        get_config_manager().validate_requirements("bedrock")
 
 
 class TestCreateAgent:
@@ -323,11 +323,11 @@ class TestCreateAgent:
 
         # Call function
         agent, handler = create_agent(
-            target="test.com", objective="test objective", server="remote"
+            target="test.com", objective="test objective", provider="bedrock"
         )
 
         # Verify calls
-        mock_validate.assert_called_once_with("remote")
+        mock_validate.assert_called_once_with("bedrock")
         mock_create_remote.assert_called_once()
         mock_agent_class.assert_called_once()
 
@@ -361,11 +361,11 @@ class TestCreateAgent:
 
         # Call function
         agent, handler = create_agent(
-            target="test.com", objective="test objective", server="local"
+            target="test.com", objective="test objective", provider="ollama"
         )
 
         # Verify calls
-        mock_validate.assert_called_once_with("local")
+        mock_validate.assert_called_once_with("ollama")
         mock_create_local.assert_called_once()
         mock_agent_class.assert_called_once()
 
@@ -378,7 +378,7 @@ class TestCreateAgent:
         mock_validate.side_effect = ConnectionError("Test error")
 
         with pytest.raises(ConnectionError):
-            create_agent(target="test.com", objective="test objective", server="local")
+            create_agent(target="test.com", objective="test objective", provider="ollama")
 
     @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agent._create_local_model")
@@ -395,7 +395,7 @@ class TestCreateAgent:
         mock_create_local.side_effect = Exception("Model creation failed")
 
         with pytest.raises(Exception):
-            create_agent(target="test.com", objective="test objective", server="local")
+            create_agent(target="test.com", objective="test objective", provider="ollama")
 
         mock_handle_error.assert_called_once()
 
@@ -410,7 +410,7 @@ class TestCheckExistingMemories:
             "test-key" if key == "MEM0_API_KEY" else default
         )
 
-        result = check_existing_memories("test.com", "remote")
+        result = check_existing_memories("test.com", "bedrock")
         assert result is True
 
     @patch("modules.agent.os.environ.get")
@@ -420,7 +420,7 @@ class TestCheckExistingMemories:
             "test-host" if key == "OPENSEARCH_HOST" else default
         )
 
-        result = check_existing_memories("test.com", "remote")
+        result = check_existing_memories("test.com", "bedrock")
         assert result is True
 
     @patch("modules.agent.os.environ.get")
@@ -434,7 +434,7 @@ class TestCheckExistingMemories:
         mock_exists.side_effect = lambda path: True  # All paths exist
         mock_getsize.return_value = 100  # Non-zero file size
 
-        result = check_existing_memories("test.com", "local")
+        result = check_existing_memories("test.com", "ollama")
         assert result is True
 
     @patch("modules.agent.os.environ.get")
@@ -444,21 +444,28 @@ class TestCheckExistingMemories:
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = False
 
-        result = check_existing_memories("test.com", "local")
+        result = check_existing_memories("test.com", "ollama")
         assert result is False
 
     @patch("modules.agent.os.environ.get")
     @patch("modules.agent.os.path.exists")
-    @patch("modules.agent.os.listdir")
+    @patch("modules.agent.os.path.getsize")
     def test_check_existing_memories_faiss_empty(
-        self, mock_listdir, mock_exists, mock_env_get
+        self, mock_getsize, mock_exists, mock_env_get
     ):
         """Test check_existing_memories with FAISS backend - directory exists but empty"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
-        mock_exists.return_value = True
-        mock_listdir.return_value = []
+        
+        # Directory exists but no FAISS files
+        def exists_side_effect(path):
+            if "outputs/test_com/memory" in path and not path.endswith(('.faiss', '.pkl')):
+                return True
+            return False
+        
+        mock_exists.side_effect = exists_side_effect
+        mock_getsize.return_value = 0
 
-        result = check_existing_memories("test.com", "local")
+        result = check_existing_memories("test.com", "ollama")
         assert result is False
 
     @patch("modules.agent.os.environ.get")
@@ -472,7 +479,7 @@ class TestCheckExistingMemories:
         mock_exists.side_effect = lambda path: True  # All paths exist
         mock_getsize.return_value = 0  # Zero file size
 
-        result = check_existing_memories("test.com", "local")
+        result = check_existing_memories("test.com", "ollama")
         assert result is False  # Should return False for zero-size files
 
     @patch("modules.agent.os.environ.get")
@@ -482,7 +489,7 @@ class TestCheckExistingMemories:
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.return_value = False
 
-        result = check_existing_memories("https://test.com/path", "local")
+        result = check_existing_memories("https://test.com/path", "ollama")
         assert result is False
         mock_exists.assert_called_with("outputs/test.com/memory")
 
@@ -496,7 +503,7 @@ class TestCheckExistingMemories:
         mock_exists.side_effect = Exception("File system error")
 
         with patch("modules.agent.logger") as mock_logger:
-            result = check_existing_memories("test.com", "local")
+            result = check_existing_memories("test.com", "ollama")
             assert result is False
             mock_logger.debug.assert_called_once()
 

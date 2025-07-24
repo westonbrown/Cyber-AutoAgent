@@ -420,13 +420,13 @@ class ConfigManager:
 
     def get_server_config(self, provider: str, **overrides) -> ServerConfig:
         """Get complete provider configuration with optional overrides."""
-        logger.debug(f"Getting server config for provider: {provider}")
+        logger.debug("Getting server config for provider: %s", provider)
         cache_key = f"provider_{provider}_{hash(frozenset(overrides.items()))}"
         if cache_key in self._config_cache:
             return self._config_cache[cache_key]
 
         if provider not in self._default_configs:
-            logger.error(f"Provider {provider} not in available configs: {list(self._default_configs.keys())}")
+            logger.error("Provider %s not in available configs: %s", provider, list(self._default_configs.keys()))
             raise ValueError(f"Unsupported provider type: {provider}")
 
         defaults = self._default_configs[provider].copy()
@@ -664,7 +664,7 @@ class ConfigManager:
 
     def validate_requirements(self, provider: str) -> None:
         """Validate that all requirements are met for the specified provider."""
-        logger.debug(f"Validating requirements for provider: {provider}")
+        logger.debug("Validating requirements for provider: %s", provider)
         if provider == "ollama":
             self._validate_ollama_requirements()
         elif provider == "bedrock":
@@ -913,7 +913,7 @@ class ConfigManager:
         try:
             boto3.client("bedrock-runtime", region_name=region)
         except Exception as e:
-            logger.debug(f"Could not create bedrock-runtime client: {e}")
+            logger.debug("Could not create bedrock-runtime client: %s", e)
             # Model-specific errors will be handled by strands-agents during actual usage
 
     def _convert_bearer_token_if_needed(self) -> None:

@@ -25,9 +25,9 @@ import time
 import atexit
 import re
 import base64
+import threading
 from datetime import datetime
 import requests
-import threading
 from opentelemetry import trace
 
 # Optional telemetry import
@@ -145,7 +145,7 @@ def setup_observability(logger):
 # Global flag for interrupt handling
 interrupted = False
 
-def signal_handler(signum, frame):
+def signal_handler(signum, frame):  # pylint: disable=unused-argument
     """Handle interrupt signals gracefully"""
     global interrupted
     interrupted = True
@@ -674,7 +674,7 @@ def main():
             
         # Ensure final report is generated if callback_handler exists and report not yet generated
         if callback_handler and not getattr(
-            callback_handler, "report_generated", False
+            callback_handler.state, "report_generated", False
         ):
             try:
                 callback_handler.generate_final_report(

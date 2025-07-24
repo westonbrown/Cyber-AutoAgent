@@ -162,7 +162,7 @@ def _display_plain_text(text: str, max_lines: int = 20, max_line_length: int = 1
         print("    %s... (%d more lines)%s" % (Colors.DIM, len(lines) - max_lines, Colors.RESET))
 
 
-def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
+def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:  # pylint: disable=unused-argument
     """Display swarm execution results in a structured, readable format.
 
     Args:
@@ -170,11 +170,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
         tool_result: The tool result dictionary (currently unused but kept for compatibility)
     """
     lines = output_text.strip().split("\n")
-
-    # Debug log to see what we're parsing
-    print("\n%s[DEBUG] Parsing swarm result with %d lines%s" % (Colors.DIM, len(lines), Colors.RESET))
-    if len(lines) > 0:
-        print("%s[DEBUG] First line: %s%s" % (Colors.DIM, lines[0][:100], Colors.RESET))
 
     # Parse swarm result components
     status = None
@@ -203,33 +198,28 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             status_match = re.search(r"\*\*Status:\*\*\s*(.+)", line)
             if status_match:
                 status = status_match.group(1).strip()
-                print("%s[DEBUG] Found status: %s%s" % (Colors.DIM, status, Colors.RESET))
 
         # Execution metrics - handle markdown bold format
         elif "**Execution Time:**" in line:
             time_match = re.search(r"\*\*Execution Time:\*\*\s*(\d+)ms", line)
             if time_match:
                 execution_time = int(time_match.group(1))
-                print("%s[DEBUG] Found execution time: %dms%s" % (Colors.DIM, execution_time, Colors.RESET))
 
         elif "**Team Size:**" in line:
             team_match = re.search(r"\*\*Team Size:\*\*\s*(\d+)\s*agents", line)
             if team_match:
                 team_size = int(team_match.group(1))
-                print("%s[DEBUG] Found team size: %d%s" % (Colors.DIM, team_size, Colors.RESET))
             
         elif "**Iterations:**" in line:
             iter_match = re.search(r"\*\*Iterations:\*\*\s*(\d+)", line)
             if iter_match:
                 iterations = int(iter_match.group(1))
-                print("%s[DEBUG] Found iterations: %d%s" % (Colors.DIM, iterations, Colors.RESET))
 
         # Collaboration chain
         elif "**Collaboration Chain:**" in line:
             chain_match = re.search(r"\*\*Collaboration Chain:\*\*\s*(.+)", line)
             if chain_match:
                 collaboration_chain = chain_match.group(1).strip()
-                print("%s[DEBUG] Found collaboration chain: %s%s" % (Colors.DIM, collaboration_chain, Colors.RESET))
 
         # Agent sections - look for bold agent names in uppercase
         elif line.strip().startswith("**") and line.strip().endswith(":**") and not any(header in line for header in ["Individual Agent Contributions", "Final Team Result", "Team Resource Usage"]):
@@ -245,11 +235,10 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
                 in_agent_section = True
                 in_final_result = False
                 in_resource_section = False
-                print("%s[DEBUG] Found agent section: %s%s" % (Colors.DIM, current_agent, Colors.RESET))
                 
         elif "Individual Agent Contributions:" in line:
             # Just a header, continue
-            print("%s[DEBUG] Found Individual Agent Contributions header%s" % (Colors.DIM, Colors.RESET))
+            pass
             
         elif "Final Team Result:" in line:
             if current_agent and current_content:
@@ -259,7 +248,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             in_final_result = True
             in_agent_section = False
             in_resource_section = False
-            print("%s[DEBUG] Found Final Team Result section%s" % (Colors.DIM, Colors.RESET))
             
         elif "Team Resource Usage:" in line:
             if current_agent and current_content:
@@ -271,7 +259,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
             in_resource_section = True
             in_agent_section = False
             in_final_result = False
-            print("%s[DEBUG] Found Team Resource Usage section%s" % (Colors.DIM, Colors.RESET))
 
         elif in_agent_section and current_agent and line.strip() and not line.strip().startswith("**"):
             current_content.append(line)
@@ -284,7 +271,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
                 token_type = token_match.group(1).lower()
                 tokens = int(token_match.group(2).replace(",", ""))
                 resource_usage[f"{token_type}_tokens"] = tokens
-                print("%s[DEBUG] Found %s tokens: %d%s" % (Colors.DIM, token_type, tokens, Colors.RESET))
 
     # Handle remaining content
     if current_agent and current_content:
@@ -292,11 +278,6 @@ def display_swarm_result(output_text: str, tool_result: Dict[str, Any]) -> None:
     elif in_final_result and current_content:
         final_result = "\n".join(current_content)
 
-    print("%s[DEBUG] Parsing complete: status=%s, time=%s, team=%s, iterations=%s%s" % 
-          (Colors.DIM, status, execution_time, team_size, iterations, Colors.RESET))
-    print("%s[DEBUG] Agent contributions: %d agents%s" % (Colors.DIM, len(agent_contributions), Colors.RESET))
-    print("%s[DEBUG] Has final result: %s%s" % (Colors.DIM, bool(final_result), Colors.RESET))
-    print("%s[DEBUG] Resource usage: %s%s" % (Colors.DIM, resource_usage, Colors.RESET))
 
     # Display formatted results
     print("\n%s🤖 Swarm Execution Complete%s" % (Colors.BOLD, Colors.RESET))

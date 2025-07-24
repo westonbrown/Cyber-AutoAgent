@@ -191,7 +191,7 @@ class CyberAgentEvaluator:
             self.answer_relevancy,
         ]
 
-        logger.info(f"Setup complete - {len(self.all_metrics)} metrics configured")
+        logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
         logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
 
     async def evaluate_trace(
@@ -211,7 +211,7 @@ class CyberAgentEvaluator:
         run_config = RunConfig()
         for metric in self.all_metrics:
             if hasattr(metric, "init"):
-                logger.debug(f"Initializing metric {metric.name} with RunConfig")
+                logger.debug("Initializing metric %s with RunConfig", metric.name)
                 metric.init(run_config)
 
         for attempt in range(max_retries):
@@ -227,7 +227,7 @@ class CyberAgentEvaluator:
                 for t in all_traces.data:
                     if hasattr(t, "id") and t.id == trace_id:
                         trace = t
-                        logger.info(f"Found trace {trace_id} in list")
+                        logger.info("Found trace %s in list", trace_id)
                         break
 
             if not trace:
@@ -247,10 +247,10 @@ class CyberAgentEvaluator:
                     return {}
 
             # Create evaluation data from trace
-            logger.info(f"Creating evaluation data from trace {trace_id}")
+            logger.info("Creating evaluation data from trace %s", trace_id)
             eval_data = self._create_evaluation_data(trace)
             if not eval_data:
-                logger.error(f"Could not create evaluation data from trace {trace_id}")
+                logger.error("Could not create evaluation data from trace %s", trace_id)
                 return {}
 
             # Log evaluation data type for debugging
@@ -265,14 +265,14 @@ class CyberAgentEvaluator:
                     )
 
             # Evaluate all metrics
-            logger.info(f"Starting metric evaluation for trace {trace_id}")
+            logger.info("Starting metric evaluation for trace %s", trace_id)
             scores = await self._evaluate_all_metrics(eval_data)
-            logger.info(f"Metric evaluation completed: {scores}")
+            logger.info("Metric evaluation completed: %s", scores)
 
             # Upload scores to Langfuse
             await self._upload_scores_to_langfuse(trace_id, scores)
 
-            logger.info(f"Evaluation completed for trace {trace_id}: {scores}")
+            logger.info("Evaluation completed for trace %s: %s", trace_id, scores)
             return scores
 
         return {}
@@ -290,15 +290,15 @@ class CyberAgentEvaluator:
         Returns:
             SingleTurnSample, MultiTurnSample, or None on error
         """
-        logger.debug(f"Creating evaluation data from trace: {trace.id}")
-        logger.debug(f"Trace type: {type(trace)}")
+        logger.debug("Creating evaluation data from trace: %s", trace.id)
+        logger.debug("Trace type: %s", type(trace))
 
         # Extract original objective from trace metadata
         objective = None
 
         # Parse trace metadata for original objective
         if hasattr(trace, "metadata") and trace.metadata:
-            logger.debug(f"Trace metadata: {trace.metadata}")
+            logger.debug("Trace metadata: %s", trace.metadata)
             metadata = trace.metadata
 
             # Check if metadata has 'attributes' key (from Strands agent trace attributes)
@@ -318,12 +318,12 @@ class CyberAgentEvaluator:
 
         # Extract basic info from trace
         if hasattr(trace, "input") and trace.input:
-            logger.debug(f"Trace input type: {type(trace.input)}")
-            logger.debug(f"Trace input: {trace.input}")
+            logger.debug("Trace input type: %s", type(trace.input))
+            logger.debug("Trace input: %s", trace.input)
 
         if hasattr(trace, "output") and trace.output:
-            logger.debug(f"Trace output type: {type(trace.output)}")
-            logger.debug(f"Trace output: {str(trace.output)[:200]}...")
+            logger.debug("Trace output type: %s", type(trace.output))
+            logger.debug("Trace output: %s...", str(trace.output)[:200])
             agent_responses.append(str(trace.output))
             conversation_messages.append(
                 {"role": "assistant", "content": str(trace.output)}
@@ -331,7 +331,7 @@ class CyberAgentEvaluator:
 
         # Extract detailed conversation flow from observations
         if hasattr(trace, "observations") and trace.observations:
-            logger.debug(f"Trace has {len(trace.observations)} observations")
+            logger.debug("Trace has %d observations", len(trace.observations))
 
             for obs in trace.observations:
                 if hasattr(obs, "type"):
@@ -423,7 +423,7 @@ class CyberAgentEvaluator:
             )
 
         for metric in self.all_metrics:
-            logger.info(f"Starting evaluation of metric: {metric.name}")
+            logger.info("Starting evaluation of metric: %s", metric.name)
 
             # Determine appropriate evaluation method based on data type and metric capabilities
             if is_multi_turn and hasattr(metric, "multi_turn_ascore"):
@@ -440,20 +440,20 @@ class CyberAgentEvaluator:
                     )
                     scores[metric.name] = 0.0
                     continue
-                logger.error(f"Metric {metric.name} missing evaluation method")
+                logger.error("Metric %s missing evaluation method", metric.name)
                 scores[metric.name] = 0.0
                 continue
 
-            logger.debug(f"Raw score for {metric.name}: {score} (type: {type(score)})")
+            logger.debug("Raw score for %s: %s (type: %s)", metric.name, score, type(score))
 
             if score is None:
-                logger.warning(f"Score is None for {metric.name}")
+                logger.warning("Score is None for %s", metric.name)
                 scores[metric.name] = 0.0
             else:
                 scores[metric.name] = float(score)
-                logger.info(f"Metric {metric.name} score: {scores[metric.name]}")
+                logger.info("Metric %s score: %s", metric.name, scores[metric.name])
 
-        logger.info(f"Final metric scores: {scores}")
+        logger.info("Final metric scores: %s", scores)
         return scores
 
     async def _upload_scores_to_langfuse(self, trace_id: str, scores: Dict[str, float]):

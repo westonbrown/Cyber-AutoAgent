@@ -67,12 +67,12 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
-        mock_check_memories.assert_called_once_with("test.com", "remote")
+        mock_check_memories.assert_called_once_with("test.com", "bedrock")
         mock_get_client.assert_called_once()
         mock_memory_client.get_memory_overview.assert_called_once_with(
             user_id="cyber_agent"
@@ -132,12 +132,12 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
-        mock_check_memories.assert_called_once_with("test.com", "remote")
+        mock_check_memories.assert_called_once_with("test.com", "bedrock")
 
         # Verify agent was created with fresh start system prompt
         assert agent is not None
@@ -207,7 +207,7 @@ class TestMemoryAwareAgentIntegration:
                 objective="test objective",
                 max_steps=50,
                 op_id="OP_20240101_120000",
-                server="remote",
+                provider="bedrock",
                 memory_path="/test/memory/path",
             )
 
@@ -271,7 +271,7 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify agent was still created successfully
@@ -335,7 +335,7 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="local",
+            provider="ollama",
         )
 
         # Verify agent was created successfully
