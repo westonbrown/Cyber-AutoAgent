@@ -21,22 +21,22 @@ def generate_final_report(
     """Generate comprehensive final report using LLM analysis.
 
     Args:
-        handler_state: The handler state object containing operation data
+        handler_state: The handler object containing operation data and state
         agent: The agent instance
         target: The target system
         objective: The operation objective
         memory_config: Optional memory configuration
     """
     # Ensure single report generation
-    if handler_state.report_generated:
+    if handler_state.state.report_generated:
         return
-    handler_state.report_generated = True
+    handler_state.state.report_generated = True
 
     # Send operation metadata to Langfuse
-    _send_operation_metadata(handler_state)
+    _send_operation_metadata(handler_state.state)
 
     # Collect evidence from memory first
-    evidence = _retrieve_evidence(handler_state, memory_config)
+    evidence = _retrieve_evidence(handler_state.state, memory_config)
 
     # Only generate report if evidence was collected
     if not evidence:
@@ -53,7 +53,7 @@ def generate_final_report(
     print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
 
     # Generate report using LLM
-    report_content = _generate_llm_report(handler_state, agent, target, objective, evidence)
+    report_content = _generate_llm_report(handler_state.state, agent, target, objective, evidence)
 
     if report_content:
         # Display the report
@@ -68,7 +68,7 @@ def generate_final_report(
         print("%s%sFailed to generate report%s" % (Colors.RED, Colors.BOLD, Colors.RESET))
 
 
-def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any]]) -> List[Dict]:
+def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any]]) -> List[Dict]:  # pylint: disable=unused-argument
     """Retrieve evidence from memory system.
 
     Args:
@@ -85,58 +85,49 @@ def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any
         return evidence
 
     try:
-        # Define evidence query categories
-        evidence_queries = [
-            # Vulnerability findings
-            ("vulnerability findings", "vulnerability"),
-            ("security issues", "vulnerability"),
-            ("exploit results", "exploit"),
-            ("attack vectors", "vulnerability"),
-            # Service and system info
-            ("service enumeration", "recon"),
-            ("system information", "recon"),
-            ("network topology", "recon"),
-            ("open ports", "recon"),
-            # Access and credentials
-            ("credentials found", "credential"),
-            ("access gained", "access"),
-            ("privilege escalation", "exploit"),
-            # Data and files
-            ("sensitive data", "data"),
-            ("configuration files", "data"),
-            ("database access", "data"),
-            # General findings
-            ("security assessment", "finding"),
-            ("penetration test results", "finding"),
-        ]
-
-        # Collect evidence from each category
-        seen_ids = set()
-        for query, category in evidence_queries:
-            try:
-                results = memory_client.search(query, limit=10)
-                if results and "results" in results:
-                    for item in results["results"]:
-                        if item.get("id") not in seen_ids:
-                            seen_ids.add(item.get("id"))
-                            evidence.append(
-                                {
-                                    "category": category,
-                                    "content": item.get("memory", ""),
-                                    "metadata": item.get("metadata", {}),
-                                    "score": item.get("score", 0.0),
-                                }
-                            )
-            except Exception as e:
-                print(f"  %sWarning: Failed to search for {query}: {e}%s" % (Colors.YELLOW, Colors.RESET))
-                continue
-
-        # Sort evidence by relevance score
-        evidence.sort(key=lambda x: x.get("score", 0), reverse=True)
-
-        # Limit to most relevant evidence
-        evidence = evidence[:50]  # Top 50 pieces of evidence
-
+        # Retrieve memories using list_memories method
+        # The memory system uses "cyber_agent" as the default user_id
+        memories_response = memory_client.list_memories(user_id="cyber_agent")
+        
+        # Parse memory response format (same as old implementation)
+        if isinstance(memories_response, dict):
+            # Extract from dictionary response
+            raw_memories = memories_response.get("memories", memories_response.get("results", []))
+        elif isinstance(memories_response, list):
+            # Process list response
+            raw_memories = memories_response
+        else:
+            # Handle unexpected format
+            raw_memories = []
+            print(f"  %sWarning: Unexpected memory response format: {type(memories_response)}%s" % (Colors.YELLOW, Colors.RESET))
+        
+        # Process memories according to category and content length
+        for mem in raw_memories:
+            metadata = mem.get("metadata", {})
+            memory_content = mem.get("memory", "")
+            memory_id = mem.get("id", "")
+            
+            # Process memories with category "finding" in metadata
+            if metadata.get("category") == "finding":
+                evidence.append({
+                    "category": "finding",
+                    "content": memory_content,
+                    "id": memory_id,
+                    "severity": metadata.get("severity", "unknown"),
+                    "confidence": metadata.get("confidence", "unknown"),
+                })
+            # Process uncategorized memories (no category in metadata)
+            elif "category" not in metadata and memory_content:
+                # Only include short uncategorized memories
+                if len(memory_content.split()) < 100:
+                    evidence.append({
+                        "category": "general",
+                        "content": memory_content,
+                        "id": memory_id,
+                        "severity": "unknown",
+                        "confidence": "unknown",
+                    })
+        
         print(f"  %sCollected {len(evidence)} pieces of evidence from memory%s" % (Colors.GREEN, Colors.RESET))
 
     except Exception as e:
@@ -155,20 +146,21 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
         Memory client instance or None
     """
     if not memory_config:
-        return None
+        # Fall back to global memory client
+        try:
+            from ..memory_tools import get_memory_client
+            # Return the wrapper itself, not the inner mem0 client
+            return get_memory_client()
+        except Exception:
+            return None
 
     try:
         # Try to get memory client from config
         from ..memory_tools import Mem0ServiceClient
 
         # Initialize memory client with config
-        memory_client = Mem0ServiceClient(config=memory_config)
-
-        if memory_client and hasattr(memory_client, "client"):
-            return memory_client.client
-        else:
-            print("  %sWarning: Memory client does not have client attribute%s" % (Colors.YELLOW, Colors.RESET))
-            return None
+        # Return the wrapper itself which has list_memories method
+        return Mem0ServiceClient(config=memory_config)
 
     except Exception as e:
         print(f"  %sWarning: Could not access memory for report: {e}%s" % (Colors.YELLOW, Colors.RESET))
@@ -193,7 +185,20 @@ def _generate_llm_report(
     # Prepare evidence summary
     evidence_text = ""
     for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
-        evidence_text += f"\n{i+1}. [{item['category'].upper()}] {item['content'][:500]}"
+        # Format based on category and available metadata
+        category = item['category'].upper()
+        content = item['content'][:500]
+        
+        if item['category'] == 'finding':
+            severity = item.get('severity', 'unknown').upper()
+            confidence = item.get('confidence', 'unknown')
+            if confidence != 'unknown':
+                evidence_text += f"\n{i+1}. [{category} | {severity} | {confidence}] {content}"
+            else:
+                evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
+        else:
+            evidence_text += f"\n{i+1}. [{category}] {content}"
+            
         if len(item["content"]) > 500:
             evidence_text += "..."
 
@@ -340,7 +345,7 @@ def _save_report_to_file(handler_state: Any, report_content: str, target: str, o
     """Save report to file in operation directory.
 
     Args:
-        handler_state: The handler state object
+        handler_state: The handler object
         report_content: The report content
         target: The target system
         objective: The operation objective
@@ -352,7 +357,7 @@ def _save_report_to_file(handler_state: Any, report_content: str, target: str, o
 
             target_name = sanitize_target_name(target)
             report_dir = get_output_path(
-                target_name=target_name, operation_id=handler_state.operation_id, base_dir=handler_state.output_base_dir
+                target_name=target_name, operation_id=handler_state.state.operation_id, base_dir=handler_state.output_base_dir
             )
         else:
             report_dir = "."
@@ -370,9 +375,9 @@ def _save_report_to_file(handler_state: Any, report_content: str, target: str, o
             f.write("# Security Assessment Report\n\n")
             f.write(f"**Target:** {target}\n")
             f.write(f"**Objective:** {objective}\n")
-            f.write(f"**Operation ID:** {handler_state.operation_id}\n")
+            f.write(f"**Operation ID:** {handler_state.state.operation_id}\n")
             f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"**Total Steps:** {handler_state.steps}\n\n")
+            f.write(f"**Total Steps:** {handler_state.state.steps}\n\n")
             f.write("---\n\n")
             f.write(report_content)
 
@@ -386,7 +391,7 @@ def _trigger_evaluation_if_enabled(handler_state: Any) -> None:
     """Trigger evaluation process if enabled.
 
     Args:
-        handler_state: The handler state object
+        handler_state: The handler object
     """
     if not os.getenv("ENABLE_EVALUATION", "").lower() == "true":
         return
@@ -413,7 +418,7 @@ def _trigger_evaluation_if_enabled(handler_state: Any) -> None:
                     "python",
                     eval_script,
                     "--operation-ids",
-                    handler_state.operation_id,
+                    handler_state.state.operation_id,
                     "--output-dir",
                     handler_state.output_base_dir or "./outputs",
                 ]
@@ -445,7 +450,7 @@ def _trigger_evaluation_if_enabled(handler_state: Any) -> None:
         print("%sError triggering evaluation: %s%s" % (Colors.RED, e, Colors.RESET))
 
 
-def _send_operation_metadata(handler_state: Any) -> None:
+def _send_operation_metadata(handler_state: Any) -> None:  # pylint: disable=unused-argument
     """Send operation metadata to Langfuse for tracking.
 
     Args:

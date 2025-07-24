@@ -22,13 +22,15 @@ def show_tool_execution(tool_use: Dict[str, Any], state: Any) -> None:
         tool_use: Dictionary containing tool information (name, input, etc.)
         state: Handler state object containing execution context
     """
-    # Enforce step limit
-    if state.steps >= state.max_steps and not state.step_limit_reached:
+    # Enforce step limit - only check for main agent operations, not swarm sub-operations
+    if not state.in_swarm_operation and state.steps >= state.max_steps and not state.step_limit_reached:
         state.step_limit_reached = True
         print("\n%sStep limit reached (%d). Assessment complete.%s" % (Colors.BLUE, state.max_steps, Colors.RESET))
         return
 
-    state.steps += 1
+    # Only increment main step counter for non-swarm operations
+    if not state.in_swarm_operation:
+        state.steps += 1
 
     tool_name = tool_use.get("name", "unknown")
     tool_input = tool_use.get("input", {})
@@ -42,30 +44,40 @@ def show_tool_execution(tool_use: Dict[str, Any], state: Any) -> None:
     # Display step header with swarm context
     print("%s" % ("─" * 80))
 
+    # Use separate step counters for swarm vs main agent operations
     if state.in_swarm_operation:
         state.swarm_step_count += 1
-        # Show swarm context in step header with agent name if available
-        agent_info = ""
+        # Show agent name in step header when in swarm operation
         if state.current_swarm_agent:
             # Format agent name for display
             agent_display = state.current_swarm_agent.replace("_", " ").title()
-            agent_info = f" - {agent_display}"
-
-        print(
-            "Step %d/%d: %s%s%s %s[Swarm Sub-Step %d%s]%s"
-            % (
-                state.steps,
-                state.max_steps,
-                Colors.CYAN,
-                tool_name,
-                Colors.RESET,
-                Colors.DIM,
-                state.swarm_step_count,
-                agent_info,
-                Colors.RESET,
+            print(
+                "Swarm Step %d: %s%s%s - %s%s%s"
+                % (
+                    state.swarm_step_count,
+                    Colors.CYAN,
+                    tool_name,
+                    Colors.RESET,
+                    Colors.YELLOW,
+                    agent_display,
+                    Colors.RESET,
+                )
             )
-        )
+        else:
+            # First swarm step or no agent identified yet
+            print(
+                "Swarm Step %d: %s%s%s %s(Initializing)%s"
+                % (
+                    state.swarm_step_count,
+                    Colors.CYAN,
+                    tool_name,
+                    Colors.RESET,
+                    Colors.DIM,
+                    Colors.RESET,
+                )
+            )
     else:
+        # Regular main agent step - only increment main counter for non-swarm operations
         print("Step %d/%d: %s%s%s" % (state.steps, state.max_steps, Colors.CYAN, tool_name, Colors.RESET))
 
     print("%s" % ("─" * 80))
@@ -100,6 +112,8 @@ def _display_tool_details(tool_name: str, tool_input: Dict[str, Any], state: Any
         _display_http_request_tool(tool_input, state)
     elif tool_name == "thought":
         _display_thought_tool(tool_input, state)
+    elif tool_name == "handoff_to_agent":
+        _display_handoff_tool(tool_input, state)
     else:
         # Generic tool display
         print("↳ Executing: %s%s%s" % (Colors.CYAN, tool_name, Colors.RESET))
@@ -418,6 +432,26 @@ def _display_thought_tool(tool_input: Dict[str, Any], state: Any) -> None:
             print("  %s... (%d more lines)%s" % (Colors.DIM, len(thought_lines) - 10, Colors.RESET))
 
     state.tools_used.append("thought: metacognitive assessment")
+
+
+def _display_handoff_tool(tool_input: Dict[str, Any], state: Any) -> None:
+    """Display agent handoff details."""
+    target_agent = tool_input.get("agent_name", "unknown")
+    message = tool_input.get("message", "")
+    
+    # Format target agent name for display
+    target_display = target_agent.replace("_", " ").title()
+    
+    print("↳ %sHandoff to: %s%s%s" % (Colors.MAGENTA, Colors.YELLOW, target_display, Colors.RESET))
+    
+    # Show brief message preview
+    if message:
+        message_preview = message[:150]
+        if len(message) > 150:
+            message_preview += "..."
+        print("  %sMessage:%s %s" % (Colors.DIM, Colors.RESET, message_preview))
+    
+    state.tools_used.append(f"handoff_to_agent: {target_agent}")
 
 
 def show_tool_result(tool_id: str, tool_result: Dict[str, Any], state: Any) -> None:

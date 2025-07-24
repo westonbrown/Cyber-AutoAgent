@@ -128,7 +128,7 @@ class TestGetSystemPrompt:
             objective="test objective",
             max_steps=100,
             operation_id="OP_20240101_120000",
-            server="local",
+            provider="ollama",
         )
 
         # Test remote server
@@ -137,7 +137,7 @@ class TestGetSystemPrompt:
             objective="test objective",
             max_steps=100,
             operation_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Both should contain the basic elements

@@ -37,7 +37,7 @@ class TestModelProvider:
         """Test that all expected providers are available."""
         assert ModelProvider.AWS_BEDROCK.value == "aws_bedrock"
         assert ModelProvider.OLLAMA.value == "ollama"
-        assert ModelProvider.OPENAI.value == "openai"
+        assert ModelProvider.LITELLM.value == "litellm"
 
 
 class TestModelConfig:
@@ -211,28 +211,28 @@ class TestConfigManager:
     def test_initialization(self):
         """Test ConfigManager initialization."""
         assert self.config_manager._config_cache == {}
-        assert "local" in self.config_manager._default_configs
-        assert "remote" in self.config_manager._default_configs
+        assert "ollama" in self.config_manager._default_configs
+        assert "bedrock" in self.config_manager._default_configs
 
     def test_get_local_server_config(self):
         """Test getting local server configuration."""
         with patch.dict(os.environ, {}, clear=True):
             # Clear cache to ensure fresh config
             self.config_manager._config_cache = {}
-            config = self.config_manager.get_server_config("local")
+            config = self.config_manager.get_server_config("ollama")
 
-            assert config.server_type == "local"
+            assert config.server_type == "ollama"
             assert config.llm.provider == ModelProvider.OLLAMA
             assert config.llm.model_id == "llama3.2:3b"
             assert config.embedding.provider == ModelProvider.OLLAMA
             assert config.embedding.model_id == "mxbai-embed-large"
-            assert config.region == "local"
+            assert config.region == "ollama"
 
     def test_get_remote_server_config(self):
         """Test getting remote server configuration."""
-        config = self.config_manager.get_server_config("remote")
+        config = self.config_manager.get_server_config("bedrock")
 
-        assert config.server_type == "remote"
+        assert config.server_type == "bedrock"
         assert config.llm.provider == ModelProvider.AWS_BEDROCK
         assert "claude-sonnet-4" in config.llm.model_id
         assert config.embedding.provider == ModelProvider.AWS_BEDROCK
@@ -241,7 +241,7 @@ class TestConfigManager:
 
     def test_invalid_server_type(self):
         """Test that invalid server type raises error."""
-        with pytest.raises(ValueError, match="Unsupported server type"):
+        with pytest.raises(ValueError, match="Unsupported provider type"):
             self.config_manager.get_server_config("invalid")
 
     def test_config_caching(self):
@@ -250,17 +250,17 @@ class TestConfigManager:
         self.config_manager._config_cache = {}
 
         # First call should cache the result
-        config1 = self.config_manager.get_server_config("local")
+        config1 = self.config_manager.get_server_config("ollama")
         assert len(self.config_manager._config_cache) == 1
 
         # Second call should return cached result
-        config2 = self.config_manager.get_server_config("local")
+        config2 = self.config_manager.get_server_config("ollama")
         assert config1 is config2
         assert len(self.config_manager._config_cache) == 1
 
     def test_get_llm_config(self):
         """Test getting LLM configuration."""
-        config = self.config_manager.get_llm_config("local")
+        config = self.config_manager.get_llm_config("ollama")
 
         assert isinstance(config, LLMConfig)
         assert config.provider == ModelProvider.OLLAMA
@@ -271,7 +271,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {}, clear=True):
             # Clear cache to ensure fresh config
             self.config_manager._config_cache = {}
-            config = self.config_manager.get_embedding_config("local")
+            config = self.config_manager.get_embedding_config("ollama")
 
             assert isinstance(config, EmbeddingConfig)
             assert config.provider == ModelProvider.OLLAMA
@@ -279,7 +279,7 @@ class TestConfigManager:
 
     def test_get_memory_config(self):
         """Test getting memory configuration."""
-        config = self.config_manager.get_memory_config("local")
+        config = self.config_manager.get_memory_config("ollama")
 
         assert isinstance(config, MemoryConfig)
         assert isinstance(config.embedder, MemoryEmbeddingConfig)
@@ -290,7 +290,7 @@ class TestConfigManager:
 
     def test_get_evaluation_config(self):
         """Test getting evaluation configuration."""
-        config = self.config_manager.get_evaluation_config("local")
+        config = self.config_manager.get_evaluation_config("ollama")
 
         assert isinstance(config, EvaluationConfig)
         assert config.llm.provider == ModelProvider.OLLAMA
@@ -299,7 +299,7 @@ class TestConfigManager:
     def test_get_swarm_config(self):
         """Test getting swarm configuration."""
         # Test local swarm config
-        local_config = self.config_manager.get_swarm_config("local")
+        local_config = self.config_manager.get_swarm_config("ollama")
         assert isinstance(local_config, SwarmConfig)
         assert local_config.llm.provider == ModelProvider.OLLAMA
         assert local_config.llm.model_id == "llama3.2:3b"
@@ -307,7 +307,7 @@ class TestConfigManager:
         assert local_config.llm.max_tokens == 500
 
         # Test remote swarm config
-        remote_config = self.config_manager.get_swarm_config("remote")
+        remote_config = self.config_manager.get_swarm_config("bedrock")
         assert isinstance(remote_config, SwarmConfig)
         assert remote_config.llm.provider == ModelProvider.AWS_BEDROCK
         assert "claude" in remote_config.llm.model_id
@@ -320,7 +320,7 @@ class TestConfigManager:
         with patch.dict(os.environ, {}, clear=True):
             # Clear cache to ensure fresh config
             self.config_manager._config_cache = {}
-            local_config = self.config_manager.get_mem0_service_config("local")
+            local_config = self.config_manager.get_mem0_service_config("ollama")
             assert isinstance(local_config, dict)
             assert "embedder" in local_config
             assert "llm" in local_config
@@ -344,7 +344,7 @@ class TestConfigManager:
             assert vector_store_config["config"]["embedding_model_dims"] == 1024
 
         # Test remote config
-        remote_config = self.config_manager.get_mem0_service_config("remote")
+        remote_config = self.config_manager.get_mem0_service_config("bedrock")
         assert isinstance(remote_config, dict)
 
         # Test embedder config
@@ -367,7 +367,7 @@ class TestConfigManager:
         # Clear cache to ensure fresh config
         self.config_manager._config_cache = {}
 
-        config = self.config_manager.get_mem0_service_config("remote")
+        config = self.config_manager.get_mem0_service_config("bedrock")
 
         # Should use OpenSearch when OPENSEARCH_HOST is set
         vector_store_config = config["vector_store"]
@@ -382,7 +382,7 @@ class TestConfigManager:
         # Clear cache to force re-evaluation
         self.config_manager._config_cache = {}
 
-        config = self.config_manager.get_server_config("local")
+        config = self.config_manager.get_server_config("ollama")
         assert config.llm.model_id == "custom-llm"
 
     @patch.dict(os.environ, {"RAGAS_EVALUATOR_MODEL": "custom-evaluator"})
@@ -391,7 +391,7 @@ class TestConfigManager:
         # Clear cache to force re-evaluation
         self.config_manager._config_cache = {}
 
-        config = self.config_manager.get_server_config("local")
+        config = self.config_manager.get_server_config("ollama")
         assert config.evaluation.llm.model_id == "custom-evaluator"
 
     @patch.dict(os.environ, {"CYBER_AGENT_SWARM_MODEL": "custom-swarm-model"})
@@ -400,15 +400,15 @@ class TestConfigManager:
         # Clear cache to force re-evaluation
         self.config_manager._config_cache = {}
 
-        config = self.config_manager.get_server_config("local")
+        config = self.config_manager.get_server_config("ollama")
         assert config.swarm.llm.model_id == "custom-swarm-model"
 
     def test_parameter_overrides(self):
         """Test that function parameters override configuration."""
         # This would require more complex override logic
         # For now, just test that the method accepts overrides
-        config = self.config_manager.get_server_config("local", custom_param="value")
-        assert config.server_type == "local"
+        config = self.config_manager.get_server_config("ollama", custom_param="value")
+        assert config.server_type == "ollama"
 
     @patch("modules.config.os.path.exists")
     @patch("modules.config.requests.get")
@@ -451,7 +451,7 @@ class TestConfigManager:
                 }
 
                 # Should not raise an exception
-                self.config_manager.validate_requirements("local")
+                self.config_manager.validate_requirements("ollama")
 
     @patch("modules.config.requests.get")
     def test_validate_ollama_requirements_server_down(self, mock_get):
@@ -459,13 +459,13 @@ class TestConfigManager:
         mock_get.side_effect = ConnectionError("Connection refused")
 
         with pytest.raises(ConnectionError, match="Ollama server not accessible"):
-            self.config_manager.validate_requirements("local")
+            self.config_manager.validate_requirements("ollama")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_validate_aws_requirements_no_credentials(self):
         """Test AWS requirements validation without credentials."""
         with pytest.raises(EnvironmentError, match="AWS credentials not configured"):
-            self.config_manager.validate_requirements("remote")
+            self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(
         os.environ,
@@ -502,11 +502,10 @@ class TestConfigManager:
         mock_boto_client.side_effect = client_side_effect
 
         # Should not raise an exception
-        self.config_manager.validate_requirements("remote")
+        self.config_manager.validate_requirements("bedrock")
 
-        # Verify calls were made
-        mock_bedrock.list_foundation_models.assert_called()
-        mock_runtime.invoke_model.assert_called()
+        # Verify bedrock-runtime client was created
+        mock_boto_client.assert_any_call("bedrock-runtime", region_name="us-east-1")
 
     @patch.dict(
         os.environ,
@@ -521,16 +520,16 @@ class TestConfigManager:
         """Test Bedrock validation when service access is denied."""
         from botocore.exceptions import ClientError
 
-        mock_bedrock = MagicMock()
-        mock_bedrock.list_foundation_models.side_effect = ClientError(
+        mock_runtime = MagicMock()
+        mock_runtime.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
-            "ListFoundationModels",
+            "client",
         )
 
-        mock_boto_client.return_value = mock_bedrock
+        mock_boto_client.side_effect = mock_runtime
 
-        with pytest.raises(ConnectionError, match="AWS Bedrock service access denied"):
-            self.config_manager.validate_requirements("remote")
+        # Should not raise an exception - errors are handled by strands-agents
+        self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(
         os.environ,
@@ -543,6 +542,8 @@ class TestConfigManager:
     @patch("boto3.client")
     def test_validate_bedrock_missing_models(self, mock_boto_client):
         """Test Bedrock validation when required models are missing."""
+        # The new implementation delegates model validation to strands-agents
+        # So this test now verifies that validation completes without error
         mock_bedrock = MagicMock()
         mock_bedrock.list_foundation_models.return_value = {
             "modelSummaries": [{"modelId": "some.other.model:1.0"}]
@@ -550,8 +551,8 @@ class TestConfigManager:
 
         mock_boto_client.return_value = mock_bedrock
 
-        with pytest.raises(ValueError, match="Required Bedrock models not available"):
-            self.config_manager.validate_requirements("remote")
+        # Should not raise - model validation is handled by strands-agents
+        self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(
         os.environ,
@@ -566,33 +567,17 @@ class TestConfigManager:
         """Test Bedrock validation when model access is denied."""
         from botocore.exceptions import ClientError
 
-        # Mock bedrock client (list models succeeds)
-        mock_bedrock = MagicMock()
-        mock_bedrock.list_foundation_models.return_value = {
-            "modelSummaries": [
-                {"modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0"},
-                {"modelId": "amazon.titan-embed-text-v2:0"},
-            ]
-        }
-
-        # Mock bedrock-runtime client (invoke fails)
+        # Mock runtime invoke failure
         mock_runtime = MagicMock()
-        mock_runtime.invoke_model.side_effect = ClientError(
+        mock_runtime.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
             "InvokeModel",
         )
 
-        def client_side_effect(service_name, **kwargs):
-            if service_name == "bedrock":
-                return mock_bedrock
-            elif service_name == "bedrock-runtime":
-                return mock_runtime
-            return MagicMock()
+        mock_boto_client.side_effect = mock_runtime
 
-        mock_boto_client.side_effect = client_side_effect
-
-        with pytest.raises(ValueError, match="Access denied to Bedrock model"):
-            self.config_manager.validate_requirements("remote")
+        # Should not raise an exception - model errors handled by strands-agents
+        self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(
         os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}
@@ -602,7 +587,7 @@ class TestConfigManager:
         """Test Bedrock validation when region returns None."""
         with patch.object(self.config_manager, "get_default_region", return_value=None):
             with pytest.raises(EnvironmentError, match="AWS region not configured"):
-                self.config_manager.validate_requirements("remote")
+                self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(
         os.environ,
@@ -638,7 +623,7 @@ class TestConfigManager:
         mock_boto_client.side_effect = client_side_effect
 
         # Should not raise an exception
-        self.config_manager.validate_requirements("remote")
+        self.config_manager.validate_requirements("bedrock")
 
     @patch.dict(os.environ, {"AWS_PROFILE": "test-profile", "AWS_REGION": "us-east-1"})
     @patch("boto3.client")
@@ -667,12 +652,12 @@ class TestConfigManager:
         mock_boto_client.side_effect = client_side_effect
 
         # Should not raise an exception
-        self.config_manager.validate_requirements("remote")
+        self.config_manager.validate_requirements("bedrock")
 
     def test_set_environment_variables_local(self):
         """Test setting environment variables for local mode."""
         with patch.dict(os.environ, {}, clear=True):
-            self.config_manager.set_environment_variables("local")
+            self.config_manager.set_environment_variables("ollama")
 
             assert os.environ["MEM0_LLM_PROVIDER"] == "ollama"
             assert os.environ["MEM0_LLM_MODEL"] == "llama3.2:3b"
@@ -681,7 +666,7 @@ class TestConfigManager:
     def test_set_environment_variables_remote(self):
         """Test setting environment variables for remote mode."""
         with patch.dict(os.environ, {}, clear=True):
-            self.config_manager.set_environment_variables("remote")
+            self.config_manager.set_environment_variables("bedrock")
 
             assert "claude-3-5-sonnet" in os.environ["MEM0_LLM_MODEL"]
             assert "titan-embed" in os.environ["MEM0_EMBEDDING_MODEL"]
@@ -698,13 +683,13 @@ class TestGlobalFunctions:
 
     def test_get_model_config(self):
         """Test get_model_config function."""
-        config = get_model_config("local")
+        config = get_model_config("ollama")
         assert isinstance(config, ServerConfig)
-        assert config.server_type == "local"
+        assert config.server_type == "ollama"
 
     def test_get_default_model_configs_backward_compatibility(self):
         """Test backward compatibility function."""
-        config = get_default_model_configs("local")
+        config = get_default_model_configs("ollama")
 
         assert isinstance(config, dict)
         assert "llm_model" in config
@@ -735,7 +720,7 @@ class TestEnvironmentIntegration:
 
         with patch.dict(os.environ, env_vars, clear=True):
             config_manager = ConfigManager()
-            config = config_manager.get_server_config("remote")
+            config = config_manager.get_server_config("bedrock")
 
             assert config.llm.model_id == "custom-llm"
             assert config.embedding.model_id == "custom-embedding"
@@ -751,7 +736,7 @@ class TestEnvironmentIntegration:
 
         with patch.dict(os.environ, env_vars):
             config_manager = ConfigManager()
-            config = config_manager.get_server_config("local")
+            config = config_manager.get_server_config("ollama")
 
             assert config.evaluation.llm.model_id == "new-evaluator"
 
@@ -765,16 +750,16 @@ class TestEnvironmentIntegration:
             assert config_manager.get_default_region() == "eu-west-1"
 
             # Test server config uses centralized region
-            server_config = config_manager.get_server_config("remote")
+            server_config = config_manager.get_server_config("bedrock")
             assert server_config.region == "eu-west-1"
 
             # Test memory config uses centralized region
-            memory_config = config_manager.get_memory_config("remote")
+            memory_config = config_manager.get_memory_config("bedrock")
             assert memory_config.llm.aws_region == "eu-west-1"
             assert memory_config.embedder.aws_region == "eu-west-1"
 
             # Test mem0 service config uses centralized region
-            mem0_config = config_manager.get_mem0_service_config("remote")
+            mem0_config = config_manager.get_mem0_service_config("bedrock")
             assert mem0_config["llm"]["config"]["aws_region"] == "eu-west-1"
             assert mem0_config["embedder"]["config"]["aws_region"] == "eu-west-1"
 
@@ -786,7 +771,7 @@ class TestEnvironmentIntegration:
             assert config_manager.get_default_region() == "us-east-1"
 
             # Test server config uses default region
-            server_config = config_manager.get_server_config("remote")
+            server_config = config_manager.get_server_config("bedrock")
             assert server_config.region == "us-east-1"
 
     def test_thinking_models_configuration(self):
@@ -835,14 +820,14 @@ class TestEnvironmentIntegration:
 
         # Test standard model configuration
         standard_config = config_manager.get_standard_model_config(
-            "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "us-east-1", "remote"
+            "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "us-east-1", "bedrock"
         )
         assert standard_config["temperature"] == 0.95
         assert standard_config["max_tokens"] == 4096
         assert standard_config["top_p"] == 0.95
 
         # Test local model configuration
-        local_config = config_manager.get_local_model_config("llama3.2:3b", "local")
+        local_config = config_manager.get_local_model_config("llama3.2:3b", "ollama")
         assert local_config["temperature"] == 0.95
         assert local_config["max_tokens"] == 4096
         assert "host" in local_config
@@ -853,7 +838,7 @@ class TestEnvironmentIntegration:
         config_manager = ConfigManager()
 
         # Test local config has ollama_base_url
-        local_config = config_manager.get_mem0_service_config("local")
+        local_config = config_manager.get_mem0_service_config("ollama")
         assert local_config["embedder"]["config"]["ollama_base_url"].startswith(
             "http://"
         )
@@ -862,7 +847,7 @@ class TestEnvironmentIntegration:
         assert "aws_region" not in local_config["llm"]["config"]
 
         # Test remote config has aws_region
-        remote_config = config_manager.get_mem0_service_config("remote")
+        remote_config = config_manager.get_mem0_service_config("bedrock")
         assert "aws_region" in remote_config["embedder"]["config"]
         assert "aws_region" in remote_config["llm"]["config"]
         assert "ollama_base_url" not in remote_config["embedder"]["config"]
@@ -910,7 +895,7 @@ class TestOutputConfigIntegration:
     def test_get_output_config_default(self):
         """Test getting default output configuration."""
         config_manager = ConfigManager()
-        output_config = config_manager.get_output_config("remote")
+        output_config = config_manager.get_output_config("bedrock")
 
         assert isinstance(output_config, OutputConfig)
         assert output_config.base_dir == get_default_base_dir()
@@ -921,7 +906,7 @@ class TestOutputConfigIntegration:
         """Test getting output configuration with overrides."""
         config_manager = ConfigManager()
         output_config = config_manager.get_output_config(
-            "remote",
+            "bedrock",
             output_dir="/tmp/custom",
             target_name="test_target",
             enable_unified_output=True,
@@ -941,7 +926,7 @@ class TestOutputConfigIntegration:
     def test_get_output_config_with_env_vars(self):
         """Test getting output configuration with environment variables."""
         config_manager = ConfigManager()
-        output_config = config_manager.get_output_config("remote")
+        output_config = config_manager.get_output_config("bedrock")
 
         assert output_config.base_dir == "/env/outputs"
         assert output_config.enable_unified_output is True
@@ -949,7 +934,7 @@ class TestOutputConfigIntegration:
     def test_output_config_in_server_config(self):
         """Test that output configuration is included in server configuration."""
         config_manager = ConfigManager()
-        server_config = config_manager.get_server_config("remote")
+        server_config = config_manager.get_server_config("bedrock")
 
         assert hasattr(server_config, "output")
         assert isinstance(server_config.output, OutputConfig)
@@ -960,7 +945,7 @@ class TestOutputConfigIntegration:
         with patch.dict(os.environ, {"CYBER_AGENT_OUTPUT_DIR": "/env/outputs"}):
             config_manager = ConfigManager()
             output_config = config_manager.get_output_config(
-                "remote", output_dir="/override/outputs"
+                "bedrock", output_dir="/override/outputs"
             )
 
             # Override should take precedence over environment variable

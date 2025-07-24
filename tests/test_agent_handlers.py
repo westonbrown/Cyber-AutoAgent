@@ -9,6 +9,8 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers import ReasoningHandler
+from modules.handlers import reporting
+from modules.handlers.reporting import _get_memory_client_for_report, _retrieve_evidence
 
 
 class TestReasoningHandlerMemoryConfig:
@@ -51,8 +53,8 @@ class TestReasoningHandlerMemoryConfig:
 class TestMemoryClientForReport:
     """Test the memory client creation for report generation"""
 
-    @patch("modules.agent_handlers.Mem0ServiceClient")
-    @patch("modules.agent_handlers.get_memory_client")
+    @patch("modules.memory_tools.Mem0ServiceClient")
+    @patch("modules.memory_tools.get_memory_client")
     def test_get_memory_client_with_stored_config(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -63,8 +65,10 @@ class TestMemoryClientForReport:
             "vector_store": {"provider": "faiss", "config": {"path": "/test/path"}},
         }
 
-        mock_client = Mock()
-        mock_mem0_client.return_value = mock_client
+        mock_inner_client = Mock()
+        mock_outer_client = Mock()
+        mock_outer_client.client = mock_inner_client
+        mock_mem0_client.return_value = mock_outer_client
 
         handler = ReasoningHandler(
             max_steps=50,
@@ -73,15 +77,15 @@ class TestMemoryClientForReport:
             memory_config=memory_config,
         )
 
-        result = handler._get_memory_client_for_report()
+        result = _get_memory_client_for_report(handler.memory_config)
 
         # Should create new client with stored config
         mock_mem0_client.assert_called_once()
         mock_get_memory_client.assert_not_called()
-        assert result == mock_client
+        assert result == mock_inner_client
 
-    @patch("modules.agent_handlers.Mem0ServiceClient")
-    @patch("modules.agent_handlers.get_memory_client")
+    @patch("modules.memory_tools.Mem0ServiceClient")
+    @patch("modules.memory_tools.get_memory_client")
     def test_get_memory_client_without_stored_config(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -95,22 +99,24 @@ class TestMemoryClientForReport:
             target="test.com",
         )
 
-        result = handler._get_memory_client_for_report()
+        result = _get_memory_client_for_report(handler.memory_config)
 
         # Should use global client
         mock_get_memory_client.assert_called_once()
         mock_mem0_client.assert_not_called()
         assert result == mock_global_client
 
-    @patch("modules.agent_handlers.Mem0ServiceClient")
+    @patch("modules.memory_tools.Mem0ServiceClient")
     def test_get_memory_client_enhances_config(self, mock_mem0_client):
         """Test that memory client enhances config with missing context"""
         memory_config = {
             "vector_store": {"provider": "faiss", "config": {"path": "/test/path"}},
         }
 
-        mock_client = Mock()
-        mock_mem0_client.return_value = mock_client
+        mock_inner_client = Mock()
+        mock_outer_client = Mock()
+        mock_outer_client.client = mock_inner_client
+        mock_mem0_client.return_value = mock_outer_client
 
         handler = ReasoningHandler(
             max_steps=50,
@@ -119,17 +125,17 @@ class TestMemoryClientForReport:
             memory_config=memory_config,
         )
 
-        result = handler._get_memory_client_for_report()
+        result = _get_memory_client_for_report(handler.memory_config)
 
         # Should enhance config with target_name and operation_id
         mock_mem0_client.assert_called_once()
-        call_args = mock_mem0_client.call_args[0][0]
-        assert call_args["target_name"] == "test.com"
-        assert call_args["operation_id"] == "OP_20240101_120000"
-        assert result == mock_client
+        call_config = mock_mem0_client.call_args.kwargs["config"]
+        assert call_config["target_name"] == "test.com"
+        assert call_config["operation_id"] == "OP_20240101_120000"
+        assert result == mock_inner_client
 
-    @patch("modules.agent_handlers.Mem0ServiceClient")
-    @patch("modules.agent_handlers.get_memory_client")
+    @patch("modules.memory_tools.Mem0ServiceClient")
+    @patch("modules.memory_tools.get_memory_client")
     def test_get_memory_client_handles_error(
         self, mock_get_memory_client, mock_mem0_client
     ):
@@ -147,7 +153,7 @@ class TestMemoryClientForReport:
             memory_config=memory_config,
         )
 
-        result = handler._get_memory_client_for_report()
+        result = _get_memory_client_for_report(handler.memory_config)
 
         # Should return None on error
         assert result is None
@@ -159,7 +165,7 @@ class TestRetrieveEvidence:
     def test_retrieve_evidence_with_no_client(self):
         """Test evidence retrieval when memory client is not available"""
         with patch.object(
-            ReasoningHandler, "_get_memory_client_for_report"
+            reporting, "_get_memory_client_for_report"
         ) as mock_get_client:
             mock_get_client.return_value = None
 
@@ -169,7 +175,7 @@ class TestRetrieveEvidence:
                 target="test.com",
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert evidence == []
 
@@ -177,7 +183,7 @@ class TestRetrieveEvidence:
         """Test evidence retrieval with security findings"""
         mock_client = Mock()
         mock_client.list_memories.return_value = {
-            "memories": [
+            "results": [
                 {
                     "id": "mem1",
                     "memory": "SQL injection found in login form",
@@ -186,6 +192,7 @@ class TestRetrieveEvidence:
                         "severity": "high",
                         "confidence": "90%",
                     },
+                    "score": 0.95
                 },
                 {
                     "id": "mem2",
@@ -195,12 +202,13 @@ class TestRetrieveEvidence:
                         "severity": "medium",
                         "confidence": "80%",
                     },
+                    "score": 0.85
                 },
             ]
         }
 
         with patch.object(
-            ReasoningHandler, "_get_memory_client_for_report"
+            reporting, "_get_memory_client_for_report"
         ) as mock_get_client:
             mock_get_client.return_value = mock_client
 
@@ -210,7 +218,7 @@ class TestRetrieveEvidence:
                 target="test.com",
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert len(evidence) == 2
             assert evidence[0]["category"] == "finding"
@@ -223,19 +231,20 @@ class TestRetrieveEvidence:
         """Test evidence retrieval with uncategorized memories"""
         mock_client = Mock()
         mock_client.list_memories.return_value = {
-            "memories": [
-                {"id": "mem1", "memory": "Port 22 is open", "metadata": {}},
+            "results": [
+                {"id": "mem1", "memory": "Port 22 is open", "metadata": {}, "score": 0.5},
                 {
                     "id": "mem2",
                     "memory": "This is a very long uncategorized memory that contains more than 100 words "
                     * 10,
                     "metadata": {},
+                    "score": 0.3
                 },
             ]
         }
 
         with patch.object(
-            ReasoningHandler, "_get_memory_client_for_report"
+            reporting, "_get_memory_client_for_report"
         ) as mock_get_client:
             mock_get_client.return_value = mock_client
 
@@ -245,7 +254,7 @@ class TestRetrieveEvidence:
                 target="test.com",
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             # Should only include the short memory
             assert len(evidence) == 1
@@ -255,16 +264,19 @@ class TestRetrieveEvidence:
     def test_retrieve_evidence_handles_list_response(self):
         """Test evidence retrieval with list response format"""
         mock_client = Mock()
-        mock_client.list_memories.return_value = [
-            {
-                "id": "mem1",
-                "memory": "Critical vulnerability found",
-                "metadata": {"category": "finding", "severity": "critical"},
-            }
-        ]
+        mock_client.list_memories.return_value = {
+            "results": [
+                {
+                    "id": "mem1",
+                    "memory": "Critical vulnerability found",
+                    "metadata": {"category": "finding", "severity": "critical"},
+                    "score": 0.99
+                }
+            ]
+        }
 
         with patch.object(
-            ReasoningHandler, "_get_memory_client_for_report"
+            reporting, "_get_memory_client_for_report"
         ) as mock_get_client:
             mock_get_client.return_value = mock_client
 
@@ -274,7 +286,7 @@ class TestRetrieveEvidence:
                 target="test.com",
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert len(evidence) == 1
             assert evidence[0]["category"] == "finding"
@@ -286,7 +298,7 @@ class TestRetrieveEvidence:
         mock_client.list_memories.side_effect = Exception("Memory retrieval failed")
 
         with patch.object(
-            ReasoningHandler, "_get_memory_client_for_report"
+            reporting, "_get_memory_client_for_report"
         ) as mock_get_client:
             mock_get_client.return_value = mock_client
 
@@ -296,7 +308,7 @@ class TestRetrieveEvidence:
                 target="test.com",
             )
 
-            evidence = handler._retrieve_evidence()
+            evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert evidence == []
 
@@ -322,9 +334,15 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_agent.return_value = "Generated security report content"
+        mock_result = Mock()
+        mock_result.message = {
+            "content": [
+                {"text": "Generated security report content"}
+            ]
+        }
+        mock_agent.return_value = mock_result
 
-        with patch.object(ReasoningHandler, "_retrieve_evidence") as mock_retrieve:
+        with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
 
             handler = ReasoningHandler(
@@ -333,8 +351,8 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch.object(handler, "_display_final_report") as mock_display:
-                with patch.object(handler, "_save_report_to_file") as mock_save:
+            with patch("modules.handlers.reporting._display_final_report") as mock_display:
+                with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
                     )
@@ -347,7 +365,7 @@ class TestGenerateReport:
         """Test report generation when no evidence is found"""
         mock_agent = Mock()
 
-        with patch.object(ReasoningHandler, "_retrieve_evidence") as mock_retrieve:
+        with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = []
 
             handler = ReasoningHandler(
@@ -356,8 +374,8 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch.object(handler, "_display_final_report") as mock_display:
-                with patch.object(handler, "_save_report_to_file") as mock_save:
+            with patch("modules.handlers.reporting._display_final_report") as mock_display:
+                with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
                     )
@@ -378,7 +396,7 @@ class TestGenerateReport:
         ]
         mock_agent = Mock()
 
-        with patch.object(ReasoningHandler, "_retrieve_evidence") as mock_retrieve:
+        with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
 
             handler = ReasoningHandler(
@@ -387,8 +405,8 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch.object(handler, "_display_final_report"):
-                with patch.object(handler, "_save_report_to_file"):
+            with patch("modules.handlers.reporting._display_final_report"):
+                with patch("modules.handlers.reporting._save_report_to_file"):
                     # First call should execute
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
@@ -425,9 +443,15 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_agent.return_value = "Generated report"
+        mock_result = Mock()
+        mock_result.message = {
+            "content": [
+                {"text": "Generated report"}
+            ]
+        }
+        mock_agent.return_value = mock_result
 
-        with patch.object(ReasoningHandler, "_retrieve_evidence") as mock_retrieve:
+        with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
 
             handler = ReasoningHandler(
@@ -436,8 +460,8 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch.object(handler, "_display_final_report"):
-                with patch.object(handler, "_save_report_to_file"):
+            with patch("modules.handlers.reporting._display_final_report"):
+                with patch("modules.handlers.reporting._save_report_to_file"):
                     handler.generate_final_report(
                         mock_agent, "test.com", "security assessment"
                     )

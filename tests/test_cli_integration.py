@@ -165,8 +165,8 @@ class TestMainFunction:
             "test.com",
             "--objective",
             "test objective",
-            "--server",
-            "remote",
+            "--provider",
+            "bedrock",
         ],
     )
     def test_main_remote_flow(
@@ -227,8 +227,8 @@ class TestMainFunction:
             "test.com",
             "--objective",
             "test objective",
-            "--server",
-            "local",
+            "--provider",
+            "ollama",
         ],
     )
     def test_main_local_flow(

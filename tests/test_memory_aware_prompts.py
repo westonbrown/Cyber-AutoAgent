@@ -114,7 +114,7 @@ class TestMemoryAwareSystemPrompts:
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context="",
-            server="remote",
+            provider="bedrock",
             has_memory_path=False,
             has_existing_memories=False,
             memory_overview=None,
@@ -135,7 +135,7 @@ class TestMemoryAwareSystemPrompts:
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context="",
-            server="remote",
+            provider="bedrock",
             has_memory_path=True,
             has_existing_memories=False,
             memory_overview=None,
@@ -153,7 +153,7 @@ class TestMemoryAwareSystemPrompts:
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context="",
-            server="remote",
+            provider="bedrock",
             has_memory_path=False,
             has_existing_memories=True,
             memory_overview=None,
@@ -187,7 +187,7 @@ class TestMemoryAwareSystemPrompts:
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context="",
-            server="remote",
+            provider="bedrock",
             has_memory_path=False,
             has_existing_memories=True,
             memory_overview=memory_overview,
@@ -215,7 +215,7 @@ Leverage these tools directly via shell.
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context=tools_context,
-            server="remote",
+            provider="bedrock",
             has_memory_path=False,
             has_existing_memories=False,
             memory_overview=None,
@@ -239,7 +239,7 @@ Leverage these tools directly via shell.
             max_steps=50,
             operation_id="OP_20240101_120000",
             tools_context="",
-            server="remote",
+            provider="bedrock",
             has_memory_path=False,
             has_existing_memories=False,
             output_config=output_config,
@@ -259,7 +259,7 @@ Leverage these tools directly via shell.
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         assert 'model_provider: "bedrock"' in result_remote
@@ -270,7 +270,7 @@ Leverage these tools directly via shell.
             objective="test objective",
             max_steps=50,
             operation_id="OP_20240101_120000",
-            server="local",
+            provider="ollama",
         )
 
         assert 'model_provider: "ollama"' in result_local
