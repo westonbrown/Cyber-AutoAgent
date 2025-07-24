@@ -25,7 +25,7 @@ import requests
 import ollama
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
-from .handlers.utils import get_output_path, sanitize_target_name
+from ..handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,7 @@ class ModelConfig:
         if not self.model_id:
             raise ValueError("model_id cannot be empty")
         if not isinstance(self.provider, ModelProvider):
-            raise ValueError(
-                f"provider must be a ModelProvider enum, got {type(self.provider)}"
-            )
+            raise ValueError(f"provider must be a ModelProvider enum, got {type(self.provider)}")
 
 
 @dataclass
@@ -102,9 +100,7 @@ class MemoryLLMConfig(ModelConfig):
 
     temperature: float = 0.1
     max_tokens: int = 2000
-    aws_region: str = field(
-        default_factory=lambda: os.getenv("AWS_REGION", "us-east-1")
-    )
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
     def __post_init__(self):
         super().__post_init__()
@@ -121,16 +117,12 @@ class MemoryLLMConfig(ModelConfig):
 class MemoryEmbeddingConfig(ModelConfig):
     """Configuration for memory-specific embedding models."""
 
-    aws_region: str = field(
-        default_factory=lambda: os.getenv("AWS_REGION", "us-east-1")
-    )
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
     dimensions: int = 1024
 
     def __post_init__(self):
         super().__post_init__()
-        self.parameters.update(
-            {"aws_region": self.aws_region, "dimensions": self.dimensions}
-        )
+        self.parameters.update({"aws_region": self.aws_region, "dimensions": self.dimensions})
 
 
 @dataclass
@@ -173,9 +165,7 @@ class MemoryConfig:
 
     embedder: MemoryEmbeddingConfig
     llm: MemoryLLMConfig
-    vector_store: MemoryVectorStoreConfig = field(
-        default_factory=MemoryVectorStoreConfig
-    )
+    vector_store: MemoryVectorStoreConfig = field(default_factory=MemoryVectorStoreConfig)
 
 
 @dataclass
@@ -267,9 +257,7 @@ class ConfigManager:
         """Check if a model supports thinking capabilities."""
         return model_id in self.get_thinking_models()
 
-    def get_thinking_model_config(
-        self, model_id: str, region_name: str
-    ) -> Dict[str, Any]:
+    def get_thinking_model_config(self, model_id: str, region_name: str) -> Dict[str, Any]:
         """Get configuration for thinking-enabled models."""
         return {
             "model_id": model_id,
@@ -282,9 +270,7 @@ class ConfigManager:
             },
         }
 
-    def get_standard_model_config(
-        self, model_id: str, region_name: str, provider: str
-    ) -> Dict[str, Any]:
+    def get_standard_model_config(self, model_id: str, region_name: str, provider: str) -> Dict[str, Any]:
         """Get configuration for standard (non-thinking) models."""
         provider_config = self.get_server_config(provider)
         llm_config = provider_config.llm
@@ -534,9 +520,7 @@ class ConfigManager:
             base_dir=output_config.base_dir,
         )
 
-    def get_unified_memory_path(
-        self, server: str, target_name: str, **overrides
-    ) -> str:
+    def get_unified_memory_path(self, server: str, target_name: str, **overrides) -> str:
         """Get unified memory path for target.
 
         Args:
@@ -707,9 +691,7 @@ class ConfigManager:
             os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
 
-    def _apply_environment_overrides(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _apply_environment_overrides(self, _server: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
         # Main LLM model override
         llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
@@ -731,9 +713,7 @@ class ConfigManager:
             )
 
         # Evaluation model override
-        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv(
-            "RAGAS_EVALUATOR_MODEL"
-        )
+        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
         if eval_model:
             defaults["evaluation_llm"] = LLMConfig(
                 provider=defaults["evaluation_llm"].provider,
@@ -765,9 +745,7 @@ class ConfigManager:
 
         # Memory embedding override (only if not already overridden)
         mem0_embedding_model = os.getenv("MEM0_EMBEDDING_MODEL")
-        if (
-            mem0_embedding_model and not embedding_model
-        ):  # Only if not already overridden
+        if mem0_embedding_model and not embedding_model:  # Only if not already overridden
             defaults["embedding"] = EmbeddingConfig(
                 provider=defaults["embedding"].provider,
                 model_id=mem0_embedding_model,
@@ -781,9 +759,7 @@ class ConfigManager:
 
         return defaults
 
-    def _get_memory_embedder_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryEmbeddingConfig:
+    def _get_memory_embedder_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
         embedding_config = defaults["embedding"]
         return MemoryEmbeddingConfig(
@@ -793,40 +769,26 @@ class ConfigManager:
             dimensions=embedding_config.dimensions,
         )
 
-    def _get_memory_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryLLMConfig:
+    def _get_memory_llm_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
 
-    def _get_evaluation_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation LLM configuration."""
         return defaults["evaluation_llm"]
 
-    def _get_evaluation_embedding_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_embedding_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
 
-    def _get_swarm_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_swarm_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get swarm LLM configuration."""
         return defaults["swarm_llm"]
 
-    def _get_output_config(
-        self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]
-    ) -> OutputConfig:
+    def _get_output_config(self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]) -> OutputConfig:
         """Get output configuration with environment variable and override support."""
         # Get base output directory
-        base_dir = (
-            overrides.get("output_dir")
-            or os.getenv("CYBER_AGENT_OUTPUT_DIR")
-            or get_default_base_dir()
-        )
+        base_dir = overrides.get("output_dir") or os.getenv("CYBER_AGENT_OUTPUT_DIR") or get_default_base_dir()
 
         # Get target name
         target_name = overrides.get("target_name")
@@ -860,17 +822,14 @@ class ConfigManager:
                 raise ConnectionError("Ollama server not responding")
         except Exception as e:
             raise ConnectionError(
-                f"Ollama server not accessible at {ollama_host}. "
-                "Please ensure Ollama is installed and running."
+                f"Ollama server not accessible at {ollama_host}. " "Please ensure Ollama is installed and running."
             ) from e
 
         # Check if required models are available
         try:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
-            available_models = [
-                m.get("model", m.get("name", "")) for m in models_response["models"]
-            ]
+            available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
 
             server_config = self.get_server_config("ollama")
             required_models = [
@@ -878,11 +837,7 @@ class ConfigManager:
                 server_config.embedding.model_id,
             ]
 
-            missing = [
-                m
-                for m in required_models
-                if not any(m in model for model in available_models)
-            ]
+            missing = [m for m in required_models if not any(m in model for model in available_models)]
 
             if missing:
                 raise ValueError(
@@ -928,7 +883,7 @@ class ConfigManager:
         """Validate AWS requirements including Bedrock model access."""
         # Convert bearer token if needed
         self._convert_bearer_token_if_needed()
-        
+
         # Verify AWS credentials are configured
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
@@ -940,7 +895,7 @@ class ConfigManager:
 
     def _validate_litellm_requirements(self) -> None:
         """Validate LiteLLM requirements based on model provider prefix.
-        
+
         LiteLLM handles authentication internally based on model prefixes,
         so we validate that required environment variables are set for the
         default model configuration.
@@ -948,7 +903,7 @@ class ConfigManager:
         # Get default LiteLLM model ID
         litellm_config = self._default_configs.get("litellm", {})
         model_id = litellm_config.get("llm", {}).model_id if hasattr(litellm_config.get("llm", {}), "model_id") else ""
-        
+
         # Check provider-specific requirements based on model prefix
         if model_id.startswith("bedrock/"):
             # LiteLLM does NOT support AWS bearer tokens - only standard credentials
@@ -958,7 +913,7 @@ class ConfigManager:
                     "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE. "
                     "Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK - use standard AWS credentials instead."
                 )
-                
+
         elif model_id.startswith("openai/"):
             if not os.getenv("OPENAI_API_KEY"):
                 raise EnvironmentError(

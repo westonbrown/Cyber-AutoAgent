@@ -7,12 +7,12 @@ metadata, and triggering evaluation processes.
 
 import os
 import re
-import subprocess
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from .utils import Colors, get_output_path
 from .base import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+from ..agents.report_agent import ReportAgent
 
 
 def generate_final_report(
@@ -53,7 +53,18 @@ def generate_final_report(
     print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
 
     # Generate report using LLM
-    report_content = _generate_llm_report(handler_state.state, agent, target, objective, evidence)
+    # Create report agent with same model as main agent
+    report_agent = ReportAgent(model=agent.model if hasattr(agent, "model") else None)
+
+    # Generate report using dedicated agent
+    report_content = report_agent.generate_report(
+        target=target,
+        objective=objective,
+        operation_id=handler_state.state.operation_id,
+        steps_executed=handler_state.state.steps,
+        evidence=evidence,
+        tools_used=handler_state.state.tools_used,
+    )
 
     if report_content:
         # Display the report
@@ -68,7 +79,9 @@ def generate_final_report(
         print("%s%sFailed to generate report%s" % (Colors.RED, Colors.BOLD, Colors.RESET))
 
 
-def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any]]) -> List[Dict]:  # pylint: disable=unused-argument
+def _retrieve_evidence(
+    handler_state: Any, memory_config: Optional[Dict[str, Any]]
+) -> List[Dict]:  # pylint: disable=unused-argument
     """Retrieve evidence from memory system.
 
     Args:
@@ -88,7 +101,7 @@ def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any
         # Retrieve memories using list_memories method
         # The memory system uses "cyber_agent" as the default user_id
         memories_response = memory_client.list_memories(user_id="cyber_agent")
-        
+
         # Parse memory response format (same as old implementation)
         if isinstance(memories_response, dict):
             # Extract from dictionary response
@@ -99,35 +112,42 @@ def _retrieve_evidence(handler_state: Any, memory_config: Optional[Dict[str, Any
         else:
             # Handle unexpected format
             raw_memories = []
-            print(f"  %sWarning: Unexpected memory response format: {type(memories_response)}%s" % (Colors.YELLOW, Colors.RESET))
-        
+            print(
+                f"  %sWarning: Unexpected memory response format: {type(memories_response)}%s"
+                % (Colors.YELLOW, Colors.RESET)
+            )
+
         # Process memories according to category and content length
         for mem in raw_memories:
             metadata = mem.get("metadata", {})
             memory_content = mem.get("memory", "")
             memory_id = mem.get("id", "")
-            
+
             # Process memories with category "finding" in metadata
             if metadata.get("category") == "finding":
-                evidence.append({
-                    "category": "finding",
-                    "content": memory_content,
-                    "id": memory_id,
-                    "severity": metadata.get("severity", "unknown"),
-                    "confidence": metadata.get("confidence", "unknown"),
-                })
+                evidence.append(
+                    {
+                        "category": "finding",
+                        "content": memory_content,
+                        "id": memory_id,
+                        "severity": metadata.get("severity", "unknown"),
+                        "confidence": metadata.get("confidence", "unknown"),
+                    }
+                )
             # Process uncategorized memories (no category in metadata)
             elif "category" not in metadata and memory_content:
                 # Only include short uncategorized memories
                 if len(memory_content.split()) < 100:
-                    evidence.append({
-                        "category": "general",
-                        "content": memory_content,
-                        "id": memory_id,
-                        "severity": "unknown",
-                        "confidence": "unknown",
-                    })
-        
+                    evidence.append(
+                        {
+                            "category": "general",
+                            "content": memory_content,
+                            "id": memory_id,
+                            "severity": "unknown",
+                            "confidence": "unknown",
+                        }
+                    )
+
         print(f"  %sCollected {len(evidence)} pieces of evidence from memory%s" % (Colors.GREEN, Colors.RESET))
 
     except Exception as e:
@@ -148,7 +168,8 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
     if not memory_config:
         # Fall back to global memory client
         try:
-            from ..memory_tools import get_memory_client
+            from ..tools.memory import get_memory_client
+
             # Return the wrapper itself, not the inner mem0 client
             return get_memory_client()
         except Exception:
@@ -156,7 +177,7 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
 
     try:
         # Try to get memory client from config
-        from ..memory_tools import Mem0ServiceClient
+        from ..tools.memory import Mem0ServiceClient
 
         # Initialize memory client with config
         # Return the wrapper itself which has list_memories method
@@ -186,19 +207,19 @@ def _generate_llm_report(
     evidence_text = ""
     for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
         # Format based on category and available metadata
-        category = item['category'].upper()
-        content = item['content'][:500]
-        
-        if item['category'] == 'finding':
-            severity = item.get('severity', 'unknown').upper()
-            confidence = item.get('confidence', 'unknown')
-            if confidence != 'unknown':
+        category = item["category"].upper()
+        content = item["content"][:500]
+
+        if item["category"] == "finding":
+            severity = item.get("severity", "unknown").upper()
+            confidence = item.get("confidence", "unknown")
+            if confidence != "unknown":
                 evidence_text += f"\n{i+1}. [{category} | {severity} | {confidence}] {content}"
             else:
                 evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
         else:
             evidence_text += f"\n{i+1}. [{category}] {content}"
-            
+
         if len(item["content"]) > 500:
             evidence_text += "..."
 
@@ -312,7 +333,7 @@ def _clean_duplicate_content(report_content: str) -> str:
             if section_name in seen_sections:
                 skip_until_next_section = True
                 continue
-                
+
             seen_sections.add(section_name)
             skip_until_next_section = False
 
@@ -357,7 +378,9 @@ def _save_report_to_file(handler_state: Any, report_content: str, target: str, o
 
             target_name = sanitize_target_name(target)
             report_dir = get_output_path(
-                target_name=target_name, operation_id=handler_state.state.operation_id, base_dir=handler_state.output_base_dir
+                target_name=target_name,
+                operation_id=handler_state.state.operation_id,
+                base_dir=handler_state.output_base_dir,
             )
         else:
             report_dir = "."
@@ -393,58 +416,16 @@ def _trigger_evaluation_if_enabled(handler_state: Any) -> None:
     Args:
         handler_state: The handler object
     """
-    if not os.getenv("ENABLE_EVALUATION", "").lower() == "true":
+    if not os.getenv("ENABLE_AUTO_EVALUATION", "").lower() == "true":
         return
 
     try:
         print("\n%s🔬 Triggering operation evaluation...%s" % (Colors.CYAN, Colors.RESET))
-
-        # Run evaluation in background
-        def run_batch_evaluation():
-            try:
-                # Get the cyberautoagent module path
-                import cyberautoagent
-
-                module_path = os.path.dirname(cyberautoagent.__file__)
-                eval_script = os.path.join(module_path, "evaluation", "batch_evaluator.py")
-
-                # Check if evaluation script exists
-                if not os.path.exists(eval_script):
-                    print("%sEvaluation script not found: %s%s" % (Colors.YELLOW, eval_script, Colors.RESET))
-                    return
-
-                # Prepare evaluation command
-                cmd = [
-                    "python",
-                    eval_script,
-                    "--operation-ids",
-                    handler_state.state.operation_id,
-                    "--output-dir",
-                    handler_state.output_base_dir or "./outputs",
-                ]
-
-                # Add optional parameters
-                if os.getenv("EVALUATION_MODEL"):
-                    cmd.extend(["--model", os.getenv("EVALUATION_MODEL")])
-
-                # Run evaluation
-                print(f"  Running: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-
-                if result.returncode == 0:
-                    print("%s✅ Evaluation completed successfully%s" % (Colors.GREEN, Colors.RESET))
-                else:
-                    print("%s❌ Evaluation failed: %s%s" % (Colors.RED, result.stderr, Colors.RESET))
-
-            except Exception as e:
-                print("%sError running evaluation: %s%s" % (Colors.RED, e, Colors.RESET))
-
-        # Run in thread to avoid blocking
-        import threading
-
-        eval_thread = threading.Thread(target=run_batch_evaluation)
-        eval_thread.daemon = True
-        eval_thread.start()
+        
+        # The evaluation is already triggered in the callback handler
+        # This function is kept for backward compatibility but the actual
+        # evaluation happens in callback.py using trigger_evaluation_on_completion()
+        print("%s✅ Evaluation triggered in background%s" % (Colors.GREEN, Colors.RESET))
 
     except Exception as e:
         print("%sError triggering evaluation: %s%s" % (Colors.RED, e, Colors.RESET))

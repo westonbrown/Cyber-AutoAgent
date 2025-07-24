@@ -15,11 +15,11 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request
 from strands_tools.swarm import swarm
 
-from .system_prompts import get_system_prompt
-from .config import get_config_manager
-from .handlers import ReasoningHandler
-from .handlers.utils import Colors, sanitize_target_name
-from .memory_tools import mem0_memory, initialize_memory_system, get_memory_client
+from ..prompts.system import get_system_prompt
+from ..config.manager import get_config_manager
+from ..handlers import ReasoningHandler
+from ..handlers.utils import Colors, sanitize_target_name
+from ..tools.memory import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -130,21 +130,21 @@ def _create_litellm_model(
     provider: str = "litellm",
 ) -> LiteLLMModel:
     """Create LiteLLM model instance for universal provider access."""
-    
+
     # Get centralized configuration
     config_manager = get_config_manager()
-    
+
     # Get standard configuration (LiteLLM doesn't have special thinking mode handling)
     config = config_manager.get_standard_model_config(model_id, region_name, provider)
-    
+
     # Prepare client args based on model prefix
     client_args = {}
-    
+
     # If using AWS Bedrock models via LiteLLM, configure appropriately
     if model_id.startswith("bedrock/"):
         client_args["aws_region_name"] = region_name
         # Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK - use standard AWS credentials
-    
+
     return LiteLLMModel(
         client_args=client_args,
         model_id=config["model_id"],
@@ -152,7 +152,7 @@ def _create_litellm_model(
             "temperature": config["temperature"],
             "max_tokens": config["max_tokens"],
             "top_p": config.get("top_p", 0.95),
-        }
+        },
     )
 
 
@@ -162,21 +162,21 @@ def _handle_model_creation_error(provider: str, error: Exception) -> None:
         "ollama": [
             "Ensure Ollama is installed: https://ollama.ai",
             "Start Ollama: ollama serve",
-            "Pull required models (see config.py file)"
+            "Pull required models (see config.py file)",
         ],
         "bedrock": [
             "Check AWS credentials and region settings",
             "Verify AWS_ACCESS_KEY_ID or AWS_BEARER_TOKEN_BEDROCK",
-            "Ensure Bedrock access is enabled in your AWS account"
+            "Ensure Bedrock access is enabled in your AWS account",
         ],
         "litellm": [
             "Check environment variables for your model provider",
             "For Bedrock: AWS_ACCESS_KEY_ID (bearer tokens not supported)",
             "For OpenAI: OPENAI_API_KEY",
-            "For Anthropic: ANTHROPIC_API_KEY"
-        ]
+            "For Anthropic: ANTHROPIC_API_KEY",
+        ],
     }
-    
+
     print(f"{Colors.RED}[!] {provider.title()} model creation failed: {error}{Colors.RESET}")
     if provider in error_messages:
         print(f"{Colors.YELLOW}[?] Troubleshooting steps:{Colors.RESET}")
@@ -238,28 +238,20 @@ def create_agent(
 
         # Override vector store path in centralized config
         memory_config["vector_store"] = {"config": {"path": memory_path}}
-        print(
-            f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}"
-        )
+        print(f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}")
 
     # Check for existing memories before initializing to avoid race conditions
     # Skip check if user explicitly wants fresh memory
     if memory_mode == "fresh":
         has_existing_memories = False
-        print(
-            f"{Colors.YELLOW}[*] Using fresh memory mode - ignoring any existing memories{Colors.RESET}"
-        )
+        print(f"{Colors.YELLOW}[*] Using fresh memory mode - ignoring any existing memories{Colors.RESET}")
     else:
         has_existing_memories = check_existing_memories(target, provider)
 
     # Initialize memory system
     target_name = sanitize_target_name(target)
-    initialize_memory_system(
-        memory_config, operation_id, target_name, has_existing_memories
-    )
-    print(
-        f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
-    )
+    initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
+    print(f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}")
     memory_overview = None
 
     # Get memory overview for system prompt enhancement
@@ -267,9 +259,7 @@ def create_agent(
         try:
             memory_client = get_memory_client()
             if memory_client:
-                memory_overview = memory_client.get_memory_overview(
-                    user_id="cyber_agent"
-                )
+                memory_overview = memory_client.get_memory_overview(user_id="cyber_agent")
         except Exception as e:
             agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
@@ -290,7 +280,7 @@ Leverage these tools directly via shell.
         max_steps,
         operation_id,
         tools_context,
-        provider,  
+        provider,
         has_memory_path=bool(memory_path),
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
@@ -310,21 +300,15 @@ Leverage these tools directly via shell.
         if provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
             model = _create_local_model(model_id, provider)
-            print(
-                f"{Colors.GREEN}[+] Ollama model initialized: {model_id}{Colors.RESET}"
-            )
+            print(f"{Colors.GREEN}[+] Ollama model initialized: {model_id}{Colors.RESET}")
         elif provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
             model = _create_remote_model(model_id, region_name, provider)
-            print(
-                f"{Colors.GREEN}[+] Bedrock model initialized: {model_id}{Colors.RESET}"
-            )
+            print(f"{Colors.GREEN}[+] Bedrock model initialized: {model_id}{Colors.RESET}")
         elif provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
             model = _create_litellm_model(model_id, region_name, provider)
-            print(
-                f"{Colors.GREEN}[+] LiteLLM model initialized: {model_id}{Colors.RESET}"
-            )
+            print(f"{Colors.GREEN}[+] LiteLLM model initialized: {model_id}{Colors.RESET}")
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 

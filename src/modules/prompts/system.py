@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 
 from typing import Dict, Optional
+import os
+import logging
 
 # Import the new configuration system
-from .config import get_config_manager
+from ..config.manager import get_config_manager
+
+logger = logging.getLogger(__name__)
+
+# Check if we should use prompt manager
+USE_PROMPT_MANAGER = os.getenv("ENABLE_LANGFUSE_PROMPTS", "false").lower() == "true"
 
 
 def _get_swarm_model_guidance(provider: str) -> str:
@@ -35,9 +42,7 @@ When configuring swarm agents, you can optionally set:
 """
 
 
-def _get_output_directory_guidance(
-    output_config: Optional[Dict], operation_id: str
-) -> str:
+def _get_output_directory_guidance(output_config: Optional[Dict], operation_id: str) -> str:
     """Generate output directory guidance based on configuration."""
     if not output_config:
         return ""
@@ -71,11 +76,9 @@ def _get_memory_context_guidance(
     """Generate memory-aware context and guidance."""
     # Check if we have any previous memories
     has_previous_memories = (
-        has_existing_memories 
-        or has_memory_path 
-        or (memory_overview and memory_overview.get("has_memories"))
+        has_existing_memories or has_memory_path or (memory_overview and memory_overview.get("has_memories"))
     )
-    
+
     if not has_previous_memories:
         return """## MEMORY CONTEXT
     Starting fresh assessment with no previous context.
@@ -89,7 +92,7 @@ def _get_memory_context_guidance(
         total_memories = 0
         if memory_overview and memory_overview.get("has_memories"):
             total_memories = memory_overview.get("total_count", 0)
-            
+
         return f"""## MEMORY CONTEXT
     Continuing assessment with {total_memories} existing memories.
     
@@ -115,19 +118,69 @@ def get_system_prompt(
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
-    swarm_guidance = _get_swarm_model_guidance(provider)
-    full_tools_context = (
-        f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
+    # Use prompt manager if enabled
+    if USE_PROMPT_MANAGER:
+        try:
+            from .manager import get_prompt_manager
+
+            pm = get_prompt_manager()
+
+            # Prepare variables for Langfuse prompt
+            variables = {
+                "target": target,
+                "objective": objective,
+                "max_steps": max_steps,
+                "operation_id": operation_id,
+                "tools_context": tools_context,
+                "provider": provider,
+                "has_memory_path": has_memory_path,
+                "has_existing_memories": has_existing_memories,
+                "output_config": output_config,
+                "memory_overview": memory_overview,
+            }
+
+            logger.info("Fetching system prompt from Langfuse")
+            return pm.get_prompt("cyber-agent-system", variables)
+        except Exception as e:
+            logger.warning("Failed to use prompt manager: %s. Falling back to local prompt.", e)
+
+    # Continue with local prompt generation
+    return _get_local_system_prompt(
+        target=target,
+        objective=objective,
+        max_steps=max_steps,
+        operation_id=operation_id,
+        tools_context=tools_context,
+        provider=provider,
+        has_memory_path=has_memory_path,
+        has_existing_memories=has_existing_memories,
+        output_config=output_config,
+        memory_overview=memory_overview,
     )
+
+
+def _get_local_system_prompt(
+    target: str,
+    objective: str,
+    max_steps: int,
+    operation_id: str,
+    tools_context: str = "",
+    provider: str = "bedrock",
+    has_memory_path: bool = False,
+    has_existing_memories: bool = False,
+    output_config: Optional[Dict] = None,
+    memory_overview: Optional[Dict] = None,
+) -> str:
+    """Generate hardcoded system prompt (original implementation)."""
+
+    swarm_guidance = _get_swarm_model_guidance(provider)
+    full_tools_context = f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
 
     # Generate output directory guidance
     output_guidance = _get_output_directory_guidance(output_config, operation_id)
 
     # Generate memory-aware context and guidance
-    memory_context = _get_memory_context_guidance(
-        has_memory_path, has_existing_memories, memory_overview
-    )
-
+    memory_context = _get_memory_context_guidance(has_memory_path, has_existing_memories, memory_overview)
 
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
@@ -375,6 +428,27 @@ def get_initial_prompt(
     _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
+
+    # Use prompt manager if enabled
+    if USE_PROMPT_MANAGER:
+        try:
+            from .manager import get_prompt_manager
+
+            pm = get_prompt_manager()
+
+            variables = {
+                "target": target,
+                "objective": objective,
+                "max_steps": _iterations,
+                "available_tools": _available_tools,
+            }
+
+            logger.info("Fetching initial prompt from Langfuse")
+            return pm.get_prompt("cyber-agent-initial", variables)
+        except Exception as e:
+            logger.warning("Failed to use prompt manager: %s. Falling back to hardcoded prompt.", e)
+
+    # Continue with hardcoded prompt
     return f"""Initializing penetration testing operation.
 Target: {target}
 Objective: {objective}
@@ -389,6 +463,25 @@ def get_continuation_prompt(
     _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
+
+    # Use prompt manager if enabled
+    if USE_PROMPT_MANAGER:
+        try:
+            from .manager import get_prompt_manager
+
+            pm = get_prompt_manager()
+
+            variables = {
+                "remaining_steps": remaining,
+                "max_steps": total,
+            }
+
+            logger.info("Fetching continuation prompt from Langfuse")
+            return pm.get_prompt("cyber-agent-continuation", variables)
+        except Exception as e:
+            logger.warning("Failed to use prompt manager: %s. Falling back to hardcoded prompt.", e)
+
+    # Continue with hardcoded prompt
     urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
 
     return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}

@@ -8,17 +8,17 @@ from unittest.mock import Mock, patch
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.agent import create_agent
+from modules.agents.cyber_autoagent import create_agent
 
 
 class TestMemoryAwareAgentIntegration:
     """Test memory-aware system prompt integration with agent creation"""
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_overview(
         self,
         mock_config_manager,
@@ -89,11 +89,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Load all memories with mem0_memory" in system_prompt
         assert "**CRITICAL FIRST ACTION**" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_fresh_start(
         self,
         mock_config_manager,
@@ -150,11 +150,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Begin with reconnaissance" in system_prompt
         assert "Store all findings immediately" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_path(
         self,
         mock_config_manager,
@@ -224,11 +224,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Continuing assessment with 2 existing memories" in system_prompt
         assert "Load all memories with mem0_memory" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_memory_overview_error_handling(
         self,
         mock_config_manager,
@@ -283,11 +283,11 @@ class TestMemoryAwareAgentIntegration:
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 0 existing memories" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_local_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_local_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_local_server_with_memory(
         self,
         mock_config_manager,
