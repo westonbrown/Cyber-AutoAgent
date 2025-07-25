@@ -135,9 +135,11 @@ class TeeOutput:
 
     def write(self, message):
         with self.lock:
-            # Write to terminal as-is
+            # Write to terminal as-is, ensuring proper flushing
             self.terminal.write(message)
-            self.terminal.flush()
+            # Force immediate flush to prevent buffering issues
+            if hasattr(self.terminal, 'flush'):
+                self.terminal.flush()
 
             # Clean message for log file
             try:
@@ -163,11 +165,7 @@ class TeeOutput:
                     lines = self.line_buffer.split("\n")
                     # Write all complete lines
                     for line in lines[:-1]:
-                        # Strip any leading spaces that might cause indentation issues
-                        # but preserve intentional indentation (2+ spaces)
-                        if line and len(line) - len(line.lstrip()) > 30:
-                            # This line has excessive leading spaces, likely from positioning
-                            line = line.lstrip()
+                        # Don't strip leading spaces - preserve formatting
                         self.log.write(line + "\n")
                     # Keep the incomplete line in buffer
                     self.line_buffer = lines[-1]
@@ -190,9 +188,6 @@ class TeeOutput:
             try:
                 # Flush any remaining buffered content
                 if self.line_buffer:
-                    # Strip excessive leading spaces from final buffer
-                    if len(self.line_buffer) - len(self.line_buffer.lstrip()) > 30:
-                        self.line_buffer = self.line_buffer.lstrip()
                     self.log.write(self.line_buffer)
                     self.log.flush()
                 self.log.close()

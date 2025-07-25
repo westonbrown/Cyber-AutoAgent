@@ -8,8 +8,29 @@ output formatting, and message analysis.
 
 import os
 import re
+import shutil
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
+
+
+def get_terminal_width(default=80):
+    """Get terminal width with fallback to default."""
+    try:
+        # Try to get actual terminal size
+        size = shutil.get_terminal_size((default, 24))
+        # Return a slightly smaller width to account for edge cases
+        return max(40, min(size.columns - 2, default))
+    except:
+        return default
+
+
+def print_separator(char="─", color_start="", color_end=""):
+    """Print a separator line that fits the terminal width."""
+    width = get_terminal_width()
+    if color_start and color_end:
+        print(f"{color_start}{char * width}{color_end}")
+    else:
+        print(char * width)
 
 
 def get_output_path(
@@ -116,10 +137,14 @@ def create_output_directory(path: str) -> bool:
 class Colors:
     """ANSI color codes for terminal output formatting."""
 
-    # Check if output is to a terminal (not redirected)
-    _is_terminal = hasattr(os.sys.stdout, "isatty") and os.sys.stdout.isatty()
+    # Check if output is to a terminal (not redirected), Docker pseudo-TTY, or if colors are forced
+    # Docker allocates a pseudo-TTY when -t flag is used, which makes isatty() return True
+    # We also respect FORCE_COLOR env var which is set in docker-compose.yml
+    _force_color = os.environ.get("FORCE_COLOR", "").lower() in ("1", "true", "yes")
+    _is_tty = hasattr(os.sys.stdout, "isatty") and os.sys.stdout.isatty()
+    _is_terminal = _is_tty or _force_color
 
-    # Define colors only if outputting to terminal
+    # Define colors only if outputting to terminal or colors are forced
     BLUE = "\033[94m" if _is_terminal else ""
     GREEN = "\033[92m" if _is_terminal else ""
     YELLOW = "\033[93m" if _is_terminal else ""

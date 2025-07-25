@@ -41,7 +41,7 @@ class PromptManager:
                 self.langfuse_client = Langfuse(
                     public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
                     secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-                    host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
+                    host=os.getenv("LANGFUSE_HOST", "http://langfuse-web:3000" if os.path.exists("/.dockerenv") or os.path.exists("/app") else "http://localhost:3000"),
                 )
                 logger.info("Langfuse prompt management enabled with label: %s", self.prompt_label)
             except Exception as e:

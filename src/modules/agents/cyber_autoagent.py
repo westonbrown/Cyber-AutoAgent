@@ -12,8 +12,7 @@ from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, editor, load_tool, stop, http_request
-from strands_tools.swarm import swarm
+from strands_tools import shell, editor, load_tool, stop, http_request, swarm
 
 from ..prompts.system import get_system_prompt
 from ..config.manager import get_config_manager
@@ -140,10 +139,9 @@ def _create_litellm_model(
     # Prepare client args based on model prefix
     client_args = {}
 
-    # If using AWS Bedrock models via LiteLLM, configure appropriately
+    # Configure AWS Bedrock models via LiteLLM
     if model_id.startswith("bedrock/"):
         client_args["aws_region_name"] = region_name
-        # Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK - use standard AWS credentials
 
     return LiteLLMModel(
         client_args=client_args,
@@ -334,28 +332,45 @@ Leverage these tools directly via shell.
         conversation_manager=SlidingWindowConversationManager(window_size=120),
         load_tools_from_directory=True,
         trace_attributes={
-            # Session and user identification
+            # Langfuse-specific attributes for proper UI display
+            "langfuse.trace.name": f"Security Assessment - {target} - {operation_id}",
+            "langfuse.session.id": operation_id,
+            "langfuse.user.id": f"cyber-agent-{target}",
+            "langfuse.tags": [
+                "Cyber-AutoAgent",
+                provider.upper(),
+                operation_id,
+            ],
+            "langfuse.environment": os.getenv("DEPLOYMENT_ENV", "production"),
+            "langfuse.agent.type": "main_orchestrator",
+            "langfuse.capabilities.swarm": True,
+            
+            # Standard attributes for compatibility
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
+            
             # Agent identification
             "agent.name": "Cyber-AutoAgent",
             "agent.version": "1.0.0",
             "gen_ai.agent.name": "Cyber-AutoAgent",
             "gen_ai.system": "Cyber-AutoAgent",
+            
             # Operation metadata
             "operation.id": operation_id,
             "operation.type": "security_assessment",
             "operation.start_time": datetime.now().isoformat(),
             "operation.max_steps": max_steps,
-            # Target information
+            
+            # Target and objective
             "target.host": target,
-            # Objective and scope
             "objective.description": objective,
+            
             # Model configuration
             "model.provider": provider,
             "model.id": model_id,
-            "model.region": region_name if provider in ["bedrock", "litellm"] else "ollama",
+            "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
             "gen_ai.request.model": model_id,
+            
             # Tool configuration
             "tools.available": 7,  # Number of core tools
             "tools.names": [
@@ -368,15 +383,10 @@ Leverage these tools directly via shell.
                 "http_request",
             ],
             "tools.parallel_limit": 8,
+            
             # Memory configuration
             "memory.enabled": True,
             "memory.path": memory_path if memory_path else "ephemeral",
-            # Tags for filtering
-            "langfuse.tags": [
-                "Cyber-AutoAgent",
-                provider.upper(),
-                operation_id,
-            ],
         },
     )
 

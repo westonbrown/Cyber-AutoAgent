@@ -49,7 +49,7 @@ class CyberAgentEvaluator:
         self.langfuse = Langfuse(
             public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
             secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-            host=os.getenv("LANGFUSE_HOST", "http://localhost:3000"),
+            host=os.getenv("LANGFUSE_HOST", "http://langfuse-web:3000" if os.path.exists("/.dockerenv") or os.path.exists("/app") else "http://localhost:3000"),
         )
         self.setup_models()
         self.setup_metrics()
@@ -182,17 +182,22 @@ class CyberAgentEvaluator:
         logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
         logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
 
-    async def evaluate_trace(self, trace_id: str, max_retries: int = 3) -> Dict[str, float]:
+    async def evaluate_trace(self, trace_id: str, max_retries: int = 5) -> Dict[str, float]:
         """
         Evaluate agent trace with configured metrics.
 
         Args:
-            trace_id: Langfuse trace identifier
+            trace_id: Operation ID or session ID used to find the trace in Langfuse
             max_retries: Maximum number of retries if trace not found
 
         Returns:
             Dictionary of metric names and scores
         """
+        # Wait for trace ingestion on first attempt
+        initial_wait = 10  # seconds
+        logger.info(f"Waiting {initial_wait}s for trace ingestion before evaluation...")
+        time.sleep(initial_wait)
+        
         # Initialize metrics with RunConfig if needed
         run_config = RunConfig()
         for metric in self.all_metrics:
@@ -201,33 +206,81 @@ class CyberAgentEvaluator:
                 metric.init(run_config)
 
         for attempt in range(max_retries):
-            # Fetch trace from Langfuse
-            all_traces = self.langfuse.api.trace.list(limit=50)
-            logger.info(
-                f"Retrieved {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces from Langfuse API"
-            )
+            # Fetch trace from Langfuse by session ID
+            # Note: trace_id parameter is actually the operation ID / session ID
+            # The actual trace ID will be extracted from the fetched trace object
+            try:
+                # Fetch traces by session ID
+                all_traces = self.langfuse.api.trace.list(session_id=trace_id, limit=50)
+                logger.info(
+                    f"Retrieved {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces for session {trace_id}"
+                )
+            except Exception as e:
+                logger.debug(f"Failed to fetch by session_id, falling back to general list: {e}")
+                # Fallback to fetching all recent traces
+                all_traces = self.langfuse.api.trace.list(limit=100)
+                logger.info(
+                    f"Retrieved {len(all_traces.data) if hasattr(all_traces, 'data') else 0} recent traces"
+                )
 
             trace = None
             if hasattr(all_traces, "data") and all_traces.data:
-                # Find our specific trace
+                # Find our specific trace by matching session_id in metadata or attributes
                 for t in all_traces.data:
-                    if hasattr(t, "id") and t.id == trace_id:
+                    # Check if this trace belongs to our operation
+                    # Method 1: Check session_id field directly
+                    if hasattr(t, "session_id") and t.session_id == trace_id:
                         trace = t
-                        logger.info("Found trace %s in list", trace_id)
+                        logger.info("Found trace by session_id: %s", trace_id)
                         break
+                    
+                    # Method 2: Check metadata for session_id or operation_id
+                    if hasattr(t, "metadata") and t.metadata:
+                        metadata = t.metadata
+                        if isinstance(metadata, dict):
+                            # Check for session_id in metadata
+                            if metadata.get("session_id") == trace_id:
+                                trace = t
+                                logger.info("Found trace by metadata.session_id: %s", trace_id)
+                                break
+                            # Check for operation.id in attributes from OTLP
+                            if "attributes" in metadata:
+                                attrs = metadata["attributes"]
+                                if isinstance(attrs, dict):
+                                    if attrs.get("operation.id") == trace_id or attrs.get("langfuse.session.id") == trace_id:
+                                        trace = t
+                                        logger.info("Found trace by metadata.attributes: %s", trace_id)
+                                        break
+                    
+                    # Method 3: Check if operation_id is in the trace name
+                    if hasattr(t, "name") and t.name and trace_id in t.name:
+                        # Verify it's the right trace by checking if it contains our operation pattern
+                        if f"Security Assessment" in t.name and trace_id in t.name:
+                            trace = t
+                            logger.info("Found trace by name pattern: %s", t.name)
+                            break
 
             if not trace:
                 logger.debug(
-                    f"Trace {trace_id} not found in list of {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces"
+                    f"Operation {trace_id} not found in list of {len(all_traces.data) if hasattr(all_traces, 'data') else 0} traces"
                 )
                 if attempt < max_retries - 1:
                     logger.warning(
-                        f"Trace {trace_id} not found, retrying in 3 seconds... (attempt {attempt + 1}/{max_retries})"
+                        f"Operation {trace_id} not found, retrying in 5 seconds... (attempt {attempt + 1}/{max_retries})"
                     )
-                    time.sleep(3)
+                    time.sleep(5)  # Increased wait time for trace ingestion
                     continue
                 else:
-                    logger.error(f"Trace {trace_id} not found after {max_retries} attempts")
+                    logger.error(f"Operation {trace_id} not found after {max_retries} attempts")
+                    # Log available traces for debugging
+                    if hasattr(all_traces, "data") and all_traces.data:
+                        logger.debug("Available traces:")
+                        for idx, t in enumerate(all_traces.data[:10]):  # Show first 10
+                            logger.debug(
+                                f"  [{idx}] id={getattr(t, 'id', 'N/A')[:8]}..., "
+                                f"name={getattr(t, 'name', 'N/A')}, "
+                                f"session_id={getattr(t, 'session_id', 'N/A')}"
+                            )
                     return {}
 
             # Create evaluation data from trace
@@ -249,10 +302,13 @@ class CyberAgentEvaluator:
             scores = await self._evaluate_all_metrics(eval_data)
             logger.info("Metric evaluation completed: %s", scores)
 
-            # Upload scores to Langfuse
-            await self._upload_scores_to_langfuse(trace_id, scores)
+            # Upload scores to Langfuse using the actual trace ID
+            actual_trace_id = trace.id if hasattr(trace, 'id') else trace_id
+            if actual_trace_id != trace_id:
+                logger.info("Uploading scores to actual trace ID: %s (operation: %s)", actual_trace_id, trace_id)
+            await self._upload_scores_to_langfuse(actual_trace_id, scores)
 
-            logger.info("Evaluation completed for trace %s: %s", trace_id, scores)
+            logger.info("Evaluation completed for operation %s (trace: %s): %s", trace_id, actual_trace_id, scores)
             return scores
 
         return {}
@@ -281,10 +337,10 @@ class CyberAgentEvaluator:
             logger.debug("Trace metadata: %s", trace.metadata)
             metadata = trace.metadata
 
-            # Check if metadata has 'attributes' key (from Strands agent trace attributes)
+            # Check if metadata has 'attributes' key from Strands agent trace
             if isinstance(metadata, dict) and "attributes" in metadata:
                 attrs = metadata["attributes"]
-                # Extract the original objective description
+                # Get the objective description
                 objective = attrs.get("objective.description")
 
         # Collect conversation history and tool outputs for comprehensive evaluation
@@ -292,7 +348,7 @@ class CyberAgentEvaluator:
         agent_responses = []
         tool_outputs = []
 
-        # Extract initial objective as first user message
+        # Add initial objective as first user message
         if objective:
             conversation_messages.append({"role": "user", "content": objective})
 
@@ -389,7 +445,7 @@ class CyberAgentEvaluator:
         for metric in self.all_metrics:
             logger.info("Starting evaluation of metric: %s", metric.name)
 
-            # Determine appropriate evaluation method based on data type and metric capabilities
+            # Choose evaluation method based on data type and metric capabilities
             if is_multi_turn and hasattr(metric, "multi_turn_ascore"):
                 # Use multi-turn evaluation for agent-specific metrics
                 score = await metric.multi_turn_ascore(eval_data)
@@ -460,7 +516,6 @@ class CyberAgentEvaluator:
 
     def _get_metric_category(self, metric_name: str) -> str:
         """Categorize metrics for better organization in Langfuse."""
-        # TODO: adding metric tags in the future for advanced filtering
         if metric_name in [
             "tool_selection_accuracy",
             "evidence_quality",
