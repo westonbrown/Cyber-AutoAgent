@@ -29,9 +29,7 @@ import threading
 from datetime import datetime
 import requests
 from opentelemetry import trace
-from strands.telemetry import StrandsTelemetry
-
-from strands.telemetry.tracer import get_tracer
+from strands.telemetry.config import StrandsTelemetry
 # Local imports
 from modules.agents.cyber_autoagent import create_agent
 from modules.prompts.system import get_initial_prompt, get_continuation_prompt
@@ -58,10 +56,17 @@ def setup_observability(logger):
     # Check if observability is enabled via environment (default: true)
     if os.getenv("ENABLE_OBSERVABILITY", "true").lower() != "true":
         logger.debug("Observability is disabled (set ENABLE_OBSERVABILITY=false)")
-        return False
+        return None
 
     # Get configuration from environment with defaults for self-hosted Langfuse
-    host = os.getenv("LANGFUSE_HOST", "http://localhost:3000")
+    # Helper function to detect if running in Docker
+    def is_docker():
+        """Check if running inside a Docker container."""
+        return os.path.exists("/.dockerenv") or os.path.exists("/app")
+    
+    # Use langfuse-web:3000 when in Docker, localhost:3000 otherwise
+    default_host = "http://langfuse-web:3000" if is_docker() else "http://localhost:3000"
+    host = os.getenv("LANGFUSE_HOST", default_host)
     public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public")
     secret_key = os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret")
 
@@ -69,73 +74,23 @@ def setup_observability(logger):
     auth_token = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
 
     # Set OpenTelemetry environment variables that Strands SDK will use
-    # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
-    # Note: Some OTLP endpoints expect base URL, others expect full path
+    # IMPORTANT: OTEL_EXPORTER_OTLP_ENDPOINT should be the base URL, not the traces endpoint
+    # The SDK will append /v1/traces automatically
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
-    os.environ["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] = (
-        f"{host}/api/public/otel/v1/traces"
-    )
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
-    os.environ["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
-
-    # Override service name for OpenTelemetry to show as Cyber-AutoAgent
-    os.environ["OTEL_SERVICE_NAME"] = "Cyber-AutoAgent"
-    os.environ["OTEL_RESOURCE_ATTRIBUTES"] = (
-        "service.name=Cyber-AutoAgent,service.version=0.1.1,gen_ai.system=Cyber-AutoAgent"
-    )
-
-    # According to Strands documentation, there are multiple ways to enable OTLP export:
-    # Option 1: If OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTLP by default
-    # Option 2: Use StrandsTelemetry class (requires strands-agents[otel])
-
-    if StrandsTelemetry:
-        # Try to use StrandsTelemetry for explicit setup
-        logger.debug("StrandsTelemetry available - setting up OTLP exporter")
-        strands_telemetry = StrandsTelemetry()
-        strands_telemetry.setup_otlp_exporter()  # Send traces to OTLP endpoint
-
-        # Also setup console exporter for debugging if requested
-        if os.getenv("DEBUG_TRACES", "false").lower() == "true":
-            strands_telemetry.setup_console_exporter()
-            logger.info("Console trace exporter enabled for debugging")
-
-        logger.info("OTLP exporter initialized via StrandsTelemetry")
-
-    else:
-        # StrandsTelemetry not available - rely on environment variables
-        logger.info(
-            "StrandsTelemetry not available - using environment variable configuration"
-        )
-        logger.info("Strands will use OTEL_EXPORTER_OTLP_ENDPOINT for trace export")
-
-        # According to docs: "if OTEL_EXPORTER_OTLP_ENDPOINT is set, it enables OTEL by default"
-        # We've already set all necessary environment variables above
-
-    # Test OTLP endpoint connectivity
-    try:
-        test_url = f"{host}/api/public/otel/v1/traces"
-        headers = {"Authorization": f"Basic {auth_token}"}
-        response = requests.get(test_url, headers=headers, timeout=5)
-        if response.status_code == 405:  # Method not allowed is expected for GET
-            logger.info("OTLP endpoint is reachable at %s", test_url)
-        else:
-            logger.warning(
-                "OTLP endpoint returned unexpected status %d", response.status_code
-            )
-    except requests.exceptions.ConnectionError:
-        logger.error(
-            "Cannot connect to OTLP endpoint at %s - traces will not be exported!",
-            test_url,
-        )
-        logger.error("  Check that Langfuse is running and accessible")
-    except Exception as e:
-        logger.warning("Could not test OTLP endpoint: %s", str(e))
-
+    
+    # Initialize Strands telemetry system with OTLP export
+    telemetry = StrandsTelemetry()
+    telemetry.setup_otlp_exporter()
+    
+    logger.debug("OTEL environment configured for Strands SDK")
+    logger.debug("Strands telemetry initialized with OTLP exporter")
+    
     logger.info("Langfuse observability enabled at %s", host)
     logger.info("OTLP endpoint: %s", os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"])
     logger.info("View traces at %s (login: admin@cyber-autoagent.com/changeme)", host)
-
-    return True
+    
+    return telemetry
 
 
 # Global flag for interrupt handling
@@ -179,6 +134,9 @@ def signal_handler(signum, frame):  # pylint: disable=unused-argument
 def main():
     """Main execution function"""
     global interrupted
+    
+    # Initialize telemetry variable for use in finally block
+    telemetry = None
     
     # Set up signal handlers for both Ctrl+C and Ctrl+Z
     signal.signal(signal.SIGINT, signal_handler)
@@ -304,18 +262,20 @@ def main():
     logger = setup_logging(log_file=log_file, verbose=args.verbose)
 
     # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
-    setup_observability(logger)
+    telemetry = setup_observability(logger)
 
     # Register cleanup function to properly close log files
     def cleanup_logging():
         """Ensure log files are properly closed on exit"""
         try:
             # Write session end marker before closing
-            print("\n" + "=" * 80)
+            from modules.handlers.utils import get_terminal_width
+            width = get_terminal_width()
+            print("\n" + "=" * width)
             print(
                 f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             )
-            print("=" * 80 + "\n")
+            print("=" * width + "\n")
         except Exception:
             pass
 
@@ -368,6 +328,15 @@ def main():
         target_sanitized, operation_timestamp, "", server_config.output.base_dir
     )
 
+    # Detect if running in Docker for path display
+    is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
+    
+    # Prepare path display based on environment
+    if is_docker:
+        output_path_display = f"{output_base_path}\n{Colors.BOLD}Host Path:{Colors.RESET}     {output_base_path.replace('/app/outputs', './outputs')}"
+    else:
+        output_path_display = output_base_path
+    
     print_section(
         "MISSION PARAMETERS",
         f"""
@@ -376,8 +345,7 @@ def main():
 {Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET} (sanitized: {target_sanitized})
 {Colors.BOLD}Max Iterations:{Colors.RESET} {args.iterations} steps
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
-{Colors.BOLD}Output Base:{Colors.RESET} {server_config.output.base_dir}
-{Colors.BOLD}Operation Path:{Colors.RESET} {output_base_path}
+{Colors.BOLD}Output Path:{Colors.RESET}  {output_path_display}
 """,
         Colors.CYAN,
         "🎯",
@@ -419,29 +387,14 @@ def main():
             # Main autonomous execution loop
             while not interrupted:
                 try:
-
-                    tracer = get_tracer()
-                    
-                    # Start agent span with our custom name
-                    agent_span = tracer.start_agent_span(
-                        message={"content": current_message},
-                        agent_name=f"Cyber-AutoAgent {local_operation_id}",
-                        model_id=agent.model.model_id if hasattr(agent.model, 'model_id') else None,
-                        tools=agent.tool_names,
-                    )
-                    
-                    try:
-                        # For newer strands versions, pass the prompt directly without messages on first call
-                        if not messages:
-                            # First call - don't pass messages parameter
-                            result = agent(current_message)
-                        else:
-                            # Subsequent calls - pass messages
-                            result = agent(current_message, messages=messages)
-                    finally:
-                        # End the agent span
-                        if agent_span:
-                            tracer.end_agent_span(agent_span, response=result)
+                    # Execute agent with current message
+                    # The agent handles its own tracing internally via Strands SDK
+                    if not messages:
+                        # First call - don't pass messages parameter
+                        result = agent(current_message)
+                    else:
+                        # Subsequent calls - pass messages for conversation context
+                        result = agent(current_message, messages=messages)
 
                     # Update conversation history
                     # Structure content properly for Strands integration
@@ -662,10 +615,30 @@ def main():
                 server_config.output.base_dir,
             )
 
-            print(
-                f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}"
-            )
-            print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
+            # Detect if running in Docker
+            is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
+            
+            # Show appropriate paths based on environment
+            if is_docker:
+                # In Docker, show both container and host paths
+                host_evidence_location = evidence_location.replace("/app/outputs", "./outputs")
+                host_memory_location = memory_location.replace("./outputs", "./outputs")
+                print(
+                    f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET}"
+                    f"\n  {Colors.DIM}Container:{Colors.RESET} {evidence_location}"
+                    f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_evidence_location}"
+                )
+                print(
+                    f"{Colors.BOLD}Memory stored in:{Colors.RESET}"
+                    f"\n  {Colors.DIM}Container:{Colors.RESET} {memory_location}"
+                    f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_memory_location}"
+                )
+            else:
+                # Running locally, just show the paths
+                print(
+                    f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}"
+                )
+                print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
             print(f"{'=' * 80}")
 
     except KeyboardInterrupt:
@@ -741,12 +714,20 @@ def main():
 
         # Flush OpenTelemetry traces before exit
         try:
-            tracer_provider = trace.get_tracer_provider()
+            # Use the telemetry instance if available, otherwise use global tracer provider
+            if telemetry and hasattr(telemetry, 'tracer_provider'):
+                tracer_provider = telemetry.tracer_provider
+            else:
+                tracer_provider = trace.get_tracer_provider()
+                
             if hasattr(tracer_provider, "force_flush"):
                 logger.debug("Flushing OpenTelemetry traces...")
-                tracer_provider.force_flush()
-                # Give a moment for traces to be sent
+                # Force flush with timeout to ensure traces are sent
+                # This is critical for capturing all tool calls and swarm operations
+                tracer_provider.force_flush(timeout_millis=10000)  # 10 second timeout
+                # Short delay to ensure network transmission completes
                 time.sleep(2)
+                logger.debug("Traces flushed successfully")
         except Exception as e:
             logger.warning("Error flushing traces: %s", e)
 

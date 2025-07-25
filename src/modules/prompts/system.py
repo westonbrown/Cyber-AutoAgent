@@ -32,6 +32,9 @@ When configuring swarm agents, you can optionally set:
 When configuring swarm agents, you can optionally set:
 - model_provider: "bedrock" 
 - model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
+You can also use different models for different agents:
+- model_provider: "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0" for simple tasks
+- model_provider: "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0" for complex analysis 
 """
     else:  # litellm
         # LiteLLM provider configuration
@@ -364,6 +367,8 @@ repetitive_handoff_min_unique_agents: 3 (default) | 2 (small team) | 4 (large te
 - Each agent should have a clear specialization
 - Include tools they need in their specification
 - Agents coordinate through handoff_to_agent
+- CRITICAL: Each agent MUST be a dictionary {{"name": "...", "system_prompt": "...", "tools": [...]}}
+- NEVER pass strings or other types in the agents list
 
 **Task Format (Max 100 words):**
 ```
@@ -377,13 +382,17 @@ STRATEGY: [How agents should collaborate]
 **Decision Example:**
 Task: "Complex web app with API, uploads, auth"
 Analysis: 3 attack vectors, medium confidence (60%), time-sensitive
-Decision: 
+Decision: Use different models for cost/performance optimization
+# api_specialist: Sonnet for complex API analysis 
+# upload_expert: Haiku for standard file upload tests
+# session_analyst: Default model (inherits parent) 
+IMPORTANT: Each agent's model calls are tracked in Langfuse as separate spans with their model ID 
 ```python
 swarm(
     task="STATE: Found login page, API endpoints mapped. GOAL: Exploit any vector for initial access. AVOID: Basic SQLi already tested. FOCUS: API auth bypass, file upload RCE, session flaws. STRATEGY: Parallel testing of all vectors, share exploitable findings immediately.",
     agents=[
-        {{"name": "api_specialist", "system_prompt": "You are an API security expert. Test auth bypasses, JWT flaws, IDOR, rate limits. Focus on API-specific vulnerabilities. Use your tools to test and share findings via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"]}},
-        {{"name": "upload_expert", "system_prompt": "You are a file upload exploitation specialist. Test for unrestricted upload, filter bypasses, path traversal. Create custom payloads and test them. Share successful techniques via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"]}},
+        {{"name": "api_specialist", "system_prompt": "You are an API security expert. Test auth bypasses, JWT flaws, IDOR, rate limits. Focus on API-specific vulnerabilities. Use your tools to test and share findings via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"], "model_provider": "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"}},
+        {{"name": "upload_expert", "system_prompt": "You are a file upload exploitation specialist. Test for unrestricted upload, filter bypasses, path traversal. Create custom payloads and test them. Share successful techniques via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"], "model_provider": "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0"}},
         {{"name": "session_analyst", "system_prompt": "You are a session security analyst. Test session fixation, prediction, hijacking, and cookie vulnerabilities. Document findings and coordinate with team.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"]}}
     ],
     max_handoffs=25,  # 3 agents × 8 rounds of collaboration  

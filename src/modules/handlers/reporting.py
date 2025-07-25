@@ -7,12 +7,14 @@ metadata, and triggering evaluation processes.
 
 import os
 import re
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from .utils import Colors, get_output_path
 from .base import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
-from ..agents.report_agent import ReportAgent
+
+logger = logging.getLogger(__name__)
 
 
 def generate_final_report(
@@ -52,31 +54,41 @@ def generate_final_report(
     print("%s🔍 GENERATING COMPREHENSIVE SECURITY ASSESSMENT REPORT%s" % (Colors.BOLD, Colors.RESET))
     print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
 
-    # Generate report using LLM
-    # Create report agent with same model as main agent
-    report_agent = ReportAgent(model=agent.model if hasattr(agent, "model") else None)
-
-    # Generate report using dedicated agent
-    report_content = report_agent.generate_report(
+    # Generate report using the main agent to maintain trace continuity
+    report_content = _generate_llm_report(
+        handler_state=handler_state,
+        agent=agent,
         target=target,
         objective=objective,
-        operation_id=handler_state.state.operation_id,
-        steps_executed=handler_state.state.steps,
         evidence=evidence,
-        tools_used=handler_state.state.tools_used,
     )
 
     if report_content:
-        # Display the report
-        _display_final_report(report_content)
-
+        # Log report generation success
+        print(f"  %sReport generated successfully (%d characters)%s" % (Colors.GREEN, len(report_content), Colors.RESET))
+        
+        # Debug: Show first 200 chars of report
+        print(f"  %sFirst 200 chars of report: %s%s" % (Colors.DIM, repr(report_content[:200]), Colors.RESET))
+        
+        # Display the report in terminal
+        try:
+            _display_final_report(report_content)
+        except Exception as e:
+            print(f"  %sError displaying report: {e}%s" % (Colors.RED, Colors.RESET))
+            import traceback
+            traceback.print_exc()
+            # Fallback: Try to display report without formatting
+            print("\n%sFALLBACK: Displaying report without formatting:%s" % (Colors.YELLOW, Colors.RESET))
+            print(report_content)
+        
         # Save report to file
         _save_report_to_file(handler_state, report_content, target, objective)
 
         # Trigger evaluation if enabled
         _trigger_evaluation_if_enabled(handler_state)
     else:
-        print("%s%sFailed to generate report%s" % (Colors.RED, Colors.BOLD, Colors.RESET))
+        print("\n%s%sFailed to generate report content from LLM%s" % (Colors.RED, Colors.BOLD, Colors.RESET))
+        print("%sReport generation returned empty or None%s" % (Colors.YELLOW, Colors.RESET))
 
 
 def _retrieve_evidence(
@@ -203,6 +215,9 @@ def _generate_llm_report(
     Returns:
         Generated report content or None
     """
+    # Import OpenTelemetry for proper span management
+    from opentelemetry import trace as otel_trace
+    
     # Prepare evidence summary
     evidence_text = ""
     for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
@@ -225,7 +240,7 @@ def _generate_llm_report(
 
     # Prepare tools used summary
     tools_summary = {}
-    for tool in handler_state.tools_used:
+    for tool in handler_state.state.tools_used:
         tool_name = tool.split(":")[0]
         if tool_name in tools_summary:
             tools_summary[tool_name] += 1
@@ -239,8 +254,8 @@ def _generate_llm_report(
 
 TARGET: {target}
 OBJECTIVE: {objective}
-OPERATION ID: {handler_state.operation_id}
-STEPS EXECUTED: {handler_state.steps}
+OPERATION ID: {handler_state.state.operation_id}
+STEPS EXECUTED: {handler_state.state.steps}
 
 TOOLS USED:
 {tools_text}
@@ -281,27 +296,171 @@ Focus on actionable findings and practical recommendations.
 Be specific about vulnerabilities found and provide technical details."""
 
     try:
-        # Use the agent to generate the report
-        print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
-        result = agent(report_prompt)
+        # Create a child span for report generation using OpenTelemetry context
+        # This creates proper parent-child relationship in the trace
+        report_span = None
+        
+        # Check if agent has a tracer (it should from Strands SDK)
+        if hasattr(agent, 'tracer') and agent.tracer:
+            # Get the parent span (agent's main trace span)
+            parent_span = getattr(agent, 'trace_span', None) or otel_trace.get_current_span()
+            
+            # Create child span for report generation
+            report_span = agent.tracer._start_span(
+                span_name="generate_security_report",
+                parent_span=parent_span,
+                attributes={
+                    # Langfuse-specific attributes for UI display
+                    "langfuse.trace.name": f"Report Generation - {target} - {handler_state.state.operation_id}",
+                    "langfuse.agent.type": "report_generator",
+                    "langfuse.phase": "report_generation",
+                    "langfuse.parent.operation": handler_state.state.operation_id,
+                    
+                    # Standard OpenTelemetry attributes
+                    "report.type": "security_assessment",
+                    "report.target": target,
+                    "report.objective": objective,
+                    "report.evidence_count": len(evidence),
+                    "report.tools_used": len(tools_summary),
+                    "report.steps_executed": handler_state.state.steps,
+                    
+                    # Operation context
+                    "operation.id": handler_state.state.operation_id,
+                    "gen_ai.operation.name": "generate_report",
+                }
+            )
+        
+        # Execute report generation within the span context
+        with otel_trace.use_span(report_span) if report_span else otel_trace.use_span(otel_trace.get_current_span()):
+            print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
+            
+            # Add event for report generation start
+            if report_span and hasattr(agent.tracer, '_add_event'):
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_started",
+                    {
+                        "evidence_pieces": len(evidence),
+                        "unique_tools": len(tools_summary),
+                        "total_steps": handler_state.state.steps,
+                    }
+                )
+            
+            # Execute the agent to generate report
+            result = agent(report_prompt)
+            
+            # Debug: Log the result structure
+            logger.debug(f"Report generation result type: {type(result)}")
+            logger.debug(f"Result has message attr: {hasattr(result, 'message')}")
+            if hasattr(result, 'message'):
+                logger.debug(f"Message type: {type(result.message)}")
+                logger.debug(f"Message keys: {result.message.keys() if hasattr(result.message, 'keys') else 'Not a dict'}")
+            
+            # Process the result
+            if result and hasattr(result, "message"):
+                content = result.message.get("content", [])
+                if content and isinstance(content, list):
+                    report_text = ""
+                    for block in content:
+                        if isinstance(block, dict) and "text" in block:
+                            report_text += block["text"]
 
-        if result and hasattr(result, "message"):
-            content = result.message.get("content", [])
-            if content and isinstance(content, list):
-                report_text = ""
-                for block in content:
-                    if isinstance(block, dict) and "text" in block:
-                        report_text += block["text"]
-
-                # Clean up any duplicate content
-                report_text = _clean_duplicate_content(report_text)
-                return report_text
-
-        return None
+                    # Extract only the actual report, removing any preamble
+                    logger.debug(f"Report text before extraction: {len(report_text)} chars")
+                    report_text = _extract_report_content(report_text)
+                    logger.debug(f"Report text after extraction: {len(report_text)} chars")
+                    
+                    # Clean up any duplicate content
+                    report_text = _clean_duplicate_content(report_text)
+                    logger.debug(f"Report text after cleaning: {len(report_text)} chars")
+                    
+                    # Add completion event with report metrics
+                    if report_span and hasattr(agent.tracer, '_add_event'):
+                        agent.tracer._add_event(
+                            report_span,
+                            "report_generation_completed",
+                            {
+                                "report_length": len(report_text),
+                                "sections_generated": 5,  # We requested 5 sections
+                                "status": "success",
+                            }
+                        )
+                    
+                    return report_text
+            
+            # If we reach here, report generation failed
+            if report_span and hasattr(agent.tracer, '_add_event'):
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_failed",
+                    {
+                        "reason": "No content in result",
+                        "status": "error",
+                    }
+                )
+            
+            return None
 
     except Exception as e:
         print(f"  %sError generating report: {e}%s" % (Colors.RED, Colors.RESET))
+        
+        # Record error in span if available
+        if report_span and hasattr(agent.tracer, '_end_span'):
+            agent.tracer._end_span(report_span, error=e)
+        
         return None
+    
+    finally:
+        # End the report span properly
+        if report_span and hasattr(agent.tracer, '_end_span'):
+            agent.tracer._end_span(report_span)
+
+
+def _extract_report_content(raw_content: str) -> str:
+    """Extract the actual report content from LLM response.
+    
+    The LLM sometimes includes thinking/preamble before the actual report.
+    This method extracts only the report starting from the first report header.
+    
+    Args:
+        raw_content: Raw content from LLM including possible preamble
+        
+    Returns:
+        Extracted report content
+    """
+    # Look for common report headers
+    report_markers = [
+        "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+        "# Security Assessment Report",
+        "# SECURITY ASSESSMENT REPORT",
+        "## EXECUTIVE SUMMARY",
+        "## 1. EXECUTIVE SUMMARY",
+        "PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+        "1. EXECUTIVE SUMMARY",
+        "EXECUTIVE SUMMARY",
+        "## Executive Summary",
+        "# Executive Summary",
+    ]
+    
+    lines = raw_content.split("\n")
+    report_start_idx = None
+    
+    # Find the first occurrence of a report marker
+    for i, line in enumerate(lines):
+        for marker in report_markers:
+            if marker in line:
+                report_start_idx = i
+                break
+        if report_start_idx is not None:
+            break
+    
+    if report_start_idx is not None:
+        # Return content from the report start
+        return "\n".join(lines[report_start_idx:])
+    
+    # If no marker found, log warning and return original content
+    logger.warning(f"No report markers found in content. Returning original content of {len(raw_content)} chars")
+    return raw_content
 
 
 def _clean_duplicate_content(report_content: str) -> str:
@@ -357,9 +516,43 @@ def _display_final_report(report_content: str) -> None:
     Args:
         report_content: The report content to display
     """
-    print("\n" + "─" * 80)
-    print(report_content)
-    print("─" * 80 + "\n")
+    # Debug: Check if function is called and content length
+    logger.debug(f"_display_final_report called with content length: {len(report_content)}")
+    
+    # Try to force output through original stdout in case of redirection issues
+    import sys
+    original_stdout = getattr(sys.stdout, 'terminal', sys.stdout)
+    
+    def safe_print(text=""):
+        """Print to both stdout and original terminal if redirected"""
+        print(text)
+        if original_stdout != sys.stdout:
+            try:
+                original_stdout.write(text + "\n")
+                original_stdout.flush()
+            except:
+                pass
+    
+    safe_print()
+    safe_print("%s%s%s" % (Colors.BOLD, "═" * 80, Colors.RESET))
+    safe_print("%s%s PENETRATION TESTING SECURITY ASSESSMENT REPORT %s%s" % (Colors.CYAN, Colors.BOLD, Colors.RESET, Colors.RESET))
+    safe_print("%s%s%s" % (Colors.BOLD, "═" * 80, Colors.RESET))
+    safe_print()
+    
+    # Split report content into lines to handle any special cases
+    for line in report_content.split('\n'):
+        safe_print(line)
+    
+    safe_print()
+    safe_print("%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
+    
+    # Force flush to ensure output is displayed
+    sys.stdout.flush()
+    if original_stdout != sys.stdout:
+        try:
+            original_stdout.flush()
+        except:
+            pass
 
 
 def _save_report_to_file(handler_state: Any, report_content: str, target: str, objective: str) -> None:
@@ -404,7 +597,15 @@ def _save_report_to_file(handler_state: Any, report_content: str, target: str, o
             f.write("---\n\n")
             f.write(report_content)
 
-        print("\n%s📄 Report saved to: %s%s%s" % (Colors.GREEN, Colors.BOLD, report_path, Colors.RESET))
+        # Check if running in Docker to show appropriate paths
+        is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
+        if is_docker:
+            host_path = report_path.replace("/app/outputs", "./outputs")
+            print("\n%s📄 Report saved to:%s" % (Colors.GREEN, Colors.RESET))
+            print("   %sContainer:%s %s" % (Colors.DIM, Colors.RESET, report_path))
+            print("   %sHost:%s %s%s%s" % (Colors.GREEN, Colors.RESET, Colors.BOLD, host_path, Colors.RESET))
+        else:
+            print("\n%s📄 Report saved to: %s%s%s" % (Colors.GREEN, Colors.BOLD, report_path, Colors.RESET))
 
     except Exception as e:
         print("\n%sError saving report: %s%s" % (Colors.RED, e, Colors.RESET))
