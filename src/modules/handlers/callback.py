@@ -341,7 +341,21 @@ class ReasoningHandler(PrintingCallbackHandler):
                 print()
                 self.state.last_was_tool = False
 
-            print(text, end="", flush=True)
+            # Normalize excessive leading spaces in agent output
+            lines = text.split('\n')
+            normalized_lines = []
+            for line in lines:
+                # If line has more than 10 leading spaces, it's likely misformatted
+                stripped = line.lstrip()
+                leading_spaces = len(line) - len(stripped)
+                if leading_spaces > 10 and stripped:
+                    # Preserve some indentation but not excessive amounts
+                    normalized_lines.append('    ' + stripped if leading_spaces > 20 else '  ' + stripped)
+                else:
+                    normalized_lines.append(line)
+            
+            normalized_text = '\n'.join(normalized_lines)
+            print(normalized_text, end="", flush=True)
             self.state.last_was_reasoning = True
 
     def generate_report(self, agent: Any, objective: str) -> None:
@@ -436,8 +450,6 @@ class ReasoningHandler(PrintingCallbackHandler):
             def run_evaluation():
                 try:
                     evaluator = CyberAgentEvaluator()
-                    # Note: The actual evaluation method might be different
-                    # This is a placeholder that might need adjustment
                     import asyncio
 
                     asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
@@ -452,8 +464,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             logger.error("Error triggering evaluation: %s", e)
 
     def trigger_evaluation_on_completion(self) -> None:
-        """Trigger evaluation on operation completion using operation ID as trace ID."""
-        # Use operation_id as the trace_id since we don't have access to Langfuse trace ID
+        """Trigger evaluation on operation completion."""
         self.trigger_evaluation(self.state.operation_id)
 
     @property
@@ -500,3 +511,31 @@ class ReasoningHandler(PrintingCallbackHandler):
     def report_generated(self) -> bool:
         """Check if report was generated."""
         return self.state.report_generated
+
+    def wait_for_evaluation_completion(self, timeout: int = 300) -> bool:
+        """
+        Wait for evaluation to complete.
+
+        Args:
+            timeout: Maximum time to wait in seconds (default: 300)
+
+        Returns:
+            True if evaluation completed, False if timeout reached
+        """
+        if not self.state.evaluation_triggered:
+            logger.debug("No evaluation was triggered, nothing to wait for")
+            return True
+
+        if not self.state.evaluation_thread:
+            logger.debug("No evaluation thread found")
+            return True
+
+        logger.info("Waiting for evaluation to complete (timeout: %ds)...", timeout)
+        self.state.evaluation_thread.join(timeout=timeout)
+
+        if self.state.evaluation_thread.is_alive():
+            logger.warning("Evaluation did not complete within %ds timeout", timeout)
+            return False
+
+        logger.info("Evaluation completed successfully")
+        return True

@@ -1,5 +1,6 @@
 services:
   cyber-autoagent:
+    image: cyber-autoagent:latest
     build: .
     container_name: cyber-autoagent
     environment:
@@ -19,6 +20,7 @@ services:
       
       # Application configuration
       - DEV=true
+      - FORCE_COLOR=1
       
       # Observability configuration (enabled by default)
       - ENABLE_OBSERVABILITY=${ENABLE_OBSERVABILITY:-true}

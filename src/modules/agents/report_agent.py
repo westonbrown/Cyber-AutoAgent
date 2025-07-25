@@ -85,6 +85,9 @@ class ReportAgent:
                         if isinstance(block, dict) and "text" in block:
                             report_text += block["text"]
 
+                    # Extract only the actual report, removing any preamble
+                    report_text = self._extract_report_content(report_text)
+                    
                     # Clean up any duplicate content
                     report_text = self._clean_duplicate_content(report_text)
                     return report_text
@@ -205,6 +208,47 @@ Format the report professionally with clear sections and bullet points where app
 Focus on actionable findings and practical recommendations.
 Be specific about vulnerabilities found and provide technical details."""
 
+    def _extract_report_content(self, raw_content: str) -> str:
+        """Extract the actual report content from LLM response.
+        
+        The LLM sometimes includes thinking/preamble before the actual report.
+        This method extracts only the report starting from the first report header.
+        
+        Args:
+            raw_content: Raw content from LLM including possible preamble
+            
+        Returns:
+            Extracted report content
+        """
+        # Look for common report headers
+        report_markers = [
+            "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+            "# Security Assessment Report",
+            "# SECURITY ASSESSMENT REPORT",
+            "## EXECUTIVE SUMMARY",
+            "## 1. EXECUTIVE SUMMARY",
+            "PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+        ]
+        
+        lines = raw_content.split("\n")
+        report_start_idx = None
+        
+        # Find the first occurrence of a report marker
+        for i, line in enumerate(lines):
+            for marker in report_markers:
+                if marker in line:
+                    report_start_idx = i
+                    break
+            if report_start_idx is not None:
+                break
+        
+        if report_start_idx is not None:
+            # Return content from the report start
+            return "\n".join(lines[report_start_idx:])
+        
+        # If no marker found, return original content
+        return raw_content
+    
     def _clean_duplicate_content(self, report_content: str) -> str:
         """Remove duplicate sections from report content.
 
