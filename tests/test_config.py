@@ -98,17 +98,13 @@ class TestEmbeddingConfig:
 
     def test_default_dimensions(self):
         """Test embedding config with default dimensions."""
-        config = EmbeddingConfig(
-            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large"
-        )
+        config = EmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large")
         assert config.dimensions == 1024
         assert config.parameters["dimensions"] == 1024
 
     def test_custom_dimensions(self):
         """Test embedding config with custom dimensions."""
-        config = EmbeddingConfig(
-            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large", dimensions=512
-        )
+        config = EmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large", dimensions=512)
         assert config.dimensions == 512
         assert config.parameters["dimensions"] == 512
 
@@ -146,9 +142,7 @@ class TestMemoryEmbeddingConfig:
 
     def test_default_parameters(self):
         """Test memory embedding config with default parameters."""
-        config = MemoryEmbeddingConfig(
-            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large"
-        )
+        config = MemoryEmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large")
         assert config.aws_region == "us-east-1"
         assert config.dimensions == 1024
         assert config.parameters["aws_region"] == "us-east-1"
@@ -194,9 +188,7 @@ class TestMemoryVectorStoreConfig:
     def test_config_overrides(self):
         """Test configuration overrides."""
         config = MemoryVectorStoreConfig()
-        opensearch_config = config.get_config_for_provider(
-            "opensearch", host="test-host"
-        )
+        opensearch_config = config.get_config_for_provider("opensearch", host="test-host")
         assert opensearch_config["host"] == "test-host"
         assert opensearch_config["port"] == 443  # Default preserved
 
@@ -545,9 +537,7 @@ class TestConfigManager:
         # The new implementation delegates model validation to strands-agents
         # So this test now verifies that validation completes without error
         mock_bedrock = MagicMock()
-        mock_bedrock.list_foundation_models.return_value = {
-            "modelSummaries": [{"modelId": "some.other.model:1.0"}]
-        }
+        mock_bedrock.list_foundation_models.return_value = {"modelSummaries": [{"modelId": "some.other.model:1.0"}]}
 
         mock_boto_client.return_value = mock_bedrock
 
@@ -579,9 +569,7 @@ class TestConfigManager:
         # Should not raise an exception - model errors handled by strands-agents
         self.config_manager.validate_requirements("bedrock")
 
-    @patch.dict(
-        os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}
-    )
+    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
     @patch("boto3.client")
     def test_validate_bedrock_no_region(self, mock_boto_client):
         """Test Bedrock validation when region returns None."""
@@ -793,15 +781,9 @@ class TestEnvironmentIntegration:
             assert model in thinking_models
 
         # Test is_thinking_model method
-        assert config_manager.is_thinking_model(
-            "us.anthropic.claude-opus-4-20250514-v1:0"
-        )
-        assert config_manager.is_thinking_model(
-            "us.anthropic.claude-sonnet-4-20250514-v1:0"
-        )
-        assert not config_manager.is_thinking_model(
-            "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-        )
+        assert config_manager.is_thinking_model("us.anthropic.claude-opus-4-20250514-v1:0")
+        assert config_manager.is_thinking_model("us.anthropic.claude-sonnet-4-20250514-v1:0")
+        assert not config_manager.is_thinking_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         assert not config_manager.is_thinking_model("llama3.2:3b")
 
     def test_centralized_model_configuration_methods(self):
@@ -839,9 +821,7 @@ class TestEnvironmentIntegration:
 
         # Test local config has ollama_base_url
         local_config = config_manager.get_mem0_service_config("ollama")
-        assert local_config["embedder"]["config"]["ollama_base_url"].startswith(
-            "http://"
-        )
+        assert local_config["embedder"]["config"]["ollama_base_url"].startswith("http://")
         assert local_config["llm"]["config"]["ollama_base_url"].startswith("http://")
         assert "aws_region" not in local_config["embedder"]["config"]
         assert "aws_region" not in local_config["llm"]["config"]
@@ -944,9 +924,7 @@ class TestOutputConfigIntegration:
         """Test that overrides take precedence over environment variables."""
         with patch.dict(os.environ, {"CYBER_AGENT_OUTPUT_DIR": "/env/outputs"}):
             config_manager = ConfigManager()
-            output_config = config_manager.get_output_config(
-                "bedrock", output_dir="/override/outputs"
-            )
+            output_config = config_manager.get_output_config("bedrock", output_dir="/override/outputs")
 
             # Override should take precedence over environment variable
             assert output_config.base_dir == "/override/outputs"

@@ -7,7 +7,7 @@ processing tool results with proper formatting.
 
 from typing import Dict, Any, List, Set
 from .utils import Colors
-from .base import CONTENT_PREVIEW_LENGTH, MAX_CONTENT_DISPLAY_LENGTH
+from .base import CONTENT_PREVIEW_LENGTH, MAX_CONTENT_DISPLAY_LENGTH, StepLimitReached
 
 
 # Constants for tool display
@@ -26,7 +26,7 @@ def show_tool_execution(tool_use: Dict[str, Any], state: Any) -> None:
     if not state.in_swarm_operation and state.steps >= state.max_steps and not state.step_limit_reached:
         state.step_limit_reached = True
         print("\n%sStep limit reached (%d). Assessment complete.%s" % (Colors.BLUE, state.max_steps, Colors.RESET))
-        return
+        raise StepLimitReached(f"Step limit of {state.max_steps} reached")
 
     # Only increment main step counter for non-swarm operations
     if not state.in_swarm_operation:

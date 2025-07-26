@@ -138,7 +138,7 @@ class TeeOutput:
             # Write to terminal as-is, ensuring proper flushing
             self.terminal.write(message)
             # Force immediate flush to prevent buffering issues
-            if hasattr(self.terminal, 'flush'):
+            if hasattr(self.terminal, "flush"):
                 self.terminal.flush()
 
             # Clean message for log file

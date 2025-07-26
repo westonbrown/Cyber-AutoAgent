@@ -16,6 +16,7 @@ def is_docker():
     """Check if running inside a Docker container."""
     return os.path.exists("/.dockerenv") or os.path.exists("/app")
 
+
 # Use langfuse-web:3000 when in Docker, localhost:3000 otherwise
 DEFAULT_LANGFUSE_HOST = "http://langfuse-web:3000" if is_docker() else "http://localhost:3000"
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
@@ -71,10 +72,6 @@ class HandlerState:
 class HandlerError(Exception):
     """Base exception for handler-related errors."""
 
-    pass
-
 
 class StepLimitReached(HandlerError):
     """Raised when the step limit is reached."""
-
-    pass

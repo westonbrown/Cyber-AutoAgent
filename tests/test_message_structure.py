@@ -33,11 +33,7 @@ class TestMessageStructure:
             {"role": "user", "content": [{"text": "Test objective"}]},
             {
                 "role": "assistant",
-                "content": [
-                    {
-                        "text": "Objective achieved: Successfully completed the structured test"
-                    }
-                ],
+                "content": [{"text": "Objective achieved: Successfully completed the structured test"}],
             },
         ]
 
@@ -69,9 +65,7 @@ class TestMessageStructure:
                 "role": "assistant",
                 "content": [
                     {"text": "Analysis complete. "},
-                    {
-                        "text": "Objective achieved: Multiple blocks processed successfully"
-                    },
+                    {"text": "Objective achieved: Multiple blocks processed successfully"},
                 ],
             },
         ]

@@ -16,7 +16,7 @@ from typing import Dict, List, Any
 
 from strands.handlers import PrintingCallbackHandler
 
-from .base import HandlerState
+from .base import HandlerState, StepLimitReached
 from .utils import Colors
 from .tools import show_tool_execution, show_tool_result, track_tool_effectiveness
 from .reporting import generate_final_report
@@ -110,9 +110,13 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 # Step limit checked in show_tool_execution
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
-                                show_tool_execution(tool_use, self.state)
-                                self.state.last_was_tool = True
-                                self.state.last_was_reasoning = False
+                                try:
+                                    show_tool_execution(tool_use, self.state)
+                                    self.state.last_was_tool = True
+                                    self.state.last_was_reasoning = False
+                                except StepLimitReached:
+                                    # Re-raise to stop execution
+                                    raise
 
                 # Process tool results
                 for block in content:
@@ -155,9 +159,13 @@ class ReasoningHandler(PrintingCallbackHandler):
                 if tool_id not in self.state.shown_tools:
                     self.state.shown_tools.add(tool_id)
                     self.state.tool_use_map[tool_id] = tool
-                    show_tool_execution(tool, self.state)
-                    self.state.last_was_tool = True
-                    self.state.last_was_reasoning = False
+                    try:
+                        show_tool_execution(tool, self.state)
+                        self.state.last_was_tool = True
+                        self.state.last_was_reasoning = False
+                    except StepLimitReached:
+                        # Re-raise to stop execution
+                        raise
             return
 
         # Handle tool result events
@@ -342,7 +350,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                 self.state.last_was_tool = False
 
             # Normalize excessive leading spaces in agent output
-            lines = text.split('\n')
+            lines = text.split("\n")
             normalized_lines = []
             for line in lines:
                 # If line has more than 10 leading spaces, it's likely misformatted
@@ -350,11 +358,11 @@ class ReasoningHandler(PrintingCallbackHandler):
                 leading_spaces = len(line) - len(stripped)
                 if leading_spaces > 10 and stripped:
                     # Preserve some indentation but not excessive amounts
-                    normalized_lines.append('    ' + stripped if leading_spaces > 20 else '  ' + stripped)
+                    normalized_lines.append("    " + stripped if leading_spaces > 20 else "  " + stripped)
                 else:
                     normalized_lines.append(line)
-            
-            normalized_text = '\n'.join(normalized_lines)
+
+            normalized_text = "\n".join(normalized_lines)
             print(normalized_text, end="", flush=True)
             self.state.last_was_reasoning = True
 
@@ -431,7 +439,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         """Trigger evaluation for the operation if enabled.
 
         Args:
-            agent_trace_id: The trace ID for evaluation
+            agent_trace_id: The trace ID for evaluation (usually the operation_id)
         """
         if self.state.evaluation_triggered:
             return
@@ -452,6 +460,7 @@ class ReasoningHandler(PrintingCallbackHandler):
                     evaluator = CyberAgentEvaluator()
                     import asyncio
 
+                    # Evaluate all traces for this operation
                     asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
                 except Exception as e:
                     logger.error("Error running evaluation: %s", e)

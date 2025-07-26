@@ -47,20 +47,20 @@ LANGFUSE_PROMPT_CACHE_TTL=300
 
 ## Initial Setup
 
-### 1. Run Migration Script
+### Automatic Prompt Creation
 
-Upload the initial prompts to Langfuse:
+When `ENABLE_LANGFUSE_PROMPTS=true` is set, the system automatically creates the required prompts in Langfuse on first startup:
 
-```bash
-python scripts/migrate_prompts_to_langfuse.py
-```
-
-This creates three prompts:
 - `cyber-agent-system`: Main agent system prompt
 - `cyber-agent-initial`: Initial assessment prompt
 - `cyber-agent-continuation`: Step continuation prompt
 
-### 2. Verify in Langfuse UI
+No manual migration is needed! The prompts are created automatically when:
+1. The PromptManager initializes
+2. Langfuse is accessible
+3. The prompts don't already exist
+
+### Verify in Langfuse UI
 
 1. Open Langfuse UI (http://localhost:3000)
 2. Navigate to Prompts section

@@ -55,9 +55,7 @@ class TestMemoryClientForReport:
 
     @patch("modules.tools.memory.Mem0ServiceClient")
     @patch("modules.tools.memory.get_memory_client")
-    def test_get_memory_client_with_stored_config(
-        self, mock_get_memory_client, mock_mem0_client
-    ):
+    def test_get_memory_client_with_stored_config(self, mock_get_memory_client, mock_mem0_client):
         """Test getting memory client with stored configuration"""
         memory_config = {
             "target_name": "test.com",
@@ -85,9 +83,7 @@ class TestMemoryClientForReport:
 
     @patch("modules.tools.memory.Mem0ServiceClient")
     @patch("modules.tools.memory.get_memory_client")
-    def test_get_memory_client_without_stored_config(
-        self, mock_get_memory_client, mock_mem0_client
-    ):
+    def test_get_memory_client_without_stored_config(self, mock_get_memory_client, mock_mem0_client):
         """Test getting memory client without stored configuration"""
         mock_global_client = Mock()
         mock_get_memory_client.return_value = mock_global_client
@@ -130,9 +126,7 @@ class TestMemoryClientForReport:
 
     @patch("modules.tools.memory.Mem0ServiceClient")
     @patch("modules.tools.memory.get_memory_client")
-    def test_get_memory_client_handles_error(
-        self, mock_get_memory_client, mock_mem0_client
-    ):
+    def test_get_memory_client_handles_error(self, mock_get_memory_client, mock_mem0_client):
         """Test memory client handles initialization errors gracefully"""
         memory_config = {
             "vector_store": {"provider": "faiss", "config": {"path": "/test/path"}},
@@ -157,9 +151,7 @@ class TestRetrieveEvidence:
 
     def test_retrieve_evidence_with_no_client(self):
         """Test evidence retrieval when memory client is not available"""
-        with patch.object(
-            reporting, "_get_memory_client_for_report"
-        ) as mock_get_client:
+        with patch.object(reporting, "_get_memory_client_for_report") as mock_get_client:
             mock_get_client.return_value = None
 
             handler = ReasoningHandler(
@@ -185,7 +177,7 @@ class TestRetrieveEvidence:
                         "severity": "high",
                         "confidence": "90%",
                     },
-                    "score": 0.95
+                    "score": 0.95,
                 },
                 {
                     "id": "mem2",
@@ -195,14 +187,12 @@ class TestRetrieveEvidence:
                         "severity": "medium",
                         "confidence": "80%",
                     },
-                    "score": 0.85
+                    "score": 0.85,
                 },
             ]
         }
 
-        with patch.object(
-            reporting, "_get_memory_client_for_report"
-        ) as mock_get_client:
+        with patch.object(reporting, "_get_memory_client_for_report") as mock_get_client:
             mock_get_client.return_value = mock_client
 
             handler = ReasoningHandler(
@@ -228,17 +218,14 @@ class TestRetrieveEvidence:
                 {"id": "mem1", "memory": "Port 22 is open", "metadata": {}, "score": 0.5},
                 {
                     "id": "mem2",
-                    "memory": "This is a very long uncategorized memory that contains more than 100 words "
-                    * 10,
+                    "memory": "This is a very long uncategorized memory that contains more than 100 words " * 10,
                     "metadata": {},
-                    "score": 0.3
+                    "score": 0.3,
                 },
             ]
         }
 
-        with patch.object(
-            reporting, "_get_memory_client_for_report"
-        ) as mock_get_client:
+        with patch.object(reporting, "_get_memory_client_for_report") as mock_get_client:
             mock_get_client.return_value = mock_client
 
             handler = ReasoningHandler(
@@ -262,14 +249,12 @@ class TestRetrieveEvidence:
                     "id": "mem1",
                     "memory": "Critical vulnerability found",
                     "metadata": {"category": "finding", "severity": "critical"},
-                    "score": 0.99
+                    "score": 0.99,
                 }
             ]
         }
 
-        with patch.object(
-            reporting, "_get_memory_client_for_report"
-        ) as mock_get_client:
+        with patch.object(reporting, "_get_memory_client_for_report") as mock_get_client:
             mock_get_client.return_value = mock_client
 
             handler = ReasoningHandler(
@@ -289,9 +274,7 @@ class TestRetrieveEvidence:
         mock_client = Mock()
         mock_client.list_memories.side_effect = Exception("Memory retrieval failed")
 
-        with patch.object(
-            reporting, "_get_memory_client_for_report"
-        ) as mock_get_client:
+        with patch.object(reporting, "_get_memory_client_for_report") as mock_get_client:
             mock_get_client.return_value = mock_client
 
             handler = ReasoningHandler(
@@ -326,7 +309,6 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -337,17 +319,13 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            # Mock the ReportAgent and its generate_report method
-            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
-                mock_report_agent = Mock()
-                mock_report_agent.generate_report.return_value = "Generated security report content"
-                mock_report_agent_class.return_value = mock_report_agent
+            # Mock the _generate_llm_report function
+            with patch("modules.handlers.reporting._generate_llm_report") as mock_generate:
+                mock_generate.return_value = "Generated security report content"
 
                 with patch("modules.handlers.reporting._display_final_report") as mock_display:
                     with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
-                        handler.generate_final_report(
-                            mock_agent, "test.com", "security assessment"
-                        )
+                        handler.generate_final_report(mock_agent, "test.com", "security assessment")
 
                         mock_display.assert_called_once()
                         mock_save.assert_called_once()
@@ -356,7 +334,6 @@ class TestGenerateReport:
     def test_generate_report_no_evidence(self):
         """Test report generation when no evidence is found"""
         mock_agent = Mock()
-        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = []
@@ -367,12 +344,10 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            # No need to mock ReportAgent since it won't be called with no evidence
+            # No need to mock _generate_llm_report since it won't be called with no evidence
             with patch("modules.handlers.reporting._display_final_report") as mock_display:
                 with patch("modules.handlers.reporting._save_report_to_file") as mock_save:
-                    handler.generate_final_report(
-                        mock_agent, "test.com", "security assessment"
-                    )
+                    handler.generate_final_report(mock_agent, "test.com", "security assessment")
 
                     mock_display.assert_not_called()
                     mock_save.assert_not_called()
@@ -389,7 +364,6 @@ class TestGenerateReport:
             }
         ]
         mock_agent = Mock()
-        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -400,21 +374,15 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
-                mock_report_agent = Mock()
-                mock_report_agent.generate_report.return_value = "Generated report"
-                mock_report_agent_class.return_value = mock_report_agent
+            with patch("modules.handlers.reporting._generate_llm_report") as mock_generate:
+                mock_generate.return_value = "Generated report"
 
                 with patch("modules.handlers.reporting._display_final_report"):
                     with patch("modules.handlers.reporting._save_report_to_file"):
-                        handler.generate_final_report(
-                            mock_agent, "test.com", "security assessment"
-                        )
+                        handler.generate_final_report(mock_agent, "test.com", "security assessment")
                         assert handler.report_generated is True
 
-                        handler.generate_final_report(
-                            mock_agent, "test.com", "security assessment"
-                        )
+                        handler.generate_final_report(mock_agent, "test.com", "security assessment")
                         mock_retrieve.assert_called_once()
 
     def test_format_evidence_with_metadata(self):
@@ -441,7 +409,6 @@ class TestGenerateReport:
         ]
 
         mock_agent = Mock()
-        mock_agent.model = Mock()  # Add model attribute for ReportAgent
 
         with patch("modules.handlers.reporting._retrieve_evidence") as mock_retrieve:
             mock_retrieve.return_value = evidence
@@ -452,27 +419,21 @@ class TestGenerateReport:
                 target="test.com",
             )
 
-            # Mock the ReportAgent to check formatted evidence
-            with patch("modules.handlers.reporting.ReportAgent") as mock_report_agent_class:
-                mock_report_agent = Mock()
-                mock_report_agent.generate_report.return_value = "Generated report"
-                mock_report_agent_class.return_value = mock_report_agent
+            # Mock the _generate_llm_report to check formatted evidence
+            with patch("modules.handlers.reporting._generate_llm_report") as mock_generate:
+                mock_generate.return_value = "Generated report"
 
                 with patch("modules.handlers.reporting._display_final_report"):
                     with patch("modules.handlers.reporting._save_report_to_file"):
-                        handler.generate_final_report(
-                            mock_agent, "test.com", "security assessment"
-                        )
+                        handler.generate_final_report(mock_agent, "test.com", "security assessment")
 
-                        # Check that report agent was created with proper model
-                        mock_report_agent_class.assert_called_once_with(model=mock_agent.model)
-                        
-                        # Check that generate_report was called with the evidence
-                        mock_report_agent.generate_report.assert_called_once()
-                        call_args = mock_report_agent.generate_report.call_args[1]
-                        assert call_args["evidence"] == evidence
+                        # Check that _generate_llm_report was called with proper arguments
+                        mock_generate.assert_called_once()
+                        call_args = mock_generate.call_args[1]
+                        assert call_args["agent"] == mock_agent
                         assert call_args["target"] == "test.com"
                         assert call_args["objective"] == "security assessment"
+                        assert call_args["evidence"] == evidence
 
 
 if __name__ == "__main__":
