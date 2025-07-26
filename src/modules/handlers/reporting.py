@@ -219,6 +219,8 @@ def _generate_llm_report(
     """
     # Import OpenTelemetry for proper span management
     from opentelemetry import trace as otel_trace
+    import sys
+    import io
 
     # Prepare evidence summary
     evidence_text = ""
@@ -350,7 +352,9 @@ Be specific about vulnerabilities found and provide technical details."""
         report_agent = Agent(
             model=agent.model,
             name="Cyber-ReportAgent",
-            system_prompt=agent.system_prompt,
+            # Use a clean, focused system prompt instead of agent.system_prompt to prevent
+            # thinking/reasoning output that would duplicate in terminal
+            system_prompt="You are a cybersecurity report generator. Generate a comprehensive, professional penetration testing report based on the provided evidence. Output ONLY the final report content without any preamble, thinking, or commentary. Begin directly with the report header and content.",
             # No tools needed for report generation
             tools=[],
             # Use the same trace attributes but update the agent type
@@ -362,7 +366,16 @@ Be specific about vulnerabilities found and provide technical details."""
         )
 
         # Execute report generation with clean conversation state
-        result = report_agent(report_prompt)
+        # Suppress output to prevent duplicate display in terminal
+        # Capture stdout to prevent report agent from printing to terminal
+        original_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        
+        try:
+            result = report_agent(report_prompt)
+        finally:
+            # Always restore stdout
+            sys.stdout = original_stdout
 
         # Debug: Log the result structure
         logger.debug("Report generation result type: %s", type(result))
@@ -447,6 +460,7 @@ def _extract_report_content(raw_content: str) -> str:
     """
     # Look for common report headers
     report_markers = [
+        "# PENETRATION TESTING REPORT",
         "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
         "# Security Assessment Report",
         "# SECURITY ASSESSMENT REPORT",
