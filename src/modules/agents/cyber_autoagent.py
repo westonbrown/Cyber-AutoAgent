@@ -332,10 +332,12 @@ Leverage these tools directly via shell.
         conversation_manager=SlidingWindowConversationManager(window_size=120),
         load_tools_from_directory=True,
         trace_attributes={
-            # Langfuse-specific attributes for proper UI display
-            "langfuse.trace.name": f"Security Assessment - {target} - {operation_id}",
+            # Core identification - session_id is the key for Langfuse trace naming
             "langfuse.session.id": operation_id,
             "langfuse.user.id": f"cyber-agent-{target}",
+            # Human-readable name that Langfuse will pick up
+            "name": f"Security Assessment - {target} - {operation_id}",
+            # Tags for filtering and categorization
             "langfuse.tags": [
                 "Cyber-AutoAgent",
                 provider.upper(),
@@ -344,33 +346,27 @@ Leverage these tools directly via shell.
             "langfuse.environment": os.getenv("DEPLOYMENT_ENV", "production"),
             "langfuse.agent.type": "main_orchestrator",
             "langfuse.capabilities.swarm": True,
-            
-            # Standard attributes for compatibility
+            # Standard OTEL attributes
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
-            
             # Agent identification
             "agent.name": "Cyber-AutoAgent",
             "agent.version": "1.0.0",
             "gen_ai.agent.name": "Cyber-AutoAgent",
             "gen_ai.system": "Cyber-AutoAgent",
-            
             # Operation metadata
             "operation.id": operation_id,
             "operation.type": "security_assessment",
             "operation.start_time": datetime.now().isoformat(),
             "operation.max_steps": max_steps,
-            
             # Target and objective
             "target.host": target,
             "objective.description": objective,
-            
             # Model configuration
             "model.provider": provider,
             "model.id": model_id,
             "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
             "gen_ai.request.model": model_id,
-            
             # Tool configuration
             "tools.available": 7,  # Number of core tools
             "tools.names": [
@@ -383,7 +379,6 @@ Leverage these tools directly via shell.
                 "http_request",
             ],
             "tools.parallel_limit": 8,
-            
             # Memory configuration
             "memory.enabled": True,
             "memory.path": memory_path if memory_path else "ephemeral",

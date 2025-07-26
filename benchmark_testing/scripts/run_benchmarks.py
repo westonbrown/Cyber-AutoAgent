@@ -175,7 +175,7 @@ def update_env_flag(benchmark_id, flag):
     env_file = os.path.join(benchmark_dir, ".env")
 
     if not os.path.exists(env_file):
-        logger.debug(f"No .env file found for {benchmark_id}, skipping flag update")
+        logger.debug("No .env file found for %s, skipping flag update", benchmark_id)
         return False
 
     try:
@@ -194,10 +194,10 @@ def update_env_flag(benchmark_id, flag):
         with open(env_file, "w") as f:
             f.write(new_content)
 
-        logger.info(f"Updated FLAG in .env file for {benchmark_id}")
+        logger.info("Updated FLAG in .env file for %s", benchmark_id)
         return True
     except Exception as e:
-        logger.error(f"Failed to update .env file for {benchmark_id}: {str(e)}")
+        logger.error("Failed to update .env file for %s: %s", benchmark_id, str(e))
         return False
 
 
@@ -206,14 +206,14 @@ def build_benchmark(benchmark_id, flag=None):
     benchmark_dir = os.path.join(BENCHMARKS_PATH, benchmark_id)
 
     if not os.path.isdir(benchmark_dir):
-        logger.error(f"Benchmark directory not found: {benchmark_dir}")
+        logger.error("Benchmark directory not found: %s", benchmark_dir)
         return False
 
     # Update the .env file if a flag is provided
     if flag:
         update_env_flag(benchmark_id, flag)
 
-    logger.info(f"Building benchmark {benchmark_id}...")
+    logger.info("Building benchmark %s...", benchmark_id)
 
     build_cmd = ["make", "build"]
     if flag:
@@ -227,11 +227,11 @@ def build_benchmark(benchmark_id, flag=None):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        logger.info(f"Successfully built {benchmark_id}")
+        logger.info("Successfully built %s", benchmark_id)
         return True
     except subprocess.CalledProcessError as e:
         logger.error(
-            f"Failed to build {benchmark_id}: {e.stderr.decode() if e.stderr else str(e)}"
+            "Failed to build %s: %s", benchmark_id, e.stderr.decode() if e.stderr else str(e)
         )
         return False
 
@@ -240,7 +240,7 @@ def start_benchmark(benchmark_id):
     """Start a benchmark container."""
     benchmark_dir = os.path.join(BENCHMARKS_PATH, benchmark_id)
 
-    logger.info(f"Starting benchmark {benchmark_id}...")
+    logger.info("Starting benchmark %s...", benchmark_id)
 
     try:
         # Run docker-compose up and wait for containers to be ready
@@ -279,14 +279,14 @@ def start_benchmark(benchmark_id):
                 f"Could not determine port mapping, using default: {port_mapping}"
             )
 
-        logger.info(f"Benchmark {benchmark_id} started on port {port_mapping}")
+        logger.info("Benchmark %s started on port %s", benchmark_id, port_mapping)
 
         # Wait a moment for the service to be fully ready
         time.sleep(2)
         return port_mapping
     except subprocess.CalledProcessError as e:
         logger.error(
-            f"Failed to start {benchmark_id}: {e.stderr.decode() if e.stderr else str(e)}"
+            "Failed to start %s: %s", benchmark_id, e.stderr.decode() if e.stderr else str(e)
         )
         return None
 
@@ -295,7 +295,7 @@ def stop_benchmark(benchmark_id):
     """Stop a benchmark container."""
     benchmark_dir = os.path.join(BENCHMARKS_PATH, benchmark_id)
 
-    logger.info(f"Stopping benchmark {benchmark_id}...")
+    logger.info("Stopping benchmark %s...", benchmark_id)
 
     try:
         subprocess.run(
@@ -305,11 +305,11 @@ def stop_benchmark(benchmark_id):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        logger.info(f"Successfully stopped {benchmark_id}")
+        logger.info("Successfully stopped %s", benchmark_id)
         return True
     except subprocess.CalledProcessError as e:
         logger.error(
-            f"Failed to stop {benchmark_id}: {e.stderr.decode() if e.stderr else str(e)}"
+            "Failed to stop %s: %s", benchmark_id, e.stderr.decode() if e.stderr else str(e)
         )
         return False
 
@@ -327,7 +327,7 @@ def extract_benchmark_metadata(benchmark_id):
 
         return {"title": title, "description": description, "tags": tags}
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.error(f"Error reading benchmark metadata for {benchmark_id}: {str(e)}")
+        logger.error("Error reading benchmark metadata for %s: %s", benchmark_id, str(e))
         return {
             "title": benchmark_id,
             "description": "No description available",
@@ -341,9 +341,9 @@ def log_process_output(process, benchmark_id, log_prefix=""):
         try:
             line_str = line.decode("utf-8").rstrip()
             if line_str:
-                logger.debug(f"{log_prefix}[{benchmark_id}] {line_str}")
+                logger.debug("%s[%s] %s", log_prefix, benchmark_id, line_str)
         except Exception as e:
-            logger.error(f"Error processing output line: {e}")
+            logger.error("Error processing output line: %s", e)
 
 
 def ensure_agent_directories():
@@ -351,7 +351,7 @@ def ensure_agent_directories():
     # Create logs directory in the agent path
     logs_dir = os.path.join(AGENT_PATH, "logs")
     if not os.path.exists(logs_dir):
-        logger.info(f"Creating logs directory: {logs_dir}")
+        logger.info("Creating logs directory: %s", logs_dir)
         os.makedirs(logs_dir, exist_ok=True)
 
     # Create data directory structure if needed
@@ -359,7 +359,7 @@ def ensure_agent_directories():
     for data_dir in data_dirs:
         dir_path = os.path.join(AGENT_PATH, data_dir)
         if not os.path.exists(dir_path):
-            logger.info(f"Creating directory: {dir_path}")
+            logger.info("Creating directory: %s", dir_path)
             os.makedirs(dir_path, exist_ok=True)
 
     # Create any other directories that might be needed by the agent
@@ -369,18 +369,18 @@ def ensure_agent_directories():
 
 def run_single_benchmark(benchmark_id, flag=None, timeout=None):
     """Run a complete benchmark: build, start, test, stop."""
-    logger.info(f"Starting benchmark {benchmark_id}")
+    logger.info("Starting benchmark %s", benchmark_id)
 
     try:
         # Build the benchmark
         if not build_benchmark(benchmark_id, flag):
-            logger.error(f"Failed to build {benchmark_id}")
+            logger.error("Failed to build %s", benchmark_id)
             return None
 
         # Start the benchmark container
         port = start_benchmark(benchmark_id)
         if not port:
-            logger.error(f"Failed to start {benchmark_id}")
+            logger.error("Failed to start %s", benchmark_id)
             return None
 
         try:
@@ -392,7 +392,7 @@ def run_single_benchmark(benchmark_id, flag=None, timeout=None):
             stop_benchmark(benchmark_id)
 
     except Exception as e:
-        logger.error(f"Error in benchmark {benchmark_id}: {str(e)}")
+        logger.error("Error in benchmark %s: %s", benchmark_id, str(e))
         return None
 
 
@@ -413,7 +413,7 @@ def run_agent(benchmark_id, port, timeout=None):
     # Ensure required directories exist
     ensure_agent_directories()
 
-    logger.info(f"Running agent against {benchmark_id} at {target_url}")
+    logger.info("Running agent against %s at %s", benchmark_id, target_url)
 
     result = {
         "benchmark_id": benchmark_id,
@@ -442,17 +442,17 @@ def run_agent(benchmark_id, port, timeout=None):
 
         # Verify paths exist
         if not os.path.exists(python_exe):
-            logger.error(f"Python executable not found: {python_exe}")
+            logger.error("Python executable not found: %s", python_exe)
             raise FileNotFoundError(f"Python executable not found: {python_exe}")
 
         if not os.path.exists(cyberautoagent_path):
-            logger.error(f"Cyberautoagent script not found: {cyberautoagent_path}")
+            logger.error("Cyberautoagent script not found: %s", cyberautoagent_path)
             raise FileNotFoundError(
                 f"Cyberautoagent script not found: {cyberautoagent_path}"
             )
 
-        logger.info(f"Using Python: {python_exe}")
-        logger.info(f"Running script: {cyberautoagent_path}")
+        logger.info("Using Python: %s", python_exe)
+        logger.info("Running script: %s", cyberautoagent_path)
 
         # Set up environment with proper Python path
         env = os.environ.copy()
@@ -469,7 +469,7 @@ def run_agent(benchmark_id, port, timeout=None):
 
         # Run the agent with proper output capture and timeout
         if timeout is not None:
-            logger.info(f"Starting agent process with timeout of {timeout} seconds")
+            logger.info("Starting agent process with timeout of %s seconds", timeout)
         else:
             logger.info("Starting agent process with no timeout")
 
@@ -484,7 +484,7 @@ def run_agent(benchmark_id, port, timeout=None):
             "50",
         ]
 
-        logger.debug(f"Command: {' '.join(cmd)}")
+        logger.debug("Command: %s", ' '.join(cmd))
 
         # Use Popen to capture output in real-time
         process = subprocess.Popen(
@@ -515,10 +515,10 @@ def run_agent(benchmark_id, port, timeout=None):
                         # This is a section separator
                         if current_section:
                             # End of a section
-                            logger.debug(f"[{benchmark_id}] ")
+                            logger.debug("[%s] ", benchmark_id)
                         current_section = None
                         section_lines = 0
-                        logger.debug(f"[{benchmark_id}] {line_text}")
+                        logger.debug("[%s] %s", benchmark_id, line_text)
                     elif (
                         line_text.startswith("Step ")
                         and "/" in line_text
@@ -527,20 +527,20 @@ def run_agent(benchmark_id, port, timeout=None):
                         # This is a step header
                         current_section = "step"
                         section_lines = 0
-                        logger.debug(f"[{benchmark_id}] {line_text}")
+                        logger.debug("[%s] %s", benchmark_id, line_text)
                     elif line_text.startswith("Running:"):
                         # This is a command execution
                         current_section = "command"
                         section_lines = 0
-                        logger.debug(f"[{benchmark_id}] {line_text}")
+                        logger.debug("[%s] %s", benchmark_id, line_text)
                     elif (
                         current_section == "html"
                         and section_lines > 20
                         and (line_text.startswith("</") or line_text == "</html>")
                     ):
                         # End of HTML content, just show closing tag
-                        logger.debug(f"[{benchmark_id}] {line_text}")
-                        logger.debug(f"[{benchmark_id}] [HTML content truncated...]")
+                        logger.debug("[%s] %s", benchmark_id, line_text)
+                        logger.debug("[%s] [HTML content truncated...]", benchmark_id)
                         current_section = None
                     elif line_text.startswith("<!doctype") or line_text.startswith(
                         "<html"
@@ -548,7 +548,7 @@ def run_agent(benchmark_id, port, timeout=None):
                         # Start of HTML content
                         current_section = "html"
                         section_lines = 0
-                        logger.debug(f"[{benchmark_id}] {line_text}")
+                        logger.debug("[%s] %s", benchmark_id, line_text)
                     else:
                         # Regular content
                         section_lines += 1
@@ -556,7 +556,7 @@ def run_agent(benchmark_id, port, timeout=None):
                             # Skip excessive HTML content
                             pass
                         else:
-                            logger.debug(f"[{benchmark_id}] {line_text}")
+                            logger.debug("[%s] %s", benchmark_id, line_text)
 
         stdout_thread = threading.Thread(
             target=collect_output, args=(process.stdout, stdout_data)
@@ -602,7 +602,7 @@ def run_agent(benchmark_id, port, timeout=None):
         result["stderr"] = "".join(stderr_data)
         result["duration"] = time.time() - start_time
 
-        logger.info(f"Agent process completed with return code {result['return_code']}")
+        logger.info("Agent process completed with return code %s", result['return_code'])
 
         # Check if flag was found - support multiple flag formats
         flag_patterns = [
@@ -619,24 +619,24 @@ def run_agent(benchmark_id, port, timeout=None):
                 result["flag_found"] = True
                 result["success"] = True
                 result["extracted_flag"] = flag_match.group(0)
-                logger.info(f"Flag found in {benchmark_id}: {flag_match.group(0)}")
+                logger.info("Flag found in %s: %s", benchmark_id, flag_match.group(0))
                 flag_found = True
                 break
 
         # Log if no flag was found
         if not flag_found and result["stdout"]:
-            logger.debug(f"No flag found in {benchmark_id} output")
+            logger.debug("No flag found in %s output", benchmark_id)
 
         if result["return_code"] != 0:
             logger.error(
-                f"Agent failed for {benchmark_id} with return code {result['return_code']}"
+                "Agent failed for %s with return code %s", benchmark_id, result['return_code']
             )
             logger.error(
-                f"STDERR: {result['stderr'][:500]}..."
+                "STDERR: %s...", result['stderr'][:500]
             )  # Log first 500 chars of stderr
 
         logger.info(
-            f"Agent execution completed for {benchmark_id} (Success: {result['success']})"
+            "Agent execution completed for %s (Success: %s)", benchmark_id, result['success']
         )
 
     except Exception as e:
@@ -644,11 +644,11 @@ def run_agent(benchmark_id, port, timeout=None):
         result["stdout"] = ""
         result["stderr"] = str(e)
         result["duration"] = time.time() - start_time
-        logger.error(f"Error running agent for {benchmark_id}: {str(e)}")
+        logger.error("Error running agent for %s: %s", benchmark_id, str(e))
         if "python_exe" in locals():
-            logger.error(f"Python executable: {python_exe}")
+            logger.error("Python executable: %s", python_exe)
         if "cyberautoagent_path" in locals():
-            logger.error(f"Script path: {cyberautoagent_path}")
+            logger.error("Script path: %s", cyberautoagent_path)
 
     # Save the result to a file
     os.makedirs(RESULTS_PATH, exist_ok=True)
@@ -774,7 +774,7 @@ def main():
             if benchmark in all_benchmarks:
                 benchmarks_to_run.append(benchmark)
             else:
-                logger.warning(f"Benchmark {benchmark} not found, skipping")
+                logger.warning("Benchmark %s not found, skipping", benchmark)
     else:
         benchmarks_to_run = all_benchmarks
 
@@ -782,7 +782,7 @@ def main():
         logger.error("No valid benchmarks to run")
         return 1
 
-    logger.info(f"Starting test run with {len(benchmarks_to_run)} benchmarks")
+    logger.info("Starting test run with %s benchmarks", len(benchmarks_to_run))
 
     print(f"\nCAA Test Harness - Running {len(benchmarks_to_run)} benchmarks")
 
@@ -792,7 +792,7 @@ def main():
     results = []
 
     if args.parallel > 1:
-        logger.info(f"Running benchmarks in parallel with {args.parallel} workers")
+        logger.info("Running benchmarks in parallel with %s workers", args.parallel)
 
         # Use ThreadPoolExecutor for parallel execution
         with ThreadPoolExecutor(max_workers=args.parallel) as executor:
@@ -826,7 +826,7 @@ def main():
                             f"[{completed}/{len(benchmarks_to_run)}] FAILED: {benchmark_id} (setup failed)"
                         )
                 except Exception as e:
-                    logger.error(f"Exception in benchmark {benchmark_id}: {str(e)}")
+                    logger.error("Exception in benchmark %s: %s", benchmark_id, str(e))
                     print(
                         f"[{completed}/{len(benchmarks_to_run)}] ERROR: {benchmark_id} ({str(e)})"
                     )

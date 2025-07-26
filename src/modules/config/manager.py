@@ -875,7 +875,7 @@ class ConfigManager:
         """Convert AWS Bedrock API key to session credentials if provided."""
         bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
         access_key = os.getenv("AWS_ACCESS_KEY_ID")
-        
+
         # Handle both None and empty string cases (Docker Compose sets empty strings)
         if bearer_token and (not access_key or access_key.strip() == ""):
             os.environ["AWS_ACCESS_KEY_ID"] = "ASIABEARERTOKEN"

@@ -20,7 +20,7 @@ def get_terminal_width(default=80):
         size = shutil.get_terminal_size((default, 24))
         # Return a slightly smaller width to account for edge cases
         return max(40, min(size.columns - 2, default))
-    except:
+    except (OSError, ValueError):
         return default
 
 

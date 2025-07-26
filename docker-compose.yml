@@ -28,8 +28,13 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-cyber-public}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-cyber-secret}
       
+      # Prompt management configuration (enabled by default)
+      - ENABLE_LANGFUSE_PROMPTS=${ENABLE_LANGFUSE_PROMPTS:-true}
+      - LANGFUSE_PROMPT_LABEL=${LANGFUSE_PROMPT_LABEL:-production}
+      - LANGFUSE_PROMPT_CACHE_TTL=${LANGFUSE_PROMPT_CACHE_TTL:-300}
+      
       # Evaluation configuration 
-      - ENABLE_AUTO_EVALUATION=${ENABLE_AUTO_EVALUATION:-false}
+      - ENABLE_AUTO_EVALUATION=${ENABLE_AUTO_EVALUATION:-true}
       - RAGAS_EVALUATOR_MODEL=${RAGAS_EVALUATOR_MODEL:-us.anthropic.claude-3-5-sonnet-20241022-v2:0}
       - EVALUATION_BATCH_SIZE=${EVALUATION_BATCH_SIZE:-5}
       - MIN_TOOL_ACCURACY_SCORE=${MIN_TOOL_ACCURACY_SCORE:-0.8}

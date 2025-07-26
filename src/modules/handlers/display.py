@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, Tuple
 from .utils import Colors
 
 
-def display_http_response(output_text: str, tool_result: Dict[str, Any]) -> None:
+def display_http_response(output_text: str, tool_result: Dict[str, Any]) -> None:  # pylint: disable=unused-argument
     """Display HTTP response in a structured, readable format.
 
     Args:
@@ -37,7 +37,7 @@ def display_http_response(output_text: str, tool_result: Dict[str, Any]) -> None
             headers_str = line.split(":", 1)[1].strip()
             try:
                 headers = json.loads(headers_str)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 headers = {"raw": headers_str}
         elif line.startswith("Body:"):
             # Get everything after "Body: "
@@ -55,7 +55,7 @@ def display_http_response(output_text: str, tool_result: Dict[str, Any]) -> None
             metrics_str = line.split(":", 1)[1].strip()
             try:
                 metrics = json.loads(metrics_str)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 metrics = {"raw": metrics_str}
 
     # Display formatted response
@@ -75,7 +75,7 @@ def display_http_response(output_text: str, tool_result: Dict[str, Any]) -> None
             else:
                 status_color = Colors.RED
                 status_icon = "❌"
-        except:
+        except (ValueError, TypeError):
             status_color = Colors.CYAN
             status_icon = "ℹ️"
 
@@ -139,7 +139,7 @@ def _display_formatted_body(body: str, max_lines: int = 30) -> None:
         else:
             # Not JSON, display as text
             _display_plain_text(body, max_lines)
-    except:
+    except (json.JSONDecodeError, ValueError, TypeError):
         # Failed to parse as JSON, display as plain text
         _display_plain_text(body, max_lines)
 

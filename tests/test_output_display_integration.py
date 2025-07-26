@@ -232,9 +232,7 @@ class TestPathConsistency:
         memory_tools_path = os.path.join("outputs", target_name, "memory")
 
         # Path from cleanup logic
-        cleanup_path = os.path.join(
-            "outputs", target_name, "memory", f"mem0_faiss_{target_name}"
-        )
+        cleanup_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
 
         # Path from display logic
         display_path = f"./outputs/{target_name}/memory"
@@ -318,7 +316,5 @@ class TestErrorHandling:
             get_output_path(None, None, None, None)
 
         # Test with special characters in base_dir
-        result = get_output_path(
-            "example.com", "OP_20250718_123456", "logs", "/app/outputs with spaces"
-        )
+        result = get_output_path("example.com", "OP_20250718_123456", "logs", "/app/outputs with spaces")
         assert result == "/app/outputs with spaces/example.com/OP_20250718_123456/logs"

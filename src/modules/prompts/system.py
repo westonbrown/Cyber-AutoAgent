@@ -10,7 +10,7 @@ from ..config.manager import get_config_manager
 logger = logging.getLogger(__name__)
 
 # Check if we should use prompt manager
-USE_PROMPT_MANAGER = os.getenv("ENABLE_LANGFUSE_PROMPTS", "false").lower() == "true"
+USE_PROMPT_MANAGER = os.getenv("ENABLE_LANGFUSE_PROMPTS", "true").lower() == "true"
 
 
 def _get_swarm_model_guidance(provider: str) -> str:
@@ -118,6 +118,9 @@ def get_system_prompt(
     has_existing_memories: bool = False,  # Add existing memories detection
     output_config: Optional[Dict] = None,  # Add output configuration
     memory_overview: Optional[Dict] = None,  # Add memory overview data
+    is_initial: bool = False,  # Whether this is the initial prompt
+    current_step: int = 1,  # Current step number
+    remaining_steps: int = 100,  # Remaining steps
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
@@ -140,10 +143,13 @@ def get_system_prompt(
                 "has_existing_memories": has_existing_memories,
                 "output_config": output_config,
                 "memory_overview": memory_overview,
+                "is_initial": is_initial,
+                "current_step": current_step,
+                "remaining_steps": remaining_steps,
             }
 
             logger.info("Fetching system prompt from Langfuse")
-            return pm.get_prompt("cyber-agent-system", variables)
+            return pm.get_prompt("cyber-agent-main", variables)
         except Exception as e:
             logger.warning("Failed to use prompt manager: %s. Falling back to local prompt.", e)
 
@@ -437,32 +443,18 @@ def get_initial_prompt(
     _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
-
-    # Use prompt manager if enabled
-    if USE_PROMPT_MANAGER:
-        try:
-            from .manager import get_prompt_manager
-
-            pm = get_prompt_manager()
-
-            variables = {
-                "target": target,
-                "objective": objective,
-                "max_steps": _iterations,
-                "available_tools": _available_tools,
-            }
-
-            logger.info("Fetching initial prompt from Langfuse")
-            return pm.get_prompt("cyber-agent-initial", variables)
-        except Exception as e:
-            logger.warning("Failed to use prompt manager: %s. Falling back to hardcoded prompt.", e)
-
-    # Continue with hardcoded prompt
-    return f"""Initializing penetration testing operation.
-Target: {target}
-Objective: {objective}
-Approach: Dynamic execution based on continuous assessment and adaptation.
-Beginning with reconnaissance to build target model and identify optimal attack vectors."""
+    
+    # Delegate to get_system_prompt with is_initial flag
+    return get_system_prompt(
+        target=target,
+        objective=objective,
+        max_steps=_iterations,
+        operation_id="",  # Will be filled by the caller if needed
+        tools_context="",  # Will be filled by the caller if needed
+        is_initial=True,
+        current_step=1,
+        remaining_steps=_iterations
+    )
 
 
 def get_continuation_prompt(
@@ -472,27 +464,16 @@ def get_continuation_prompt(
     _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
-
-    # Use prompt manager if enabled
-    if USE_PROMPT_MANAGER:
-        try:
-            from .manager import get_prompt_manager
-
-            pm = get_prompt_manager()
-
-            variables = {
-                "remaining_steps": remaining,
-                "max_steps": total,
-            }
-
-            logger.info("Fetching continuation prompt from Langfuse")
-            return pm.get_prompt("cyber-agent-continuation", variables)
-        except Exception as e:
-            logger.warning("Failed to use prompt manager: %s. Falling back to hardcoded prompt.", e)
-
-    # Continue with hardcoded prompt
-    urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
-
-    return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}
-Reassessing strategy based on current knowledge and confidence levels.
-Continuing adaptive execution toward objective completion."""
+    
+    # Delegate to get_system_prompt with continuation context
+    current_step = total - remaining + 1
+    return get_system_prompt(
+        target="",  # Will be filled by the agent's context
+        objective="",  # Will be filled by the agent's context
+        max_steps=total,
+        operation_id="",  # Will be filled by the agent's context
+        tools_context="",  # Will be filled by the agent's context
+        is_initial=False,
+        current_step=current_step,
+        remaining_steps=remaining
+    )
