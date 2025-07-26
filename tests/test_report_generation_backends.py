@@ -61,10 +61,7 @@ class TestReportGenerationWithFAISS:
             mock_mem0_client.assert_called_once()
             call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["provider"] == "faiss"
-            assert (
-                call_config["vector_store"]["config"]["path"]
-                == "outputs/test.com/memory"
-            )
+            assert call_config["vector_store"]["config"]["path"] == "outputs/test.com/memory"
 
             # Verify evidence was retrieved
             assert len(evidence) == 1
@@ -102,9 +99,7 @@ class TestReportGenerationWithFAISS:
 
             # Verify custom path was used
             call_config = mock_mem0_client.call_args.kwargs["config"]
-            assert (
-                call_config["vector_store"]["config"]["path"] == "/custom/memory/path"
-            )
+            assert call_config["vector_store"]["config"]["path"] == "/custom/memory/path"
 
 
 class TestReportGenerationWithOpenSearch:
@@ -170,9 +165,7 @@ class TestReportGenerationWithOpenSearch:
             mock_mem0_client.assert_called_once()
             call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["provider"] == "opensearch"
-            assert (
-                call_config["vector_store"]["config"]["host"] == "test-opensearch.com"
-            )
+            assert call_config["vector_store"]["config"]["host"] == "test-opensearch.com"
 
             # Verify evidence was retrieved
             assert len(evidence) == 1

@@ -121,9 +121,7 @@ class TestOllamaHostDetection:
         # Verify it tested both options
         assert mock_test.call_count >= 2
         mock_test.assert_any_call("http://localhost:11434/api/version", timeout=2)
-        mock_test.assert_any_call(
-            "http://host.docker.internal:11434/api/version", timeout=2
-        )
+        mock_test.assert_any_call("http://host.docker.internal:11434/api/version", timeout=2)
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("os.path.exists")
@@ -131,9 +129,7 @@ class TestOllamaHostDetection:
     def test_get_ollama_host_docker_no_connection(self, mock_test, mock_exists):
         """Test Docker environment where neither option works"""
         mock_exists.return_value = True  # /app exists
-        mock_test.side_effect = requests.exceptions.ConnectionError(
-            "Connection failed"
-        )  # Neither option works
+        mock_test.side_effect = requests.exceptions.ConnectionError("Connection failed")  # Neither option works
 
         host = get_ollama_host()
         # Should fallback to host.docker.internal
@@ -157,9 +153,7 @@ class TestMemoryConfig:
                         mock_handler.return_value = Mock()
                         with patch("modules.agents.cyber_autoagent.get_system_prompt"):
                             # Call create_agent with local server
-                            create_agent(
-                                target="test.com", objective="test", provider="ollama"
-                            )
+                            create_agent(target="test.com", objective="test", provider="ollama")
 
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
@@ -182,9 +176,7 @@ class TestMemoryConfig:
                         mock_handler.return_value = Mock()
                         with patch("modules.agents.cyber_autoagent.get_system_prompt"):
                             # Call create_agent with remote server
-                            create_agent(
-                                target="test.com", objective="test", provider="bedrock"
-                            )
+                            create_agent(target="test.com", objective="test", provider="bedrock")
 
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
@@ -201,18 +193,14 @@ class TestServerValidation:
 
     @patch("modules.config.manager.requests.get")
     @patch("modules.config.manager.ollama.Client")
-    def test_validate_server_requirements_local_success(
-        self, mock_ollama_client, mock_requests
-    ):
+    def test_validate_server_requirements_local_success(self, mock_ollama_client, mock_requests):
         """Test successful local server validation"""
         # Mock Ollama server responding
         mock_requests.return_value.status_code = 200
 
         # Mock ollama client and list method
         mock_client_instance = mock_ollama_client.return_value
-        mock_client_instance.list.return_value = {
-            "models": [{"model": "llama3.2:3b"}, {"model": "mxbai-embed-large"}]
-        }
+        mock_client_instance.list.return_value = {"models": [{"model": "llama3.2:3b"}, {"model": "mxbai-embed-large"}]}
 
         # Should not raise any exception
         get_config_manager().validate_requirements("ollama")
@@ -231,18 +219,14 @@ class TestServerValidation:
 
     @patch("modules.config.manager.requests.get")
     @patch("modules.config.manager.ollama.Client")
-    def test_validate_server_requirements_local_missing_models(
-        self, mock_ollama_client, mock_requests
-    ):
+    def test_validate_server_requirements_local_missing_models(self, mock_ollama_client, mock_requests):
         """Test local server validation when models are missing"""
         # Mock Ollama server responding
         mock_requests.return_value.status_code = 200
 
         # Mock ollama client and list method with missing models
         mock_client_instance = mock_ollama_client.return_value
-        mock_client_instance.list.return_value = {
-            "models": [{"model": "some-other-model:latest"}]
-        }
+        mock_client_instance.list.return_value = {"models": [{"model": "some-other-model:latest"}]}
 
         with pytest.raises(ValueError, match="Required models not found"):
             get_config_manager().validate_requirements("ollama")
@@ -322,9 +306,7 @@ class TestCreateAgent:
         mock_get_prompt.return_value = "test prompt"
 
         # Call function
-        agent, handler = create_agent(
-            target="test.com", objective="test objective", provider="bedrock"
-        )
+        agent, handler = create_agent(target="test.com", objective="test objective", provider="bedrock")
 
         # Verify calls
         mock_validate.assert_called_once_with("bedrock")
@@ -360,9 +342,7 @@ class TestCreateAgent:
         mock_get_prompt.return_value = "test prompt"
 
         # Call function
-        agent, handler = create_agent(
-            target="test.com", objective="test objective", provider="ollama"
-        )
+        agent, handler = create_agent(target="test.com", objective="test objective", provider="ollama")
 
         # Verify calls
         mock_validate.assert_called_once_with("ollama")
@@ -406,9 +386,7 @@ class TestCheckExistingMemories:
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     def test_check_existing_memories_mem0_platform(self, mock_env_get):
         """Test check_existing_memories with Mem0 Platform"""
-        mock_env_get.side_effect = lambda key, default=None: (
-            "test-key" if key == "MEM0_API_KEY" else default
-        )
+        mock_env_get.side_effect = lambda key, default=None: ("test-key" if key == "MEM0_API_KEY" else default)
 
         result = check_existing_memories("test.com", "bedrock")
         assert result is True
@@ -416,9 +394,7 @@ class TestCheckExistingMemories:
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     def test_check_existing_memories_opensearch(self, mock_env_get):
         """Test check_existing_memories with OpenSearch"""
-        mock_env_get.side_effect = lambda key, default=None: (
-            "test-host" if key == "OPENSEARCH_HOST" else default
-        )
+        mock_env_get.side_effect = lambda key, default=None: ("test-host" if key == "OPENSEARCH_HOST" else default)
 
         result = check_existing_memories("test.com", "bedrock")
         assert result is True
@@ -426,9 +402,7 @@ class TestCheckExistingMemories:
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     @patch("modules.agents.cyber_autoagent.os.path.exists")
     @patch("modules.agents.cyber_autoagent.os.path.getsize")
-    def test_check_existing_memories_faiss_exists(
-        self, mock_getsize, mock_exists, mock_env_get
-    ):
+    def test_check_existing_memories_faiss_exists(self, mock_getsize, mock_exists, mock_env_get):
         """Test check_existing_memories with FAISS backend - directory exists with content"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.side_effect = lambda path: True  # All paths exist
@@ -450,18 +424,16 @@ class TestCheckExistingMemories:
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     @patch("modules.agents.cyber_autoagent.os.path.exists")
     @patch("modules.agents.cyber_autoagent.os.path.getsize")
-    def test_check_existing_memories_faiss_empty(
-        self, mock_getsize, mock_exists, mock_env_get
-    ):
+    def test_check_existing_memories_faiss_empty(self, mock_getsize, mock_exists, mock_env_get):
         """Test check_existing_memories with FAISS backend - directory exists but empty"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
-        
+
         # Directory exists but no FAISS files
         def exists_side_effect(path):
-            if "outputs/test_com/memory" in path and not path.endswith(('.faiss', '.pkl')):
+            if "outputs/test_com/memory" in path and not path.endswith((".faiss", ".pkl")):
                 return True
             return False
-        
+
         mock_exists.side_effect = exists_side_effect
         mock_getsize.return_value = 0
 
@@ -471,9 +443,7 @@ class TestCheckExistingMemories:
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     @patch("modules.agents.cyber_autoagent.os.path.exists")
     @patch("modules.agents.cyber_autoagent.os.path.getsize")
-    def test_check_existing_memories_faiss_zero_size_files(
-        self, mock_getsize, mock_exists, mock_env_get
-    ):
+    def test_check_existing_memories_faiss_zero_size_files(self, mock_getsize, mock_exists, mock_env_get):
         """Test check_existing_memories with FAISS backend - files exist but are zero size"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.side_effect = lambda path: True  # All paths exist
@@ -495,9 +465,7 @@ class TestCheckExistingMemories:
 
     @patch("modules.agents.cyber_autoagent.os.environ.get")
     @patch("modules.agents.cyber_autoagent.os.path.exists")
-    def test_check_existing_memories_exception_handling(
-        self, mock_exists, mock_env_get
-    ):
+    def test_check_existing_memories_exception_handling(self, mock_exists, mock_env_get):
         """Test check_existing_memories handles exceptions gracefully"""
         mock_env_get.return_value = None  # No Mem0 or OpenSearch
         mock_exists.side_effect = Exception("File system error")

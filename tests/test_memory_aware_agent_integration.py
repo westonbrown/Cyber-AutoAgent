@@ -74,9 +74,7 @@ class TestMemoryAwareAgentIntegration:
         mock_initialize_memory.assert_called_once()
         mock_check_memories.assert_called_once_with("test.com", "bedrock")
         mock_get_client.assert_called_once()
-        mock_memory_client.get_memory_overview.assert_called_once_with(
-            user_id="cyber_agent"
-        )
+        mock_memory_client.get_memory_overview.assert_called_once_with(user_id="cyber_agent")
 
         # Verify agent was created with memory-aware system prompt
         assert agent is not None
@@ -256,9 +254,7 @@ class TestMemoryAwareAgentIntegration:
         # Mock memory system with error
         mock_check_memories.return_value = True
         mock_memory_client = Mock()
-        mock_memory_client.get_memory_overview.side_effect = Exception(
-            "Memory overview error"
-        )
+        mock_memory_client.get_memory_overview.side_effect = Exception("Memory overview error")
         mock_get_client.return_value = mock_memory_client
 
         # Mock model creation

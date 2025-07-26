@@ -4,6 +4,9 @@ import pytest
 import os
 import sys
 
+# Disable prompt manager for tests to ensure consistent behavior
+os.environ["ENABLE_LANGFUSE_PROMPTS"] = "false"
+
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -18,37 +21,37 @@ class TestMemoryContextGuidance:
 
     def test_fresh_start_guidance(self):
         """Test memory context guidance for fresh start"""
-        result = _get_memory_context_guidance(
-            has_memory_path=False, has_existing_memories=False, memory_overview=None
-        )
+        result = _get_memory_context_guidance(has_memory_path=False, has_existing_memories=False, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
         assert "Do NOT check memory on fresh operations" in result
         assert "Begin with reconnaissance and target information gathering" in result
-        assert "Store all findings immediately with category=\"finding\"" in result
+        assert 'Store all findings immediately with category="finding"' in result
 
     def test_memory_path_guidance(self):
         """Test memory context guidance with explicit memory path"""
-        result = _get_memory_context_guidance(
-            has_memory_path=True, has_existing_memories=False, memory_overview=None
-        )
+        result = _get_memory_context_guidance(has_memory_path=True, has_existing_memories=False, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
 
     def test_existing_memories_guidance(self):
         """Test memory context guidance with existing memories"""
-        result = _get_memory_context_guidance(
-            has_memory_path=False, has_existing_memories=True, memory_overview=None
-        )
+        result = _get_memory_context_guidance(has_memory_path=False, has_existing_memories=True, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
 
@@ -78,7 +81,10 @@ class TestMemoryContextGuidance:
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 5 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
         assert "Build upon previous discoveries" in result
@@ -100,7 +106,10 @@ class TestMemoryContextGuidance:
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
 
 
 class TestMemoryAwareSystemPrompts:
@@ -143,10 +152,20 @@ class TestMemoryAwareSystemPrompts:
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
 
     def test_system_prompt_with_existing_memories(self):
         """Test system prompt generation with existing memories"""
+        memory_overview = {
+            "has_memories": True,
+            "total_count": 5,
+            "categories": {"finding": 3, "general": 2},
+            "recent_findings": [],
+        }
+        
         result = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -156,12 +175,15 @@ class TestMemoryAwareSystemPrompts:
             provider="bedrock",
             has_memory_path=False,
             has_existing_memories=True,
-            memory_overview=None,
+            memory_overview=memory_overview,
         )
 
         assert "## MEMORY CONTEXT" in result
-        assert "Continuing assessment with 0 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert "Continuing assessment with 5 existing memories" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
 
     def test_system_prompt_with_detailed_memory_overview(self):
         """Test system prompt generation with detailed memory overview"""
@@ -195,7 +217,10 @@ class TestMemoryAwareSystemPrompts:
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 8 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
         assert "Analyze retrieved memories before taking any actions" in result
 
     def test_system_prompt_with_tools_context(self):
@@ -311,7 +336,10 @@ Leverage these tools directly via shell.
         )
 
         # Should have both memory context and dynamic instruction
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result_with_memories
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result_with_memories
+        )
 
         # Without existing memories - should have fresh start instructions
         result_fresh = get_system_prompt(
@@ -357,7 +385,10 @@ class TestMemoryAwarePromptIntegration:
         assert "comprehensive penetration test" in result
         assert "OP_20240101_120000" in result
         assert "Continuing assessment with 3 existing memories" in result
-        assert "**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action=\"list\", user_id=\"cyber_agent\")" in result
+        assert (
+            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
+            in result
+        )
 
         # Verify memory-aware instructions are included
         assert "Analyze retrieved memories before taking any actions" in result

@@ -10,7 +10,6 @@ import re
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from strands import Agent
 
 from .utils import Colors, get_output_path
 from .base import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
@@ -337,86 +336,90 @@ Be specific about vulnerabilities found and provide technical details."""
 
         # Add event for report generation start
         if report_span and hasattr(agent.tracer, "_add_event"):
-            agent.tracer._add_event(
-                report_span,
-                "report_generation_started",
-                {
-                    "evidence_pieces": len(evidence),
-                    "unique_tools": len(tools_summary),
-                    "total_steps": handler_state.state.steps,
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_started",
+                    {
+                        "evidence_pieces": len(evidence),
+                        "unique_tools": len(tools_summary),
+                        "total_steps": handler_state.state.steps,
+                    },
+                )
+
+            # Create a new agent instance for report generation to avoid conversation state issues
+            # This prevents tool_use/tool_result validation errors from the main agent's history
+            from strands import Agent
+
+            report_agent = Agent(
+                model=agent.model,
+                name="Cyber-ReportAgent",
+                system_prompt=agent.system_prompt,
+                # No tools needed for report generation
+                tools=[],
+                # Use the same trace attributes but update the agent type
+                trace_attributes={
+                    **agent.trace_attributes,
+                    "langfuse.agent.type": "report_generator",
+                    "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
                 },
             )
 
-        report_agent = Agent(
-            model=agent.model,
-            name="Cyber-ReportAgent",
-            system_prompt=agent.system_prompt,
-            # No tools needed for report generation
-            tools=[],
-            # Use the same trace attributes but update the agent type
-            trace_attributes={
-                **agent.trace_attributes,
-                "langfuse.agent.type": "report_generator",
-                "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
-            },
-        )
+            # Execute report generation with clean conversation state
+            result = report_agent(report_prompt)
 
-        # Execute report generation with clean conversation state
-        result = report_agent(report_prompt)
+            # Debug: Log the result structure
+            logger.debug("Report generation result type: %s", type(result))
+            logger.debug("Result has message attr: %s", hasattr(result, "message"))
+            if hasattr(result, "message"):
+                logger.debug("Message type: %s", type(result.message))
+                logger.debug(
+                    "Message keys: %s", result.message.keys() if hasattr(result.message, "keys") else "Not a dict"
+                )
 
-        # Debug: Log the result structure
-        logger.debug("Report generation result type: %s", type(result))
-        logger.debug("Result has message attr: %s", hasattr(result, "message"))
-        if hasattr(result, "message"):
-            logger.debug("Message type: %s", type(result.message))
-            logger.debug(
-                "Message keys: %s", result.message.keys() if hasattr(result.message, "keys") else "Not a dict"
-            )
+            # Process the result
+            if result and hasattr(result, "message"):
+                content = result.message.get("content", [])
+                if content and isinstance(content, list):
+                    report_text = ""
+                    for block in content:
+                        if isinstance(block, dict) and "text" in block:
+                            report_text += block["text"]
 
-        # Process the result
-        if result and hasattr(result, "message"):
-            content = result.message.get("content", [])
-            if content and isinstance(content, list):
-                report_text = ""
-                for block in content:
-                    if isinstance(block, dict) and "text" in block:
-                        report_text += block["text"]
+                    # Extract only the actual report, removing any preamble
+                    logger.debug("Report text before extraction: %s chars", len(report_text))
+                    report_text = _extract_report_content(report_text)
+                    logger.debug("Report text after extraction: %s chars", len(report_text))
 
-                # Extract only the actual report, removing any preamble
-                logger.debug("Report text before extraction: %s chars", len(report_text))
-                report_text = _extract_report_content(report_text)
-                logger.debug("Report text after extraction: %s chars", len(report_text))
+                    # Clean up any duplicate content
+                    report_text = _clean_duplicate_content(report_text)
+                    logger.debug("Report text after cleaning: %s chars", len(report_text))
 
-                # Clean up any duplicate content
-                report_text = _clean_duplicate_content(report_text)
-                logger.debug("Report text after cleaning: %s chars", len(report_text))
+                    # Add completion event with report metrics
+                    if report_span and hasattr(agent.tracer, "_add_event"):
+                        agent.tracer._add_event(
+                            report_span,
+                            "report_generation_completed",
+                            {
+                                "report_length": len(report_text),
+                                "sections_generated": 5,  # We requested 5 sections
+                                "status": "success",
+                            },
+                        )
 
-                # Add completion event with report metrics
-                if report_span and hasattr(agent.tracer, "_add_event"):
-                    agent.tracer._add_event(
-                        report_span,
-                        "report_generation_completed",
-                        {
-                            "report_length": len(report_text),
-                            "sections_generated": 5,  # We requested 5 sections
-                            "status": "success",
-                        },
-                    )
+                    return report_text
 
-                return report_text
+            # If we reach here, report generation failed
+            if report_span and hasattr(agent.tracer, "_add_event"):
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_failed",
+                    {
+                        "reason": "No content in result",
+                        "status": "error",
+                    },
+                )
 
-        # If we reach here, report generation failed
-        if report_span and hasattr(agent.tracer, "_add_event"):
-            agent.tracer._add_event(
-                report_span,
-                "report_generation_failed",
-                {
-                    "reason": "No content in result",
-                    "status": "error",
-                },
-            )
-
-        return None
+            return None
 
     except Exception as e:
         print("  %sError generating report: %s%s" % (Colors.RED, e, Colors.RESET))

@@ -15,24 +15,24 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
-# Import local prompts as fallback
-from .system import (
-    get_system_prompt as get_local_system_prompt,
-    get_initial_prompt as get_local_initial_prompt,
-    get_continuation_prompt as get_local_continuation_prompt,
-)
 
 
 class PromptManager:
-    """Manages prompt retrieval with Langfuse integration and fallback support."""
+    """
+    Manages unified prompt retrieval with Langfuse integration and fallback support.
+    
+    Uses a single 'cyber-agent-main' prompt that handles all agent interactions
+    through variable substitution for different contexts (initial, continuation, etc).
+    """
 
     def __init__(self):
         """Initialize the prompt manager."""
-        self.langfuse_enabled = os.getenv("ENABLE_LANGFUSE_PROMPTS", "false").lower() == "true"
+        self.langfuse_enabled = os.getenv("ENABLE_LANGFUSE_PROMPTS", "true").lower() == "true"
         self.prompt_label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
         self.cache_ttl = int(os.getenv("LANGFUSE_PROMPT_CACHE_TTL", "300"))  # 5 minutes
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.langfuse_client = None
+        self._prompts_initialized = False  # Track if we've already tried to create prompts
 
         if self.langfuse_enabled:
             try:
@@ -41,9 +41,22 @@ class PromptManager:
                 self.langfuse_client = Langfuse(
                     public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
                     secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-                    host=os.getenv("LANGFUSE_HOST", "http://langfuse-web:3000" if os.path.exists("/.dockerenv") or os.path.exists("/app") else "http://localhost:3000"),
+                    host=os.getenv(
+                        "LANGFUSE_HOST",
+                        (
+                            "http://langfuse-web:3000"
+                            if os.path.exists("/.dockerenv") or os.path.exists("/app")
+                            else "http://localhost:3000"
+                        ),
+                    ),
                 )
                 logger.info("Langfuse prompt management enabled with label: %s", self.prompt_label)
+                
+                # Auto-create prompts if they don't exist
+                if not self._prompts_initialized:
+                    self._ensure_prompts_exist()
+                    self._prompts_initialized = True
+                
             except Exception as e:
                 logger.warning("Failed to initialize Langfuse client: %s. Using local prompts.", e)
                 self.langfuse_enabled = False
@@ -55,12 +68,16 @@ class PromptManager:
         Retrieve a prompt by name with variable substitution.
 
         Args:
-            name: Name of the prompt in Langfuse
+            name: Name of the prompt in Langfuse (should be 'cyber-agent-main')
             variables: Variables to substitute in the prompt
             **kwargs: Additional arguments passed to fallback functions
 
         Returns:
-            Compiled prompt string
+            Compiled prompt string with all variables replaced
+            
+        Note:
+            This implementation uses a unified prompt approach where 'cyber-agent-main'
+            handles all scenarios through variable substitution.
         """
         # Try Langfuse first if enabled
         if self.langfuse_enabled and self.langfuse_client:
@@ -129,30 +146,14 @@ class PromptManager:
         Returns:
             Local prompt string
         """
-        # Map prompt names to local functions
-        if name == "cyber-agent-system":
+        # Only handle the unified prompt
+        if name == "cyber-agent-main":
             # Extract variables and merge with kwargs
             if variables:
                 kwargs.update(variables)
-            return get_local_system_prompt(**kwargs)
-
-        elif name == "cyber-agent-initial":
-            # Initial prompt expects: target, objective, max_steps, available_tools
-            if variables:
-                kwargs.update(variables)
-            return get_local_initial_prompt(
-                kwargs.get("target", ""),
-                kwargs.get("objective", ""),
-                kwargs.get("max_steps", 100),
-                kwargs.get("available_tools", []),
-            )
-
-        elif name == "cyber-agent-continuation":
-            # Continuation prompt expects: remaining_steps, max_steps
-            if variables:
-                kwargs.update(variables)
-            return get_local_continuation_prompt(kwargs.get("remaining_steps", 0), kwargs.get("max_steps", 100))
-
+            
+            # Generate the unified prompt based on context
+            return self._generate_unified_prompt(**kwargs)
         else:
             logger.error("Unknown prompt name: %s", name)
             raise ValueError(f"Unknown prompt name: {name}")
@@ -183,6 +184,92 @@ class PromptManager:
         self.prompt_label = label
         self.invalidate_cache()  # Clear cache when label changes
         logger.info("Prompt label changed to: %s", label)
+
+    def _ensure_prompts_exist(self):
+        """
+        Ensure required prompts exist in Langfuse. Create them if they don't.
+        This runs automatically on initialization when Langfuse is enabled.
+        """
+        # Generate the unified prompt template
+        required_prompts = {
+            "cyber-agent-main": {
+                "description": "Unified prompt for Cyber-AutoAgent - combines system behavior, mission parameters, and progress tracking",
+                "variables": [
+                    "target", "objective", "max_steps", "operation_id",
+                    "tools_context", "provider", "has_memory_path", "has_existing_memories",
+                    "output_config", "memory_overview", "current_step", "remaining_steps",
+                    "is_initial"
+                ],
+                "get_template": lambda: self._generate_unified_template()
+            }
+        }
+        
+        for prompt_name, config in required_prompts.items():
+            try:
+                # Check if prompt exists
+                try:
+                    existing = self.langfuse_client.get_prompt(prompt_name)
+                    if existing:
+                        logger.debug("Prompt '%s' already exists in Langfuse", prompt_name)
+                        continue
+                except Exception:
+                    # Prompt doesn't exist, create it
+                    pass
+                
+                # Create the prompt
+                logger.info("Creating prompt '%s' in Langfuse...", prompt_name)
+                prompt_template = config["get_template"]()
+                
+                self.langfuse_client.create_prompt(
+                    name=prompt_name,
+                    type="text",
+                    prompt=prompt_template,
+                    labels=["production", "latest"],
+                    tags=["cyber-agent", "auto-created"],
+                    config={
+                        "description": config["description"],
+                        "variables": config["variables"]
+                    }
+                )
+                logger.info("✓ Created prompt '%s'", prompt_name)
+                
+            except Exception as e:
+                logger.warning("Failed to ensure prompt '%s' exists: %s", prompt_name, e)
+        
+        # Flush to ensure prompts are saved
+        try:
+            self.langfuse_client.flush()
+        except Exception:
+            pass
+    
+    def _generate_unified_template(self) -> str:
+        """
+        Generate the unified prompt template for Langfuse.
+        
+        This creates a template with Langfuse variable placeholders that will be
+        replaced when the prompt is used. The template covers all scenarios
+        (initial, continuation, system) in a single prompt.
+        """
+        # Create template with Langfuse variable syntax
+        from .system import _get_local_system_prompt
+        return _get_local_system_prompt(
+            target="{{target}}", 
+            objective="{{objective}}", 
+            max_steps=100,  # Default value for template
+            operation_id="{{operation_id}}",
+            tools_context="{{tools_context}}",
+            provider="bedrock",  # Default provider
+            has_memory_path=False,  # Default to false
+            has_existing_memories=False,  # Default to false
+            output_config=None,  # Will be populated at runtime
+            memory_overview=None  # Will be populated at runtime
+        )
+    
+    def _generate_unified_prompt(self, **kwargs) -> str:
+        """Generate the unified prompt with filled variables."""
+        # Direct passthrough to system prompt with all variables
+        from .system import _get_local_system_prompt
+        return _get_local_system_prompt(**kwargs)
 
 
 # Singleton instance
