@@ -208,29 +208,29 @@ class PromptManager:
             try:
                 # Check if prompt exists
                 try:
-                    existing = self.langfuse_client.get_prompt(prompt_name)
+                    existing = self.langfuse_client.get_prompt(prompt_name, label=self.prompt_label)
                     if existing:
                         logger.debug("Prompt '%s' already exists in Langfuse", prompt_name)
                         continue
-                except Exception:
+                except Exception as e:
                     # Prompt doesn't exist, create it
-                    pass
+                    logger.debug("Prompt '%s' not found (expected): %s", prompt_name, e)
                 
                 # Create the prompt
                 logger.info("Creating prompt '%s' in Langfuse...", prompt_name)
                 prompt_template = config["get_template"]()
                 
-                self.langfuse_client.create_prompt(
+                response = self.langfuse_client.create_prompt(
                     name=prompt_name,
-                    type="text",
                     prompt=prompt_template,
-                    labels=["production", "latest"],
-                    tags=["cyber-agent", "auto-created"],
+                    labels=[self.prompt_label, "latest"],
                     config={
                         "description": config["description"],
-                        "variables": config["variables"]
+                        "variables": config["variables"],
+                        "type": "text"
                     }
                 )
+                logger.debug("Prompt creation response: %s", response)
                 logger.info("✓ Created prompt '%s'", prompt_name)
                 
             except Exception as e:
