@@ -78,6 +78,7 @@ def setup_observability(logger):
     # Set OpenTelemetry environment variables that Strands SDK will use
     # IMPORTANT: OTEL_EXPORTER_OTLP_ENDPOINT should be the base URL, not the traces endpoint
     # The SDK will append /v1/traces automatically
+    os.environ["OTEL_SERVICE_NAME"] = "cyber-autoagent"
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
 

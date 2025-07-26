@@ -28,6 +28,7 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 from ..config.manager import get_config_manager
+from .trace_parser import TraceParser, ParsedTrace
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class CyberAgentEvaluator:
                 ),
             ),
         )
+        self.trace_parser = TraceParser()
         self.setup_models()
         self.setup_metrics()
 
@@ -188,6 +190,23 @@ class CyberAgentEvaluator:
 
         logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
         logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
+        
+        # Log metric capabilities for debugging
+        self._log_metric_capabilities()
+    
+    def _log_metric_capabilities(self):
+        """Log the capabilities of each metric for debugging."""
+        metric_info = []
+        for metric in self.all_metrics:
+            capabilities = []
+            if hasattr(metric, "single_turn_ascore"):
+                capabilities.append("SingleTurn")
+            if hasattr(metric, "multi_turn_ascore"):
+                capabilities.append("MultiTurn")
+            
+            metric_info.append(f"{metric.name}: {', '.join(capabilities) or 'No capabilities'}")
+        
+        logger.debug("Metric capabilities:\n" + "\n".join(metric_info))
 
     async def evaluate_operation_traces(self, operation_id: str) -> Dict[str, Dict[str, float]]:
         """
@@ -202,9 +221,12 @@ class CyberAgentEvaluator:
         Returns:
             Dictionary mapping trace names to their evaluation scores
         """
-        # Wait for traces to be ingested
-        initial_wait = 15  # seconds - increased to ensure both traces are available
-        logger.info("Waiting %ss for all traces to be ingested...", initial_wait)
+        # Wait for traces to be ingested with configurable delay
+        initial_wait = int(os.getenv("EVALUATION_WAIT_TIME", "20"))  # seconds
+        logger.info(
+            "Waiting %ss for all traces to be ingested (configurable via EVALUATION_WAIT_TIME)...", 
+            initial_wait
+        )
         time.sleep(initial_wait)
 
         # Find all traces for this operation
@@ -333,6 +355,25 @@ class CyberAgentEvaluator:
         # Upload scores to Langfuse
         if hasattr(trace, "id"):
             await self._upload_scores_to_langfuse(trace.id, scores)
+        
+        # Log evaluation summary
+        if scores:
+            avg_score = sum(scores.values()) / len(scores)
+            logger.info(
+                "Evaluation complete for trace %s: %d metrics, avg score: %.2f",
+                getattr(trace, 'id', 'unknown'),
+                len(scores),
+                avg_score
+            )
+            
+            # Log any zero scores for debugging
+            zero_scores = [name for name, score in scores.items() if score == 0.0]
+            if zero_scores:
+                logger.warning(
+                    "Metrics with zero scores for trace %s: %s",
+                    getattr(trace, 'id', 'unknown'),
+                    ", ".join(zero_scores)
+                )
 
         return scores
 
@@ -389,8 +430,8 @@ class CyberAgentEvaluator:
         """
         Transform Langfuse trace data into appropriate Ragas evaluation format.
 
-        Creates either SingleTurnSample or MultiTurnSample based on conversation complexity.
-        Extracts conversation history, tool outputs, and metadata for comprehensive evaluation.
+        Uses the TraceParser for robust data extraction and creates either
+        SingleTurnSample or MultiTurnSample based on conversation complexity.
 
         Args:
             trace: Langfuse trace object
@@ -398,105 +439,41 @@ class CyberAgentEvaluator:
         Returns:
             SingleTurnSample, MultiTurnSample, or None on error
         """
-        logger.debug("Creating evaluation data from trace: %s", trace.id)
-        logger.debug("Trace type: %s", type(trace))
-
-        # Extract original objective from trace metadata
-        objective = None
-
-        # Parse trace metadata for original objective
-        if hasattr(trace, "metadata") and trace.metadata:
-            logger.debug("Trace metadata: %s", trace.metadata)
-            metadata = trace.metadata
-
-            # Check if metadata has 'attributes' key from Strands agent trace
-            if isinstance(metadata, dict) and "attributes" in metadata:
-                attrs = metadata["attributes"]
-                # Get the objective description
-                objective = attrs.get("objective.description")
-
-        # Collect conversation history and tool outputs for comprehensive evaluation
-        conversation_messages = []
-        agent_responses = []
-        tool_outputs = []
-
-        # Add initial objective as first user message
-        if objective:
-            conversation_messages.append({"role": "user", "content": objective})
-
-        # Extract basic info from trace
-        if hasattr(trace, "input") and trace.input:
-            logger.debug("Trace input type: %s", type(trace.input))
-            logger.debug("Trace input: %s", trace.input)
-
-        if hasattr(trace, "output") and trace.output:
-            logger.debug("Trace output type: %s", type(trace.output))
-            logger.debug("Trace output: %s...", str(trace.output)[:200])
-            agent_responses.append(str(trace.output))
-            conversation_messages.append({"role": "assistant", "content": str(trace.output)})
-
-        # Extract detailed conversation flow from observations
-        if hasattr(trace, "observations") and trace.observations:
-            logger.debug("Trace has %d observations", len(trace.observations))
-
-            for obs in trace.observations:
-                if hasattr(obs, "type"):
-                    logger.debug("Observation type: %s, name: %s", obs.type, getattr(obs, "name", "N/A"))
-
-                    if obs.type == "GENERATION":
-                        if hasattr(obs, "output") and obs.output:
-                            response = str(obs.output)
-                            agent_responses.append(response)
-                            conversation_messages.append({"role": "assistant", "content": response})
-
-                    elif obs.type == "SPAN":
-                        tool_name = getattr(obs, "name", "").lower()
-                        if any(
-                            tool in tool_name
-                            for tool in [
-                                "shell",
-                                "http_request",
-                                "mem0_memory",
-                                "retrieve",
-                            ]
-                        ):
-                            if hasattr(obs, "output") and obs.output:
-                                tool_output = f"[{obs.name}] {str(obs.output)[:400]}"
-                                tool_outputs.append(tool_output)
-
-        # Determine evaluation format based on conversation complexity
-        if len(conversation_messages) > 2:
-            # Multi-turn conversation - use MultiTurnSample for agent metrics
-            logger.info("Creating MultiTurnSample with %s messages", len(conversation_messages))
-
-            evaluation_data = MultiTurnSample(
-                user_input=conversation_messages,
-                reference_topics=[
-                    "cybersecurity",
-                    "penetration testing",
-                    "vulnerability assessment",
-                ],
-            )
-        else:
-            # Single-turn or simple interaction - use SingleTurnSample
-            user_input = objective
-            agent_response = "\n".join(agent_responses[-3:]) if agent_responses else "No agent response captured"
-            contexts = tool_outputs[-5:] if tool_outputs else ["No tool outputs captured"]
-
-            logger.info(
-                "Creating SingleTurnSample - user_input: '%s...', response: '%s...', contexts: %d",
-                user_input[:50],
-                agent_response[:50],
-                len(contexts),
-            )
-
-            evaluation_data = SingleTurnSample(
-                user_input=user_input,
-                response=agent_response,
-                retrieved_contexts=contexts,
-            )
-
-        logger.debug("Evaluation data created successfully: %s", evaluation_data.to_dict())
+        logger.debug("Creating evaluation data from trace: %s", getattr(trace, 'id', 'unknown'))
+        
+        # Use TraceParser for robust data extraction
+        parsed_trace = self.trace_parser.parse_trace(trace)
+        if not parsed_trace:
+            logger.error("Failed to parse trace data")
+            return None
+        
+        # Create appropriate evaluation sample
+        evaluation_data = self.trace_parser.create_evaluation_sample(parsed_trace)
+        
+        # Log sample type and basic info
+        sample_type = "MultiTurnSample" if isinstance(evaluation_data, MultiTurnSample) else "SingleTurnSample"
+        logger.info(
+            "Created %s for trace %s: %d messages, %d tool calls",
+            sample_type,
+            parsed_trace.trace_id,
+            len(parsed_trace.messages),
+            len(parsed_trace.tool_calls)
+        )
+        
+        # Additional validation
+        if isinstance(evaluation_data, SingleTurnSample):
+            if not evaluation_data.response or evaluation_data.response == "No agent response captured":
+                logger.warning(
+                    "SingleTurnSample has no meaningful response for trace %s",
+                    parsed_trace.trace_id
+                )
+        elif isinstance(evaluation_data, MultiTurnSample):
+            if not evaluation_data.user_input:
+                logger.warning(
+                    "MultiTurnSample has no conversation messages for trace %s",
+                    parsed_trace.trace_id
+                )
+        
         return evaluation_data
 
     async def _evaluate_all_metrics(self, eval_data) -> Dict[str, float]:
@@ -505,51 +482,98 @@ class CyberAgentEvaluator:
         is_multi_turn = isinstance(eval_data, MultiTurnSample)
 
         logger.info(
-            "Evaluating %d metrics on %s sample", len(self.all_metrics), "MultiTurn" if is_multi_turn else "SingleTurn"
+            "Evaluating %d metrics on %s sample", 
+            len(self.all_metrics), 
+            "MultiTurn" if is_multi_turn else "SingleTurn"
         )
 
         if is_multi_turn:
             logger.debug(
                 "MultiTurn evaluation data: %d messages, topics: %s",
-                len(eval_data.user_input),
+                len(eval_data.user_input) if hasattr(eval_data.user_input, '__len__') else 1,
                 eval_data.reference_topics,
             )
         else:
             logger.debug(
                 "SingleTurn evaluation data: user_input='%s...', response='%s...', contexts=%d",
-                eval_data.user_input[:100],
-                eval_data.response[:100],
-                len(eval_data.retrieved_contexts),
+                str(eval_data.user_input)[:100] if eval_data.user_input else "None",
+                str(eval_data.response)[:100] if eval_data.response else "None",
+                len(eval_data.retrieved_contexts) if eval_data.retrieved_contexts else 0,
             )
 
+        # Group metrics by their capabilities
+        single_turn_only_metrics = []
+        multi_turn_only_metrics = []
+        both_turn_metrics = []
+        
         for metric in self.all_metrics:
-            logger.info("Starting evaluation of metric: %s", metric.name)
-
-            # Choose evaluation method based on data type and metric capabilities
-            if is_multi_turn and hasattr(metric, "multi_turn_ascore"):
-                # Use multi-turn evaluation for agent-specific metrics
-                score = await metric.multi_turn_ascore(eval_data)
-            elif not is_multi_turn and hasattr(metric, "single_turn_ascore"):
-                # Use single-turn evaluation for RAG and response metrics
-                score = await metric.single_turn_ascore(eval_data)
+            has_single = hasattr(metric, "single_turn_ascore")
+            has_multi = hasattr(metric, "multi_turn_ascore")
+            
+            if has_single and has_multi:
+                both_turn_metrics.append(metric)
+            elif has_single:
+                single_turn_only_metrics.append(metric)
+            elif has_multi:
+                multi_turn_only_metrics.append(metric)
             else:
-                # Handle metrics that don't support the current data type
+                logger.error("Metric %s has no evaluation methods", metric.name)
+
+        # Log metric categorization
+        logger.debug(
+            "Metric categorization - Both: %s, Single-only: %s, Multi-only: %s",
+            [m.name for m in both_turn_metrics],
+            [m.name for m in single_turn_only_metrics],
+            [m.name for m in multi_turn_only_metrics]
+        )
+
+        # Evaluate metrics based on sample type and metric capabilities
+        for metric in self.all_metrics:
+            try:
+                logger.info("Starting evaluation of metric: %s", metric.name)
+                
+                score = None
+                
+                # For MultiTurnSample
                 if is_multi_turn:
-                    logger.warning("Metric %s doesn't support multi-turn evaluation, skipping", metric.name)
+                    if hasattr(metric, "multi_turn_ascore"):
+                        score = await metric.multi_turn_ascore(eval_data)
+                    else:
+                        logger.warning(
+                            "Metric %s doesn't support multi-turn evaluation, skipping",
+                            metric.name
+                        )
+                        scores[metric.name] = 0.0
+                        continue
+                
+                # For SingleTurnSample
+                else:
+                    if hasattr(metric, "single_turn_ascore"):
+                        score = await metric.single_turn_ascore(eval_data)
+                    else:
+                        logger.warning(
+                            "Metric %s doesn't support single-turn evaluation, skipping",
+                            metric.name
+                        )
+                        scores[metric.name] = 0.0
+                        continue
+
+                # Process score
+                if score is None:
+                    logger.warning("Score is None for %s", metric.name)
                     scores[metric.name] = 0.0
-                    continue
-                logger.error("Metric %s missing evaluation method", metric.name)
+                else:
+                    scores[metric.name] = float(score)
+                    logger.info("Metric %s score: %.2f", metric.name, scores[metric.name])
+                    
+            except Exception as e:
+                logger.error(
+                    "Error evaluating metric %s: %s",
+                    metric.name,
+                    str(e),
+                    exc_info=True
+                )
                 scores[metric.name] = 0.0
-                continue
-
-            logger.debug("Raw score for %s: %s (type: %s)", metric.name, score, type(score))
-
-            if score is None:
-                logger.warning("Score is None for %s", metric.name)
-                scores[metric.name] = 0.0
-            else:
-                scores[metric.name] = float(score)
-                logger.info("Metric %s score: %s", metric.name, scores[metric.name])
 
         logger.info("Final metric scores: %s", scores)
         return scores
