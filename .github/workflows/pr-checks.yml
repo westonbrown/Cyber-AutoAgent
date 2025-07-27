@@ -27,21 +27,29 @@ jobs:
     
     - name: Install dependencies
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
         uv sync
         uv add --dev pylint pytest pytest-mock
+        # Install package in editable mode
+        uv pip install -e .
     
     - name: Run Pylint
       id: pylint
       run: |
-        output=$(uv run pylint src/ --exit-zero --score=y)
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        output=$(PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --exit-zero --score=y)
         score=$(echo "$output" | grep "Your code has been rated at" | sed -E 's/.*rated at ([0-9.]+).*/\1/')
         echo "score=$score" >> $GITHUB_OUTPUT
         echo "Pylint score: $score/10"
-        uv run pylint src/ --fail-under=9.5
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5
     
     - name: Run Tests
       run: |
-        uv run pytest tests/ -v --tb=short
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v --tb=short
     
     - name: Display Results Summary
       if: always()
