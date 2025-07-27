@@ -27,7 +27,7 @@ from ragas.metrics import (
     RubricsScore,
 )
 from ragas.run_config import RunConfig
-from ..config.manager import get_config_manager
+from modules.config.manager import get_config_manager
 from .trace_parser import TraceParser, ParsedTrace
 
 logger = logging.getLogger(__name__)
@@ -222,7 +222,7 @@ class CyberAgentEvaluator:
             Dictionary mapping trace names to their evaluation scores
         """
         # Wait for traces to be ingested with configurable delay
-        initial_wait = int(os.getenv("EVALUATION_WAIT_TIME", "20"))  # seconds
+        initial_wait = int(os.getenv("EVALUATION_WAIT_TIME", "10"))  # seconds
         logger.info(
             "Waiting %ss for all traces to be ingested (configurable via EVALUATION_WAIT_TIME)...", 
             initial_wait
