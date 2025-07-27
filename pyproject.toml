@@ -116,6 +116,7 @@ addopts = [
     "--strict-config",
     "--verbose"
 ]
+pythonpath = ["src"]
 
 [tool.pylint.main]
 # Disable specific warnings that are not relevant for this project
