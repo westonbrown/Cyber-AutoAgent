@@ -25,7 +25,7 @@ import requests
 import ollama
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
-from .utils import get_output_path, sanitize_target_name
+from modules.handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ModelProvider(Enum):
 
     AWS_BEDROCK = "aws_bedrock"
     OLLAMA = "ollama"
-    OPENAI = "openai"  # Future extension possible in a simple way
+    LITELLM = "litellm"  # Universal provider gateway supporting 100+ model providers
 
 
 @dataclass
@@ -51,9 +51,7 @@ class ModelConfig:
         if not self.model_id:
             raise ValueError("model_id cannot be empty")
         if not isinstance(self.provider, ModelProvider):
-            raise ValueError(
-                f"provider must be a ModelProvider enum, got {type(self.provider)}"
-            )
+            raise ValueError(f"provider must be a ModelProvider enum, got {type(self.provider)}")
 
 
 @dataclass
@@ -102,9 +100,7 @@ class MemoryLLMConfig(ModelConfig):
 
     temperature: float = 0.1
     max_tokens: int = 2000
-    aws_region: str = field(
-        default_factory=lambda: os.getenv("AWS_REGION", "us-east-1")
-    )
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
     def __post_init__(self):
         super().__post_init__()
@@ -121,16 +117,12 @@ class MemoryLLMConfig(ModelConfig):
 class MemoryEmbeddingConfig(ModelConfig):
     """Configuration for memory-specific embedding models."""
 
-    aws_region: str = field(
-        default_factory=lambda: os.getenv("AWS_REGION", "us-east-1")
-    )
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
     dimensions: int = 1024
 
     def __post_init__(self):
         super().__post_init__()
-        self.parameters.update(
-            {"aws_region": self.aws_region, "dimensions": self.dimensions}
-        )
+        self.parameters.update({"aws_region": self.aws_region, "dimensions": self.dimensions})
 
 
 @dataclass
@@ -173,9 +165,7 @@ class MemoryConfig:
 
     embedder: MemoryEmbeddingConfig
     llm: MemoryLLMConfig
-    vector_store: MemoryVectorStoreConfig = field(
-        default_factory=MemoryVectorStoreConfig
-    )
+    vector_store: MemoryVectorStoreConfig = field(default_factory=MemoryVectorStoreConfig)
 
 
 @dataclass
@@ -232,7 +222,7 @@ class OutputConfig:
 class ServerConfig:
     """Complete server configuration."""
 
-    server_type: str  # "local" or "remote"
+    server_type: str  # "bedrock", "ollama", or "litellm"
     llm: LLMConfig
     embedding: EmbeddingConfig
     memory: MemoryConfig
@@ -267,9 +257,7 @@ class ConfigManager:
         """Check if a model supports thinking capabilities."""
         return model_id in self.get_thinking_models()
 
-    def get_thinking_model_config(
-        self, model_id: str, region_name: str
-    ) -> Dict[str, Any]:
+    def get_thinking_model_config(self, model_id: str, region_name: str) -> Dict[str, Any]:
         """Get configuration for thinking-enabled models."""
         return {
             "model_id": model_id,
@@ -282,12 +270,10 @@ class ConfigManager:
             },
         }
 
-    def get_standard_model_config(
-        self, model_id: str, region_name: str, server: str
-    ) -> Dict[str, Any]:
+    def get_standard_model_config(self, model_id: str, region_name: str, provider: str) -> Dict[str, Any]:
         """Get configuration for standard (non-thinking) models."""
-        server_config = self.get_server_config(server)
-        llm_config = server_config.llm
+        provider_config = self.get_server_config(provider)
+        llm_config = provider_config.llm
 
         return {
             "model_id": model_id,
@@ -297,10 +283,10 @@ class ConfigManager:
             "top_p": llm_config.top_p,
         }
 
-    def get_local_model_config(self, model_id: str, server: str) -> Dict[str, Any]:
+    def get_local_model_config(self, model_id: str, provider: str) -> Dict[str, Any]:
         """Get configuration for local Ollama models."""
-        server_config = self.get_server_config(server)
-        llm_config = server_config.llm
+        provider_config = self.get_server_config(provider)
+        llm_config = provider_config.llm
 
         return {
             "model_id": model_id,
@@ -310,9 +296,9 @@ class ConfigManager:
         }
 
     def _initialize_default_configs(self) -> Dict[str, Dict[str, Any]]:
-        """Initialize default configurations for all server types."""
+        """Initialize default configurations for all provider types."""
         return {
-            "local": {
+            "ollama": {
                 "llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
                     model_id="llama3.2:3b",
@@ -329,7 +315,7 @@ class ConfigManager:
                     model_id="llama3.2:3b",
                     temperature=0.1,
                     max_tokens=2000,
-                    aws_region="local",
+                    aws_region="ollama",
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
@@ -344,9 +330,9 @@ class ConfigManager:
                     max_tokens=500,
                 ),
                 "host": None,  # Will be resolved dynamically
-                "region": "local",
+                "region": "ollama",
             },
-            "remote": {
+            "bedrock": {
                 "llm": LLMConfig(
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -381,49 +367,86 @@ class ConfigManager:
                 "host": None,
                 "region": os.getenv("AWS_REGION", "us-east-1"),
             },
+            "litellm": {
+                "llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",  # Default to Bedrock via LiteLLM
+                    temperature=0.95,
+                    max_tokens=4096,
+                    top_p=0.95,
+                ),
+                "embedding": EmbeddingConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/amazon.titan-embed-text-v2:0",  # Default to Bedrock embedding via LiteLLM
+                    dimensions=1024,
+                ),
+                "memory_llm": MemoryLLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                    aws_region=os.getenv("AWS_REGION", "us-east-1"),
+                ),
+                "evaluation_llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.7,
+                    max_tokens=500,
+                ),
+                "host": None,
+                "region": os.getenv("AWS_REGION", "us-east-1"),
+            },
         }
 
-    def get_server_config(self, server: str, **overrides) -> ServerConfig:
-        """Get complete server configuration with optional overrides."""
-        cache_key = f"server_{server}_{hash(frozenset(overrides.items()))}"
+    def get_server_config(self, provider: str, **overrides) -> ServerConfig:
+        """Get complete provider configuration with optional overrides."""
+        logger.debug("Getting server config for provider: %s", provider)
+        cache_key = f"provider_{provider}_{hash(frozenset(overrides.items()))}"
         if cache_key in self._config_cache:
             return self._config_cache[cache_key]
 
-        if server not in self._default_configs:
-            raise ValueError(f"Unsupported server type: {server}")
+        if provider not in self._default_configs:
+            logger.error("Provider %s not in available configs: %s", provider, list(self._default_configs.keys()))
+            raise ValueError(f"Unsupported provider type: {provider}")
 
-        defaults = self._default_configs[server].copy()
+        defaults = self._default_configs[provider].copy()
 
         # Apply environment variable overrides
-        defaults = self._apply_environment_overrides(server, defaults)
+        defaults = self._apply_environment_overrides(provider, defaults)
 
         # Apply function parameter overrides
         defaults.update(overrides)
 
         # Build memory configuration
         memory_config = MemoryConfig(
-            embedder=self._get_memory_embedder_config(server, defaults),
-            llm=self._get_memory_llm_config(server, defaults),
+            embedder=self._get_memory_embedder_config(provider, defaults),
+            llm=self._get_memory_llm_config(provider, defaults),
             vector_store=MemoryVectorStoreConfig(),
         )
 
         # Build evaluation configuration
         evaluation_config = EvaluationConfig(
-            llm=self._get_evaluation_llm_config(server, defaults),
-            embedding=self._get_evaluation_embedding_config(server, defaults),
+            llm=self._get_evaluation_llm_config(provider, defaults),
+            embedding=self._get_evaluation_embedding_config(provider, defaults),
         )
 
         # Build swarm configuration
-        swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(server, defaults))
+        swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(provider, defaults))
 
         # Build output configuration
-        output_config = self._get_output_config(server, defaults, overrides)
+        output_config = self._get_output_config(provider, defaults, overrides)
 
-        # Resolve host for local server
-        host = self.get_ollama_host() if server == "local" else None
+        # Resolve host for ollama provider
+        host = self.get_ollama_host() if provider == "ollama" else None
 
         config = ServerConfig(
-            server_type=server,
+            server_type=provider,
             llm=defaults["llm"],
             embedding=defaults["embedding"],
             memory=memory_config,
@@ -497,9 +520,7 @@ class ConfigManager:
             base_dir=output_config.base_dir,
         )
 
-    def get_unified_memory_path(
-        self, server: str, target_name: str, **overrides
-    ) -> str:
+    def get_unified_memory_path(self, server: str, target_name: str, **overrides) -> str:
         """Get unified memory path for target.
 
         Args:
@@ -521,17 +542,38 @@ class ConfigManager:
         memory_config = server_config.memory
 
         # Build embedder config based on server type
-        if server == "local":
+        if server == "ollama":
             embedder_config = {
-                "provider": memory_config.embedder.provider.value,
+                "provider": "ollama",
                 "config": {
                     "model": memory_config.embedder.model_id,
                     "ollama_base_url": self.get_ollama_host(),
                 },
             }
-        else:
+        elif server == "litellm":
+            # For LiteLLM, we need to map to the actual provider that Mem0 supports
+            # Extract provider from model ID (e.g., "bedrock/model" -> "aws_bedrock")
+            model_id = memory_config.embedder.model_id
+            if model_id.startswith("bedrock/"):
+                embedder_config = {
+                    "provider": "aws_bedrock",
+                    "config": {
+                        "model": model_id.replace("bedrock/", ""),  # Remove prefix for Mem0
+                        "aws_region": memory_config.embedder.aws_region,
+                    },
+                }
+            else:
+                # Default to AWS Bedrock for unsupported providers
+                embedder_config = {
+                    "provider": "aws_bedrock",
+                    "config": {
+                        "model": "amazon.titan-embed-text-v2:0",
+                        "aws_region": memory_config.embedder.aws_region,
+                    },
+                }
+        else:  # bedrock
             embedder_config = {
-                "provider": memory_config.embedder.provider.value,
+                "provider": "aws_bedrock",
                 "config": {
                     "model": memory_config.embedder.model_id,
                     "aws_region": memory_config.embedder.aws_region,
@@ -539,9 +581,9 @@ class ConfigManager:
             }
 
         # Build LLM config based on server type
-        if server == "local":
+        if server == "ollama":
             llm_config = {
-                "provider": memory_config.llm.provider.value,
+                "provider": "ollama",
                 "config": {
                     "model": memory_config.llm.model_id,
                     "temperature": memory_config.llm.temperature,
@@ -549,9 +591,33 @@ class ConfigManager:
                     "ollama_base_url": self.get_ollama_host(),
                 },
             }
-        else:
+        elif server == "litellm":
+            # For LiteLLM, we need to map to the actual provider that Mem0 supports
+            model_id = memory_config.llm.model_id
+            if model_id.startswith("bedrock/"):
+                llm_config = {
+                    "provider": "aws_bedrock",
+                    "config": {
+                        "model": model_id.replace("bedrock/", ""),  # Remove prefix for Mem0
+                        "temperature": memory_config.llm.temperature,
+                        "max_tokens": memory_config.llm.max_tokens,
+                        "aws_region": memory_config.llm.aws_region,
+                    },
+                }
+            else:
+                # Default to AWS Bedrock for unsupported providers
+                llm_config = {
+                    "provider": "aws_bedrock",
+                    "config": {
+                        "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                        "temperature": memory_config.llm.temperature,
+                        "max_tokens": memory_config.llm.max_tokens,
+                        "aws_region": memory_config.llm.aws_region,
+                    },
+                }
+        else:  # bedrock
             llm_config = {
-                "provider": memory_config.llm.provider.value,
+                "provider": "aws_bedrock",
                 "config": {
                     "model": memory_config.llm.model_id,
                     "temperature": memory_config.llm.temperature,
@@ -580,14 +646,17 @@ class ConfigManager:
             "vector_store": vector_store_config,
         }
 
-    def validate_requirements(self, server: str) -> None:
-        """Validate that all requirements are met for the specified server."""
-        if server == "local":
+    def validate_requirements(self, provider: str) -> None:
+        """Validate that all requirements are met for the specified provider."""
+        logger.debug("Validating requirements for provider: %s", provider)
+        if provider == "ollama":
             self._validate_ollama_requirements()
-        elif server == "remote":
+        elif provider == "bedrock":
             self._validate_aws_requirements()
+        elif provider == "litellm":
+            self._validate_litellm_requirements()
         else:
-            raise ValueError(f"Unsupported server type: {server}")
+            raise ValueError(f"Unsupported provider type: {provider}")
 
     def get_ollama_host(self) -> str:
         """Determine appropriate Ollama host based on environment."""
@@ -614,7 +683,7 @@ class ConfigManager:
         """Set environment variables for backward compatibility."""
         server_config = self.get_server_config(server)
 
-        if server == "local":
+        if server == "ollama":
             os.environ["MEM0_LLM_PROVIDER"] = "ollama"
             os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
@@ -622,9 +691,7 @@ class ConfigManager:
             os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
 
-    def _apply_environment_overrides(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _apply_environment_overrides(self, _server: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
         # Main LLM model override
         llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
@@ -646,9 +713,7 @@ class ConfigManager:
             )
 
         # Evaluation model override
-        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv(
-            "RAGAS_EVALUATOR_MODEL"
-        )
+        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
         if eval_model:
             defaults["evaluation_llm"] = LLMConfig(
                 provider=defaults["evaluation_llm"].provider,
@@ -680,9 +745,7 @@ class ConfigManager:
 
         # Memory embedding override (only if not already overridden)
         mem0_embedding_model = os.getenv("MEM0_EMBEDDING_MODEL")
-        if (
-            mem0_embedding_model and not embedding_model
-        ):  # Only if not already overridden
+        if mem0_embedding_model and not embedding_model:  # Only if not already overridden
             defaults["embedding"] = EmbeddingConfig(
                 provider=defaults["embedding"].provider,
                 model_id=mem0_embedding_model,
@@ -696,9 +759,7 @@ class ConfigManager:
 
         return defaults
 
-    def _get_memory_embedder_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryEmbeddingConfig:
+    def _get_memory_embedder_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
         embedding_config = defaults["embedding"]
         return MemoryEmbeddingConfig(
@@ -708,40 +769,26 @@ class ConfigManager:
             dimensions=embedding_config.dimensions,
         )
 
-    def _get_memory_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryLLMConfig:
+    def _get_memory_llm_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
 
-    def _get_evaluation_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation LLM configuration."""
         return defaults["evaluation_llm"]
 
-    def _get_evaluation_embedding_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_embedding_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
 
-    def _get_swarm_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_swarm_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get swarm LLM configuration."""
         return defaults["swarm_llm"]
 
-    def _get_output_config(
-        self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]
-    ) -> OutputConfig:
+    def _get_output_config(self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]) -> OutputConfig:
         """Get output configuration with environment variable and override support."""
         # Get base output directory
-        base_dir = (
-            overrides.get("output_dir")
-            or os.getenv("CYBER_AGENT_OUTPUT_DIR")
-            or get_default_base_dir()
-        )
+        base_dir = overrides.get("output_dir") or os.getenv("CYBER_AGENT_OUTPUT_DIR") or get_default_base_dir()
 
         # Get target name
         target_name = overrides.get("target_name")
@@ -775,29 +822,22 @@ class ConfigManager:
                 raise ConnectionError("Ollama server not responding")
         except Exception as e:
             raise ConnectionError(
-                f"Ollama server not accessible at {ollama_host}. "
-                "Please ensure Ollama is installed and running."
+                f"Ollama server not accessible at {ollama_host}. " "Please ensure Ollama is installed and running."
             ) from e
 
         # Check if required models are available
         try:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
-            available_models = [
-                m.get("model", m.get("name", "")) for m in models_response["models"]
-            ]
+            available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
 
-            server_config = self.get_server_config("local")
+            server_config = self.get_server_config("ollama")
             required_models = [
                 server_config.llm.model_id,
                 server_config.embedding.model_id,
             ]
 
-            missing = [
-                m
-                for m in required_models
-                if not any(m in model for model in available_models)
-            ]
+            missing = [m for m in required_models if not any(m in model for model in available_models)]
 
             if missing:
                 raise ValueError(
@@ -812,128 +852,90 @@ class ConfigManager:
     def _validate_bedrock_model_access(self) -> None:
         """Validate AWS Bedrock model access and availability.
 
-        Tests access to required LLM and embedding models configured for the remote server.
+        Performs basic validation of AWS region configuration.
+        Model access validation is handled by the strands-agents framework.
 
         Raises:
-            ConnectionError: If AWS Bedrock service is not accessible
-            ValueError: If required models are not available or accessible
             EnvironmentError: If AWS region is not configured
         """
-        server_config = self.get_server_config("remote")
         region = self.get_default_region()
-
         if not region:
             raise EnvironmentError(
                 "AWS region not configured. Set AWS_REGION environment variable or configure default region."
             )
 
-        # Required models from configuration
-        llm_model = server_config.llm.model_id
-        embedding_model = server_config.embedding.model_id
-        required_models = [llm_model, embedding_model]
-
+        # Verify boto3 client can be created with current credentials
         try:
-            bedrock_client = boto3.client("bedrock", region_name=region)
-
-            # Test Bedrock service connectivity
-            try:
-                bedrock_client.list_foundation_models()
-            except ClientError as e:
-                error_code = e.response.get("Error", {}).get("Code", "Unknown")
-                if error_code == "UnauthorizedOperation":
-                    raise ConnectionError(
-                        f"AWS Bedrock access denied in region {region}. "
-                        "Check IAM permissions for bedrock:ListFoundationModels"
-                    ) from e
-                if error_code == "AccessDeniedException":
-                    raise ConnectionError(
-                        f"AWS Bedrock service access denied in region {region}. "
-                        "Ensure Bedrock is enabled and IAM permissions are configured."
-                    ) from e
-                raise ConnectionError(
-                    f"AWS Bedrock service not accessible in region {region}: {e}"
-                ) from e
-
-            # Get available foundation models
-            try:
-                response = bedrock_client.list_foundation_models()
-                available_models = [
-                    model["modelId"] for model in response.get("modelSummaries", [])
-                ]
-            except ClientError as e:
-                raise ConnectionError(f"Failed to list Bedrock models: {e}") from e
-
-            missing_models = []
-            for model in required_models:
-                if model not in available_models:
-                    missing_models.append(model)
-
-            if missing_models:
-                raise ValueError(
-                    f"Required Bedrock models not available in region {region}: {missing_models}. "
-                    f"Available models: {available_models[:10]}... "
-                    f"(showing first 10 of {len(available_models)} total)"
-                )
-
-            bedrock_runtime = boto3.client("bedrock-runtime", region_name=region)
-
-            for model in required_models:
-                try:
-                    # Try a minimal test request to verify model access
-                    if "embed" in model.lower() or "titan-embed" in model.lower():
-                        # Test embedding model
-                        test_payload = {"inputText": "test"}
-                        bedrock_runtime.invoke_model(
-                            modelId=model,
-                            body=json.dumps(test_payload),
-                            contentType="application/json",
-                        )
-                    else:
-                        # Test LLM model
-                        test_payload = {
-                            "inputText": "test",
-                            "textGenerationConfig": {
-                                "maxTokenCount": 1,
-                                "temperature": 0.1,
-                            },
-                        }
-                        bedrock_runtime.invoke_model(
-                            modelId=model,
-                            body=json.dumps(test_payload),
-                            contentType="application/json",
-                        )
-                except ClientError as e:
-                    error_code = e.response.get("Error", {}).get("Code", "Unknown")
-                    if error_code == "AccessDeniedException":
-                        raise ValueError(
-                            f"Access denied to Bedrock model {model}. "
-                            f"Check IAM permissions for bedrock-runtime:InvokeModel"
-                        ) from e
-                    if error_code == "ValidationException":
-                        # This actually confirms the model is accessible
-                        continue
-                    raise ValueError(f"Model {model} not accessible: {e}") from e
-
-        except NoCredentialsError as e:
-            raise EnvironmentError(
-                "AWS credentials not found. Configure AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY "
-                "or set up AWS profile."
-            ) from e
+            boto3.client("bedrock-runtime", region_name=region)
         except Exception as e:
-            if isinstance(e, (ConnectionError, ValueError, EnvironmentError)):
-                raise
-            raise ConnectionError(
-                f"Unexpected error validating Bedrock access: {e}"
-            ) from e
+            logger.debug("Could not create bedrock-runtime client: %s", e)
+            # Model-specific errors will be handled by strands-agents during actual usage
+
+    def _convert_bearer_token_if_needed(self) -> None:
+        """Convert AWS Bedrock API key to session credentials if provided."""
+        bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+        access_key = os.getenv("AWS_ACCESS_KEY_ID")
+
+        # Handle both None and empty string cases (Docker Compose sets empty strings)
+        if bearer_token and (not access_key or access_key.strip() == ""):
+            os.environ["AWS_ACCESS_KEY_ID"] = "ASIABEARERTOKEN"
+            os.environ["AWS_SECRET_ACCESS_KEY"] = "bearer+token+placeholder"
+            os.environ["AWS_SESSION_TOKEN"] = bearer_token
 
     def _validate_aws_requirements(self) -> None:
         """Validate AWS requirements including Bedrock model access."""
+        # Convert bearer token if needed
+        self._convert_bearer_token_if_needed()
+
+        # Verify AWS credentials are configured
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
-                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE"
+                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, configure AWS_PROFILE, "
+                "or set AWS_BEARER_TOKEN_BEDROCK for API key authentication"
             )
         self._validate_bedrock_model_access()
+
+    def _validate_litellm_requirements(self) -> None:
+        """Validate LiteLLM requirements based on model provider prefix.
+
+        LiteLLM handles authentication internally based on model prefixes,
+        so we validate that required environment variables are set for the
+        default model configuration.
+        """
+        # Get default LiteLLM model ID
+        litellm_config = self._default_configs.get("litellm", {})
+        model_id = litellm_config.get("llm", {}).model_id if hasattr(litellm_config.get("llm", {}), "model_id") else ""
+
+        # Check provider-specific requirements based on model prefix
+        if model_id.startswith("bedrock/"):
+            # LiteLLM does NOT support AWS bearer tokens - only standard credentials
+            if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+                raise EnvironmentError(
+                    "AWS credentials not configured for LiteLLM Bedrock models. "
+                    "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE. "
+                    "Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK - use standard AWS credentials instead."
+                )
+
+        elif model_id.startswith("openai/"):
+            if not os.getenv("OPENAI_API_KEY"):
+                raise EnvironmentError(
+                    "OPENAI_API_KEY not configured for LiteLLM OpenAI models. "
+                    "Set OPENAI_API_KEY environment variable."
+                )
+        elif model_id.startswith("anthropic/"):
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                raise EnvironmentError(
+                    "ANTHROPIC_API_KEY not configured for LiteLLM Anthropic models. "
+                    "Set ANTHROPIC_API_KEY environment variable."
+                )
+        elif model_id.startswith("cohere/"):
+            if not os.getenv("COHERE_API_KEY"):
+                raise EnvironmentError(
+                    "COHERE_API_KEY not configured for LiteLLM Cohere models. "
+                    "Set COHERE_API_KEY environment variable."
+                )
+        # LiteLLM will handle other provider validations internally
 
 
 # Global configuration manager instance
