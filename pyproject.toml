@@ -67,7 +67,7 @@ cyber-autoagent = "cyberautoagent:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["*"]
+include = ["modules*", "cyberautoagent"]
 
 [tool.setuptools.package-dir]
 "" = "src"

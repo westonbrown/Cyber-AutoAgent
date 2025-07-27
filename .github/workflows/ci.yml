@@ -28,31 +28,36 @@ jobs:
     - name: Install dependencies
       run: |
         export PATH="$HOME/.local/bin:$PATH"
-        uv pip install -e .
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        # Sync dependencies from lock file
+        uv sync
+        # Add dev dependencies
         uv add --dev pylint pytest pytest-mock
-        echo "PYTHONPATH: $PYTHONPATH"
-        ls -F /github/workspace/
-        echo "PYTHONPATH: $PYTHONPATH"
-        ls -F /github/workspace/
-        # Ensure the package is installed in editable mode
+        # Install package in editable mode with PYTHONPATH set
         uv pip install -e .
     
     - name: Run Pylint
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        uv run pylint src/ --fail-under=9.5 --exit-zero
+        # Run pylint with PYTHONPATH
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5 --exit-zero
         echo "Pylint score:"
-        uv run pylint src/ --score=y | grep "Your code has been rated"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --score=y | grep "Your code has been rated"
     
     - name: Run Tests
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        uv run pytest tests/ -v
+        # Debug: show Python path and installed packages
+        echo "PYTHONPATH: $PYTHONPATH"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run python -c "import sys; print('sys.path:', sys.path)"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run python -c "import modules; print('modules location:', modules.__file__)"
+        # Run tests with explicit PYTHONPATH
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v
     
     - name: Check Pylint minimum score
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        uv run pylint src/ --fail-under=9.5
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5
