@@ -41,7 +41,6 @@ jobs:
     - name: Run Tests
       run: |
         export PATH="$HOME/.local/bin:$PATH"
-        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
         uv run pytest tests/ -v
     
     - name: Check Pylint minimum score
