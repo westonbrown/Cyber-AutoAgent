@@ -1,0 +1,681 @@
+"""
+Report generation and evaluation utilities for the handlers module.
+
+This module contains functions for generating final reports, sending operation
+metadata, and triggering evaluation processes.
+"""
+
+import os
+import re
+import logging
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+
+from .utils import Colors, get_output_path
+from .base import LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+
+logger = logging.getLogger(__name__)
+
+
+def generate_final_report(
+    handler_state: Any, agent: Any, target: str, objective: str, memory_config: Optional[Dict[str, Any]] = None
+) -> None:
+    """Generate comprehensive final report using LLM analysis.
+
+    Args:
+        handler_state: The handler object containing operation data and state
+        agent: The agent instance
+        target: The target system
+        objective: The operation objective
+        memory_config: Optional memory configuration
+    """
+    # Ensure single report generation
+    if handler_state.state.report_generated:
+        return
+    handler_state.state.report_generated = True
+
+    # Send operation metadata to Langfuse
+    _send_operation_metadata(handler_state.state)
+
+    # Collect evidence from memory first
+    evidence = _retrieve_evidence(handler_state.state, memory_config)
+
+    # Only generate report if evidence was collected
+    if not evidence:
+        print("\n%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
+        print(
+            "%s%sNo evidence collected - skipping final report generation%s"
+            % (Colors.YELLOW, Colors.BOLD, Colors.RESET)
+        )
+        print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
+        return
+
+    print("\n%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
+    print("%s🔍 GENERATING COMPREHENSIVE SECURITY ASSESSMENT REPORT%s" % (Colors.BOLD, Colors.RESET))
+    print("%s%s%s" % (Colors.DIM, "═" * 80, Colors.RESET))
+
+    # Generate report using the main agent to maintain trace continuity
+    report_content = _generate_llm_report(
+        handler_state=handler_state,
+        agent=agent,
+        target=target,
+        objective=objective,
+        evidence=evidence,
+    )
+
+    if report_content:
+        # Log report generation success
+        print("  %sReport generated successfully (%d characters)%s" % (Colors.GREEN, len(report_content), Colors.RESET))
+
+        # Debug: Show first 200 chars of report
+        print("  %sFirst 200 chars of report: %s%s" % (Colors.DIM, repr(report_content[:200]), Colors.RESET))
+
+        # Display the report in terminal
+        try:
+            _display_final_report(report_content)
+        except Exception as e:
+            print("  %sError displaying report: %s%s" % (Colors.RED, e, Colors.RESET))
+            import traceback
+
+            traceback.print_exc()
+            # Fallback: Try to display report without formatting
+            print("\n%sFALLBACK: Displaying report without formatting:%s" % (Colors.YELLOW, Colors.RESET))
+            print(report_content)
+
+        # Save report to file
+        _save_report_to_file(handler_state, report_content, target, objective)
+
+        # Trigger evaluation if enabled
+        _trigger_evaluation_if_enabled(handler_state)
+    else:
+        print("\n%s%sFailed to generate report content from LLM%s" % (Colors.RED, Colors.BOLD, Colors.RESET))
+        print("%sReport generation returned empty or None%s" % (Colors.YELLOW, Colors.RESET))
+
+
+def _retrieve_evidence(
+    handler_state: Any, memory_config: Optional[Dict[str, Any]]  # pylint: disable=unused-argument
+) -> List[Dict]:
+    """Retrieve evidence from memory system.
+
+    Args:
+        handler_state: The handler state object
+        memory_config: Memory configuration
+
+    Returns:
+        List of evidence dictionaries
+    """
+    evidence = []
+    memory_client = _get_memory_client_for_report(memory_config)
+
+    if not memory_client:
+        return evidence
+
+    try:
+        # Retrieve memories using list_memories method
+        # The memory system uses "cyber_agent" as the default user_id
+        memories_response = memory_client.list_memories(user_id="cyber_agent")
+
+        # Parse memory response format (same as old implementation)
+        if isinstance(memories_response, dict):
+            # Extract from dictionary response
+            raw_memories = memories_response.get("memories", memories_response.get("results", []))
+        elif isinstance(memories_response, list):
+            # Process list response
+            raw_memories = memories_response
+        else:
+            # Handle unexpected format
+            raw_memories = []
+            print(
+                "  %sWarning: Unexpected memory response format: %s%s"
+                % (Colors.YELLOW, type(memories_response), Colors.RESET)
+            )
+
+        # Process memories according to category and content length
+        for mem in raw_memories:
+            metadata = mem.get("metadata", {})
+            memory_content = mem.get("memory", "")
+            memory_id = mem.get("id", "")
+
+            # Process memories with category "finding" in metadata
+            if metadata.get("category") == "finding":
+                evidence.append(
+                    {
+                        "category": "finding",
+                        "content": memory_content,
+                        "id": memory_id,
+                        "severity": metadata.get("severity", "unknown"),
+                        "confidence": metadata.get("confidence", "unknown"),
+                    }
+                )
+            # Process uncategorized memories (no category in metadata)
+            elif "category" not in metadata and memory_content:
+                # Only include short uncategorized memories
+                if len(memory_content.split()) < 100:
+                    evidence.append(
+                        {
+                            "category": "general",
+                            "content": memory_content,
+                            "id": memory_id,
+                            "severity": "unknown",
+                            "confidence": "unknown",
+                        }
+                    )
+
+        print("  %sCollected %d pieces of evidence from memory%s" % (Colors.GREEN, len(evidence), Colors.RESET))
+
+    except Exception as e:
+        print("  %sError retrieving evidence: %s%s" % (Colors.RED, e, Colors.RESET))
+
+    return evidence
+
+
+def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Optional[Any]:
+    """Get memory client for report generation.
+
+    Args:
+        memory_config: Memory configuration
+
+    Returns:
+        Memory client instance or None
+    """
+    if not memory_config:
+        # Fall back to global memory client
+        try:
+            from ..tools.memory import get_memory_client
+
+            # Return the wrapper itself, not the inner mem0 client
+            return get_memory_client()
+        except Exception:
+            return None
+
+    try:
+        # Try to get memory client from config
+        from ..tools.memory import Mem0ServiceClient
+
+        # Initialize memory client with config
+        # Return the wrapper itself which has list_memories method
+        return Mem0ServiceClient(config=memory_config)
+
+    except Exception as e:
+        print("  %sWarning: Could not access memory for report: %s%s" % (Colors.YELLOW, e, Colors.RESET))
+        return None
+
+
+def _generate_llm_report(
+    handler_state: Any, agent: Any, target: str, objective: str, evidence: List[Dict]
+) -> Optional[str]:
+    """Generate report content using LLM analysis.
+
+    Args:
+        handler_state: The handler state object
+        agent: The agent instance
+        target: The target system
+        objective: The operation objective
+        evidence: List of evidence from memory
+
+    Returns:
+        Generated report content or None
+    """
+    # Import OpenTelemetry for proper span management
+    from opentelemetry import trace as otel_trace
+
+    # Prepare evidence summary
+    evidence_text = ""
+    for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
+        # Format based on category and available metadata
+        category = item["category"].upper()
+        content = item["content"][:500]
+
+        if item["category"] == "finding":
+            severity = item.get("severity", "unknown").upper()
+            confidence = item.get("confidence", "unknown")
+            if confidence != "unknown":
+                evidence_text += f"\n{i+1}. [{category} | {severity} | {confidence}] {content}"
+            else:
+                evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
+        else:
+            evidence_text += f"\n{i+1}. [{category}] {content}"
+
+        if len(item["content"]) > 500:
+            evidence_text += "..."
+
+    # Prepare tools used summary
+    tools_summary = {}
+    for tool in handler_state.state.tools_used:
+        tool_name = tool.split(":")[0]
+        if tool_name in tools_summary:
+            tools_summary[tool_name] += 1
+        else:
+            tools_summary[tool_name] = 1
+
+    tools_text = "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
+
+    # Generate report prompt
+    report_prompt = f"""Based on the penetration testing operation, generate a comprehensive security assessment report.
+
+TARGET: {target}
+OBJECTIVE: {objective}
+OPERATION ID: {handler_state.state.operation_id}
+STEPS EXECUTED: {handler_state.state.steps}
+
+TOOLS USED:
+{tools_text}
+
+EVIDENCE COLLECTED:
+{evidence_text}
+
+Generate a professional penetration testing report with the following sections:
+
+1. EXECUTIVE SUMMARY
+   - Brief overview of the assessment
+   - Key findings and risk level
+   - Main recommendations
+
+2. TECHNICAL FINDINGS
+   - Detailed vulnerabilities discovered
+   - Severity ratings (Critical/High/Medium/Low)
+   - Evidence and proof of concept
+   - Affected components
+
+3. ATTACK NARRATIVE
+   - Step-by-step attack chain
+   - Tools and techniques used
+   - Access gained and data exposed
+
+4. RECOMMENDATIONS
+   - Immediate actions required
+   - Short-term remediation steps
+   - Long-term security improvements
+
+5. CONCLUSION
+   - Overall security posture assessment
+   - Risk summary
+   - Next steps
+
+Format the report professionally with clear sections and bullet points where appropriate.
+Focus on actionable findings and practical recommendations.
+Be specific about vulnerabilities found and provide technical details."""
+
+    try:
+        # Create a child span for report generation using OpenTelemetry context
+        # This creates proper parent-child relationship in the trace
+        report_span = None
+
+        # Check if agent has a tracer (it should from Strands SDK)
+        if hasattr(agent, "tracer") and agent.tracer:
+            # Get the parent span (agent's main trace span)
+            parent_span = getattr(agent, "trace_span", None) or otel_trace.get_current_span()
+
+            # Create child span for report generation
+            report_span = agent.tracer._start_span(
+                span_name="generate_security_report",
+                parent_span=parent_span,
+                attributes={
+                    # Core naming for Langfuse display
+                    "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
+                    # Langfuse-specific attributes
+                    "langfuse.agent.type": "report_generator",
+                    "langfuse.phase": "report_generation",
+                    "langfuse.parent.operation": handler_state.state.operation_id,
+                    # Standard OpenTelemetry attributes
+                    "report.type": "security_assessment",
+                    "report.target": target,
+                    "report.objective": objective,
+                    "report.evidence_count": len(evidence),
+                    "report.tools_used": len(tools_summary),
+                    "report.steps_executed": handler_state.state.steps,
+                    # Operation context
+                    "operation.id": handler_state.state.operation_id,
+                    "gen_ai.operation.name": "generate_report",
+                },
+            )
+
+        # Execute report generation
+        # The span is already active via the tracer
+        print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
+
+        # Add event for report generation start
+        if report_span and hasattr(agent.tracer, "_add_event"):
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_started",
+                    {
+                        "evidence_pieces": len(evidence),
+                        "unique_tools": len(tools_summary),
+                        "total_steps": handler_state.state.steps,
+                    },
+                )
+
+            # Create a new agent instance for report generation to avoid conversation state issues
+            # This prevents tool_use/tool_result validation errors from the main agent's history
+            from strands import Agent
+
+            report_agent = Agent(
+                model=agent.model,
+                name="Cyber-ReportAgent",
+                system_prompt=agent.system_prompt,
+                # No tools needed for report generation
+                tools=[],
+                # Use the same trace attributes but update the agent type
+                trace_attributes={
+                    **agent.trace_attributes,
+                    "langfuse.agent.type": "report_generator",
+                    "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
+                },
+            )
+
+            # Execute report generation with clean conversation state
+            result = report_agent(report_prompt)
+
+            # Debug: Log the result structure
+            logger.debug("Report generation result type: %s", type(result))
+            logger.debug("Result has message attr: %s", hasattr(result, "message"))
+            if hasattr(result, "message"):
+                logger.debug("Message type: %s", type(result.message))
+                logger.debug(
+                    "Message keys: %s", result.message.keys() if hasattr(result.message, "keys") else "Not a dict"
+                )
+
+            # Process the result
+            if result and hasattr(result, "message"):
+                content = result.message.get("content", [])
+                if content and isinstance(content, list):
+                    report_text = ""
+                    for block in content:
+                        if isinstance(block, dict) and "text" in block:
+                            report_text += block["text"]
+
+                    # Extract only the actual report, removing any preamble
+                    logger.debug("Report text before extraction: %s chars", len(report_text))
+                    report_text = _extract_report_content(report_text)
+                    logger.debug("Report text after extraction: %s chars", len(report_text))
+
+                    # Clean up any duplicate content
+                    report_text = _clean_duplicate_content(report_text)
+                    logger.debug("Report text after cleaning: %s chars", len(report_text))
+
+                    # Add completion event with report metrics
+                    if report_span and hasattr(agent.tracer, "_add_event"):
+                        agent.tracer._add_event(
+                            report_span,
+                            "report_generation_completed",
+                            {
+                                "report_length": len(report_text),
+                                "sections_generated": 5,  # We requested 5 sections
+                                "status": "success",
+                            },
+                        )
+
+                    return report_text
+
+            # If we reach here, report generation failed
+            if report_span and hasattr(agent.tracer, "_add_event"):
+                agent.tracer._add_event(
+                    report_span,
+                    "report_generation_failed",
+                    {
+                        "reason": "No content in result",
+                        "status": "error",
+                    },
+                )
+
+            return None
+
+    except Exception as e:
+        print("  %sError generating report: %s%s" % (Colors.RED, e, Colors.RESET))
+
+        # Record error in span if available
+        if report_span and hasattr(agent.tracer, "_end_span"):
+            agent.tracer._end_span(report_span, error=e)
+
+        return None
+
+    finally:
+        # End the report span properly
+        if report_span and hasattr(agent.tracer, "_end_span"):
+            agent.tracer._end_span(report_span)
+
+
+def _extract_report_content(raw_content: str) -> str:
+    """Extract the actual report content from LLM response.
+
+    The LLM sometimes includes thinking/preamble before the actual report.
+    This method extracts only the report starting from the first report header.
+
+    Args:
+        raw_content: Raw content from LLM including possible preamble
+
+    Returns:
+        Extracted report content
+    """
+    # Look for common report headers
+    report_markers = [
+        "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+        "# Security Assessment Report",
+        "# SECURITY ASSESSMENT REPORT",
+        "## EXECUTIVE SUMMARY",
+        "## 1. EXECUTIVE SUMMARY",
+        "PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+        "1. EXECUTIVE SUMMARY",
+        "EXECUTIVE SUMMARY",
+        "## Executive Summary",
+        "# Executive Summary",
+    ]
+
+    lines = raw_content.split("\n")
+    report_start_idx = None
+
+    # Find the first occurrence of a report marker
+    for i, line in enumerate(lines):
+        for marker in report_markers:
+            if marker in line:
+                report_start_idx = i
+                break
+        if report_start_idx is not None:
+            break
+
+    if report_start_idx is not None:
+        # Return content from the report start
+        return "\n".join(lines[report_start_idx:])
+
+    # If no marker found, log warning and return original content
+    logger.warning("No report markers found in content. Returning original content of %s chars", len(raw_content))
+    return raw_content
+
+
+def _clean_duplicate_content(report_content: str) -> str:
+    """Remove duplicate sections from report content.
+
+    Args:
+        report_content: The raw report content
+
+    Returns:
+        Cleaned report content
+    """
+    lines = report_content.split("\n")
+    seen_lines = set()
+    cleaned_lines = []
+
+    # Track section headers to avoid duplicate sections
+    section_pattern = re.compile(r"^#+\s+(.+)$|^[A-Z][A-Z\s]+:?\s*$")
+    seen_sections = set()
+
+    skip_until_next_section = False
+
+    for line in lines:
+        # Check if this is a section header
+        section_match = section_pattern.match(line.strip())
+        if section_match:
+            section_name = section_match.group(1) if section_match.group(1) else line.strip()
+            section_name = section_name.upper().strip(":")
+
+            if section_name in seen_sections:
+                skip_until_next_section = True
+                continue
+
+            seen_sections.add(section_name)
+            skip_until_next_section = False
+
+        # Skip content if we're in a duplicate section
+        if skip_until_next_section:
+            continue
+
+        # Add non-duplicate lines
+        if line.strip() and line not in seen_lines:
+            cleaned_lines.append(line)
+            seen_lines.add(line)
+        elif not line.strip():  # Preserve blank lines
+            cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
+
+def _display_final_report(report_content: str) -> None:
+    """Display the final report with formatting.
+
+    Args:
+        report_content: The report content to display
+    """
+    # Debug: Check if function is called and content length
+    logger.debug("_display_final_report called with content length: %s", len(report_content))
+
+    # Try to force output through original stdout in case of redirection issues
+    import sys
+
+    def safe_print(text=""):
+        """Print safely, handling potential stdout redirection"""
+        # Only print once - to the current stdout
+        print(text)
+        # Explicitly flush to ensure output is displayed
+        try:
+            sys.stdout.flush()
+        except (IOError, OSError, AttributeError):
+            pass
+
+    safe_print()
+    safe_print("%s%s%s" % (Colors.BOLD, "═" * 80, Colors.RESET))
+    safe_print(
+        "%s%s PENETRATION TESTING SECURITY ASSESSMENT REPORT %s%s"
+        % (Colors.CYAN, Colors.BOLD, Colors.RESET, Colors.RESET)
+    )
+    safe_print("%s%s%s" % (Colors.BOLD, "═" * 80, Colors.RESET))
+    safe_print()
+
+    # Split report content into lines to handle any special cases
+    for line in report_content.split("\n"):
+        safe_print(line)
+
+    safe_print()
+    safe_print("%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
+
+
+def _save_report_to_file(handler_state: Any, report_content: str, target: str, objective: str) -> None:
+    """Save report to file in operation directory.
+
+    Args:
+        handler_state: The handler object
+        report_content: The report content
+        target: The target system
+        objective: The operation objective
+    """
+    try:
+        # Determine output path
+        if handler_state.output_base_dir:
+            from .utils import sanitize_target_name
+
+            target_name = sanitize_target_name(target)
+            report_dir = get_output_path(
+                target_name=target_name,
+                operation_id=handler_state.state.operation_id,
+                base_dir=handler_state.output_base_dir,
+            )
+        else:
+            report_dir = "."
+
+        # Create directory if needed
+        os.makedirs(report_dir, exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"security_assessment_report_{timestamp}.md"
+        report_path = os.path.join(report_dir, report_filename)
+
+        # Write report
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("# Security Assessment Report\n\n")
+            f.write(f"**Target:** {target}\n")
+            f.write(f"**Objective:** {objective}\n")
+            f.write(f"**Operation ID:** {handler_state.state.operation_id}\n")
+            f.write(f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"**Total Steps:** {handler_state.state.steps}\n\n")
+            f.write("---\n\n")
+            f.write(report_content)
+
+        # Check if running in Docker to show appropriate paths
+        is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
+        if is_docker:
+            host_path = report_path.replace("/app/outputs", "./outputs")
+            print("\n%s📄 Report saved to:%s" % (Colors.GREEN, Colors.RESET))
+            print("   %sContainer:%s %s" % (Colors.DIM, Colors.RESET, report_path))
+            print("   %sHost:%s %s%s%s" % (Colors.GREEN, Colors.RESET, Colors.BOLD, host_path, Colors.RESET))
+        else:
+            print("\n%s📄 Report saved to: %s%s%s" % (Colors.GREEN, Colors.BOLD, report_path, Colors.RESET))
+
+    except Exception as e:
+        print("\n%sError saving report: %s%s" % (Colors.RED, e, Colors.RESET))
+
+
+def _trigger_evaluation_if_enabled(handler_state: Any) -> None:  # pylint: disable=unused-argument
+    """Trigger evaluation process if enabled.
+
+    Args:
+        handler_state: The handler object
+    """
+    if not os.getenv("ENABLE_AUTO_EVALUATION", "").lower() == "true":
+        return
+
+    try:
+        print("\n%s🔬 Triggering operation evaluation...%s" % (Colors.CYAN, Colors.RESET))
+
+        # The evaluation is already triggered in the callback handler
+        # This function is kept for backward compatibility but the actual
+        # evaluation happens in callback.py using trigger_evaluation_on_completion()
+        print("%s✅ Evaluation triggered in background%s" % (Colors.GREEN, Colors.RESET))
+
+    except Exception as e:
+        print("%sError triggering evaluation: %s%s" % (Colors.RED, e, Colors.RESET))
+
+
+def _send_operation_metadata(handler_state: Any) -> None:  # pylint: disable=unused-argument
+    """Send operation metadata to Langfuse for tracking.
+
+    Args:
+        handler_state: The handler state object
+    """
+    try:
+        # Check if Langfuse is configured
+        if not all([LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY]):
+            return
+
+        # Import here to avoid circular imports
+        try:
+            from langfuse import Langfuse
+        except ImportError:
+            return
+
+        # Initialize Langfuse client
+        Langfuse(host=LANGFUSE_HOST, public_key=LANGFUSE_PUBLIC_KEY, secret_key=LANGFUSE_SECRET_KEY)
+
+        # Could send operation metadata here if needed
+        # metadata = {
+        #     "operation_id": handler_state.operation_id,
+        #     "steps_executed": handler_state.steps,
+        #     "tools_used": len(handler_state.tools_used),
+        #     "memory_operations": handler_state.memory_operations,
+        #     "tool_effectiveness": handler_state.tool_effectiveness,
+        #     "unique_tools": list({t.split(":")[0] for t in handler_state.tools_used}),
+        # }
+
+    except Exception:
+        # Silently fail - don't interrupt operation for telemetry
+        pass

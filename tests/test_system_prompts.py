@@ -5,10 +5,11 @@ import os
 import sys
 
 # Add src to path for imports
+
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.system_prompts import get_system_prompt
-
+from modules.prompts.system import get_system_prompt
 
 class TestGetSystemPrompt:
     """Test the get_system_prompt function"""
@@ -128,7 +129,7 @@ class TestGetSystemPrompt:
             objective="test objective",
             max_steps=100,
             operation_id="OP_20240101_120000",
-            server="local",
+            provider="ollama",
         )
 
         # Test remote server
@@ -137,7 +138,7 @@ class TestGetSystemPrompt:
             objective="test objective",
             max_steps=100,
             operation_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Both should contain the basic elements
@@ -145,7 +146,6 @@ class TestGetSystemPrompt:
         assert "test.com" in prompt_remote
         assert "test objective" in prompt_local
         assert "test objective" in prompt_remote
-
 
 class TestMemoryInstructions:
     """Test memory instruction logic in system prompts"""
@@ -189,7 +189,6 @@ class TestMemoryInstructions:
 
         assert "Begin with reconnaissance" in prompt
         assert "Starting fresh assessment with no previous context" in prompt
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

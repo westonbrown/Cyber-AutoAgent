@@ -267,27 +267,33 @@ This meta-architecture allows the system to transcend static tool limitations an
 
 Cyber-AutoAgent supports two model providers for maximum flexibility:
 
-### Remote Mode (AWS Bedrock)
+### Bedrock Provider (Direct AWS)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
 - **Default Model**: Claude Sonnet 4 (us.anthropic.claude-sonnet-4-20250514-v1:0)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
-### Local Mode (Ollama)
+### Ollama Provider (Local)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
 - **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
+### LiteLLM Provider (Universal)
+- **Best for**: Multi-provider flexibility, unified interface
+- **Requirements**: API keys for desired providers
+- **Supported**: 100+ models from OpenAI, Anthropic, Cohere, Google, Azure, etc.
+- **Benefits**: Switch providers easily, fallback support, unified API
+
 ### Comparison
 
-| Feature | Remote (AWS Bedrock) | Local (Ollama) |
-|---------|---------------------|----------------|
-| Cost | Pay per API call | One-time setup |
-| Performance | High (managed) | Depends on hardware |
-| Offline Use | No | Yes |
-| Setup Complexity | Moderate | Higher |
-| Model Quality | Highest | Low |
+| Feature | Bedrock | Ollama | LiteLLM |
+|---------|---------|--------|----------|
+| Cost | Pay per call | Free | Varies by provider |
+| Performance | High | Hardware dependent | Provider dependent |
+| Offline Use | No | Yes | No |
+| Setup | Easy | Higher | Easy |
+| Model Selection | AWS only | Limited | 100+ models |
 
 ## Observability & Evaluation
 
@@ -362,17 +368,49 @@ LANGFUSE_ADMIN_PASSWORD=strong-password-here
 
 ### Prerequisites
 
-**Remote Mode (AWS Bedrock)**
+**Bedrock Provider**
 ```bash
-# Configure AWS credentials
+# Option 1: Configure AWS credentials
 aws configure
 # Or set environment variables:
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
 export AWS_REGION=your_region
+
+# Option 2: Use AWS Bedrock API key (bearer token)
+export AWS_BEARER_TOKEN_BEDROCK=your_bearer_token
+export AWS_REGION=your_region
 ```
 
-**Local Mode (Ollama)**
+> **Note**: Bearer token authentication is only supported with the native Bedrock provider. LiteLLM does not currently support AWS bearer tokens - use standard AWS credentials instead.
+
+**LiteLLM Provider (Universal Gateway)**
+
+LiteLLM supports 100+ model providers. Set the appropriate environment variables for your chosen provider:
+
+```bash
+# For OpenAI models (GPT-4, GPT-3.5, etc.)
+export OPENAI_API_KEY=your_openai_key
+# Usage: --model "openai/gpt-4"
+
+# For Google models (Gemini)
+export GEMINI_API_KEY=your_gemini_key
+# Usage: --model "gemini/gemini-pro"
+
+# For Azure OpenAI
+export AZURE_API_KEY=your_azure_key
+export AZURE_API_BASE=https://your-resource.openai.azure.com
+export AZURE_API_VERSION=2024-02-15-preview
+# Usage: --model "azure/your-deployment-name"
+
+# For Hugging Face
+export HUGGINGFACE_API_KEY=your_hf_key
+# Usage: --model "huggingface/meta-llama/Llama-2-7b-chat-hf"
+```
+
+> **Important**: When using LiteLLM with Bedrock models, AWS bearer tokens (AWS_BEARER_TOKEN_BEDROCK) are NOT supported. Use standard AWS credentials only.
+
+**Ollama Provider**
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
@@ -397,7 +435,7 @@ docker build -t cyber-autoagent .
 docker run --rm \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK} \
   -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/outputs:/app/outputs \
   -v $(pwd)/tools:/app/tools \
@@ -452,7 +490,7 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--target`: Target system/network to assess (ensure you have permission!)
 
 **Optional Arguments**: 
-- `--server`: Model provider - `remote` (AWS Bedrock) or `local` (Ollama), default: remote
+- `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
 - `--iterations`: Maximum tool executions before stopping, default: 100
 - `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
 - `--region`: AWS region for Bedrock, default: us-east-1
@@ -465,11 +503,20 @@ The unified structure organizes all artifacts under operation-specific directori
 ### Usage Examples
 
 ```bash
-# Basic Python Usage (Remote Mode)
+# Basic Python Usage (Bedrock Provider)
 python src/cyberautoagent.py \
   --target "http://testphp.vulnweb.com" \
   --objective "Find SQL injection vulnerabilities" \
+  --provider bedrock \
   --iterations 50
+
+# Using LiteLLM with OpenAI
+export OPENAI_API_KEY=your_key
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Security assessment" \
+  --provider litellm \
+  --model "openai/gpt-4o"
 
 # Docker with full observability, evaluation and root access (for package installation)
 docker run --rm \
@@ -503,12 +550,15 @@ docker run --user root cyber-autoagent
 
 ## Configuration
 
-The agent uses a **centralized configuration system** defined in `src/modules/config.py`. All settings can be customized through environment variables, with sensible defaults provided.
+The agent uses a **centralized configuration system** defined in `src/modules/config/`. All settings can be customized through environment variables, with sensible defaults provided.
 
 **Recent Improvements**:
+- **Modular architecture** with organized agents/, config/, tools/, prompts/, and evaluation/ directories
+- **Langfuse prompt management** for dynamic prompt loading and versioning
 - **Unified output structure** for better organization (enabled by default)
 - **Standardized paths** for logs, reports, and evidence collection  
 - **Enhanced memory management** with cross-operation persistence
+- **Dedicated report agent** for improved report generation
 
 Copy the example environment file and customize it for your needs:
 
@@ -518,7 +568,7 @@ cp .env.example .env
 
 The `.env.example` file contains detailed configuration options with inline comments for all supported features including model providers, memory systems, and observability settings. Key environment variables include:
 
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` for remote mode (AWS Bedrock)
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION` for remote mode (AWS Bedrock)
 - `OLLAMA_HOST` for local mode (Ollama)  
 - `CYBER_AGENT_OUTPUT_DIR`, `CYBER_AGENT_ENABLE_UNIFIED_OUTPUT` for output management
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` for observability
@@ -552,15 +602,27 @@ uv run pytest --cov=src
 cyber-autoagent/
 ├── src/                       # Source code
 │   ├── cyberautoagent.py      # Main entry point and CLI
-│   └── modules/               # Core modules
-│       ├── agent.py           # Agent creation (Strands + models)
-│       ├── config.py          # Centralized configuration system
-│       ├── memory_tools.py    # Mem0 memory management
-│       ├── system_prompts.py  # AI prompts and configurations
-│       ├── agent_handlers.py  # Reasoning and callback handlers
-│       ├── environment.py     # Tool discovery and logging
-│       ├── evaluation.py      # Ragas evaluation system
-│       └── utils.py           # UI utilities and analysis
+│   └── modules/               # Core modules (modular architecture)
+│       ├── agents/            # Agent implementations
+│       │   ├── cyber_autoagent.py  # Main Strands agent creation
+│       │   └── report_agent.py     # Dedicated report generation
+│       ├── config/            # Configuration management
+│       │   ├── manager.py     # Centralized configuration system
+│       │   └── environment.py # Environment setup and validation
+│       ├── tools/             # Tool implementations
+│       │   └── memory.py      # Mem0 memory management tool
+│       ├── prompts/           # Prompt management
+│       │   ├── system.py      # AI prompts and configurations
+│       │   └── manager.py     # Langfuse prompt management
+│       ├── evaluation/        # Evaluation system
+│       │   └── evaluation.py  # Ragas evaluation metrics
+│       └── handlers/          # Callback handling and UI utilities
+│           ├── base.py        # Base classes and constants
+│           ├── callback.py    # Main ReasoningHandler class
+│           ├── display.py     # Result display formatting
+│           ├── tools.py       # Tool execution handling
+│           ├── reporting.py   # Report generation utilities
+│           └── utils.py       # UI utilities and analysis
 ├── docs/                      # Documentation
 │   ├── architecture.md       # Agent architecture and tools
 │   ├── memory.md             # Memory system (Mem0 backends)
@@ -587,10 +649,13 @@ cyber-autoagent/
 | File | Purpose |
 |------|---------|
 | `src/cyberautoagent.py` | CLI entry point, observability setup |
-| `src/modules/agent.py` | Strands agent creation, model configuration |
-| `src/modules/config.py` | Centralized configuration system |
-| `src/modules/memory_tools.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
-| `src/modules/evaluation.py` | Ragas evaluation system |
+| `src/modules/agents/cyber_autoagent.py` | Strands agent creation, model configuration |
+| `src/modules/agents/report_agent.py` | Report generation agent |
+| `src/modules/config/manager.py` | Centralized configuration system |
+| `src/modules/tools/memory.py` | Unified Mem0 tool (FAISS/OpenSearch/Platform) |
+| `src/modules/evaluation/evaluation.py` | Ragas evaluation system |
+| `src/modules/prompts/system.py` | AI prompts and configurations |
+| `src/modules/prompts/manager.py` | Langfuse prompt management |
 | `.env.example` | Environment configuration template |
 | `docker-compose.yml` | Complete observability stack |
 | `docs/architecture.md` | Technical architecture deep dive |
@@ -601,12 +666,16 @@ cyber-autoagent/
 
 #### AWS Credentials Not Found
 ```bash
-# Configure AWS CLI
+# Option 1: Configure AWS CLI
 aws configure
 
-# Or set environment variables
+# Option 2: Set traditional environment variables
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=us-east-1
+
+# Option 3: Use AWS Bedrock API key (bearer token)
+export AWS_BEARER_TOKEN_BEDROCK=your_bearer_token
 export AWS_REGION=us-east-1
 ```
 

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from .utils import Colors
+from modules.handlers.utils import Colors
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
@@ -32,9 +33,7 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
         return
 
     # Unified output structure - per-target memory
-    memory_path = os.path.join(
-        "outputs", target_name, "memory", f"mem0_faiss_{target_name}"
-    )
+    memory_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
     logger.debug("Checking memory path: %s", memory_path)
 
     if os.path.exists(memory_path):
@@ -54,9 +53,7 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
                 os.remove(memory_path)
 
             logger.info("Cleaned up operation memory: %s", memory_path)
-            print(
-                f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}"
-            )
+            print(f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}")
 
         except Exception as e:
             logger.error("Failed to clean %s: %s", memory_path, e)
@@ -103,10 +100,7 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         try:
             subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
             available_tools.append(tool_name)
-            print(
-                "  %s✓%s %-12s - %s"
-                % (Colors.GREEN, Colors.RESET, tool_name, description)
-            )
+            print("  %s✓%s %-12s - %s" % (Colors.GREEN, Colors.RESET, tool_name, description))
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
@@ -125,8 +119,7 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
             )
 
     print(
-        "\n%s[+] Environment ready. %d cyber tools available.%s\n"
-        % (Colors.GREEN, len(available_tools), Colors.RESET)
+        "\n%s[+] Environment ready. %d cyber tools available.%s\n" % (Colors.GREEN, len(available_tools), Colors.RESET)
     )
     return available_tools
 
@@ -138,14 +131,46 @@ class TeeOutput:
         self.terminal = stream
         self.log = open(log_file, "a", encoding="utf-8", buffering=1)
         self.lock = threading.Lock()
+        self.line_buffer = ""  # Buffer for incomplete lines
 
     def write(self, message):
         with self.lock:
+            # Write to terminal as-is, ensuring proper flushing
             self.terminal.write(message)
-            self.terminal.flush()
+            # Force immediate flush to prevent buffering issues
+            if hasattr(self.terminal, "flush"):
+                self.terminal.flush()
+
+            # Clean message for log file
             try:
-                self.log.write(message)
-                self.log.flush()
+                # Remove ANSI escape sequences for log file
+                ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+                clean_message = ansi_escape.sub("", message)
+
+                # Handle carriage returns properly
+                # If message contains \r without \n, it's likely overwriting the same line
+                if "\r" in clean_message and "\r\n" not in clean_message:
+                    # Split by \r and take the last part (what would be visible on screen)
+                    parts = clean_message.split("\r")
+                    # Keep only the last part after all overwrites
+                    clean_message = parts[-1]
+                    # If we had buffered content, clear it as it's being overwritten
+                    self.line_buffer = ""
+
+                # Add to line buffer
+                self.line_buffer += clean_message
+
+                # Write complete lines to log
+                if "\n" in self.line_buffer:
+                    lines = self.line_buffer.split("\n")
+                    # Write all complete lines
+                    for line in lines[:-1]:
+                        # Don't strip leading spaces - preserve formatting
+                        self.log.write(line + "\n")
+                    # Keep the incomplete line in buffer
+                    self.line_buffer = lines[-1]
+                    self.log.flush()
+
             except (ValueError, OSError):
                 # Handle closed file gracefully
                 pass
@@ -161,6 +186,10 @@ class TeeOutput:
     def close(self):
         with self.lock:
             try:
+                # Flush any remaining buffered content
+                if self.line_buffer:
+                    self.log.write(self.line_buffer)
+                    self.log.flush()
                 self.log.close()
             except (OSError, AttributeError):
                 pass
@@ -183,9 +212,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Create header in log file
     with open(log_file, "a", encoding="utf-8") as f:
         f.write("\n" + "=" * 80 + "\n")
-        f.write(
-            f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        )
+        f.write(f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("=" * 80 + "\n\n")
 
     # Set up stdout and stderr redirection to capture ALL terminal output
@@ -193,9 +220,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     sys.stderr = TeeOutput(sys.stderr, log_file)
 
     # Traditional logger setup for structured logging
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     # File handler - log everything to file
     file_handler = logging.FileHandler(log_file, mode="a")
@@ -217,9 +242,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
 
     # Suppress Strands framework error logging for expected step limit termination
     strands_event_loop_logger = logging.getLogger("strands.event_loop.event_loop")
-    strands_event_loop_logger.setLevel(
-        logging.CRITICAL
-    )  # Only show critical errors, not our expected StopIteration
+    strands_event_loop_logger.setLevel(logging.CRITICAL)  # Only show critical errors, not our expected StopIteration
 
     # Capture all other loggers at INFO level to file
     root_logger = logging.getLogger()

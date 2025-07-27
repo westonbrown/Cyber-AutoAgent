@@ -7,10 +7,11 @@ import sys
 import os
 
 # Add src to path for imports
+
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import cyberautoagent
-
 
 class TestCLIArguments:
     """Test command-line argument parsing"""
@@ -45,14 +46,10 @@ class TestCLIArguments:
                 parser.add_argument("--verbose", action="store_true")
                 parser.add_argument("--model", type=str)
                 parser.add_argument("--region", type=str, default="us-east-1")
-                parser.add_argument(
-                    "--server", type=str, choices=["remote", "local"], default="remote"
-                )
+                parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
                 parser.add_argument("--confirmations", action="store_true")
 
-                args = parser.parse_args(
-                    ["--target", "test.com", "--objective", "test objective"]
-                )
+                args = parser.parse_args(["--target", "test.com", "--objective", "test objective"])
 
                 assert args.target == "test.com"
                 assert args.objective == "test objective"
@@ -64,9 +61,7 @@ class TestCLIArguments:
     def test_server_argument_choices(self):
         """Test that --server argument accepts only valid choices"""
         parser = argparse.ArgumentParser()
-        parser.add_argument(
-            "--server", type=str, choices=["remote", "local"], default="remote"
-        )
+        parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
 
         # Valid choices should work
         args = parser.parse_args(["--server", "local"])
@@ -88,9 +83,7 @@ class TestCLIArguments:
         parser.add_argument("--verbose", action="store_true")
         parser.add_argument("--model", type=str)
         parser.add_argument("--region", type=str, default="us-east-1")
-        parser.add_argument(
-            "--server", type=str, choices=["remote", "local"], default="remote"
-        )
+        parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
         parser.add_argument("--confirmations", action="store_true")
 
         args = parser.parse_args(
@@ -145,7 +138,6 @@ class TestCLIArguments:
         assert args.output_dir == "/custom/output"
         assert args.keep_memory is True  # Default is now True
 
-
 class TestMainFunction:
     """Test main function execution flow"""
 
@@ -165,8 +157,8 @@ class TestMainFunction:
             "test.com",
             "--objective",
             "test objective",
-            "--server",
-            "remote",
+            "--provider",
+            "bedrock",
         ],
     )
     def test_main_remote_flow(
@@ -227,8 +219,8 @@ class TestMainFunction:
             "test.com",
             "--objective",
             "test objective",
-            "--server",
-            "local",
+            "--provider",
+            "ollama",
         ],
     )
     def test_main_local_flow(
@@ -280,9 +272,7 @@ class TestMainFunction:
         "sys.argv",
         ["cyberautoagent.py", "--target", "test.com", "--objective", "test objective"],
     )
-    def test_main_create_agent_failure(
-        self, mock_print_status, mock_create_agent, mock_auto_setup, mock_setup_logging
-    ):
+    def test_main_create_agent_failure(self, mock_print_status, mock_create_agent, mock_auto_setup, mock_setup_logging):
         """Test main function when create_agent fails"""
 
         mock_create_agent.side_effect = Exception("Agent creation failed")
@@ -292,7 +282,6 @@ class TestMainFunction:
             cyberautoagent.main()
 
         assert exc_info.value.code == 1
-
 
 class TestEnvironmentVariables:
     """Test environment variable handling"""
@@ -316,9 +305,7 @@ class TestEnvironmentVariables:
         parser.add_argument("--target", type=str, required=True)
         parser.add_argument("--confirmations", action="store_true")
 
-        args = parser.parse_args(
-            ["--target", "test.com", "--objective", "test", "--confirmations"]
-        )
+        args = parser.parse_args(["--target", "test.com", "--objective", "test", "--confirmations"])
 
         # Simulate the environment variable logic from main()
         if not args.confirmations:
@@ -330,9 +317,7 @@ class TestEnvironmentVariables:
         assert "BYPASS_TOOL_CONSENT" not in os.environ
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch(
-        "sys.argv", ["cyberautoagent.py", "--target", "test.com", "--objective", "test"]
-    )
+    @patch("sys.argv", ["cyberautoagent.py", "--target", "test.com", "--objective", "test"])
     def test_no_confirmations_flag_sets_env_var(self):
         """Test that without --confirmations flag, environment variable is set"""
         parser = argparse.ArgumentParser()
@@ -350,7 +335,6 @@ class TestEnvironmentVariables:
 
         # Without --confirmations, the env var should be set
         assert os.environ["BYPASS_TOOL_CONSENT"] == "true"
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
