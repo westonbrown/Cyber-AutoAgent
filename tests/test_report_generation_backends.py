@@ -6,11 +6,9 @@ import sys
 from unittest.mock import Mock, patch
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers import ReasoningHandler
 from modules.handlers.reporting import _retrieve_evidence
-
 
 class TestReportGenerationWithFAISS:
     """Test report generation with FAISS memory backend"""
@@ -101,7 +99,6 @@ class TestReportGenerationWithFAISS:
             call_config = mock_mem0_client.call_args.kwargs["config"]
             assert call_config["vector_store"]["config"]["path"] == "/custom/memory/path"
 
-
 class TestReportGenerationWithOpenSearch:
     """Test report generation with OpenSearch memory backend"""
 
@@ -171,7 +168,6 @@ class TestReportGenerationWithOpenSearch:
             assert len(evidence) == 1
             assert evidence[0]["category"] == "finding"
 
-
 class TestReportGenerationWithMem0Platform:
     """Test report generation with Mem0 Platform memory backend"""
 
@@ -237,7 +233,6 @@ class TestReportGenerationWithMem0Platform:
             assert evidence[0]["category"] == "finding"
             assert evidence[1]["category"] == "finding"
 
-
 class TestReportGenerationBackendFallback:
     """Test report generation fallback behavior"""
 
@@ -287,7 +282,6 @@ class TestReportGenerationBackendFallback:
 
             # Should return empty evidence on failure
             assert evidence == []
-
 
 class TestReportGenerationMemoryFormats:
     """Test report generation with different memory response formats"""
@@ -387,7 +381,6 @@ class TestReportGenerationMemoryFormats:
 
             assert len(evidence) == 1
             assert evidence[0]["content"] == "Finding 1"
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

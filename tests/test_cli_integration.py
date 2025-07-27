@@ -7,10 +7,8 @@ import sys
 import os
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import cyberautoagent
-
 
 class TestCLIArguments:
     """Test command-line argument parsing"""
@@ -136,7 +134,6 @@ class TestCLIArguments:
         assert args.objective == "test objective"
         assert args.output_dir == "/custom/output"
         assert args.keep_memory is True  # Default is now True
-
 
 class TestMainFunction:
     """Test main function execution flow"""
@@ -283,7 +280,6 @@ class TestMainFunction:
 
         assert exc_info.value.code == 1
 
-
 class TestEnvironmentVariables:
     """Test environment variable handling"""
 
@@ -336,7 +332,6 @@ class TestEnvironmentVariables:
 
         # Without --confirmations, the env var should be set
         assert os.environ["BYPASS_TOOL_CONSENT"] == "true"
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

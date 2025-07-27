@@ -5,10 +5,8 @@ import os
 import sys
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.prompts.system import get_system_prompt
-
 
 class TestGetSystemPrompt:
     """Test the get_system_prompt function"""
@@ -146,7 +144,6 @@ class TestGetSystemPrompt:
         assert "test objective" in prompt_local
         assert "test objective" in prompt_remote
 
-
 class TestMemoryInstructions:
     """Test memory instruction logic in system prompts"""
 
@@ -189,7 +186,6 @@ class TestMemoryInstructions:
 
         assert "Begin with reconnaissance" in prompt
         assert "Starting fresh assessment with no previous context" in prompt
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

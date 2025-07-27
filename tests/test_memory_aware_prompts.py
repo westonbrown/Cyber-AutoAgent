@@ -8,13 +8,11 @@ import sys
 os.environ["ENABLE_LANGFUSE_PROMPTS"] = "false"
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.prompts.system import (
     get_system_prompt,
     _get_memory_context_guidance,
 )
-
 
 class TestMemoryContextGuidance:
     """Test memory context guidance generation"""
@@ -110,7 +108,6 @@ class TestMemoryContextGuidance:
             '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
             in result
         )
-
 
 class TestMemoryAwareSystemPrompts:
     """Test memory-aware system prompt generation"""
@@ -353,7 +350,6 @@ Leverage these tools directly via shell.
         assert "Starting fresh assessment with no previous context" in result_fresh
         assert "Begin with reconnaissance and target information gathering" in result_fresh
 
-
 class TestMemoryAwarePromptIntegration:
     """Test integration of memory-aware prompts with system components"""
 
@@ -394,7 +390,6 @@ class TestMemoryAwarePromptIntegration:
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
         assert "Build upon previous discoveries" in result
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
