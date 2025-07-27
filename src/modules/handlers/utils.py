@@ -1,9 +1,36 @@
 #!/usr/bin/env python3
+"""
+Utility functions for the handlers module.
+
+This module contains general utility functions for file operations,
+output formatting, and message analysis.
+"""
 
 import os
 import re
+import shutil
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
+
+
+def get_terminal_width(default=80):
+    """Get terminal width with fallback to default."""
+    try:
+        # Try to get actual terminal size
+        size = shutil.get_terminal_size((default, 24))
+        # Return a slightly smaller width to account for edge cases
+        return max(40, min(size.columns - 2, default))
+    except (OSError, ValueError):
+        return default
+
+
+def print_separator(char="─", color_start="", color_end=""):
+    """Print a separator line that fits the terminal width."""
+    width = get_terminal_width()
+    if color_start and color_end:
+        print(f"{color_start}{char * width}{color_end}")
+    else:
+        print(char * width)
 
 
 def get_output_path(
@@ -108,15 +135,25 @@ def create_output_directory(path: str) -> bool:
 
 # ANSI color codes for terminal output
 class Colors:
-    BLUE = "\033[94m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    CYAN = "\033[96m"
-    MAGENTA = "\033[95m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RESET = "\033[0m"
+    """ANSI color codes for terminal output formatting."""
+
+    # Check if output is to a terminal (not redirected), Docker pseudo-TTY, or if colors are forced
+    # Docker allocates a pseudo-TTY when -t flag is used, which makes isatty() return True
+    # We also respect FORCE_COLOR env var which is set in docker-compose.yml
+    _force_color = os.environ.get("FORCE_COLOR", "").lower() in ("1", "true", "yes")
+    _is_tty = hasattr(os.sys.stdout, "isatty") and os.sys.stdout.isatty()
+    _is_terminal = _is_tty or _force_color
+
+    # Define colors only if outputting to terminal or colors are forced
+    BLUE = "\033[94m" if _is_terminal else ""
+    GREEN = "\033[92m" if _is_terminal else ""
+    YELLOW = "\033[93m" if _is_terminal else ""
+    RED = "\033[91m" if _is_terminal else ""
+    CYAN = "\033[96m" if _is_terminal else ""
+    MAGENTA = "\033[95m" if _is_terminal else ""
+    BOLD = "\033[1m" if _is_terminal else ""
+    DIM = "\033[2m" if _is_terminal else ""
+    RESET = "\033[0m" if _is_terminal else ""
 
 
 def print_banner():
@@ -154,7 +191,7 @@ def print_banner():
 
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
-    """Print formatted section with optional emoji"""
+    """Print formatted section with optional emoji."""
     print("\n%s" % ("─" * 60))
     print("%s %s%s%s%s" % (emoji, color, Colors.BOLD, title, Colors.RESET))
     print("%s" % ("─" * 60))
@@ -162,7 +199,7 @@ def print_section(title, content, color=Colors.BLUE, emoji=""):
 
 
 def print_status(message, status="INFO"):
-    """Print status message with color coding and emojis"""
+    """Print status message with color coding and emojis."""
     status_config = {
         "INFO": (Colors.BLUE, "ℹ️"),
         "SUCCESS": (Colors.GREEN, "✅"),
@@ -222,9 +259,7 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
 
                     # Extract any confidence or completion percentage mentioned
                     confidence_match = re.search(r"(\d+)%", content)
-                    confidence = (
-                        int(confidence_match.group(1)) if confidence_match else 100
-                    )
+                    confidence = int(confidence_match.group(1)) if confidence_match else 100
 
                     return (
                         True,

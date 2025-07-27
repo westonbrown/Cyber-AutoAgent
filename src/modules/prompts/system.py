@@ -1,37 +1,51 @@
 #!/usr/bin/env python3
 
 from typing import Dict, Optional
+import os
+import logging
 
 # Import the new configuration system
-from .config import get_config_manager
+from modules.config.manager import get_config_manager
+
+logger = logging.getLogger(__name__)
+
+# Check if we should use prompt manager
+USE_PROMPT_MANAGER = os.getenv("ENABLE_LANGFUSE_PROMPTS", "true").lower() == "true"
 
 
-def _get_swarm_model_guidance(server: str) -> str:
-    """Generate swarm model configuration guidance based on server type."""
+def _get_swarm_model_guidance(provider: str) -> str:
+    """Generate swarm model configuration guidance based on provider type."""
     # Use the new configuration system
     config_manager = get_config_manager()
-    server_config = config_manager.get_server_config(server)
-    swarm_config = server_config.swarm
+    provider_config = config_manager.get_server_config(provider)
+    swarm_config = provider_config.swarm
 
-    if server == "local":
-        ollama_host = config_manager.get_ollama_host()
-        return f"""## SWARM MODEL CONFIGURATION (LOCAL MODE)
-When using swarm, always set:
-- model_provider: "ollama"
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"host\": \"{ollama_host}\", \"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}
+    if provider == "ollama":
+        return f"""## SWARM MODEL CONFIGURATION (OLLAMA PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "ollama" 
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
 """
-    else:
+    elif provider == "bedrock":
         # Use dedicated swarm LLM configuration
-        return f"""## SWARM MODEL CONFIGURATION (REMOTE MODE)
-When using swarm, always set:
-- model_provider: "bedrock"
-- model_settings: {{\"model_id\": \"{swarm_config.llm.model_id}\", \"params\": {{\"temperature\": {swarm_config.llm.temperature}, \"max_tokens\": {swarm_config.llm.max_tokens}}}}}
+        return f"""## SWARM MODEL CONFIGURATION (BEDROCK PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "bedrock" 
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
+You can also use different models for different agents:
+- model_provider: "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0" for simple tasks
+- model_provider: "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0" for complex analysis 
+"""
+    else:  # litellm
+        # LiteLLM provider configuration
+        return f"""## SWARM MODEL CONFIGURATION (LITELLM PROVIDER)
+When configuring swarm agents, you can optionally set:
+- model_provider: "litellm" 
+- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}}
 """
 
 
-def _get_output_directory_guidance(
-    output_config: Optional[Dict], operation_id: str
-) -> str:
+def _get_output_directory_guidance(output_config: Optional[Dict], operation_id: str) -> str:
     """Generate output directory guidance based on configuration."""
     if not output_config:
         return ""
@@ -65,11 +79,9 @@ def _get_memory_context_guidance(
     """Generate memory-aware context and guidance."""
     # Check if we have any previous memories
     has_previous_memories = (
-        has_existing_memories 
-        or has_memory_path 
-        or (memory_overview and memory_overview.get("has_memories"))
+        has_existing_memories or has_memory_path or (memory_overview and memory_overview.get("has_memories"))
     )
-    
+
     if not has_previous_memories:
         return """## MEMORY CONTEXT
     Starting fresh assessment with no previous context.
@@ -83,7 +95,7 @@ def _get_memory_context_guidance(
         total_memories = 0
         if memory_overview and memory_overview.get("has_memories"):
             total_memories = memory_overview.get("total_count", 0)
-            
+
         return f"""## MEMORY CONTEXT
     Continuing assessment with {total_memories} existing memories.
     
@@ -101,27 +113,83 @@ def get_system_prompt(
     max_steps: int,
     operation_id: str,
     tools_context: str = "",
-    server: str = "remote",  # Add server parameter
+    provider: str = "bedrock",  # Provider type parameter
     has_memory_path: bool = False,
     has_existing_memories: bool = False,  # Add existing memories detection
     output_config: Optional[Dict] = None,  # Add output configuration
     memory_overview: Optional[Dict] = None,  # Add memory overview data
+    is_initial: bool = False,  # Whether this is the initial prompt
+    current_step: int = 1,  # Current step number
+    remaining_steps: int = 100,  # Remaining steps
 ) -> str:
     """Generate enhanced system prompt using metacognitive architecture."""
 
-    swarm_guidance = _get_swarm_model_guidance(server)
-    full_tools_context = (
-        f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
+    # Use prompt manager if enabled
+    if USE_PROMPT_MANAGER:
+        try:
+            from .manager import get_prompt_manager
+
+            pm = get_prompt_manager()
+
+            # Prepare variables for Langfuse prompt
+            variables = {
+                "target": target,
+                "objective": objective,
+                "max_steps": max_steps,
+                "operation_id": operation_id,
+                "tools_context": tools_context,
+                "provider": provider,
+                "has_memory_path": has_memory_path,
+                "has_existing_memories": has_existing_memories,
+                "output_config": output_config,
+                "memory_overview": memory_overview,
+                "is_initial": is_initial,
+                "current_step": current_step,
+                "remaining_steps": remaining_steps,
+            }
+
+            logger.info("Fetching system prompt from Langfuse")
+            return pm.get_prompt("cyber-agent-main", variables)
+        except Exception as e:
+            logger.warning("Failed to use prompt manager: %s. Falling back to local prompt.", e)
+
+    # Continue with local prompt generation
+    return _get_local_system_prompt(
+        target=target,
+        objective=objective,
+        max_steps=max_steps,
+        operation_id=operation_id,
+        tools_context=tools_context,
+        provider=provider,
+        has_memory_path=has_memory_path,
+        has_existing_memories=has_existing_memories,
+        output_config=output_config,
+        memory_overview=memory_overview,
     )
+
+
+def _get_local_system_prompt(
+    target: str,
+    objective: str,
+    max_steps: int,
+    operation_id: str,
+    tools_context: str = "",
+    provider: str = "bedrock",
+    has_memory_path: bool = False,
+    has_existing_memories: bool = False,
+    output_config: Optional[Dict] = None,
+    memory_overview: Optional[Dict] = None,
+) -> str:
+    """Generate hardcoded system prompt (original implementation)."""
+
+    swarm_guidance = _get_swarm_model_guidance(provider)
+    full_tools_context = f"{tools_context}\n{swarm_guidance}" if tools_context else swarm_guidance
 
     # Generate output directory guidance
     output_guidance = _get_output_directory_guidance(output_config, operation_id)
 
     # Generate memory-aware context and guidance
-    memory_context = _get_memory_context_guidance(
-        has_memory_path, has_existing_memories, memory_overview
-    )
-
+    memory_context = _get_memory_context_guidance(has_memory_path, has_existing_memories, memory_overview)
 
     return f"""<role>
 You are an advanced autonomous penetration testing system implementing metacognitive reasoning with continuous self-assessment and adaptation. You systematically identify and exploit vulnerabilities through intelligent tool selection, parallel execution, and dynamic strategy adjustment.
@@ -178,9 +246,7 @@ mem0_memory(
 ```
 
 **SWARM DEPLOYMENT**:
-Model configuration provided below in operational protocols
-MANDATORY: Each agent MUST call mem0_memory first to retrieve past findings
-Always include: tools=["shell", "editor", "load_tool", "http_request", "mem0_memory"]
+Deploy specialized agents for complex tasks requiring parallel expertise
 Use when: uncertainty exists, complex target, multiple valid approaches
 
 **PARALLEL SHELL EXECUTION**:
@@ -273,47 +339,74 @@ Remember: Debug before recreating, pip install without sudo, use existing tools 
 **[Protocol: Swarm Deployment - Cognitive Parallelization]**
 **Purpose:** Deploy multiple agents when cognitive complexity exceeds single-agent capacity.
 
-**MANDATORY: All swarm agents inherit mem0_memory access and MUST use it to prevent repetition.**
+**SWARM STRATEGY:**
+- Deploy when task has multiple attack vectors
+- Each agent focuses on their specialty
+- Agents work in parallel and share findings
 
-**Metacognitive Triggers for Swarm Use:**
+**When to Use Swarm (Metacognitive Triggers):**
 - Confidence in any single approach <70%
-- Multiple equally-valid attack vectors identified
-- Target complexity requires diverse perspectives
-- Time constraints demand parallel exploration
-- Need different "mental models" analyzing same data
-
-**Configuration:** <50% confidence: 4-5 agents competitive | 50-70%: 3-4 hybrid | Complex: 3-5 collaborative
+- Multiple attack vectors need parallel exploration
+- Target has >3 services or complex architecture
+- Time pressure requires concurrent operations
+- Previous single-agent attempts failed
 
 {swarm_guidance}
 
+**Dynamic Parameter Decision Framework:**
+Analyze task complexity FIRST, then select parameters:
 
-**Task Format (KEEP CONCISE - Max 120 words):**
+```python
+# ANALYZE TASK → DECIDE PARAMETERS
+agents: 2-5 based on attack vectors (warn if >10)
+max_handoffs: 10 (simple) | 20 (default) | 30 (complex collaboration)
+max_iterations: 15 (simple) | 20 (default) | 35 (complex multi-phase)
+execution_timeout: 600.0 (10min simple) | 900.0 (15min default) | 1800.0 (30min complex)
+node_timeout: 180.0 (3min fast) | 300.0 (5min default) | 600.0 (10min thorough)
+repetitive_handoff_detection_window: 8 (default) | 4 (strict) | 12 (flexible)
+repetitive_handoff_min_unique_agents: 3 (default) | 2 (small team) | 4 (large team)
 ```
-FIRST ACTION: mem0_memory(action="list", user_id="cyber_agent") to retrieve all past findings
-CONTEXT: [What has been done: tools used, vulns found, access gained]
-OBJECTIVE: [ONE specific goal, not general exploration]
-AVOID: [List what NOT to repeat based on memory retrieval]
-FOCUS: [Specific area/technique to explore]
-SUCCESS: [Clear, measurable outcome]
+
+**CRITICAL:** Provide clear context in the task. Each agent focuses on their specialization.
+
+**SWARM AGENT DESIGN:**
+- Each agent should have a clear specialization
+- Include tools they need in their specification
+- Agents coordinate through handoff_to_agent
+- CRITICAL: Each agent MUST be a dictionary {{"name": "...", "system_prompt": "...", "tools": [...]}}
+- NEVER pass strings or other types in the agents list
+
+**Task Format (Max 100 words):**
+```
+STATE: [Current access/findings]
+GOAL: [ONE specific objective]
+AVOID: [What not to repeat]
+FOCUS: [Specific technique]
+STRATEGY: [How agents should collaborate]
 ```
 
-**CRITICAL: Each swarm agent MUST:**
-1. First retrieve memories with mem0_memory to understand completed work
-2. Analyze retrieved findings before taking any actions
-3. Avoid repeating any attacks/scans found in memory
-4. Store new findings with category="finding"
-
-**Why Memory Retrieval First:** Without checking past findings, swarm agents waste resources repeating identical attacks, creating noise, and potentially alerting defenses. Memory provides context for intelligent, non-redundant exploration.
-
-**Usage Example:** 
-
+**Decision Example:**
+Task: "Complex web app with API, uploads, auth"
+Analysis: 3 attack vectors, medium confidence (60%), time-sensitive
+Decision: Use different models for cost/performance optimization
+# api_specialist: Sonnet for complex API analysis 
+# upload_expert: Haiku for standard file upload tests
+# session_analyst: Default model (inherits parent) 
+IMPORTANT: Each agent's model calls are tracked in Langfuse as separate spans with their model ID 
+```python
 swarm(
-    task=f"FIRST ACTION: mem0_memory(action='list', user_id='cyber_agent'). CONTEXT: Found SQLi on /login, extracted DB creds. OBJECTIVE: Exploit file upload on /admin. AVOID: Re-testing SQLi, re-scanning ports, any attacks in retrieved memory. FOCUS: Bypass upload filters, achieve RCE. SUCCESS: Shell access via uploaded file.",
-    swarm_size=3,
-    coordination_pattern="collaborative",
-    model_provider="[USE CONFIG ABOVE]",
-    model_settings=[USE CONFIG ABOVE],
-    tools=["shell", "editor", "load_tool", "http_request", "mem0_memory"]  # REQUIRED TOOLS
+    task="STATE: Found login page, API endpoints mapped. GOAL: Exploit any vector for initial access. AVOID: Basic SQLi already tested. FOCUS: API auth bypass, file upload RCE, session flaws. STRATEGY: Parallel testing of all vectors, share exploitable findings immediately.",
+    agents=[
+        {{"name": "api_specialist", "system_prompt": "You are an API security expert. Test auth bypasses, JWT flaws, IDOR, rate limits. Focus on API-specific vulnerabilities. Use your tools to test and share findings via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"], "model_provider": "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"}},
+        {{"name": "upload_expert", "system_prompt": "You are a file upload exploitation specialist. Test for unrestricted upload, filter bypasses, path traversal. Create custom payloads and test them. Share successful techniques via handoff_to_agent.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"], "model_provider": "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0"}},
+        {{"name": "session_analyst", "system_prompt": "You are a session security analyst. Test session fixation, prediction, hijacking, and cookie vulnerabilities. Document findings and coordinate with team.", "tools": ["shell", "editor", "load_tool", "http_request", "mem0_memory"]}}
+    ],
+    max_handoffs=25,  # 3 agents × 8 rounds of collaboration  
+    max_iterations=30,  # Complex multi-vector testing
+    execution_timeout=900.0,  # 15 min (default)
+    node_timeout=180.0,  # 3 min per agent (fast)
+    repetitive_handoff_detection_window=8,  # Standard detection
+    repetitive_handoff_min_unique_agents=3   # All 3 agents must participate
 )
 ```
 
@@ -350,11 +443,18 @@ def get_initial_prompt(
     _assessment_plan: Optional[Dict] = None,
 ) -> str:
     """Generate the initial assessment prompt."""
-    return f"""Initializing penetration testing operation.
-Target: {target}
-Objective: {objective}
-Approach: Dynamic execution based on continuous assessment and adaptation.
-Beginning with reconnaissance to build target model and identify optimal attack vectors."""
+    
+    # Delegate to get_system_prompt with is_initial flag
+    return get_system_prompt(
+        target=target,
+        objective=objective,
+        max_steps=_iterations,
+        operation_id="",  # Will be filled by the caller if needed
+        tools_context="",  # Will be filled by the caller if needed
+        is_initial=True,
+        current_step=1,
+        remaining_steps=_iterations
+    )
 
 
 def get_continuation_prompt(
@@ -364,8 +464,16 @@ def get_continuation_prompt(
     _next_task: Optional[str] = None,
 ) -> str:
     """Generate intelligent continuation prompts."""
-    urgency = "HIGH" if remaining < 10 else "MEDIUM" if remaining < 20 else "NORMAL"
-
-    return f"""Step {total - remaining + 1}/{total} | Budget: {remaining} remaining | Urgency: {urgency}
-Reassessing strategy based on current knowledge and confidence levels.
-Continuing adaptive execution toward objective completion."""
+    
+    # Delegate to get_system_prompt with continuation context
+    current_step = total - remaining + 1
+    return get_system_prompt(
+        target="",  # Will be filled by the agent's context
+        objective="",  # Will be filled by the agent's context
+        max_steps=total,
+        operation_id="",  # Will be filled by the agent's context
+        tools_context="",  # Will be filled by the agent's context
+        is_initial=False,
+        current_step=current_step,
+        remaining_steps=remaining
+    )

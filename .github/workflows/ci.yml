@@ -27,19 +27,32 @@ jobs:
     
     - name: Install dependencies
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        # Sync dependencies from lock file
         uv sync
+        # Add dev dependencies
         uv add --dev pylint pytest pytest-mock
+        # Install package in editable mode with PYTHONPATH set
+        uv pip install -e .
     
     - name: Run Pylint
       run: |
-        uv run pylint src/ --fail-under=9.5 --exit-zero
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        # Run pylint with PYTHONPATH
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5 --exit-zero
         echo "Pylint score:"
-        uv run pylint src/ --score=y | grep "Your code has been rated"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --score=y | grep "Your code has been rated"
     
     - name: Run Tests
       run: |
-        uv run pytest tests/ -v
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v
     
     - name: Check Pylint minimum score
       run: |
-        uv run pylint src/ --fail-under=9.5
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5

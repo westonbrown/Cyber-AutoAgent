@@ -169,7 +169,7 @@ docker logs cyber-autoagent 2>&1 | grep -i evaluation
 
 ## Advanced
 
-- **Custom metrics**: Extend `CyberAgentEvaluator` in `src/modules/evaluation.py`
+- **Custom metrics**: Extend `CyberAgentEvaluator` in `src/modules/evaluation/evaluation.py`
 - **Performance**: Scale with `langfuse-worker` replicas
 - **Export data**: Coming in next release
 

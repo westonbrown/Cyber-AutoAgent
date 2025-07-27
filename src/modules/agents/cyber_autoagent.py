@@ -10,27 +10,27 @@ from typing import Optional, List, Tuple, Any
 from strands import Agent
 from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
+from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, editor, load_tool, stop, http_request
-from strands_tools.swarm import swarm
+from strands_tools import shell, editor, load_tool, stop, http_request, swarm
 
-from .system_prompts import get_system_prompt
-from .config import get_config_manager
-from .agent_handlers import ReasoningHandler
-from .utils import Colors, sanitize_target_name
-from .memory_tools import mem0_memory, initialize_memory_system, get_memory_client
+from modules.prompts.system import get_system_prompt
+from modules.config.manager import get_config_manager
+from modules.handlers import ReasoningHandler
+from modules.handlers.utils import Colors, sanitize_target_name
+from modules.tools.memory import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
 
 
-def check_existing_memories(target: str, _server: str = "remote") -> bool:
+def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
     """Check if existing memories exist for a target.
 
     Args:
         target: Target system being assessed
-        server: Server type for configuration
+        provider: Provider type for configuration
 
     Returns:
         True if existing memories are detected, False otherwise
@@ -77,7 +77,7 @@ def check_existing_memories(target: str, _server: str = "remote") -> bool:
 def _create_remote_model(
     model_id: str,
     region_name: str,
-    server: str = "remote",
+    provider: str = "bedrock",
 ) -> BedrockModel:
     """Create AWS Bedrock model instance using centralized configuration."""
 
@@ -95,7 +95,7 @@ def _create_remote_model(
             additional_request_fields=config["additional_request_fields"],
         )
     # Standard model configuration
-    config = config_manager.get_standard_model_config(model_id, region_name, server)
+    config = config_manager.get_standard_model_config(model_id, region_name, provider)
     return BedrockModel(
         model_id=config["model_id"],
         region_name=config["region_name"],
@@ -107,13 +107,13 @@ def _create_remote_model(
 
 def _create_local_model(
     model_id: str,
-    server: str = "local",
+    provider: str = "ollama",
 ) -> Any:
     """Create Ollama model instance using centralized configuration."""
 
     # Get centralized configuration
     config_manager = get_config_manager()
-    config = config_manager.get_local_model_config(model_id, server)
+    config = config_manager.get_local_model_config(model_id, provider)
 
     return OllamaModel(
         host=config["host"],
@@ -123,19 +123,63 @@ def _create_local_model(
     )
 
 
-def _handle_model_creation_error(server: str, error: Exception) -> None:
-    """Provide helpful error messages based on server type"""
-    if server == "local":
-        print(f"{Colors.RED}[!] Local model creation failed: {error}{Colors.RESET}")
+def _create_litellm_model(
+    model_id: str,
+    region_name: str,
+    provider: str = "litellm",
+) -> LiteLLMModel:
+    """Create LiteLLM model instance for universal provider access."""
+
+    # Get centralized configuration
+    config_manager = get_config_manager()
+
+    # Get standard configuration (LiteLLM doesn't have special thinking mode handling)
+    config = config_manager.get_standard_model_config(model_id, region_name, provider)
+
+    # Prepare client args based on model prefix
+    client_args = {}
+
+    # Configure AWS Bedrock models via LiteLLM
+    if model_id.startswith("bedrock/"):
+        client_args["aws_region_name"] = region_name
+
+    return LiteLLMModel(
+        client_args=client_args,
+        model_id=config["model_id"],
+        params={
+            "temperature": config["temperature"],
+            "max_tokens": config["max_tokens"],
+            "top_p": config.get("top_p", 0.95),
+        },
+    )
+
+
+def _handle_model_creation_error(provider: str, error: Exception) -> None:
+    """Provide helpful error messages based on provider type"""
+    error_messages = {
+        "ollama": [
+            "Ensure Ollama is installed: https://ollama.ai",
+            "Start Ollama: ollama serve",
+            "Pull required models (see config.py file)",
+        ],
+        "bedrock": [
+            "Check AWS credentials and region settings",
+            "Verify AWS_ACCESS_KEY_ID or AWS_BEARER_TOKEN_BEDROCK",
+            "Ensure Bedrock access is enabled in your AWS account",
+        ],
+        "litellm": [
+            "Check environment variables for your model provider",
+            "For Bedrock: AWS_ACCESS_KEY_ID (bearer tokens not supported)",
+            "For OpenAI: OPENAI_API_KEY",
+            "For Anthropic: ANTHROPIC_API_KEY",
+        ],
+    }
+
+    print(f"{Colors.RED}[!] {provider.title()} model creation failed: {error}{Colors.RESET}")
+    if provider in error_messages:
         print(f"{Colors.YELLOW}[?] Troubleshooting steps:{Colors.RESET}")
-        print("    1. Ensure Ollama is installed: https://ollama.ai")
-        print("    2. Start Ollama: ollama serve")
-        print("    3. Pull required models (see config.py file)")
-    else:
-        print(f"{Colors.RED}[!] Remote model creation failed: {error}{Colors.RESET}")
-        print(
-            f"{Colors.YELLOW}[?] Check AWS credentials and region settings{Colors.RESET}"
-        )
+        for i, step in enumerate(error_messages[provider], 1):
+            print(f"    {i}. {step}")
 
 
 def create_agent(
@@ -146,23 +190,24 @@ def create_agent(
     op_id: Optional[str] = None,
     model_id: Optional[str] = None,
     region_name: Optional[str] = None,
-    server: str = "remote",
+    provider: str = "bedrock",
     memory_path: Optional[str] = None,
+    memory_mode: str = "auto",
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
     agent_logger = logging.getLogger("CyberAutoAgent")
     agent_logger.debug(
-        "Creating agent for target: %s, objective: %s, server: %s",
+        "Creating agent for target: %s, objective: %s, provider: %s",
         target,
         objective,
-        server,
+        provider,
     )
 
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
-    config_manager.validate_requirements(server)
-    server_config = config_manager.get_server_config(server)
+    config_manager.validate_requirements(provider)
+    server_config = config_manager.get_server_config(provider)
 
     # Get centralized region configuration
     if region_name is None:
@@ -179,7 +224,7 @@ def create_agent(
         operation_id = op_id
 
     # Configure memory system using centralized configuration
-    memory_config = config_manager.get_mem0_service_config(server)
+    memory_config = config_manager.get_mem0_service_config(provider)
 
     # Configure vector store with memory path if provided
     if memory_path:
@@ -191,23 +236,20 @@ def create_agent(
 
         # Override vector store path in centralized config
         memory_config["vector_store"] = {"config": {"path": memory_path}}
-        print(
-            f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}"
-        )
+        print(f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}")
 
-    # Check for existing memories BEFORE initializing memory system
-    # to avoid race condition with directory creation
-    has_existing_memories = check_existing_memories(target, server)
+    # Check for existing memories before initializing to avoid race conditions
+    # Skip check if user explicitly wants fresh memory
+    if memory_mode == "fresh":
+        has_existing_memories = False
+        print(f"{Colors.YELLOW}[*] Using fresh memory mode - ignoring any existing memories{Colors.RESET}")
+    else:
+        has_existing_memories = check_existing_memories(target, provider)
 
-    # Initialize the memory system with configuration
-    # Extract and sanitize target name for unified output structure
+    # Initialize memory system
     target_name = sanitize_target_name(target)
-    initialize_memory_system(
-        memory_config, operation_id, target_name, has_existing_memories
-    )
-    print(
-        f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}"
-    )
+    initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
+    print(f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}")
     memory_overview = None
 
     # Get memory overview for system prompt enhancement
@@ -215,9 +257,7 @@ def create_agent(
         try:
             memory_client = get_memory_client()
             if memory_client:
-                memory_overview = memory_client.get_memory_overview(
-                    user_id="cyber_agent"
-                )
+                memory_overview = memory_client.get_memory_overview(user_id="cyber_agent")
         except Exception as e:
             agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
@@ -238,7 +278,7 @@ Leverage these tools directly via shell.
         max_steps,
         operation_id,
         tools_context,
-        server,
+        provider,
         has_memory_path=bool(memory_path),
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
@@ -253,28 +293,31 @@ Leverage these tools directly via shell.
         memory_config=memory_config,
     )
 
-    # Create model based on server type
+    # Create model based on provider type
     try:
-        if server == "local":
+        if provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
-            model = _create_local_model(model_id, server)
-            print(
-                f"{Colors.GREEN}[+] Local model initialized: {model_id}{Colors.RESET}"
-            )
-        else:
+            model = _create_local_model(model_id, provider)
+            print(f"{Colors.GREEN}[+] Ollama model initialized: {model_id}{Colors.RESET}")
+        elif provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(model_id, region_name, server)
-            print(
-                f"{Colors.GREEN}[+] Remote agent model initialized: {model_id}{Colors.RESET}"
-            )
+            model = _create_remote_model(model_id, region_name, provider)
+            print(f"{Colors.GREEN}[+] Bedrock model initialized: {model_id}{Colors.RESET}")
+        elif provider == "litellm":
+            agent_logger.debug("Configuring LiteLLMModel")
+            model = _create_litellm_model(model_id, region_name, provider)
+            print(f"{Colors.GREEN}[+] LiteLLM model initialized: {model_id}{Colors.RESET}")
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
 
     except Exception as e:
-        _handle_model_creation_error(server, e)
+        _handle_model_creation_error(provider, e)
         raise
 
     agent_logger.debug("Creating autonomous agent")
     agent = Agent(
         model=model,
+        name=f"Cyber-AutoAgent {op_id}",
         tools=[
             swarm,
             shell,
@@ -288,9 +331,22 @@ Leverage these tools directly via shell.
         callback_handler=callback_handler,
         conversation_manager=SlidingWindowConversationManager(window_size=120),
         load_tools_from_directory=True,
-        max_parallel_tools=8,
         trace_attributes={
-            # Session and user identification
+            # Core identification - session_id is the key for Langfuse trace naming
+            "langfuse.session.id": operation_id,
+            "langfuse.user.id": f"cyber-agent-{target}",
+            # Human-readable name that Langfuse will pick up
+            "name": f"Security Assessment - {target} - {operation_id}",
+            # Tags for filtering and categorization
+            "langfuse.tags": [
+                "Cyber-AutoAgent",
+                provider.upper(),
+                operation_id,
+            ],
+            "langfuse.environment": os.getenv("DEPLOYMENT_ENV", "production"),
+            "langfuse.agent.type": "main_orchestrator",
+            "langfuse.capabilities.swarm": True,
+            # Standard OTEL attributes
             "session.id": operation_id,
             "user.id": f"cyber-agent-{target}",
             # Agent identification
@@ -303,14 +359,13 @@ Leverage these tools directly via shell.
             "operation.type": "security_assessment",
             "operation.start_time": datetime.now().isoformat(),
             "operation.max_steps": max_steps,
-            # Target information
+            # Target and objective
             "target.host": target,
-            # Objective and scope
             "objective.description": objective,
             # Model configuration
-            "model.provider": server,
+            "model.provider": provider,
             "model.id": model_id,
-            "model.region": region_name if server == "remote" else "local",
+            "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
             "gen_ai.request.model": model_id,
             # Tool configuration
             "tools.available": 7,  # Number of core tools
@@ -327,12 +382,6 @@ Leverage these tools directly via shell.
             # Memory configuration
             "memory.enabled": True,
             "memory.path": memory_path if memory_path else "ephemeral",
-            # Tags for filtering
-            "langfuse.tags": [
-                "Cyber-AutoAgent",
-                server.upper(),
-                operation_id,
-            ],
         },
     )
 

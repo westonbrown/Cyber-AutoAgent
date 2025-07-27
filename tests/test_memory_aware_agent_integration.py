@@ -6,19 +6,20 @@ import sys
 from unittest.mock import Mock, patch
 
 # Add src to path for imports
+
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.agent import create_agent
-
+from modules.agents.cyber_autoagent import create_agent
 
 class TestMemoryAwareAgentIntegration:
     """Test memory-aware system prompt integration with agent creation"""
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_overview(
         self,
         mock_config_manager,
@@ -67,16 +68,14 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
-        mock_check_memories.assert_called_once_with("test.com", "remote")
+        mock_check_memories.assert_called_once_with("test.com", "bedrock")
         mock_get_client.assert_called_once()
-        mock_memory_client.get_memory_overview.assert_called_once_with(
-            user_id="cyber_agent"
-        )
+        mock_memory_client.get_memory_overview.assert_called_once_with(user_id="cyber_agent")
 
         # Verify agent was created with memory-aware system prompt
         assert agent is not None
@@ -89,11 +88,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Load all memories with mem0_memory" in system_prompt
         assert "**CRITICAL FIRST ACTION**" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_fresh_start(
         self,
         mock_config_manager,
@@ -132,12 +131,12 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
-        mock_check_memories.assert_called_once_with("test.com", "remote")
+        mock_check_memories.assert_called_once_with("test.com", "bedrock")
 
         # Verify agent was created with fresh start system prompt
         assert agent is not None
@@ -150,11 +149,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Begin with reconnaissance" in system_prompt
         assert "Store all findings immediately" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_path(
         self,
         mock_config_manager,
@@ -207,7 +206,7 @@ class TestMemoryAwareAgentIntegration:
                 objective="test objective",
                 max_steps=50,
                 op_id="OP_20240101_120000",
-                server="remote",
+                provider="bedrock",
                 memory_path="/test/memory/path",
             )
 
@@ -224,11 +223,11 @@ class TestMemoryAwareAgentIntegration:
         assert "Continuing assessment with 2 existing memories" in system_prompt
         assert "Load all memories with mem0_memory" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_remote_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_memory_overview_error_handling(
         self,
         mock_config_manager,
@@ -256,9 +255,7 @@ class TestMemoryAwareAgentIntegration:
         # Mock memory system with error
         mock_check_memories.return_value = True
         mock_memory_client = Mock()
-        mock_memory_client.get_memory_overview.side_effect = Exception(
-            "Memory overview error"
-        )
+        mock_memory_client.get_memory_overview.side_effect = Exception("Memory overview error")
         mock_get_client.return_value = mock_memory_client
 
         # Mock model creation
@@ -271,7 +268,7 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="remote",
+            provider="bedrock",
         )
 
         # Verify agent was still created successfully
@@ -283,11 +280,11 @@ class TestMemoryAwareAgentIntegration:
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Continuing assessment with 0 existing memories" in system_prompt
 
-    @patch("modules.agent.initialize_memory_system")
-    @patch("modules.agent.get_memory_client")
-    @patch("modules.agent.check_existing_memories")
-    @patch("modules.agent._create_local_model")
-    @patch("modules.agent.get_config_manager")
+    @patch("modules.agents.cyber_autoagent.initialize_memory_system")
+    @patch("modules.agents.cyber_autoagent.get_memory_client")
+    @patch("modules.agents.cyber_autoagent.check_existing_memories")
+    @patch("modules.agents.cyber_autoagent._create_local_model")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_local_server_with_memory(
         self,
         mock_config_manager,
@@ -335,7 +332,7 @@ class TestMemoryAwareAgentIntegration:
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
-            server="local",
+            provider="ollama",
         )
 
         # Verify agent was created successfully
@@ -348,7 +345,6 @@ class TestMemoryAwareAgentIntegration:
         assert "Continuing assessment with 1 existing memories" in system_prompt
         assert "Load all memories with mem0_memory" in system_prompt
         assert 'model_provider: "ollama"' in system_prompt
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

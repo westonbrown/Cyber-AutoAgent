@@ -87,7 +87,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from strands import tool
-from .config import get_config_manager
+from modules.config.manager import get_config_manager
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -165,7 +165,7 @@ class Mem0ServiceClient:
     """Client for interacting with Mem0 service."""
 
     @staticmethod
-    def get_default_config(server: str = "remote") -> Dict:
+    def get_default_config(server: str = "bedrock") -> Dict:
         """Get default configuration from ConfigManager."""
         config_manager = get_config_manager()
         mem0_config = config_manager.get_mem0_service_config(server)
@@ -216,9 +216,9 @@ class Mem0ServiceClient:
             logger.debug("Using Mem0 Platform backend (MemoryClient)")
             return MemoryClient()
 
-        # Determine server type based on environment
-        # Use remote if OpenSearch is available, otherwise local
-        server_type = "remote" if os.environ.get("OPENSEARCH_HOST") else "local"
+        # Determine provider type based on environment
+        # Use bedrock if OpenSearch is available, otherwise ollama
+        server_type = "bedrock" if os.environ.get("OPENSEARCH_HOST") else "ollama"
 
         if os.environ.get("OPENSEARCH_HOST"):
             merged_config = self._merge_config(config, server_type)
@@ -246,7 +246,7 @@ class Mem0ServiceClient:
         )
 
     def _initialize_opensearch_client(
-        self, config: Optional[Dict] = None, server: str = "remote"
+        self, config: Optional[Dict] = None, server: str = "bedrock"
     ) -> Mem0Memory:
         """Initialize a Mem0 client with OpenSearch backend.
 
@@ -287,7 +287,7 @@ class Mem0ServiceClient:
     def _initialize_faiss_client(
         self,
         config: Optional[Dict] = None,
-        server: str = "local",
+        server: str = "ollama",
         has_existing_memories: bool = False,
     ) -> Mem0Memory:
         """Initialize a Mem0 client with FAISS backend.
@@ -357,24 +357,25 @@ class Mem0ServiceClient:
             print(f"    LLM: AWS Bedrock - {llm_model}")
 
         # Display appropriate message based on whether store existed before initialization
-        if store_existed_before:
+        # Use has_existing_memories parameter which includes proper file size validation
+        if has_existing_memories or store_existed_before:
             print(f"    Loading existing FAISS store from: {faiss_path}")
             print("    Memory will persist across operations for this target")
         else:
             # For fresh starts, just show the persistence message
             print("    Memory will persist across operations for this target")
 
-        logger.debug(f"Initializing Mem0Memory with config: {merged_config}")
+        logger.debug("Initializing Mem0Memory with config: %s", merged_config)
         try:
             mem0_client = Mem0Memory.from_config(config_dict=merged_config)
             logger.debug("Mem0Memory client initialized successfully")
             return mem0_client
         except Exception as e:
-            logger.error(f"Failed to initialize Mem0Memory client: {e}")
+            logger.error("Failed to initialize Mem0Memory client: %s", e)
             raise
 
     def _merge_config(
-        self, config: Optional[Dict] = None, server: str = "remote"
+        self, config: Optional[Dict] = None, server: str = "bedrock"
     ) -> Dict:
         """Merge user-provided configuration with default configuration.
 
@@ -444,16 +445,17 @@ class Mem0ServiceClient:
 
         logger = logging.getLogger("CyberAutoAgent")
         logger.debug(
-            f"Calling mem0.get_all with user_id={user_id}, agent_id={agent_id}"
+            "Calling mem0.get_all with user_id=%s, agent_id=%s",
+            user_id, agent_id
         )
 
         try:
             result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
-            logger.debug(f"mem0.get_all returned type: {type(result)}")
-            logger.debug(f"mem0.get_all returned: {result}")
+            logger.debug("mem0.get_all returned type: %s", type(result))
+            logger.debug("mem0.get_all returned: %s", result)
             return result
         except Exception as e:
-            logger.error(f"Error in mem0.get_all: {e}")
+            logger.error("Error in mem0.get_all: %s", e)
             raise
 
     def search_memories(
@@ -496,19 +498,9 @@ class Mem0ServiceClient:
             if os.environ.get("OPENSEARCH_HOST"):
                 return True
 
-            # For FAISS - check if local store exists
-            # Need to get the merged config to check the actual path
-            server_type = "local"  # FAISS is local
-            merged_config = self._merge_config(self.config, server_type)
-
-            if merged_config and "vector_store" in merged_config:
-                faiss_path = (
-                    merged_config.get("vector_store", {}).get("config", {}).get("path")
-                )
-                if faiss_path and os.path.exists(faiss_path):
-                    return True
-
-            return False
+            # For FAISS - use the has_existing_memories flag that was already validated
+            # This was set during initialization based on proper file size checks
+            return self.has_existing_memories
         except Exception as e:
             logger.debug("Error checking if should display overview: %s", str(e))
             return False
@@ -525,23 +517,24 @@ class Mem0ServiceClient:
         try:
             # Get all memories for the user
             logger = logging.getLogger("CyberAutoAgent")
-            logger.debug(f"Getting memory overview for user_id: {user_id}")
+            logger.debug("Getting memory overview for user_id: %s", user_id)
 
             memories_response = self.list_memories(user_id=user_id)
             logger.debug(
-                f"Memory overview raw response type: {type(memories_response)}"
+                "Memory overview raw response type: %s",
+                type(memories_response)
             )
-            logger.debug(f"Memory overview raw response: {memories_response}")
+            logger.debug("Memory overview raw response: %s", memories_response)
 
             # Parse response format
             if isinstance(memories_response, dict):
                 raw_memories = memories_response.get(
                     "memories", memories_response.get("results", [])
                 )
-                logger.debug(f"Dict response: found {len(raw_memories)} memories")
+                logger.debug("Dict response: found %d memories", len(raw_memories))
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
-                logger.debug(f"List response: found {len(raw_memories)} memories")
+                logger.debug("List response: found %d memories", len(raw_memories))
             else:
                 raw_memories = []
                 logger.debug("Unexpected response type, using empty list")
@@ -1031,8 +1024,8 @@ def mem0_memory(
 
             # Debug logging to understand the response structure
             logger = logging.getLogger("CyberAutoAgent")
-            logger.debug(f"Memory list raw response type: {type(memories)}")
-            logger.debug(f"Memory list raw response: {memories}")
+            logger.debug("Memory list raw response type: %s", type(memories))
+            logger.debug("Memory list raw response: %s", memories)
 
             # Normalize to list with better error handling
             if memories is None:
@@ -1040,24 +1033,25 @@ def mem0_memory(
                 logger.debug("memories is None, returning empty list")
             elif isinstance(memories, list):
                 results_list = memories
-                logger.debug(f"memories is list with {len(memories)} items")
+                logger.debug("memories is list with %d items", len(memories))
             elif isinstance(memories, dict):
                 # Check for different possible dict structures
                 if "results" in memories:
                     results_list = memories.get("results", [])
-                    logger.debug(f"Found 'results' key with {len(results_list)} items")
+                    logger.debug("Found 'results' key with %d items", len(results_list))
                 elif "memories" in memories:
                     results_list = memories.get("memories", [])
-                    logger.debug(f"Found 'memories' key with {len(results_list)} items")
+                    logger.debug("Found 'memories' key with %d items", len(results_list))
                 else:
                     # If dict doesn't have expected keys, treat as single memory
                     results_list = [memories] if memories else []
                     logger.debug(
-                        f"Dict without expected keys, treating as single memory: {len(results_list)} items"
+                        "Dict without expected keys, treating as single memory: %d items",
+                        len(results_list)
                     )
             else:
                 results_list = []
-                logger.debug(f"Unexpected response type: {type(memories)}")
+                logger.debug("Unexpected response type: %s", type(memories))
 
             if not strands_dev:
                 panel = format_list_response(results_list)
@@ -1108,7 +1102,7 @@ def mem0_memory(
 
     except Exception as e:
         error_msg = f"Error: {str(e)}"
-        if not os.environ.get("BYPASS_TOOL_CONSENT", "").lower() == "true":
+        if os.environ.get("BYPASS_TOOL_CONSENT", "").lower() != "true":
             error_panel = Panel(
                 Text(str(e), style="red"),
                 title="❌ Memory Operation Error",
