@@ -6,12 +6,10 @@ import sys
 from unittest.mock import Mock, patch
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers import ReasoningHandler
 from modules.handlers import reporting
 from modules.handlers.reporting import _get_memory_client_for_report, _retrieve_evidence
-
 
 class TestReasoningHandlerMemoryConfig:
     """Test the ReasoningHandler memory configuration handling"""
@@ -48,7 +46,6 @@ class TestReasoningHandlerMemoryConfig:
         assert handler.memory_config is None
         assert handler.operation_id == "OP_20240101_120000"
         assert handler.target == "test.com"
-
 
 class TestMemoryClientForReport:
     """Test the memory client creation for report generation"""
@@ -144,7 +141,6 @@ class TestMemoryClientForReport:
         result = _get_memory_client_for_report(handler.memory_config)
 
         assert result is None
-
 
 class TestRetrieveEvidence:
     """Test the evidence retrieval functionality"""
@@ -286,7 +282,6 @@ class TestRetrieveEvidence:
             evidence = _retrieve_evidence(handler.state, handler.memory_config)
 
             assert evidence == []
-
 
 class TestGenerateReport:
     """Test the report generation functionality"""
@@ -434,7 +429,6 @@ class TestGenerateReport:
                         assert call_args["target"] == "test.com"
                         assert call_args["objective"] == "security assessment"
                         assert call_args["evidence"] == evidence
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
