@@ -1,6 +1,6 @@
 """Prompts module for Cyber-AutoAgent."""
 
-from .system import (
+from modules.prompts.system import (
     get_system_prompt,
     get_initial_prompt,
     get_continuation_prompt,
@@ -8,7 +8,7 @@ from .system import (
     _get_output_directory_guidance,
     _get_memory_context_guidance,
 )
-from .manager import PromptManager, get_prompt_manager
+from modules.prompts.manager import PromptManager, get_prompt_manager
 
 __all__ = [
     "get_system_prompt",
