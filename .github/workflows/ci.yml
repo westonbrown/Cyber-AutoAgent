@@ -28,8 +28,12 @@ jobs:
     - name: Install dependencies
       run: |
         export PATH="$HOME/.local/bin:$PATH"
-        uv sync
+        uv pip install -e .
         uv add --dev pylint pytest pytest-mock
+        echo "PYTHONPATH: $PYTHONPATH"
+        ls -F /github/workspace/
+        echo "PYTHONPATH: $PYTHONPATH"
+        ls -F /github/workspace/
         # Ensure the package is installed in editable mode
         uv pip install -e .
     
