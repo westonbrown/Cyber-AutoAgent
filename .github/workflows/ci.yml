@@ -27,19 +27,28 @@ jobs:
     
     - name: Install dependencies
       run: |
-        uv sync --extra dev --dev
+        export PATH="$HOME/.local/bin:$PATH"
+        uv sync
+        uv add --dev pylint pytest pytest-mock
+        # Ensure package is installed in editable mode
         uv pip install -e .
     
     - name: Run Pylint
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PYTHONPATH}:${PWD}/src"
         uv run pylint src/ --fail-under=9.5 --exit-zero
         echo "Pylint score:"
         uv run pylint src/ --score=y | grep "Your code has been rated"
     
     - name: Run Tests
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PYTHONPATH}:${PWD}/src"
         uv run pytest tests/ -v
     
     - name: Check Pylint minimum score
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
+        export PYTHONPATH="${PYTHONPATH}:${PWD}/src"
         uv run pylint src/ --fail-under=9.5
