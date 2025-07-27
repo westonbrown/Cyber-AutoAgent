@@ -457,17 +457,25 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Run evaluation in background thread
             def run_evaluation():
                 try:
+                    logger.info("Starting evaluation thread for operation: %s", agent_trace_id)
                     evaluator = CyberAgentEvaluator()
                     import asyncio
 
                     # Evaluate all traces for this operation
-                    asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
+                    logger.info("Running evaluation for trace ID: %s", agent_trace_id)
+                    result = asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
+                    logger.info("Evaluation completed. Results: %s", result)
                 except Exception as e:
-                    logger.error("Error running evaluation: %s", e)
+                    logger.error("Error running evaluation: %s", e, exc_info=True)
 
             self.state.evaluation_thread = threading.Thread(target=run_evaluation)
             self.state.evaluation_thread.daemon = True
             self.state.evaluation_thread.start()
+            
+            # Wait a moment to ensure evaluation starts before main thread exits
+            import time
+            time.sleep(2)
+            logger.info("Evaluation thread started successfully")
 
         except Exception as e:
             logger.error("Error triggering evaluation: %s", e)
