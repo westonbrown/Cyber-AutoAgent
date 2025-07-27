@@ -27,8 +27,8 @@ jobs:
     
     - name: Install dependencies
       run: |
-        uv sync --dev --all-extras
-        uv add --editable .
+        uv sync --extra dev --dev
+        uv pip install -e .
     
     - name: Run Pylint
       run: |
