@@ -5,8 +5,8 @@ This package contains modular components for handling agent callbacks,
 tool execution, display formatting, and report generation.
 """
 
-from .callback import ReasoningHandler
-from .utils import (
+from modules.handlers.callback import ReasoningHandler
+from modules.handlers.utils import (
     Colors,
     get_output_path,
     sanitize_target_name,
