@@ -14,11 +14,11 @@ from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request, swarm
 
-from ..prompts.system import get_system_prompt
-from ..config.manager import get_config_manager
-from ..handlers import ReasoningHandler
-from ..handlers.utils import Colors, sanitize_target_name
-from ..tools.memory import mem0_memory, initialize_memory_system, get_memory_client
+from modules.prompts.system import get_system_prompt
+from modules.config.manager import get_config_manager
+from modules.handlers import ReasoningHandler
+from modules.handlers.utils import Colors, sanitize_target_name
+from modules.tools.memory import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 

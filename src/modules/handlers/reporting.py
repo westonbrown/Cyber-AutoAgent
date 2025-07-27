@@ -182,7 +182,7 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
     if not memory_config:
         # Fall back to global memory client
         try:
-            from ..tools.memory import get_memory_client
+            from modules.tools.memory import get_memory_client
 
             # Return the wrapper itself, not the inner mem0 client
             return get_memory_client()
@@ -191,7 +191,7 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
 
     try:
         # Try to get memory client from config
-        from ..tools.memory import Mem0ServiceClient
+        from modules.tools.memory import Mem0ServiceClient
 
         # Initialize memory client with config
         # Return the wrapper itself which has list_memories method
@@ -218,7 +218,7 @@ def _generate_llm_report(
         Generated report content or None
     """
     # Import the report generation tool
-    from ..tools.report_generator import generate_security_report
+    from modules.tools.report_generator import generate_security_report
     
     print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
     

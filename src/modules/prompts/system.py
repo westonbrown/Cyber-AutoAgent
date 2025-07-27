@@ -5,7 +5,7 @@ import os
 import logging
 
 # Import the new configuration system
-from ..config.manager import get_config_manager
+from modules.config.manager import get_config_manager
 
 logger = logging.getLogger(__name__)
 

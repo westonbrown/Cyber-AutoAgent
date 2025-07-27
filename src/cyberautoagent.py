@@ -638,7 +638,7 @@ def main():
                 callback_handler.trigger_evaluation_on_completion()
 
                 # Wait for evaluation to complete if running
-                if os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
+                if os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
                     callback_handler.wait_for_evaluation_completion(timeout=300)
 
             except Exception as eval_error:
