@@ -45,23 +45,6 @@ jobs:
         echo "Pylint score:"
         PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --score=y | grep "Your code has been rated"
     
-    - name: Debug Module Import
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        echo "=== Debug Information ==="
-        echo "PWD: $PWD"
-        echo "PYTHONPATH: $PYTHONPATH"
-        echo "Directory structure:"
-        ls -la src/modules/
-        echo "Tools directory:"
-        ls -la src/modules/tools/
-        echo "Python sys.path:"
-        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run python -c "import sys; print('\n'.join(sys.path))"
-        echo "Testing module import:"
-        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run python -c "import modules; print('modules:', modules.__file__)"
-        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run python -c "import modules.tools; print('modules.tools:', modules.tools.__file__)"
-        
     - name: Run Tests
       run: |
         export PATH="$HOME/.local/bin:$PATH"

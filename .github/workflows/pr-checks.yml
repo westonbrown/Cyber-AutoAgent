@@ -39,35 +39,17 @@ jobs:
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        output=$(.venv/bin/python -m pylint src/ --exit-zero --score=y)
+        output=$(PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --exit-zero --score=y)
         score=$(echo "$output" | grep "Your code has been rated at" | sed -E 's/.*rated at ([0-9.]+).*/\1/')
         echo "score=$score" >> $GITHUB_OUTPUT
         echo "Pylint score: $score/10"
-        .venv/bin/python -m pylint src/ --fail-under=9.5
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pylint src/ --fail-under=9.5
     
-    - name: Debug Module Import
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        echo "=== Debug Information ==="
-        echo "PWD: $PWD"
-        echo "PYTHONPATH: $PYTHONPATH"
-        echo "Directory structure:"
-        ls -la src/modules/
-        echo "Tools directory:"
-        ls -la src/modules/tools/
-        echo "Python sys.path:"
-        .venv/bin/python -c "import sys; print('\n'.join(sys.path))"
-        echo "Testing module import:"
-        .venv/bin/python -c "import modules; print('modules:', modules.__file__)"
-        .venv/bin/python -c "import modules.tools; print('modules.tools:', modules.tools.__file__)"
-        
     - name: Run Tests
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        # Try using Python directly instead of uv run
-        .venv/bin/python -m pytest tests/ -v --tb=short
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v --tb=short
     
     - name: Display Results Summary
       if: always()
