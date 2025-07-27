@@ -38,7 +38,10 @@ jobs:
     
     - name: Run Tests
       run: |
+        export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
         uv run pytest tests/ -v
+      env:
+        PYTHONPATH: ${{ github.workspace }}/src
     
     - name: Check Pylint minimum score
       run: |
