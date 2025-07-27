@@ -8,6 +8,8 @@ from unittest.mock import Mock, patch
 # Add src to path for imports
 import sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from modules.agents.cyber_autoagent import (
     create_agent,
     check_existing_memories,

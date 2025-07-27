@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 
 # Add src to path for imports
 
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from modules.handlers import ReasoningHandler
 from modules.handlers import reporting
 from modules.handlers.reporting import _get_memory_client_for_report, _retrieve_evidence
