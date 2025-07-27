@@ -8,8 +8,6 @@ from unittest.mock import Mock, patch
 # Add src to path for imports
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from modules.agents.cyber_autoagent import (
     create_agent,
     check_existing_memories,
@@ -19,7 +17,6 @@ from modules.config.manager import (
     get_default_model_configs,
     get_ollama_host,
 )
-
 
 class TestModelConfigs:
     """Test model configuration functions"""
@@ -45,7 +42,6 @@ class TestModelConfigs:
         # Should now raise an error for invalid server type
         with pytest.raises(ValueError, match="Unsupported provider type"):
             get_default_model_configs("invalid")
-
 
 class TestOllamaHostDetection:
     """Test Ollama host detection functionality"""
@@ -135,7 +131,6 @@ class TestOllamaHostDetection:
         # Should fallback to host.docker.internal
         assert host == "http://host.docker.internal:11434"
 
-
 class TestMemoryConfig:
     """Test memory configuration generation"""
 
@@ -186,7 +181,6 @@ class TestMemoryConfig:
                             assert config["embedder"]["provider"] == "aws_bedrock"
                             assert config["llm"]["provider"] == "aws_bedrock"
                             assert "aws_region" in config["embedder"]["config"]
-
 
 class TestServerValidation:
     """Test server requirements validation"""
@@ -275,7 +269,6 @@ class TestServerValidation:
 
         # Should not raise any exception
         get_config_manager().validate_requirements("bedrock")
-
 
 class TestCreateAgent:
     """Test agent creation functionality"""
@@ -379,7 +372,6 @@ class TestCreateAgent:
 
         mock_handle_error.assert_called_once()
 
-
 class TestCheckExistingMemories:
     """Test the check_existing_memories function"""
 
@@ -474,7 +466,6 @@ class TestCheckExistingMemories:
             result = check_existing_memories("test.com", "ollama")
             assert result is False
             mock_logger.debug.assert_called_once()
-
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
