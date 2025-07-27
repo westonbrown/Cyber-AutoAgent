@@ -6,6 +6,9 @@ import sys
 
 # Add src to path for imports
 
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from modules.prompts.system import get_system_prompt
 
 class TestGetSystemPrompt:

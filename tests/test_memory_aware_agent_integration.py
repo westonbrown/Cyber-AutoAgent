@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 
 # Add src to path for imports
 
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
 from modules.agents.cyber_autoagent import create_agent
 
 class TestMemoryAwareAgentIntegration:
