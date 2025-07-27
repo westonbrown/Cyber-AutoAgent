@@ -446,10 +446,10 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.state.evaluation_triggered = True
 
         # Import here to avoid circular imports
-        from ..evaluation.evaluation import CyberAgentEvaluator
+        from modules.evaluation.evaluation import CyberAgentEvaluator
 
         # Check if evaluation is enabled
-        if not os.getenv("ENABLE_AUTO_EVALUATION", "false").lower() == "true":
+        if not os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
             logger.info("Evaluation disabled - skipping")
             return
 
@@ -469,13 +469,14 @@ class ReasoningHandler(PrintingCallbackHandler):
                     logger.error("Error running evaluation: %s", e, exc_info=True)
 
             self.state.evaluation_thread = threading.Thread(target=run_evaluation)
-            self.state.evaluation_thread.daemon = True
+            # Don't use daemon thread - allow evaluation to complete
+            self.state.evaluation_thread.daemon = False
             self.state.evaluation_thread.start()
             
-            # Wait a moment to ensure evaluation starts before main thread exits
+            # Wait a moment to ensure evaluation starts
             import time
-            time.sleep(2)
-            logger.info("Evaluation thread started successfully")
+            time.sleep(1)
+            logger.info("Evaluation thread started successfully (non-daemon mode)")
 
         except Exception as e:
             logger.error("Error triggering evaluation: %s", e)

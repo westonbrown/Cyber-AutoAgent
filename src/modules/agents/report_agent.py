@@ -16,7 +16,7 @@ from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
 
-from ..prompts.report import get_report_agent_system_prompt
+from modules.prompts.report import get_report_agent_system_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -25,7 +25,7 @@ import requests
 import ollama
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
-from ..handlers.utils import get_output_path, sanitize_target_name
+from modules.handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
