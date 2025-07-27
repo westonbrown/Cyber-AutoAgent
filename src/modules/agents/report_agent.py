@@ -1,215 +1,95 @@
 #!/usr/bin/env python3
-"""Report generation agent for Cyber-AutoAgent."""
+"""
+Report Generation Utilities for Cyber-AutoAgent
+
+This module provides utility functions for report generation that work
+with the report generation tool to maintain clean architecture and
+avoid code duplication.
+"""
 
 import logging
 import re
 from typing import Dict, Any, List, Optional
 
 from strands import Agent
+from strands.models import BedrockModel
+from strands.models.ollama import OllamaModel
+from strands.models.litellm import LiteLLMModel
+
+from ..prompts.report import get_report_agent_system_prompt
 
 logger = logging.getLogger(__name__)
 
 
-class ReportAgent:
-    """Specialized agent for generating security assessment reports."""
-
-    def __init__(self, model=None, model_config=None):
-        """Initialize the report agent with the same model configuration as main agent.
-
-        Args:
-            model: The model instance to use (same as main agent)
-            model_config: Model configuration if creating new instance
+class ReportGenerator:
+    """Utility class for report generation with clean agent creation."""
+    
+    @staticmethod
+    def create_report_agent(
+        provider: str = "bedrock",
+        model_id: Optional[str] = None,
+        operation_id: Optional[str] = None,
+        target: Optional[str] = None
+    ) -> Agent:
         """
-        self.model = model
-        self.model_config = model_config
-
-        # Create agent instance for report generation
-        if model:
-            self.agent = Agent(
-                model=model, name="Cyber-ReportAgent", description="Professional security report generator"
+        Create a clean agent instance for report generation.
+        
+        This method creates a new agent with appropriate configuration
+        for report generation, ensuring proper trace hierarchy when
+        used within a tool context.
+        
+        Args:
+            provider: Model provider (bedrock, ollama, litellm)
+            model_id: Specific model to use (optional)
+            operation_id: Operation ID for trace continuity
+            target: Target system for trace metadata
+            
+        Returns:
+            Configured Agent instance for report generation
+        """
+        # Get appropriate model based on provider
+        if provider == "bedrock":
+            model = BedrockModel(
+                model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
             )
-        else:
-            # Will be initialized when needed with proper model
-            self.agent = None
-
-    def generate_report(
-        self,
-        target: str,
-        objective: str,
-        operation_id: str,
-        steps_executed: int,
-        evidence: List[Dict],
-        tools_used: List[str],
-    ) -> Optional[str]:
-        """Generate a comprehensive security assessment report.
-
-        Args:
-            target: The target system
-            objective: The operation objective
-            operation_id: Unique operation identifier
-            steps_executed: Number of steps executed
-            evidence: List of evidence from memory
-            tools_used: List of tools used during operation
-
-        Returns:
-            Generated report content or None
-        """
-        # Prepare evidence summary
-        evidence_text = self._format_evidence(evidence)
-
-        # Prepare tools summary
-        tools_text = self._format_tools(tools_used)
-
-        # Get report prompt
-        report_prompt = self._get_report_prompt(
-            target=target,
-            objective=objective,
-            operation_id=operation_id,
-            steps_executed=steps_executed,
-            tools_text=tools_text,
-            evidence_text=evidence_text,
+        elif provider == "ollama":
+            model = OllamaModel(
+                model_id=model_id or "llama3.2:3b"
+            )
+        else:  # litellm
+            model = LiteLLMModel(
+                model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+            )
+        
+        # Create agent with report-specific configuration
+        trace_attrs = {
+            # Core identification - CRITICAL for trace continuity
+            "langfuse.session.id": operation_id,
+            "langfuse.user.id": f"cyber-agent-{target}" if target else "cyber-agent",
+            # Agent identification
+            "langfuse.agent.type": "report_generator",
+            "agent.name": "Cyber-ReportGenerator",
+            "agent.role": "report_generation",
+            # Operation context
+            "operation.id": operation_id,
+            "operation.phase": "reporting",
+            "target.host": target or "unknown",
+        }
+        
+        # Only add trace attributes if operation_id is provided
+        # This ensures proper parent-child relationship
+        return Agent(
+            model=model,
+            name="Cyber-ReportGenerator",
+            system_prompt=get_report_agent_system_prompt(),
+            tools=[],  # No tools needed for report generation
+            trace_attributes=trace_attrs if operation_id else None,
         )
-
-        try:
-            # Use the agent to generate the report
-            if not self.agent:
-                raise ValueError("Report agent not properly initialized with model")
-
-            result = self.agent(report_prompt)
-
-            if result and hasattr(result, "message"):
-                content = result.message.get("content", [])
-                if content and isinstance(content, list):
-                    report_text = ""
-                    for block in content:
-                        if isinstance(block, dict) and "text" in block:
-                            report_text += block["text"]
-
-                    # Extract only the actual report, removing any preamble
-                    report_text = self._extract_report_content(report_text)
-
-                    # Clean up any duplicate content
-                    report_text = self._clean_duplicate_content(report_text)
-                    return report_text
-
-            return None
-
-        except Exception as e:
-            logger.error("Error generating report: %s", e)
-            return None
-
-    def _format_evidence(self, evidence: List[Dict]) -> str:
-        """Format evidence for report generation.
-
-        Args:
-            evidence: List of evidence items
-
-        Returns:
-            Formatted evidence text
+    
+    @staticmethod
+    def extract_report_content(raw_content: str) -> str:
         """
-        evidence_text = ""
-        for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
-            # Format based on category and available metadata
-            category = item.get("category", "unknown").upper()
-            content = item.get("content", "")[:500]
-
-            if item.get("category") == "finding":
-                severity = item.get("severity", "unknown").upper()
-                confidence = item.get("confidence", "unknown")
-                if confidence != "unknown":
-                    evidence_text += f"\n{i+1}. [{category} | {severity} | {confidence}] {content}"
-                else:
-                    evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
-            else:
-                evidence_text += f"\n{i+1}. [{category}] {content}"
-
-            if len(item.get("content", "")) > 500:
-                evidence_text += "..."
-
-        return evidence_text
-
-    def _format_tools(self, tools_used: List[str]) -> str:
-        """Format tools used summary.
-
-        Args:
-            tools_used: List of tool usage strings
-
-        Returns:
-            Formatted tools summary
-        """
-        tools_summary = {}
-        for tool in tools_used:
-            tool_name = tool.split(":")[0]
-            if tool_name in tools_summary:
-                tools_summary[tool_name] += 1
-            else:
-                tools_summary[tool_name] = 1
-
-        return "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
-
-    def _get_report_prompt(
-        self, target: str, objective: str, operation_id: str, steps_executed: int, tools_text: str, evidence_text: str
-    ) -> str:
-        """Get the report generation prompt.
-
-        Args:
-            target: Target system
-            objective: Operation objective
-            operation_id: Operation ID
-            steps_executed: Number of steps
-            tools_text: Formatted tools summary
-            evidence_text: Formatted evidence summary
-
-        Returns:
-            Complete report generation prompt
-        """
-        return f"""Based on the penetration testing operation, generate a comprehensive security assessment report.
-
-TARGET: {target}
-OBJECTIVE: {objective}
-OPERATION ID: {operation_id}
-STEPS EXECUTED: {steps_executed}
-
-TOOLS USED:
-{tools_text}
-
-EVIDENCE COLLECTED:
-{evidence_text}
-
-Generate a professional penetration testing report with the following sections:
-
-1. EXECUTIVE SUMMARY
-   - Brief overview of the assessment
-   - Key findings and risk level
-   - Main recommendations
-
-2. TECHNICAL FINDINGS
-   - Detailed vulnerabilities discovered
-   - Severity ratings (Critical/High/Medium/Low)
-   - Evidence and proof of concept
-   - Affected components
-
-3. ATTACK NARRATIVE
-   - Step-by-step attack chain
-   - Tools and techniques used
-   - Access gained and data exposed
-
-4. RECOMMENDATIONS
-   - Immediate actions required
-   - Short-term remediation steps
-   - Long-term security improvements
-
-5. CONCLUSION
-   - Overall security posture assessment
-   - Risk summary
-   - Next steps
-
-Format the report professionally with clear sections and bullet points where appropriate.
-Focus on actionable findings and practical recommendations.
-Be specific about vulnerabilities found and provide technical details."""
-
-    def _extract_report_content(self, raw_content: str) -> str:
-        """Extract the actual report content from LLM response.
+        Extract the actual report content from LLM response.
 
         The LLM sometimes includes thinking/preamble before the actual report.
         This method extracts only the report starting from the first report header.
@@ -222,12 +102,15 @@ Be specific about vulnerabilities found and provide technical details."""
         """
         # Look for common report headers
         report_markers = [
+            "# PENETRATION TESTING REPORT",
             "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
             "# Security Assessment Report",
             "# SECURITY ASSESSMENT REPORT",
             "## EXECUTIVE SUMMARY",
             "## 1. EXECUTIVE SUMMARY",
             "PENETRATION TESTING SECURITY ASSESSMENT REPORT",
+            "1. EXECUTIVE SUMMARY",
+            "EXECUTIVE SUMMARY",
         ]
 
         lines = raw_content.split("\n")
@@ -246,11 +129,14 @@ Be specific about vulnerabilities found and provide technical details."""
             # Return content from the report start
             return "\n".join(lines[report_start_idx:])
 
-        # If no marker found, return original content
+        # If no marker found, log and return original content
+        logger.warning("No report markers found in content. Returning original content.")
         return raw_content
 
-    def _clean_duplicate_content(self, report_content: str) -> str:
-        """Remove duplicate sections from report content.
+    @staticmethod
+    def clean_duplicate_content(report_content: str) -> str:
+        """
+        Remove duplicate sections from report content.
 
         Args:
             report_content: The raw report content
@@ -294,3 +180,7 @@ Be specific about vulnerabilities found and provide technical details."""
                 cleaned_lines.append(line)
 
         return "\n".join(cleaned_lines)
+
+
+# For backward compatibility - in case anything is importing ReportAgent
+ReportAgent = ReportGenerator

@@ -205,7 +205,7 @@ def _get_memory_client_for_report(memory_config: Optional[Dict[str, Any]]) -> Op
 def _generate_llm_report(
     handler_state: Any, agent: Any, target: str, objective: str, evidence: List[Dict]
 ) -> Optional[str]:
-    """Generate report content using LLM analysis.
+    """Generate report content using the report generation tool.
 
     Args:
         handler_state: The handler state object
@@ -217,233 +217,36 @@ def _generate_llm_report(
     Returns:
         Generated report content or None
     """
-    # Import OpenTelemetry for proper span management
-    from opentelemetry import trace as otel_trace
-    import sys
-    import io
-
-    # Prepare evidence summary
-    evidence_text = ""
-    for i, item in enumerate(evidence[:30]):  # Limit to top 30 for context
-        # Format based on category and available metadata
-        category = item["category"].upper()
-        content = item["content"][:500]
-
-        if item["category"] == "finding":
-            severity = item.get("severity", "unknown").upper()
-            confidence = item.get("confidence", "unknown")
-            if confidence != "unknown":
-                evidence_text += f"\n{i+1}. [{category} | {severity} | {confidence}] {content}"
-            else:
-                evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
-        else:
-            evidence_text += f"\n{i+1}. [{category}] {content}"
-
-        if len(item["content"]) > 500:
-            evidence_text += "..."
-
-    # Prepare tools used summary
-    tools_summary = {}
-    for tool in handler_state.state.tools_used:
-        tool_name = tool.split(":")[0]
-        if tool_name in tools_summary:
-            tools_summary[tool_name] += 1
-        else:
-            tools_summary[tool_name] = 1
-
-    tools_text = "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
-
-    # Generate report prompt
-    report_prompt = f"""Based on the penetration testing operation, generate a comprehensive security assessment report.
-
-TARGET: {target}
-OBJECTIVE: {objective}
-OPERATION ID: {handler_state.state.operation_id}
-STEPS EXECUTED: {handler_state.state.steps}
-
-TOOLS USED:
-{tools_text}
-
-EVIDENCE COLLECTED:
-{evidence_text}
-
-Generate a professional penetration testing report with the following sections:
-
-1. EXECUTIVE SUMMARY
-   - Brief overview of the assessment
-   - Key findings and risk level
-   - Main recommendations
-
-2. TECHNICAL FINDINGS
-   - Detailed vulnerabilities discovered
-   - Severity ratings (Critical/High/Medium/Low)
-   - Evidence and proof of concept
-   - Affected components
-
-3. ATTACK NARRATIVE
-   - Step-by-step attack chain
-   - Tools and techniques used
-   - Access gained and data exposed
-
-4. RECOMMENDATIONS
-   - Immediate actions required
-   - Short-term remediation steps
-   - Long-term security improvements
-
-5. CONCLUSION
-   - Overall security posture assessment
-   - Risk summary
-   - Next steps
-
-Format the report professionally with clear sections and bullet points where appropriate.
-Focus on actionable findings and practical recommendations.
-Be specific about vulnerabilities found and provide technical details."""
-
+    # Import the report generation tool
+    from ..tools.report_generator import generate_security_report
+    
+    print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
+    
     try:
-        # Create a child span for report generation using OpenTelemetry context
-        # This creates proper parent-child relationship in the trace
-        report_span = None
-
-        # Check if agent has a tracer (it should from Strands SDK)
-        if hasattr(agent, "tracer") and agent.tracer:
-            # Get the parent span (agent's main trace span)
-            parent_span = getattr(agent, "trace_span", None) or otel_trace.get_current_span()
-
-            # Create child span for report generation
-            report_span = agent.tracer._start_span(
-                span_name="generate_security_report",
-                parent_span=parent_span,
-                attributes={
-                    # Core naming for Langfuse display
-                    "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
-                    # Langfuse-specific attributes
-                    "langfuse.agent.type": "report_generator",
-                    "langfuse.phase": "report_generation",
-                    "langfuse.parent.operation": handler_state.state.operation_id,
-                    # Standard OpenTelemetry attributes
-                    "report.type": "security_assessment",
-                    "report.target": target,
-                    "report.objective": objective,
-                    "report.evidence_count": len(evidence),
-                    "report.tools_used": len(tools_summary),
-                    "report.steps_executed": handler_state.state.steps,
-                    # Operation context
-                    "operation.id": handler_state.state.operation_id,
-                    "gen_ai.operation.name": "generate_report",
-                },
-            )
-
-        # Execute report generation
-        # The span is already active via the tracer
-        print("  %sAnalyzing evidence and generating report...%s" % (Colors.CYAN, Colors.RESET))
-
-        # Add event for report generation start
-        if report_span and hasattr(agent.tracer, "_add_event"):
-            agent.tracer._add_event(
-                report_span,
-                "report_generation_started",
-                {
-                    "evidence_pieces": len(evidence),
-                    "unique_tools": len(tools_summary),
-                    "total_steps": handler_state.state.steps,
-                },
-            )
-
-        report_agent = Agent(
-            model=agent.model,
-            name="Cyber-ReportAgent",
-            # Use a clean, focused system prompt instead of agent.system_prompt to prevent
-            # thinking/reasoning output that would duplicate in terminal
-            system_prompt="You are a cybersecurity report generator. Generate a comprehensive, professional penetration testing report based on the provided evidence. Output ONLY the final report content without any preamble, thinking, or commentary. Begin directly with the report header and content.",
-            # No tools needed for report generation
-            tools=[],
-            # Use the same trace attributes but update the agent type
-            trace_attributes={
-                **agent.trace_attributes,
-                "langfuse.agent.type": "report_generator",
-                "name": f"Report Generation - {target} - {handler_state.state.operation_id}",
-            },
+        # Call the report generation tool
+        # This will automatically create a proper child span in the trace
+        report_content = generate_security_report(
+            target=target,
+            objective=objective,
+            operation_id=handler_state.state.operation_id,
+            steps_executed=handler_state.state.steps,
+            tools_used=handler_state.state.tools_used,
+            evidence=evidence,
+            provider=os.getenv("PROVIDER", "bedrock").lower(),
+            model_id=None  # Use default model
         )
-
-        # Execute report generation with clean conversation state
-        # Suppress output to prevent duplicate display in terminal
-        # Capture stdout to prevent report agent from printing to terminal
-        original_stdout = sys.stdout
-        sys.stdout = io.StringIO()
         
-        try:
-            result = report_agent(report_prompt)
-        finally:
-            # Always restore stdout
-            sys.stdout = original_stdout
-
-        # Debug: Log the result structure
-        logger.debug("Report generation result type: %s", type(result))
-        logger.debug("Result has message attr: %s", hasattr(result, "message"))
-        if hasattr(result, "message"):
-            logger.debug("Message type: %s", type(result.message))
-            logger.debug(
-                "Message keys: %s", result.message.keys() if hasattr(result.message, "keys") else "Not a dict"
-            )
-
-        # Process the result
-        if result and hasattr(result, "message"):
-            content = result.message.get("content", [])
-            if content and isinstance(content, list):
-                report_text = ""
-                for block in content:
-                    if isinstance(block, dict) and "text" in block:
-                        report_text += block["text"]
-
-                # Extract only the actual report, removing any preamble
-                logger.debug("Report text before extraction: %s chars", len(report_text))
-                report_text = _extract_report_content(report_text)
-                logger.debug("Report text after extraction: %s chars", len(report_text))
-
-                # Clean up any duplicate content
-                report_text = _clean_duplicate_content(report_text)
-                logger.debug("Report text after cleaning: %s chars", len(report_text))
-
-                # Add completion event with report metrics
-                if report_span and hasattr(agent.tracer, "_add_event"):
-                    agent.tracer._add_event(
-                        report_span,
-                        "report_generation_completed",
-                        {
-                            "report_length": len(report_text),
-                            "sections_generated": 5,  # We requested 5 sections
-                            "status": "success",
-                        },
-                    )
-
-                return report_text
-
-        # If we reach here, report generation failed
-        if report_span and hasattr(agent.tracer, "_add_event"):
-            agent.tracer._add_event(
-                report_span,
-                "report_generation_failed",
-                {
-                    "reason": "No content in result",
-                    "status": "error",
-                },
-            )
-
-        return None
-
+        if report_content and not report_content.startswith("Error:"):
+            logger.info("Report generated successfully (%d characters)", len(report_content))
+            return report_content
+        else:
+            logger.error("Report generation failed: %s", report_content)
+            return None
+            
     except Exception as e:
+        logger.error("Error generating report: %s", e, exc_info=True)
         print("  %sError generating report: %s%s" % (Colors.RED, e, Colors.RESET))
-
-        # Record error in span if available
-        if report_span and hasattr(agent.tracer, "_end_span"):
-            agent.tracer._end_span(report_span, error=e)
-
         return None
-
-    finally:
-        # End the report span properly
-        if report_span and hasattr(agent.tracer, "_end_span"):
-            agent.tracer._end_span(report_span)
 
 
 def _extract_report_content(raw_content: str) -> str:
