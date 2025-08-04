@@ -109,6 +109,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+test_env/
 
 # Spyder project settings
 .spyderproject
@@ -147,3 +148,17 @@ outputs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+*.tgz
+*.tar.gz
+
+# React build outputs
+build/
+dist/
+.next/

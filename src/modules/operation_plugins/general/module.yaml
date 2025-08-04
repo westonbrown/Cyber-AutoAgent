@@ -1,0 +1,14 @@
+name: general
+version: 1.0.0
+description: Comprehensive general security assessment for diverse targets
+author: Cyber-AutoAgent Team
+license: MIT
+configuration:
+  timeout: 600
+  max_depth: 5
+  approach: Multi-layered security assessment with adaptive methodology
+tools:
+  # Core tools are always available, these are module-specific
+  - network_mapper
+  - service_analyzer
+  - vuln_scanner

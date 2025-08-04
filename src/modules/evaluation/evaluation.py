@@ -190,10 +190,10 @@ class CyberAgentEvaluator:
 
         logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
         logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
-        
+
         # Log metric capabilities for debugging
         self._log_metric_capabilities()
-    
+
     def _log_metric_capabilities(self):
         """Log the capabilities of each metric for debugging."""
         metric_info = []
@@ -203,9 +203,9 @@ class CyberAgentEvaluator:
                 capabilities.append("SingleTurn")
             if hasattr(metric, "multi_turn_ascore"):
                 capabilities.append("MultiTurn")
-            
+
             metric_info.append(f"{metric.name}: {', '.join(capabilities) or 'No capabilities'}")
-        
+
         logger.debug("Metric capabilities:\n" + "\n".join(metric_info))
 
     async def evaluate_operation_traces(self, operation_id: str) -> Dict[str, Dict[str, float]]:
@@ -224,8 +224,7 @@ class CyberAgentEvaluator:
         # Wait for traces to be ingested with configurable delay
         initial_wait = int(os.getenv("EVALUATION_WAIT_TIME", "10"))  # seconds
         logger.info(
-            "Waiting %ss for all traces to be ingested (configurable via EVALUATION_WAIT_TIME)...", 
-            initial_wait
+            "Waiting %ss for all traces to be ingested (configurable via EVALUATION_WAIT_TIME)...", initial_wait
         )
         time.sleep(initial_wait)
 
@@ -355,24 +354,22 @@ class CyberAgentEvaluator:
         # Upload scores to Langfuse
         if hasattr(trace, "id"):
             await self._upload_scores_to_langfuse(trace.id, scores)
-        
+
         # Log evaluation summary
         if scores:
             avg_score = sum(scores.values()) / len(scores)
             logger.info(
                 "Evaluation complete for trace %s: %d metrics, avg score: %.2f",
-                getattr(trace, 'id', 'unknown'),
+                getattr(trace, "id", "unknown"),
                 len(scores),
-                avg_score
+                avg_score,
             )
-            
+
             # Log any zero scores for debugging
             zero_scores = [name for name, score in scores.items() if score == 0.0]
             if zero_scores:
                 logger.warning(
-                    "Metrics with zero scores for trace %s: %s",
-                    getattr(trace, 'id', 'unknown'),
-                    ", ".join(zero_scores)
+                    "Metrics with zero scores for trace %s: %s", getattr(trace, "id", "unknown"), ", ".join(zero_scores)
                 )
 
         return scores
@@ -439,17 +436,17 @@ class CyberAgentEvaluator:
         Returns:
             SingleTurnSample, MultiTurnSample, or None on error
         """
-        logger.debug("Creating evaluation data from trace: %s", getattr(trace, 'id', 'unknown'))
-        
+        logger.debug("Creating evaluation data from trace: %s", getattr(trace, "id", "unknown"))
+
         # Use TraceParser for robust data extraction
         parsed_trace = self.trace_parser.parse_trace(trace)
         if not parsed_trace:
             logger.error("Failed to parse trace data")
             return None
-        
+
         # Create appropriate evaluation sample
         evaluation_data = self.trace_parser.create_evaluation_sample(parsed_trace)
-        
+
         # Log sample type and basic info
         sample_type = "MultiTurnSample" if isinstance(evaluation_data, MultiTurnSample) else "SingleTurnSample"
         logger.info(
@@ -457,23 +454,17 @@ class CyberAgentEvaluator:
             sample_type,
             parsed_trace.trace_id,
             len(parsed_trace.messages),
-            len(parsed_trace.tool_calls)
+            len(parsed_trace.tool_calls),
         )
-        
+
         # Additional validation
         if isinstance(evaluation_data, SingleTurnSample):
             if not evaluation_data.response or evaluation_data.response == "No agent response captured":
-                logger.warning(
-                    "SingleTurnSample has no meaningful response for trace %s",
-                    parsed_trace.trace_id
-                )
+                logger.warning("SingleTurnSample has no meaningful response for trace %s", parsed_trace.trace_id)
         elif isinstance(evaluation_data, MultiTurnSample):
             if not evaluation_data.user_input:
-                logger.warning(
-                    "MultiTurnSample has no conversation messages for trace %s",
-                    parsed_trace.trace_id
-                )
-        
+                logger.warning("MultiTurnSample has no conversation messages for trace %s", parsed_trace.trace_id)
+
         return evaluation_data
 
     async def _evaluate_all_metrics(self, eval_data) -> Dict[str, float]:
@@ -482,15 +473,13 @@ class CyberAgentEvaluator:
         is_multi_turn = isinstance(eval_data, MultiTurnSample)
 
         logger.info(
-            "Evaluating %d metrics on %s sample", 
-            len(self.all_metrics), 
-            "MultiTurn" if is_multi_turn else "SingleTurn"
+            "Evaluating %d metrics on %s sample", len(self.all_metrics), "MultiTurn" if is_multi_turn else "SingleTurn"
         )
 
         if is_multi_turn:
             logger.debug(
                 "MultiTurn evaluation data: %d messages, topics: %s",
-                len(eval_data.user_input) if hasattr(eval_data.user_input, '__len__') else 1,
+                len(eval_data.user_input) if hasattr(eval_data.user_input, "__len__") else 1,
                 eval_data.reference_topics,
             )
         else:
@@ -505,11 +494,11 @@ class CyberAgentEvaluator:
         single_turn_only_metrics = []
         multi_turn_only_metrics = []
         both_turn_metrics = []
-        
+
         for metric in self.all_metrics:
             has_single = hasattr(metric, "single_turn_ascore")
             has_multi = hasattr(metric, "multi_turn_ascore")
-            
+
             if has_single and has_multi:
                 both_turn_metrics.append(metric)
             elif has_single:
@@ -524,37 +513,31 @@ class CyberAgentEvaluator:
             "Metric categorization - Both: %s, Single-only: %s, Multi-only: %s",
             [m.name for m in both_turn_metrics],
             [m.name for m in single_turn_only_metrics],
-            [m.name for m in multi_turn_only_metrics]
+            [m.name for m in multi_turn_only_metrics],
         )
 
         # Evaluate metrics based on sample type and metric capabilities
         for metric in self.all_metrics:
             try:
                 logger.info("Starting evaluation of metric: %s", metric.name)
-                
+
                 score = None
-                
+
                 # For MultiTurnSample
                 if is_multi_turn:
                     if hasattr(metric, "multi_turn_ascore"):
                         score = await metric.multi_turn_ascore(eval_data)
                     else:
-                        logger.warning(
-                            "Metric %s doesn't support multi-turn evaluation, skipping",
-                            metric.name
-                        )
+                        logger.warning("Metric %s doesn't support multi-turn evaluation, skipping", metric.name)
                         scores[metric.name] = 0.0
                         continue
-                
+
                 # For SingleTurnSample
                 else:
                     if hasattr(metric, "single_turn_ascore"):
                         score = await metric.single_turn_ascore(eval_data)
                     else:
-                        logger.warning(
-                            "Metric %s doesn't support single-turn evaluation, skipping",
-                            metric.name
-                        )
+                        logger.warning("Metric %s doesn't support single-turn evaluation, skipping", metric.name)
                         scores[metric.name] = 0.0
                         continue
 
@@ -565,14 +548,9 @@ class CyberAgentEvaluator:
                 else:
                     scores[metric.name] = float(score)
                     logger.info("Metric %s score: %.2f", metric.name, scores[metric.name])
-                    
+
             except Exception as e:
-                logger.error(
-                    "Error evaluating metric %s: %s",
-                    metric.name,
-                    str(e),
-                    exc_info=True
-                )
+                logger.error("Error evaluating metric %s: %s", metric.name, str(e), exc_info=True)
                 scores[metric.name] = 0.0
 
         logger.info("Final metric scores: %s", scores)

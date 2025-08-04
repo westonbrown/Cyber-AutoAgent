@@ -278,14 +278,14 @@ class TestCreateAgent:
     @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agents.cyber_autoagent._create_remote_model")
     @patch("modules.agents.cyber_autoagent.Agent")
-    @patch("modules.agents.cyber_autoagent.ReasoningHandler")
+    @patch("modules.handlers.react.react_bridge_handler.ReactBridgeHandler")
     @patch("modules.agents.cyber_autoagent.get_system_prompt")
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     def test_create_agent_remote_success(
         self,
         mock_init_memory,
         mock_get_prompt,
-        mock_reasoning_handler,
+        mock_react_bridge_handler,
         mock_agent_class,
         mock_create_remote,
         mock_validate,
@@ -297,7 +297,7 @@ class TestCreateAgent:
         mock_agent = Mock()
         mock_agent_class.return_value = mock_agent
         mock_handler = Mock()
-        mock_reasoning_handler.return_value = mock_handler
+        mock_react_bridge_handler.return_value = mock_handler
         mock_get_prompt.return_value = "test prompt"
 
         # Call function
@@ -314,14 +314,14 @@ class TestCreateAgent:
     @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agents.cyber_autoagent._create_local_model")
     @patch("modules.agents.cyber_autoagent.Agent")
-    @patch("modules.agents.cyber_autoagent.ReasoningHandler")
+    @patch("modules.handlers.react.react_bridge_handler.ReactBridgeHandler")
     @patch("modules.agents.cyber_autoagent.get_system_prompt")
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     def test_create_agent_local_success(
         self,
         mock_init_memory,
         mock_get_prompt,
-        mock_reasoning_handler,
+        mock_react_bridge_handler,
         mock_agent_class,
         mock_create_local,
         mock_validate,
@@ -333,7 +333,7 @@ class TestCreateAgent:
         mock_agent = Mock()
         mock_agent_class.return_value = mock_agent
         mock_handler = Mock()
-        mock_reasoning_handler.return_value = mock_handler
+        mock_react_bridge_handler.return_value = mock_handler
         mock_get_prompt.return_value = "test prompt"
 
         # Call function

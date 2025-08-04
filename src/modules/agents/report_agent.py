@@ -23,44 +23,38 @@ logger = logging.getLogger(__name__)
 
 class ReportGenerator:
     """Utility class for report generation with clean agent creation."""
-    
+
     @staticmethod
     def create_report_agent(
         provider: str = "bedrock",
         model_id: Optional[str] = None,
         operation_id: Optional[str] = None,
-        target: Optional[str] = None
+        target: Optional[str] = None,
     ) -> Agent:
         """
         Create a clean agent instance for report generation.
-        
+
         This method creates a new agent with appropriate configuration
         for report generation, ensuring proper trace hierarchy when
         used within a tool context.
-        
+
         Args:
             provider: Model provider (bedrock, ollama, litellm)
             model_id: Specific model to use (optional)
             operation_id: Operation ID for trace continuity
             target: Target system for trace metadata
-            
+
         Returns:
             Configured Agent instance for report generation
         """
         # Get appropriate model based on provider
         if provider == "bedrock":
-            model = BedrockModel(
-                model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-            )
+            model = BedrockModel(model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         elif provider == "ollama":
-            model = OllamaModel(
-                model_id=model_id or "llama3.2:3b"
-            )
+            model = OllamaModel(model_id=model_id or "llama3.2:3b")
         else:  # litellm
-            model = LiteLLMModel(
-                model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-            )
-        
+            model = LiteLLMModel(model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+
         # Create agent with report-specific configuration
         trace_attrs = {
             # Core identification - CRITICAL for trace continuity
@@ -75,7 +69,7 @@ class ReportGenerator:
             "operation.phase": "reporting",
             "target.host": target or "unknown",
         }
-        
+
         # Only add trace attributes if operation_id is provided
         # This ensures proper parent-child relationship
         return Agent(
@@ -85,7 +79,7 @@ class ReportGenerator:
             tools=[],  # No tools needed for report generation
             trace_attributes=trace_attrs if operation_id else None,
         )
-    
+
     @staticmethod
     def extract_report_content(raw_content: str) -> str:
         """

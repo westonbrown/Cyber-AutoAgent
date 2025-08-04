@@ -77,9 +77,9 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --chown=cyberagent:cyberagent src/ ./src/
 COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
-# Create directories for evidence storage and logs with proper permissions
-RUN mkdir -p /app/evidence /app/logs && \
-    chmod 755 /app/evidence /app/logs && \
+# Create directories for evidence storage, logs, outputs, and tools with proper permissions
+RUN mkdir -p /app/evidence /app/logs /app/outputs /app/tools && \
+    chmod 755 /app/evidence /app/logs /app/outputs /app/tools && \
     chown -R cyberagent:cyberagent /app
 
 # Switch to non-root user
@@ -88,11 +88,14 @@ USER cyberagent
 # Add virtual environment to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Set Python path
-ENV PYTHONPATH="/app/src"
+# Set Python path to include src and dynamic module loading
+ENV PYTHONPATH="/app/src:/app"
 
-# Create volume for evidence persistence
-VOLUME ["/app/evidence", "/app/logs"]
+# Enable React UI mode for proper event emission
+ENV __REACT_INK__="true"
+
+# Create volume for evidence persistence and outputs
+VOLUME ["/app/evidence", "/app/logs", "/app/outputs", "/app/tools"]
 
 # Expose port for any web interfaces 
 EXPOSE 8080

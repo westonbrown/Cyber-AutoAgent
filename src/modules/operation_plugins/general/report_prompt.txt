@@ -1,0 +1,26 @@
+<general_report_structure>
+Group findings by attack vector potential:
+1. **Immediate Risks**: Exploitable now, high impact
+2. **Systemic Issues**: Patterns indicating deeper problems
+3. **Strategic Concerns**: Architecture/design vulnerabilities
+</general_report_structure>
+
+<finding_organization>
+- Chain related vulnerabilities to show compound risk
+- Map technical findings to business processes
+- Highlight where multiple small issues create critical exposure
+</finding_organization>
+
+<audience_adaptation>
+General assessments serve diverse stakeholders:
+- **Executives**: Risk quantification, business impact, strategic priorities  
+- **Technical Teams**: Specific vulnerabilities, reproduction steps, patches
+- **Compliance**: Regulatory implications, audit findings, gap analysis
+</audience_adaptation>
+
+<remediation_framework>
+Structure fixes by effort vs impact:
+- **Quick Wins** (Hours): Patches, configuration changes, access controls
+- **Short Term** (Days): Service hardening, authentication upgrades, monitoring
+- **Strategic** (Weeks+): Architecture changes, segmentation, process improvements
+</remediation_framework>

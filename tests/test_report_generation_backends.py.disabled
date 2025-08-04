@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers import ReasoningHandler
-from modules.handlers.reporting import _retrieve_evidence
+from modules.tools.report_generator import _retrieve_evidence
 
 class TestReportGenerationWithFAISS:
     """Test report generation with FAISS memory backend"""
