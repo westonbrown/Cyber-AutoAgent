@@ -6,18 +6,20 @@ import logging
 import warnings
 from datetime import datetime
 from typing import Optional, List, Tuple, Any
+from pathlib import Path
 
 from strands import Agent
 from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, editor, load_tool, stop, http_request, swarm
+from strands_tools import shell, editor, load_tool, stop, http_request, swarm, think, python_repl, handoff_to_user
 
 from modules.prompts.system import get_system_prompt
+from modules.prompts.module_loader import get_module_loader
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
-from modules.handlers.utils import Colors, sanitize_target_name
+from modules.handlers.utils import Colors, sanitize_target_name, print_status
 from modules.tools.memory import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -156,6 +158,7 @@ def _create_litellm_model(
 
 def _handle_model_creation_error(provider: str, error: Exception) -> None:
     """Provide helpful error messages based on provider type"""
+
     error_messages = {
         "ollama": [
             "Ensure Ollama is installed: https://ollama.ai",
@@ -175,11 +178,11 @@ def _handle_model_creation_error(provider: str, error: Exception) -> None:
         ],
     }
 
-    print(f"{Colors.RED}[!] {provider.title()} model creation failed: {error}{Colors.RESET}")
+    print_status(f"{provider.title()} model creation failed: {error}", "ERROR")
     if provider in error_messages:
-        print(f"{Colors.YELLOW}[?] Troubleshooting steps:{Colors.RESET}")
+        print_status("Troubleshooting steps:", "WARNING")
         for i, step in enumerate(error_messages[provider], 1):
-            print(f"    {i}. {step}")
+            print_status(f"    {i}. {step}", "INFO")
 
 
 def create_agent(
@@ -193,6 +196,7 @@ def create_agent(
     provider: str = "bedrock",
     memory_path: Optional[str] = None,
     memory_mode: str = "auto",
+    module: str = "general",
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
@@ -236,20 +240,20 @@ def create_agent(
 
         # Override vector store path in centralized config
         memory_config["vector_store"] = {"config": {"path": memory_path}}
-        print(f"{Colors.GREEN}[+] Loading existing memory from: {memory_path}{Colors.RESET}")
+        print_status(f"Loading existing memory from: {memory_path}", "SUCCESS")
 
     # Check for existing memories before initializing to avoid race conditions
     # Skip check if user explicitly wants fresh memory
     if memory_mode == "fresh":
         has_existing_memories = False
-        print(f"{Colors.YELLOW}[*] Using fresh memory mode - ignoring any existing memories{Colors.RESET}")
+        print_status("Using fresh memory mode - ignoring any existing memories", "WARNING")
     else:
         has_existing_memories = check_existing_memories(target, provider)
 
     # Initialize memory system
     target_name = sanitize_target_name(target)
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
-    print(f"{Colors.GREEN}[+] Memory system initialized for operation: {operation_id}{Colors.RESET}")
+    print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
     memory_overview = None
 
     # Get memory overview for system prompt enhancement
@@ -260,6 +264,29 @@ def create_agent(
                 memory_overview = memory_client.get_memory_overview(user_id="cyber_agent")
         except Exception as e:
             agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
+
+    # Load module-specific tools information
+    module_tools_context = ""
+    try:
+        module_loader = get_module_loader()
+        module_tool_paths = module_loader.discover_module_tools(module)
+
+        if module_tool_paths:
+            tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
+            print_status(f"Discovered {len(module_tool_paths)} module-specific tools for '{module}'", "SUCCESS")
+
+            module_tools_context = f"""
+## MODULE-SPECIFIC TOOLS
+
+Available {module} module tools (use load_tool to activate):
+{", ".join(tool_names)}
+
+Load these tools when needed: load_tool(tool_name="tool_name")
+"""
+        else:
+            print_status(f"No module-specific tools found for '{module}'", "INFO")
+    except Exception as e:
+        logger.warning(f"Error discovering module tools for '{module}': {e}")
 
     tools_context = ""
     if available_tools:
@@ -272,41 +299,60 @@ Professional tools discovered in your environment:
 Leverage these tools directly via shell. 
 """
 
+    # Combine environmental and module tools context
+    full_tools_context = tools_context + module_tools_context
+
+    # Load module-specific execution prompt
+    module_execution_prompt = None
+    try:
+        module_loader = get_module_loader()
+        module_execution_prompt = module_loader.load_module_execution_prompt(module)
+        if module_execution_prompt:
+            print_status(f"Loaded module-specific execution prompt for '{module}'", "SUCCESS")
+        else:
+            print_status(f"No module-specific execution prompt found for '{module}' - using default", "INFO")
+    except Exception as e:
+        logger.warning(f"Error loading module execution prompt for '{module}': {e}")
+
     system_prompt = get_system_prompt(
         target,
         objective,
         max_steps,
         operation_id,
-        tools_context,
+        full_tools_context,
         provider,
         has_memory_path=bool(memory_path),
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
+        module_context=module_execution_prompt,
     )
 
-    # Create callback handler with operation_id and target information
-    callback_handler = ReasoningHandler(
+    # Always use the React bridge handler as it has all the functionality we need
+    # It works in both CLI and React modes
+    from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
+
+    callback_handler = ReactBridgeHandler(
         max_steps=max_steps,
         operation_id=operation_id,
-        target=target,
-        output_base_dir=server_config.output.base_dir,
-        memory_config=memory_config,
     )
+
+    # No hooks needed - the callback handler handles everything
+    hooks = []
 
     # Create model based on provider type
     try:
         if provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
             model = _create_local_model(model_id, provider)
-            print(f"{Colors.GREEN}[+] Ollama model initialized: {model_id}{Colors.RESET}")
+            print_status(f"Ollama model initialized: {model_id}", "SUCCESS")
         elif provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
             model = _create_remote_model(model_id, region_name, provider)
-            print(f"{Colors.GREEN}[+] Bedrock model initialized: {model_id}{Colors.RESET}")
+            print_status(f"Bedrock model initialized: {model_id}", "SUCCESS")
         elif provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
             model = _create_litellm_model(model_id, region_name, provider)
-            print(f"{Colors.GREEN}[+] LiteLLM model initialized: {model_id}{Colors.RESET}")
+            print_status(f"LiteLLM model initialized: {model_id}", "SUCCESS")
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -314,22 +360,33 @@ Leverage these tools directly via shell.
         _handle_model_creation_error(provider, e)
         raise
 
+    # Always use original tools - event emission is handled by callback
+    tools_list = [
+        swarm,
+        shell,
+        editor,
+        load_tool,
+        mem0_memory,
+        stop,
+        http_request,
+        think,
+        python_repl,
+        handoff_to_user,
+    ]
+
     agent_logger.debug("Creating autonomous agent")
+
+    # Update conversation window size from SDK config
+    conversation_window = server_config.sdk.conversation_window_size
+
     agent = Agent(
         model=model,
         name=f"Cyber-AutoAgent {op_id}",
-        tools=[
-            swarm,
-            shell,
-            editor,
-            load_tool,
-            mem0_memory,
-            stop,
-            http_request,
-        ],
+        tools=tools_list,
         system_prompt=system_prompt,
         callback_handler=callback_handler,
-        conversation_manager=SlidingWindowConversationManager(window_size=120),
+        hooks=hooks if hooks else None,  # Add hooks if available
+        conversation_manager=SlidingWindowConversationManager(window_size=conversation_window),
         load_tools_from_directory=True,
         trace_attributes={
             # Core identification - session_id is the key for Langfuse trace naming
@@ -368,7 +425,7 @@ Leverage these tools directly via shell.
             "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
             "gen_ai.request.model": model_id,
             # Tool configuration
-            "tools.available": 7,  # Number of core tools
+            "tools.available": 10,  # Number of core tools
             "tools.names": [
                 "swarm",
                 "shell",
@@ -377,6 +434,8 @@ Leverage these tools directly via shell.
                 "mem0_memory",
                 "stop",
                 "http_request",
+                "think",
+                "python_repl",
             ],
             "tools.parallel_limit": 8,
             # Memory configuration

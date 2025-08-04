@@ -148,7 +148,6 @@ class TestMainFunction:
     @patch("cyberautoagent.print_banner")
     @patch("cyberautoagent.print_section")
     @patch("cyberautoagent.print_status")
-    @patch("cyberautoagent.analyze_objective_completion")
     @patch(
         "sys.argv",
         [
@@ -163,7 +162,6 @@ class TestMainFunction:
     )
     def test_main_remote_flow(
         self,
-        mock_analyze,
         mock_print_status,
         mock_print_section,
         mock_print_banner,
@@ -191,7 +189,6 @@ class TestMainFunction:
         mock_create_agent.return_value = (mock_agent, mock_handler)
         mock_auto_setup.return_value = ["nmap", "nikto"]
         mock_get_prompt.return_value = "test prompt"
-        mock_analyze.return_value = (True, "Success", {"confidence": 95})
 
         # Mock agent execution to return immediately
         mock_agent.return_value = "Agent response"
@@ -210,7 +207,6 @@ class TestMainFunction:
     @patch("cyberautoagent.print_banner")
     @patch("cyberautoagent.print_section")
     @patch("cyberautoagent.print_status")
-    @patch("cyberautoagent.analyze_objective_completion")
     @patch(
         "sys.argv",
         [
@@ -225,7 +221,6 @@ class TestMainFunction:
     )
     def test_main_local_flow(
         self,
-        mock_analyze,
         mock_print_status,
         mock_print_section,
         mock_print_banner,
@@ -253,7 +248,6 @@ class TestMainFunction:
         mock_create_agent.return_value = (mock_agent, mock_handler)
         mock_auto_setup.return_value = []
         mock_get_prompt.return_value = "test prompt"
-        mock_analyze.return_value = (True, "Success", {"confidence": 95})
 
         # Mock agent execution to return normally, then trigger completion
         mock_agent.return_value = "Agent response"

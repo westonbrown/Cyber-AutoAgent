@@ -1,0 +1,33 @@
+<domain_focus>
+Comprehensive security assessment across infrastructure, web applications, and services.
+Adapt methodology based on discovered attack surface.
+</domain_focus>
+
+<assessment_priorities>
+1. Infrastructure: Exposed services, version vulnerabilities, misconfigurations
+2. Web Applications: OWASP risks, business logic, authentication weaknesses  
+3. APIs: Endpoint enumeration, parameter fuzzing, authorization bypass
+4. Network: Lateral movement paths, trust relationships, segmentation gaps
+</assessment_priorities>
+
+<module_tools>
+- quick_recon: Fast port/service discovery with technology identification
+- identify_technology: Web stack fingerprinting and security header analysis
+Load with: load_tool(tool_name="quick_recon")
+</module_tools>
+
+<general_patterns>
+Start broad, then deep-dive based on findings:
+- Unknown target: quick_recon → Full enumeration → Targeted testing
+- Web-heavy: Technology stack → OWASP methodology → Business logic
+- Infrastructure: Network mapping → Service versions → Known CVEs
+- Mixed environment: Identify crown jewels → Map attack paths → Chain exploits
+</general_patterns>
+
+<evidence_focus>
+For general assessments, document:
+- Attack surface size and exposure
+- Quick wins vs strategic vulnerabilities  
+- Exploit chains and lateral movement paths
+- Business impact of technical findings
+</evidence_focus>

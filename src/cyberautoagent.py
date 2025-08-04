@@ -40,12 +40,12 @@ from modules.handlers.utils import (
     print_banner,
     print_section,
     print_status,
-    analyze_objective_completion,
     get_output_path,
     sanitize_target_name,
 )
 from modules.handlers.base import StepLimitReached
 from modules.config.environment import auto_setup, setup_logging, clean_operation_memory
+from modules.handlers.output_interceptor import setup_output_interception
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -154,6 +154,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Cyber-AutoAgent - Autonomous Cybersecurity Assessment Tool",
         epilog="⚠️  Use only on authorized targets in safe environments ⚠️",
+    )
+    parser.add_argument(
+        "--module",
+        type=str,
+        default="general",
+        help="Security module to use (e.g., general, web_security, api_security)",
     )
     parser.add_argument("--objective", type=str, required=True, help="Security assessment objective")
     parser.add_argument(
@@ -297,13 +303,16 @@ def main():
 
     atexit.register(cleanup_logging)
 
-    # Display banner
-    print_banner()
+    # Display banner (unless disabled by environment variable or in React mode)
+    if os.environ.get("CYBERAGENT_NO_BANNER", "").lower() not in ("1", "true", "yes") and not os.environ.get(
+        "__REACT_INK__"
+    ):
+        print_banner()
 
-    # Safety warning
-    print_section(
-        "⚠️  SAFETY WARNING",
-        f"""
+        # Safety warning (only show with banner)
+        print_section(
+            "⚠️  SAFETY WARNING",
+            f"""
 {Colors.RED}{Colors.BOLD}EXPERIMENTAL SOFTWARE - AUTHORIZED USE ONLY{Colors.RESET}
 
 • This tool is for {Colors.BOLD}authorized security testing only{Colors.RESET}
@@ -314,9 +323,9 @@ def main():
 
 {Colors.GREEN}✓{Colors.RESET} I understand and accept these terms before proceeding.
 """,
-        Colors.RED,
-        "⚠️",
-    )
+            Colors.RED,
+            "⚠️",
+        )
 
     # Auto-setup and environment discovery
     # Pass memory_path to auto_setup to skip cleanup if using existing memory
@@ -371,6 +380,7 @@ def main():
             provider=args.provider,
             memory_path=args.memory_path,
             memory_mode=args.memory_mode,
+            module=args.module,
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 
@@ -385,130 +395,68 @@ def main():
             messages = []
             current_message = initial_prompt
 
-            # Main autonomous execution loop
+            # SDK-aligned execution loop with continuation support
+            print_status(
+                f"Agent processing: {initial_prompt[:100]}{'...' if len(initial_prompt) > 100 else ''}", "THINKING"
+            )
+
+            current_message = initial_prompt
+
+            # Continue until stop condition is met
             while not interrupted:
                 try:
                     # Execute agent with current message
-                    # The agent handles its own tracing internally via Strands SDK
-                    if not messages:
-                        # First call - don't pass messages parameter
-                        result = agent(current_message)
-                    else:
-                        # Subsequent calls - pass messages for conversation context
-                        result = agent(current_message, messages=messages)
+                    result = agent(current_message)
 
-                    # Update conversation history
-                    # Structure content properly for Strands integration
-                    messages.append({"role": "user", "content": [{"text": current_message}]})
+                    # Check if we should continue
+                    if callback_handler and callback_handler.should_stop():
+                        if callback_handler.stop_tool_used:
+                            print_status("Stop tool used - terminating", "SUCCESS")
+                        elif callback_handler.has_reached_limit():
+                            print_status("Step limit reached - terminating", "SUCCESS")
+                        break
 
-                    # For thinking-enabled models, preserve the original response structure
-                    # For non-thinking models, wrap in text block
-                    if hasattr(result, "content") and isinstance(result.content, list):
-                        # Result already has proper structure (thinking + text blocks)
-                        messages.append({"role": "assistant", "content": result.content})
+                    # If agent hasn't done anything substantial, break to avoid infinite loop
+                    if callback_handler.current_step == 0:
+                        print_status("No actions taken - completing", "SUCCESS")
+                        break
+
+                    # Generate continuation prompt
+                    remaining_steps = (
+                        args.iterations - callback_handler.current_step if callback_handler else args.iterations
+                    )
+                    if remaining_steps > 0:
+                        current_message = get_continuation_prompt(remaining_steps, args.iterations)
                     else:
-                        # Fallback for simple text responses
-                        messages.append({"role": "assistant", "content": [{"text": str(result)}]})
+                        break
 
                 except StepLimitReached as error:
                     # Handle step limit reached
-                    print_status(f"Step limit reached ({callback_handler.max_steps} steps) - Stopping execution", "SUCCESS")
-                    if callback_handler:
-                        callback_handler.generate_final_report(agent, args.target, args.objective)
-                        # Trigger evaluation after clean termination
-                        try:
-                            logger.info("Triggering evaluation after step limit reached")
-                            callback_handler.trigger_evaluation_on_completion()
-                        except Exception as eval_error:
-                            logger.warning("Error triggering evaluation: %s", eval_error)
+                    print_status(f"Step limit reached ({callback_handler.max_steps} steps)", "SUCCESS")
                     break
-                except (StopIteration, Exception) as error:
+
+                except StopIteration as error:
+                    # Strands agent completed normally - continue if we have steps left
+                    logger.debug(f"Agent iteration completed: {str(error)}")
+                    if callback_handler and callback_handler.current_step >= callback_handler.max_steps:
+                        print_status("Step limit reached", "SUCCESS")
+                        break
+                    # Continue to next iteration
+
+                except Exception as error:
                     # Handle other termination scenarios
                     error_str = str(error).lower()
-                    if (
-                        "step limit" in error_str
-                        or "clean termination" in error_str
-                        or "event loop cycle stop requested" in error_str
-                    ):
-                        # Check if this was from the stop tool
-                        if "event loop cycle stop requested" in error_str:
-                            # Extract the reason from the error message
-                            reason_match = re.search(r"Reason: (.+?)(?:\n|$)", str(error))
-                            reason = reason_match.group(1) if reason_match else "Objective achieved"
-                            print_status(f"Agent terminated: {reason}", "SUCCESS")
-
-                        if callback_handler:
-                            callback_handler.generate_final_report(agent, args.target, args.objective)
-                            # Trigger evaluation after clean termination
-                            try:
-                                logger.info("Triggering evaluation after clean termination")
-                                callback_handler.trigger_evaluation_on_completion()
-                            except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
+                    if "event loop cycle stop requested" in error_str:
+                        # Extract the reason from the error message
+                        reason_match = re.search(r"Reason: (.+?)(?:\\n|$)", str(error))
+                        reason = reason_match.group(1) if reason_match else "Objective achieved"
+                        print_status(f"Agent terminated: {reason}", "SUCCESS")
+                    elif "step limit" in error_str:
+                        print_status("Step limit reached", "SUCCESS")
                     else:
                         print_status(f"Agent error: {str(error)}", "ERROR")
                         logger.exception("Unexpected agent error occurred")
-                        if callback_handler:
-                            callback_handler.generate_final_report(agent, args.target, args.objective)
-                            # Trigger evaluation after error
-                            try:
-                                logger.info("Triggering evaluation after error")
-                                callback_handler.trigger_evaluation_on_completion()
-                            except Exception as eval_error:
-                                logger.warning("Error triggering evaluation: %s", eval_error)
                     break
-
-                # Check if agent has determined objective completion
-                is_complete, completion_summary, metadata = analyze_objective_completion(messages)
-
-                if is_complete:
-                    print_status(f"Objective achieved: {completion_summary}", "SUCCESS")
-                    if metadata.get("confidence"):
-                        print_status(f"Agent confidence: {metadata['confidence']}%", "INFO")
-
-                    if callback_handler:
-                        summary = callback_handler.get_summary()
-                        print_status(
-                            f"Memory operations: {summary['memory_operations']}",
-                            "INFO",
-                        )
-                        print_status(
-                            f"Capabilities created: {summary['tools_created']}",
-                            "INFO",
-                        )
-                        print_status(
-                            f"Evidence collected: {summary['evidence_collected']} items",
-                            "INFO",
-                        )
-                        callback_handler.generate_final_report(agent, args.target, args.objective)
-                        # Trigger evaluation after successful completion
-                        try:
-                            logger.info("Triggering evaluation after successful completion")
-                            callback_handler.trigger_evaluation_on_completion()
-                        except Exception as eval_error:
-                            logger.warning("Error triggering evaluation: %s", eval_error)
-                    break
-
-                # Check if step limit reached or stop tool was used
-                if callback_handler and callback_handler.should_stop():
-                    if callback_handler.stop_tool_used:
-                        print_status("Stop tool used - terminating", "SUCCESS")
-                    elif callback_handler.has_reached_limit():
-                        print_status("Step limit reached - terminating", "SUCCESS")
-                    callback_handler.generate_final_report(agent, args.target, args.objective)
-                    # Trigger evaluation after completion
-                    try:
-                        logger.info("Triggering evaluation after step limit/stop completion")
-                        callback_handler.trigger_evaluation_on_completion()
-                    except Exception as eval_error:
-                        logger.warning("Error triggering evaluation: %s", eval_error)
-                    break
-
-                # Generate continuation prompt for next iteration
-                remaining_steps = args.iterations - callback_handler.steps if callback_handler else args.iterations
-                current_message = get_continuation_prompt(remaining_steps, args.iterations)
-
-                time.sleep(0.3)  # Shorter delay for better responsiveness
 
             execution_time = time.time() - operation_start
             logger.info("Operation completed in %.2f seconds", execution_time)
@@ -532,12 +480,12 @@ def main():
             print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
 
             # Determine status based on completion
-            if analyze_objective_completion(messages):
+            if callback_handler.stop_tool_used:
                 status_text = f"{Colors.GREEN}Objective Achieved{Colors.RESET}"
             elif callback_handler.has_reached_limit():
-                status_text = f"{Colors.YELLOW}Step Limit Reached - Final Report Generated{Colors.RESET}"
+                status_text = f"{Colors.YELLOW}Step Limit Reached{Colors.RESET}"
             else:
-                status_text = f"{Colors.BLUE}Operation Completed{Colors.RESET}"
+                status_text = f"{Colors.GREEN}Operation Completed{Colors.RESET}"
 
             print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
             print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
@@ -624,16 +572,12 @@ def main():
             print_status("Exiting immediately due to interrupt", "WARNING")
             os._exit(1)
 
-        # Ensure final report is generated if callback_handler exists and report not yet generated
-        if callback_handler and not getattr(callback_handler.state, "report_generated", False):
-            try:
-                callback_handler.generate_final_report(agent, args.target, args.objective)
-            except Exception as report_error:
-                logger.warning("Error generating final report: %s", report_error)
-
-        # Trigger evaluation regardless of completion status (success or failure)
+        # Ensure final report is generated - single trigger point
         if callback_handler:
             try:
+                callback_handler.ensure_report_generated(agent, args.target, args.objective, args.module)
+
+                # Trigger evaluation after report generation
                 logger.info("Triggering evaluation on completion")
                 callback_handler.trigger_evaluation_on_completion()
 
@@ -641,8 +585,8 @@ def main():
                 if os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
                     callback_handler.wait_for_evaluation_completion(timeout=300)
 
-            except Exception as eval_error:
-                logger.warning("Error triggering evaluation: %s", eval_error)
+            except Exception as error:
+                logger.warning("Error in final report/evaluation: %s", error)
         else:
             logger.warning("No callback_handler available for evaluation trigger")
 

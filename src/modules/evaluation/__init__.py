@@ -11,12 +11,12 @@ from modules.evaluation.manager import EvaluationManager, TraceType, TraceInfo
 from modules.evaluation.trace_parser import TraceParser, ParsedTrace, ParsedMessage, ParsedToolCall
 
 __all__ = [
-    "CyberAgentEvaluator", 
-    "EvaluationManager", 
-    "TraceType", 
+    "CyberAgentEvaluator",
+    "EvaluationManager",
+    "TraceType",
     "TraceInfo",
     "TraceParser",
     "ParsedTrace",
-    "ParsedMessage", 
-    "ParsedToolCall"
+    "ParsedMessage",
+    "ParsedToolCall",
 ]

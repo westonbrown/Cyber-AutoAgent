@@ -75,7 +75,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 
 import boto3
@@ -112,6 +112,10 @@ TOOL_SPEC = {
         "5. Get memory history\n\n"
         "Actions:\n"
         "- store: Store new memory (requires user_id or agent_id)\n"
+        "- store_plan: Store strategic plan (100-300 chars, phase-based format)\n"
+        "- store_reflection: Store reflection on findings/plan progress\n"
+        "- get_plan: Get current active plan\n"
+        "- reflect: Generate reflection prompt from recent findings\n"
         "- get: Get memory by ID\n"
         "- list: List all memories (requires user_id or agent_id)\n"
         "- retrieve: Semantic search (requires user_id or agent_id)\n"
@@ -125,10 +129,19 @@ TOOL_SPEC = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": (
-                        "Action to perform (store, get, list, retrieve, delete, history)"
-                    ),
-                    "enum": ["store", "get", "list", "retrieve", "delete", "history"],
+                    "description": ("Action to perform (store, get, list, retrieve, delete, history)"),
+                    "enum": [
+                        "store",
+                        "store_plan",
+                        "store_reflection",
+                        "get_plan",
+                        "reflect",
+                        "get",
+                        "list",
+                        "retrieve",
+                        "delete",
+                        "history",
+                    ],
                 },
                 "content": {
                     "type": "string",
@@ -172,15 +185,11 @@ class Mem0ServiceClient:
 
         # Add RequestsHttpConnection for OpenSearch if needed
         if mem0_config["vector_store"]["provider"] == "opensearch":
-            mem0_config["vector_store"]["config"]["connection_class"] = (
-                RequestsHttpConnection
-            )
+            mem0_config["vector_store"]["config"]["connection_class"] = RequestsHttpConnection
 
         return mem0_config
 
-    def __init__(
-        self, config: Optional[Dict] = None, has_existing_memories: bool = False
-    ):
+    def __init__(self, config: Optional[Dict] = None, has_existing_memories: bool = False):
         """Initialize the Mem0 service client.
 
         Args:
@@ -197,6 +206,9 @@ class Mem0ServiceClient:
         self.has_existing_memories = has_existing_memories  # Store existing memory info
         self.mem0 = self._initialize_client(config)
         self.config = config  # Store config for later use
+        self._should_reflect = False  # Flag for automatic reflection
+        self._finding_count = 0  # Counter for automatic reflection trigger
+        self._reflection_threshold = 3  # Trigger reflection after N findings
 
         # Display memory overview if existing memories are detected
         self._display_startup_overview()
@@ -232,22 +244,16 @@ class Mem0ServiceClient:
             print("[+] Memory Backend: OpenSearch")
             print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
             print(f"    Region: {embedder_region}")
-            print(
-                f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)"
-            )
+            print(f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)")
             print(f"    LLM: AWS Bedrock - {merged_config['llm']['config']['model']}")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
             return self._initialize_opensearch_client(config, server_type)
 
         # FAISS backend
         logger.debug("Using FAISS backend (Mem0Memory with FAISS)")
-        return self._initialize_faiss_client(
-            config, server_type, self.has_existing_memories
-        )
+        return self._initialize_faiss_client(config, server_type, self.has_existing_memories)
 
-    def _initialize_opensearch_client(
-        self, config: Optional[Dict] = None, server: str = "bedrock"
-    ) -> Mem0Memory:
+    def _initialize_opensearch_client(self, config: Optional[Dict] = None, server: str = "bedrock") -> Mem0Memory:
         """Initialize a Mem0 client with OpenSearch backend.
 
         Args:
@@ -260,14 +266,8 @@ class Mem0ServiceClient:
         # Set up AWS region - prioritize passed config, then environment, then default
         merged_config = self._merge_config(config, server)
         config_manager = get_config_manager()
-        config_region = (
-            merged_config.get("embedder", {}).get("config", {}).get("aws_region")
-        )
-        self.region = (
-            config_region
-            or os.environ.get("AWS_REGION")
-            or config_manager.get_default_region()
-        )
+        config_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region")
+        self.region = config_region or os.environ.get("AWS_REGION") or config_manager.get_default_region()
 
         if not os.environ.get("AWS_REGION"):
             os.environ["AWS_REGION"] = self.region
@@ -278,9 +278,7 @@ class Mem0ServiceClient:
         auth = AWSV4SignerAuth(credentials, self.region, "es")
 
         # Prepare configuration
-        merged_config["vector_store"]["config"].update(
-            {"http_auth": auth, "host": os.environ["OPENSEARCH_HOST"]}
-        )
+        merged_config["vector_store"]["config"].update({"http_auth": auth, "host": os.environ["OPENSEARCH_HOST"]})
 
         return Mem0Memory.from_config(config_dict=merged_config)
 
@@ -340,9 +338,7 @@ class Mem0ServiceClient:
         embedder_provider = embedder_config.get("provider", "aws_bedrock")
         embedder_model = embedder_config.get("config", {}).get("model")
         config_manager = get_config_manager()
-        embedder_region = embedder_config.get("config", {}).get(
-            "aws_region", config_manager.get_default_region()
-        )
+        embedder_region = embedder_config.get("config", {}).get("aws_region", config_manager.get_default_region())
 
         # Display LLM configuration
         llm_config = merged_config.get("llm", {})
@@ -374,9 +370,7 @@ class Mem0ServiceClient:
             logger.error("Failed to initialize Mem0Memory client: %s", e)
             raise
 
-    def _merge_config(
-        self, config: Optional[Dict] = None, server: str = "bedrock"
-    ) -> Dict:
+    def _merge_config(self, config: Optional[Dict] = None, server: str = "bedrock") -> Dict:
         """Merge user-provided configuration with default configuration.
 
         Args:
@@ -392,11 +386,7 @@ class Mem0ServiceClient:
 
         # Deep merge the configs
         for key, value in config.items():
-            if (
-                key in merged_config
-                and isinstance(value, dict)
-                and isinstance(merged_config[key], dict)
-            ):
+            if key in merged_config and isinstance(value, dict) and isinstance(merged_config[key], dict):
                 merged_config[key].update(value)
             else:
                 merged_config[key] = value
@@ -427,27 +417,40 @@ class Mem0ServiceClient:
             )
             # Log successful storage
             logger.debug("Memory stored successfully: %s", result)
+
+            # Auto-capture: Check if this is a finding and trigger reflection if needed
+            self._auto_capture_check(metadata)
+
             return result
         except Exception as e:
             logger.error("Critical error storing memory: %s", e)
             raise RuntimeError(f"Memory storage failed: {e}") from e
 
+    def _auto_capture_check(self, metadata: Optional[Dict] = None):
+        """Auto-capture: Check if reflection should be triggered based on stored content."""
+        if metadata and metadata.get("category") == "finding":
+            severity = metadata.get("severity", "").lower()
+
+            # Increment finding counter
+            self._finding_count += 1
+
+            # Trigger reflection for critical/high findings immediately, or after threshold
+            if severity in ["critical", "high"] or self._finding_count >= self._reflection_threshold:
+                logger.info(f"Auto-capture: Triggering reflection after {self._finding_count} findings")
+                self._should_reflect = True
+                self._finding_count = 0  # Reset counter
+
     def get_memory(self, memory_id: str):
         """Get a memory by ID."""
         return self.mem0.get(memory_id)
 
-    def list_memories(
-        self, user_id: Optional[str] = None, agent_id: Optional[str] = None
-    ):
+    def list_memories(self, user_id: Optional[str] = None, agent_id: Optional[str] = None):
         """List all memories for a user or agent."""
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
         logger = logging.getLogger("CyberAutoAgent")
-        logger.debug(
-            "Calling mem0.get_all with user_id=%s, agent_id=%s",
-            user_id, agent_id
-        )
+        logger.debug("Calling mem0.get_all with user_id=%s, agent_id=%s", user_id, agent_id)
 
         try:
             result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
@@ -458,9 +461,7 @@ class Mem0ServiceClient:
             logger.error("Error in mem0.get_all: %s", e)
             raise
 
-    def search_memories(
-        self, query: str, user_id: Optional[str] = None, agent_id: Optional[str] = None
-    ):
+    def search_memories(self, query: str, user_id: Optional[str] = None, agent_id: Optional[str] = None):
         """Search memories using semantic search."""
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
@@ -505,6 +506,199 @@ class Mem0ServiceClient:
             logger.debug("Error checking if should display overview: %s", str(e))
             return False
 
+    def store_plan(
+        self, plan_content: Union[str, Dict], user_id: str = "cyber_agent", metadata: Optional[Dict] = None
+    ) -> Dict:
+        """Store a strategic plan in memory with category='plan'.
+
+        Supports both simple string plans and hierarchical dictionary plans.
+
+        String Format:
+        - "Phase 1: [ACTION]. Phase 2: [ACTION]. Phase 3: [ACTION]"
+
+        Dict Format:
+        {
+            "objective": "Main objective",
+            "phases": [
+                {"id": 1, "goal": "Map attack surface", "status": "active"},
+                {"id": 2, "goal": "Identify vulnerabilities", "status": "pending"},
+                {"id": 3, "goal": "Exploit and document", "status": "pending"}
+            ],
+            "constraints": ["Time limit", "Stealth required"]
+        }
+
+        Args:
+            plan_content: The strategic plan (string or dict)
+            user_id: User ID for memory storage
+            metadata: Optional metadata (will be enhanced with category='plan')
+
+        Returns:
+            Memory storage result
+        """
+        # Convert dict to formatted string if needed
+        if isinstance(plan_content, dict):
+            objective = plan_content.get("objective", "Unknown objective")
+            phases = plan_content.get("phases", [])
+            constraints = plan_content.get("constraints", [])
+
+            # Format as structured text
+            formatted_plan = f"OBJECTIVE: {objective}\n"
+            for phase in phases:
+                formatted_plan += f"Phase {phase['id']}: {phase['goal']} [{phase.get('status', 'pending')}]\n"
+            if constraints:
+                formatted_plan += f"CONSTRAINTS: {', '.join(constraints)}"
+
+            plan_content_str = formatted_plan.strip()
+            plan_structured = True
+        else:
+            plan_content_str = str(plan_content)
+            plan_structured = False
+
+        plan_metadata = metadata or {}
+        plan_metadata.update(
+            {
+                "category": "plan",
+                "created_at": datetime.now().isoformat(),
+                "type": "strategic_plan",
+                "structured": plan_structured,
+                "active": True,
+            }
+        )
+
+        # Deactivate previous plans
+        try:
+            previous_plans = self.search_memories("category:plan active:true", user_id=user_id)
+            if isinstance(previous_plans, list):
+                for plan in previous_plans:
+                    if plan.get("id"):
+                        # Mark as inactive
+                        self.store_memory(
+                            content=plan.get("memory", ""),
+                            user_id=user_id,
+                            metadata={**plan.get("metadata", {}), "active": False},
+                        )
+        except Exception as e:
+            logger.debug(f"Could not deactivate previous plans: {e}")
+
+        return self.store_memory(content=f"[PLAN] {plan_content_str}", user_id=user_id, metadata=plan_metadata)
+
+    def store_reflection(
+        self,
+        reflection_content: str,
+        plan_id: Optional[str] = None,
+        user_id: str = "cyber_agent",
+        metadata: Optional[Dict] = None,
+    ) -> Dict:
+        """Store a reflection on findings and plan progress.
+
+        Args:
+            reflection_content: The reflection content
+            plan_id: Optional ID of the plan being reflected upon
+            user_id: User ID for memory storage
+            metadata: Optional metadata (will be enhanced with category='reflection')
+
+        Returns:
+            Memory storage result
+        """
+        reflection_metadata = metadata or {}
+        reflection_metadata.update(
+            {"category": "reflection", "created_at": datetime.now().isoformat(), "type": "plan_reflection"}
+        )
+
+        if plan_id:
+            reflection_metadata["related_plan_id"] = plan_id
+
+        return self.store_memory(
+            content=f"[REFLECTION] {reflection_content}", user_id=user_id, metadata=reflection_metadata
+        )
+
+    def get_active_plan(self, user_id: str = "cyber_agent") -> Optional[Dict]:
+        """Get the most recent active plan.
+
+        Args:
+            user_id: User ID to search plans for
+
+        Returns:
+            Most recent plan or None if no plans found
+        """
+        try:
+            # Search for plans
+            plan_results = self.search_memories(query="category:plan [PLAN]", user_id=user_id)
+
+            if isinstance(plan_results, list) and plan_results:
+                # Return the most recent plan (highest score/most recent)
+                return plan_results[0]
+            elif isinstance(plan_results, dict):
+                results = plan_results.get("results", [])
+                return results[0] if results else None
+
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving active plan: {e}")
+            return None
+
+    def reflect_on_findings(
+        self, recent_findings: List[Dict], current_plan: Optional[Dict] = None, user_id: str = "cyber_agent"
+    ) -> str:
+        """Generate reflection prompt based on recent findings and current plan.
+
+        Args:
+            recent_findings: List of recent findings to reflect on
+            current_plan: Current active plan (optional)
+            user_id: User ID for memory operations
+
+        Returns:
+            Reflection prompt for the agent
+        """
+        if not recent_findings:
+            return "No recent findings to reflect on."
+
+        # Summarize recent findings
+        findings_summary = []
+        for finding in recent_findings[:5]:  # Last 5 findings
+            content = finding.get("memory", finding.get("content", ""))[:100]
+            metadata = finding.get("metadata", {})
+            severity = metadata.get("severity", "unknown")
+            findings_summary.append(f"- [{severity.upper()}] {content}")
+
+        reflection_prompt = f"""
+## REFLECTION REQUIRED
+
+**Recent Findings ({len(findings_summary)}):**
+{chr(10).join(findings_summary)}
+
+**Current Plan Status:**
+"""
+
+        if current_plan:
+            plan_content = current_plan.get("memory", current_plan.get("content", ""))[:200]
+            reflection_prompt += f"""
+Active plan: {plan_content}
+
+**Required Analysis:**
+1. Are we following the current plan effectively?
+2. Do recent findings suggest we should pivot strategy?
+3. What new attack vectors have emerged?
+4. Should we deploy specialized swarms for discovered services?
+5. Are we missing any critical reconnaissance areas?
+
+Analyze findings and then update/store new plan if needed.
+"""
+        else:
+            reflection_prompt += """
+No active plan found.
+
+**Required Analysis:**
+1. Based on recent findings, what should our strategic approach be?
+2. What specialized tools/swarms do we need?
+3. What are the highest priority targets/services?
+4. What reconnaissance gaps need filling?
+
+Analyze findings and store a new strategic plan.
+"""
+
+        return reflection_prompt
+
     def get_memory_overview(self, user_id: str = "cyber_agent") -> Dict:
         """Get overview of memories for startup display.
 
@@ -520,17 +714,12 @@ class Mem0ServiceClient:
             logger.debug("Getting memory overview for user_id: %s", user_id)
 
             memories_response = self.list_memories(user_id=user_id)
-            logger.debug(
-                "Memory overview raw response type: %s",
-                type(memories_response)
-            )
+            logger.debug("Memory overview raw response type: %s", type(memories_response))
             logger.debug("Memory overview raw response: %s", memories_response)
 
             # Parse response format
             if isinstance(memories_response, dict):
-                raw_memories = memories_response.get(
-                    "memories", memories_response.get("results", [])
-                )
+                raw_memories = memories_response.get("memories", memories_response.get("results", []))
                 logger.debug("Dict response: found %d memories", len(raw_memories))
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
@@ -556,9 +745,11 @@ class Mem0ServiceClient:
                 if category == "finding":
                     recent_findings.append(
                         {
-                            "content": memory.get("memory", "")[:100] + "..."
-                            if len(memory.get("memory", "")) > 100
-                            else memory.get("memory", ""),
+                            "content": (
+                                memory.get("memory", "")[:100] + "..."
+                                if len(memory.get("memory", "")) > 100
+                                else memory.get("memory", "")
+                            ),
                             "created_at": memory.get("created_at", "Unknown"),
                         }
                     )
@@ -584,9 +775,7 @@ class Mem0ServiceClient:
             }
 
 
-def display_memory_overview(
-    memory_client: Mem0ServiceClient, user_id: str = "cyber_agent"
-) -> None:
+def display_memory_overview(memory_client: Mem0ServiceClient, user_id: str = "cyber_agent") -> None:
     """Display memory overview at startup.
 
     Args:
@@ -597,9 +786,7 @@ def display_memory_overview(
         overview = memory_client.get_memory_overview(user_id=user_id)
 
         if overview.get("error"):
-            print(
-                f"    Warning: Could not retrieve memory overview: {overview['error']}"
-            )
+            print(f"    Warning: Could not retrieve memory overview: {overview['error']}")
             return
 
         if not overview.get("has_memories"):
@@ -657,9 +844,7 @@ def format_get_response(memory: Dict) -> Panel:
 
     result.append(f"\n📄 Memory: {content}")
 
-    return Panel(
-        "\n".join(result), title="[bold green]Memory Retrieved", border_style="green"
-    )
+    return Panel("\n".join(result), title="[bold green]Memory Retrieved", border_style="green")
 
 
 def format_list_response(memories: List[Dict]) -> Panel:
@@ -686,9 +871,7 @@ def format_list_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = (
-            content[:100] + "..." if content and len(content) > 100 else content
-        )
+        content_preview = content[:100] + "..." if content and len(content) > 100 else content
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -704,9 +887,7 @@ def format_delete_response(memory_id: str) -> Panel:
         "✅ Memory deleted successfully:",
         f"🔑 Memory ID: {memory_id}",
     ]
-    return Panel(
-        "\n".join(content), title="[bold green]Memory Deleted", border_style="green"
-    )
+    return Panel("\n".join(content), title="[bold green]Memory Deleted", border_style="green")
 
 
 def format_retrieve_response(memories: List[Dict]) -> Panel:
@@ -735,9 +916,7 @@ def format_retrieve_response(memories: List[Dict]) -> Panel:
         metadata = memory.get("metadata", {})
 
         # Truncate content if too long
-        content_preview = (
-            content[:100] + "..." if content and len(content) > 100 else content
-        )
+        content_preview = content[:100] + "..." if content and len(content) > 100 else content
 
         # Format metadata for display
         metadata_str = json.dumps(metadata, indent=2) if metadata else "None"
@@ -788,16 +967,8 @@ def format_history_response(history: List[Dict]) -> Panel:
         created_at = entry.get("created_at", "Unknown")
 
         # Truncate memory content if too long
-        old_memory_preview = (
-            old_memory[:100] + "..."
-            if old_memory and len(old_memory) > 100
-            else old_memory
-        )
-        new_memory_preview = (
-            new_memory[:100] + "..."
-            if new_memory and len(new_memory) > 100
-            else new_memory
-        )
+        old_memory_preview = old_memory[:100] + "..." if old_memory and len(old_memory) > 100 else old_memory
+        new_memory_preview = new_memory[:100] + "..." if new_memory and len(new_memory) > 100 else new_memory
 
         table.add_row(
             entry_id,
@@ -852,9 +1023,7 @@ def initialize_memory_system(
 
     # Create enhanced config with operation context
     enhanced_config = config.copy() if config else {}
-    enhanced_config["operation_id"] = (
-        operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    )
+    enhanced_config["operation_id"] = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     enhanced_config["target_name"] = target_name or "default_target"
 
     _MEMORY_CONFIG = enhanced_config
@@ -926,18 +1095,66 @@ def mem0_memory(
         strands_dev = os.environ.get("BYPASS_TOOL_CONSENT", "").lower() == "true"
 
         # Handle different actions
-        if action == "store":
+        if action == "store_plan":
+            if not content:
+                raise ValueError("content is required for store_plan action")
+
+            results = _MEMORY_CLIENT.store_plan(content, user_id or "cyber_agent")
+            if not strands_dev:
+                console.print("[green]✅ Strategic plan stored successfully[/green]")
+            return json.dumps(results, indent=2)
+
+        elif action == "store_reflection":
+            if not content:
+                raise ValueError("content is required for store_reflection action")
+
+            results = _MEMORY_CLIENT.store_reflection(content, user_id=user_id or "cyber_agent", metadata=metadata)
+            if not strands_dev:
+                console.print("[green]✅ Reflection stored successfully[/green]")
+            return json.dumps(results, indent=2)
+
+        elif action == "get_plan":
+            plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent")
+            if plan:
+                if not strands_dev:
+                    console.print("[green]📋 Active plan retrieved[/green]")
+                return json.dumps(plan, indent=2)
+            else:
+                if not strands_dev:
+                    console.print("[yellow]⚠️ No active plan found[/yellow]")
+                return "No active plan found"
+
+        elif action == "reflect":
+            # Get recent findings for reflection
+            recent_memories = _MEMORY_CLIENT.search_memories("category:finding", user_id or "cyber_agent")
+            if isinstance(recent_memories, dict):
+                recent_findings = recent_memories.get("results", [])
+            else:
+                recent_findings = recent_memories or []
+
+            current_plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent")
+            reflection_prompt = _MEMORY_CLIENT.reflect_on_findings(
+                recent_findings, current_plan, user_id or "cyber_agent"
+            )
+
+            # Check if automatic reflection was triggered
+            if hasattr(_MEMORY_CLIENT, "_should_reflect") and _MEMORY_CLIENT._should_reflect:
+                reflection_prompt = "🔔 AUTOMATIC REFLECTION TRIGGERED\n" + reflection_prompt
+                _MEMORY_CLIENT._should_reflect = False  # Reset flag
+
+            if not strands_dev:
+                console.print(
+                    Panel(reflection_prompt, title="[bold blue]Reflection Required[/bold blue]", border_style="blue")
+                )
+            return reflection_prompt
+
+        elif action == "store":
             if not content:
                 raise ValueError("content is required for store action")
 
             # Clean content to prevent JSON issues
             cleaned_content = (
-                str(content)
-                .replace("\x00", "")
-                .replace("\n", " ")
-                .replace("\r", " ")
-                .replace("\t", " ")
-                .strip()
+                str(content).replace("\x00", "").replace("\n", " ").replace("\r", " ").replace("\t", " ").strip()
             )
             # Also clean multiple spaces
             cleaned_content = re.sub(r"\s+", " ", cleaned_content)
@@ -969,14 +1186,32 @@ def mem0_memory(
             mem0_logger.setLevel(logging.CRITICAL)
 
             try:
-                results = _MEMORY_CLIENT.store_memory(
-                    cleaned_content, user_id, agent_id, metadata
-                )
+                results = _MEMORY_CLIENT.store_memory(cleaned_content, user_id, agent_id, metadata)
+
+                # Automatic reflection triggers
+                if metadata and metadata.get("category") == "finding":
+                    severity = metadata.get("severity", "").lower()
+                    # Trigger reflection on critical/high findings
+                    if severity in ["critical", "high"]:
+                        logging.getLogger(__name__).debug("High severity finding detected, triggering reflection")
+                        _MEMORY_CLIENT._should_reflect = True
+
+                    # Check finding count for periodic reflection
+                    try:
+                        all_findings = _MEMORY_CLIENT.search_memories(
+                            "category:finding", user_id=user_id or "cyber_agent"
+                        )
+                        finding_count = len(all_findings) if isinstance(all_findings, list) else 0
+                        if finding_count > 0 and finding_count % 3 == 0:
+                            logging.getLogger(__name__).debug(
+                                f"Reached {finding_count} findings, triggering reflection"
+                            )
+                            _MEMORY_CLIENT._should_reflect = True
+                    except Exception as e:
+                        logging.getLogger(__name__).debug(f"Could not check finding count: {e}")
             except Exception as store_error:
                 # Handle mem0 library errors gracefully
-                if "Extra data" in str(store_error) or "Expecting value" in str(
-                    store_error
-                ):
+                if "Extra data" in str(store_error) or "Expecting value" in str(store_error):
                     # JSON parsing error in mem0 - return success but log issue
                     fallback_result = [
                         {
@@ -985,9 +1220,7 @@ def mem0_memory(
                         }
                     ]
                     if not strands_dev:
-                        console.print(
-                            "[yellow]Memory stored with minor parsing warnings[/yellow]"
-                        )
+                        console.print("[yellow]Memory stored with minor parsing warnings[/yellow]")
                     return json.dumps(fallback_result, indent=2)
                 else:
                     raise store_error
@@ -1045,10 +1278,7 @@ def mem0_memory(
                 else:
                     # If dict doesn't have expected keys, treat as single memory
                     results_list = [memories] if memories else []
-                    logger.debug(
-                        "Dict without expected keys, treating as single memory: %d items",
-                        len(results_list)
-                    )
+                    logger.debug("Dict without expected keys, treating as single memory: %d items", len(results_list))
             else:
                 results_list = []
                 logger.debug("Unexpected response type: %s", type(memories))

@@ -209,6 +209,30 @@ def get_default_base_dir() -> str:
 
 
 @dataclass
+class SDKConfig:
+    """Configuration for Strands SDK-specific features."""
+
+    # Hook system configuration
+    enable_hooks: bool = True
+    hook_timeout_ms: int = 1000
+
+    # Streaming configuration
+    enable_streaming: bool = True
+    stream_buffer_ms: int = 0  # No buffering for real-time streaming
+
+    # Conversation management
+    conversation_window_size: int = 120
+
+    # Telemetry configuration
+    enable_telemetry: bool = True
+    telemetry_sample_rate: float = 1.0
+
+    # Performance settings
+    max_concurrent_tools: int = 5
+    tool_timeout_seconds: int = 300
+
+
+@dataclass
 class OutputConfig:
     """Configuration for output directory management."""
 
@@ -229,6 +253,7 @@ class ServerConfig:
     evaluation: EvaluationConfig
     swarm: SwarmConfig
     output: OutputConfig = field(default_factory=OutputConfig)
+    sdk: SDKConfig = field(default_factory=SDKConfig)
     host: Optional[str] = None
     region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
@@ -445,6 +470,14 @@ class ConfigManager:
         # Resolve host for ollama provider
         host = self.get_ollama_host() if provider == "ollama" else None
 
+        # Build SDK configuration with environment overrides
+        sdk_config = SDKConfig(
+            enable_hooks=overrides.get("enable_hooks", True),
+            enable_streaming=overrides.get("enable_streaming", True),
+            conversation_window_size=overrides.get("conversation_window_size", 120),
+            enable_telemetry=os.getenv("ENABLE_SDK_TELEMETRY", "true").lower() == "true",
+        )
+
         config = ServerConfig(
             server_type=provider,
             llm=defaults["llm"],
@@ -453,6 +486,7 @@ class ConfigManager:
             evaluation=evaluation_config,
             swarm=swarm_config,
             output=output_config,
+            sdk=sdk_config,
             host=host,
             region=defaults["region"],
         )
@@ -489,6 +523,11 @@ class ConfigManager:
         """Get output configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.output
+
+    def get_sdk_config(self, server: str, **overrides) -> SDKConfig:
+        """Get SDK configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.sdk
 
     def get_unified_output_path(
         self,

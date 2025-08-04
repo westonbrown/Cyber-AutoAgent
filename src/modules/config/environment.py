@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from modules.handlers.utils import Colors
+from modules.handlers.utils import Colors, print_status
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
@@ -53,11 +53,11 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
                 os.remove(memory_path)
 
             logger.info("Cleaned up operation memory: %s", memory_path)
-            print(f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}")
+            print_status(f"Cleaned up operation memory: {memory_path}", "SUCCESS")
 
         except Exception as e:
             logger.error("Failed to clean %s: %s", memory_path, e)
-            print(f"{Colors.RED}[!] Failed to clean {memory_path}: {e}{Colors.RESET}")
+            print_status(f"Failed to clean {memory_path}: {e}", "ERROR")
     else:
         logger.debug("Memory path does not exist: %s", memory_path)
 
@@ -69,9 +69,19 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
 
     # Each operation uses its own isolated memory path: /tmp/mem0_{operation_id}
     if skip_mem0_cleanup:
-        print("%s[*] Using existing memory store%s" % (Colors.CYAN, Colors.RESET))
+        print_status("Using existing memory store", "INFO")
 
-    print("%s[*] Discovering cyber security tools...%s" % (Colors.CYAN, Colors.RESET))
+    print_status("Discovering cyber security tools...", "INFO")
+
+    # Emit structured event for React UI
+    import json
+
+    tool_discovery_event = {
+        "type": "tool_discovery_start",
+        "timestamp": datetime.now().isoformat(),
+        "message": "Starting cybersecurity tool discovery",
+    }
+    print(f"__CYBER_EVENT__{json.dumps(tool_discovery_event)}__CYBER_EVENT_END__")
 
     # Just check which tools are available
     cyber_tools = {
@@ -100,27 +110,46 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         try:
             subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
             available_tools.append(tool_name)
-            print("  %s✓%s %-12s - %s" % (Colors.GREEN, Colors.RESET, tool_name, description))
+            print_status(f"✓ {tool_name:<12} - {description}", "SUCCESS")
+
+            # Emit structured event for React UI (print_status is disabled in React mode)
+            tool_event = {
+                "type": "tool_available",
+                "timestamp": datetime.now().isoformat(),
+                "tool_name": tool_name,
+                "description": description,
+                "status": "available",
+            }
+            print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
+
         except (
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
             FileNotFoundError,
         ):
-            print(
-                "  %s○%s %-12s - %s %s(not available)%s"
-                % (
-                    Colors.YELLOW,
-                    Colors.RESET,
-                    tool_name,
-                    description,
-                    Colors.DIM,
-                    Colors.RESET,
-                )
-            )
+            print_status(f"○ {tool_name:<12} - {description} (not available)", "WARNING")
 
-    print(
-        "\n%s[+] Environment ready. %d cyber tools available.%s\n" % (Colors.GREEN, len(available_tools), Colors.RESET)
-    )
+            # Emit structured event for React UI (print_status is disabled in React mode)
+            tool_event = {
+                "type": "tool_unavailable",
+                "timestamp": datetime.now().isoformat(),
+                "tool_name": tool_name,
+                "description": description,
+                "status": "unavailable",
+            }
+            print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
+
+    print_status(f"Environment ready. {len(available_tools)} cyber tools available.", "SUCCESS")
+
+    # Emit environment ready event
+    env_ready_event = {
+        "type": "environment_ready",
+        "timestamp": datetime.now().isoformat(),
+        "available_tools": available_tools,
+        "tool_count": len(available_tools),
+        "message": f"Environment ready with {len(available_tools)} cybersecurity tools",
+    }
+    print(f"__CYBER_EVENT__{json.dumps(env_ready_event)}__CYBER_EVENT_END__")
     return available_tools
 
 

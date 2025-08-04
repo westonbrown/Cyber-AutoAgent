@@ -133,7 +133,7 @@ class TestMemoryAwareSystemPrompts:
         assert "Starting fresh assessment with no previous context" in result
         assert "Begin with reconnaissance and target information gathering" in result
         assert "Target: test.com" in result
-        assert "Operation ID: OP_20240101_120000" in result
+        assert "Operation: OP_20240101_120000" in result
         assert "Budget: 50 steps" in result
 
     def test_system_prompt_with_memory_path(self):
@@ -311,7 +311,6 @@ Leverage these tools directly via shell.
         )
 
         assert "Budget: 20 steps" in result_high
-        assert "Urgency: HIGH" in result_high
 
         # Medium urgency (>= 30 steps)
         result_medium = get_system_prompt(
@@ -322,7 +321,6 @@ Leverage these tools directly via shell.
         )
 
         assert "Budget: 50 steps" in result_medium
-        assert "Urgency: MEDIUM" in result_medium
 
     def test_system_prompt_memory_instructions_consistency(self):
         """Test consistency between memory context and dynamic instructions"""

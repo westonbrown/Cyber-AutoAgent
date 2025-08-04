@@ -16,11 +16,10 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 
-
 class PromptManager:
     """
     Manages unified prompt retrieval with Langfuse integration and fallback support.
-    
+
     Uses a single 'cyber-agent-main' prompt that handles all agent interactions
     through variable substitution for different contexts (initial, continuation, etc).
     """
@@ -51,12 +50,12 @@ class PromptManager:
                     ),
                 )
                 logger.info("Langfuse prompt management enabled with label: %s", self.prompt_label)
-                
+
                 # Auto-create prompts if they don't exist
                 if not self._prompts_initialized:
                     self._ensure_prompts_exist()
                     self._prompts_initialized = True
-                
+
             except Exception as e:
                 logger.warning("Failed to initialize Langfuse client: %s. Using local prompts.", e)
                 self.langfuse_enabled = False
@@ -74,7 +73,7 @@ class PromptManager:
 
         Returns:
             Compiled prompt string with all variables replaced
-            
+
         Note:
             This implementation uses a unified prompt approach where 'cyber-agent-main'
             handles all scenarios through variable substitution.
@@ -151,7 +150,7 @@ class PromptManager:
             # Extract variables and merge with kwargs
             if variables:
                 kwargs.update(variables)
-            
+
             # Generate the unified prompt based on context
             return self._generate_unified_prompt(**kwargs)
         else:
@@ -195,15 +194,24 @@ class PromptManager:
             "cyber-agent-main": {
                 "description": "Unified prompt for Cyber-AutoAgent - combines system behavior, mission parameters, and progress tracking",
                 "variables": [
-                    "target", "objective", "max_steps", "operation_id",
-                    "tools_context", "provider", "has_memory_path", "has_existing_memories",
-                    "output_config", "memory_overview", "current_step", "remaining_steps",
-                    "is_initial"
+                    "target",
+                    "objective",
+                    "max_steps",
+                    "operation_id",
+                    "tools_context",
+                    "provider",
+                    "has_memory_path",
+                    "has_existing_memories",
+                    "output_config",
+                    "memory_overview",
+                    "current_step",
+                    "remaining_steps",
+                    "is_initial",
                 ],
-                "get_template": lambda: self._generate_unified_template()
+                "get_template": lambda: self._generate_unified_template(),
             }
         }
-        
+
         for prompt_name, config in required_prompts.items():
             try:
                 # Check if prompt exists
@@ -215,46 +223,43 @@ class PromptManager:
                 except Exception as e:
                     # Prompt doesn't exist, create it
                     logger.debug("Prompt '%s' not found (expected): %s", prompt_name, e)
-                
+
                 # Create the prompt
                 logger.info("Creating prompt '%s' in Langfuse...", prompt_name)
                 prompt_template = config["get_template"]()
-                
+
                 response = self.langfuse_client.create_prompt(
                     name=prompt_name,
                     prompt=prompt_template,
                     labels=[self.prompt_label, "latest"],
-                    config={
-                        "description": config["description"],
-                        "variables": config["variables"],
-                        "type": "text"
-                    }
+                    config={"description": config["description"], "variables": config["variables"], "type": "text"},
                 )
                 logger.debug("Prompt creation response: %s", response)
                 logger.info("✓ Created prompt '%s'", prompt_name)
-                
+
             except Exception as e:
                 logger.warning("Failed to ensure prompt '%s' exists: %s", prompt_name, e)
-        
+
         # Flush to ensure prompts are saved
         try:
             self.langfuse_client.flush()
         except Exception:
             pass
-    
+
     def _generate_unified_template(self) -> str:
         """
         Generate the unified prompt template for Langfuse.
-        
+
         This creates a template with Langfuse variable placeholders that will be
         replaced when the prompt is used. The template covers all scenarios
         (initial, continuation, system) in a single prompt.
         """
         # Create template with Langfuse variable syntax
         from .system import _get_local_system_prompt
+
         return _get_local_system_prompt(
-            target="{{target}}", 
-            objective="{{objective}}", 
+            target="{{target}}",
+            objective="{{objective}}",
             max_steps=100,  # Default value for template
             operation_id="{{operation_id}}",
             tools_context="{{tools_context}}",
@@ -262,13 +267,14 @@ class PromptManager:
             has_memory_path=False,  # Default to false
             has_existing_memories=False,  # Default to false
             output_config=None,  # Will be populated at runtime
-            memory_overview=None  # Will be populated at runtime
+            memory_overview=None,  # Will be populated at runtime
         )
-    
+
     def _generate_unified_prompt(self, **kwargs) -> str:
         """Generate the unified prompt with filled variables."""
         # Direct passthrough to system prompt with all variables
         from .system import _get_local_system_prompt
+
         return _get_local_system_prompt(**kwargs)
 
 

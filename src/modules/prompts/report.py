@@ -16,10 +16,13 @@ def get_report_generation_prompt(
     steps_executed: int,
     tools_text: str,
     evidence_text: str,
+    module_report_prompt: str = None,
+    memory_timeline: str = None,
+    attack_path: str = None,
 ) -> str:
     """
     Get the prompt for generating a security assessment report.
-    
+
     Args:
         target: The target system that was assessed
         objective: The security assessment objective
@@ -27,12 +30,26 @@ def get_report_generation_prompt(
         steps_executed: Number of steps executed during assessment
         tools_text: Formatted summary of tools used
         evidence_text: Formatted summary of evidence collected
-        
+        memory_timeline: Timeline of findings from memory
+        attack_path: Attack path visualization data
+
     Returns:
         The complete report generation prompt
     """
-    return f"""Based on the penetration testing operation, generate a comprehensive security assessment report.
+    # Add memory context if available
+    memory_context = ""
+    if memory_timeline:
+        memory_context = f"\n\nATTACK TIMELINE:\n{memory_timeline}"
+    if attack_path:
+        memory_context += f"\n\nATTACK PATH:\n{attack_path}"
 
+    # Use module-specific report guidance if provided
+    if module_report_prompt:
+        report_guidance = f"""
+[MODULE REPORT GUIDANCE]
+{module_report_prompt}
+
+[ASSESSMENT DATA]
 TARGET: {target}
 OBJECTIVE: {objective}
 OPERATION ID: {operation_id}
@@ -43,73 +60,91 @@ TOOLS USED:
 
 EVIDENCE COLLECTED:
 {evidence_text}
+{memory_context}
 
-Generate a professional penetration testing report with the following sections:
+Based on the module-specific guidance above and the assessment data, generate a professional security report that follows the domain-specific approach while ensuring all findings are properly documented."""
+    else:
+        # Streamlined security report format
+        report_guidance = f"""Ghost's Security Assessment Report
 
-1. EXECUTIVE SUMMARY
-   - Brief overview of the assessment
-   - Key findings and risk level
-   - Main recommendations
+TARGET: {target} | OBJECTIVE: {objective} | OP: {operation_id} | STEPS: {steps_executed}
 
-2. TECHNICAL FINDINGS
-   - Detailed vulnerabilities discovered
-   - Severity ratings (Critical/High/Medium/Low)
-   - Evidence and proof of concept
-   - Affected components
+TOOLS: {tools_text}
+EVIDENCE: {evidence_text}
+{memory_context}
 
-3. ATTACK NARRATIVE
-   - Step-by-step attack chain
-   - Tools and techniques used
-   - Access gained and data exposed
+Generate concise security report (max 500 words):
 
-4. RECOMMENDATIONS
-   - Immediate actions required
-   - Short-term remediation steps
-   - Long-term security improvements
+# EXECUTIVE SUMMARY
+3 sentences: What was tested, key findings, business impact.
 
-5. CONCLUSION
-   - Overall security posture assessment
-   - Risk summary
-   - Next steps
+# ATTACK FLOW
+```mermaid
+graph TD
+    A[Recon] --> B[Discovery]
+    B --> C[Exploit]
+    C --> D[Impact]
+```
 
-Format the report professionally with clear sections and bullet points where appropriate.
-Focus on actionable findings and practical recommendations.
-Be specific about vulnerabilities found and provide technical details."""
+# FINDINGS TABLE
+| Vulnerability | Severity | Impact | Evidence |
+|--------------|----------|---------|----------|
+| [Vuln] | Critical/High/Medium/Low | [Impact] | [Proof] |
+
+# ATTACK NARRATIVE
+Brief story of compromise:
+1. **Recon**: Surface mapping
+2. **Discovery**: Vulnerabilities found
+3. **Exploit**: Compromise achieved
+4. **Impact**: Access/data obtained
+
+# RECOMMENDATIONS
+- **Immediate**: Critical fixes
+- **Short-term**: Hardening
+- **Long-term**: Architecture
+
+# CONCLUSION
+Security score [X/10]. Key gaps. Next steps.
+
+Ghost's voice: Confident. Precise. No fluff."""
+
+    return report_guidance
 
 
 def get_report_agent_system_prompt() -> str:
     """
     Get the system prompt for the report generation agent.
-    
+
     Returns:
         The system prompt for report generation
     """
     return (
-        "You are a cybersecurity report generator. Generate comprehensive, professional "
-        "penetration testing reports. Output ONLY the final report content without any "
-        "preamble, thinking, or commentary. Begin directly with the report header and content."
+        "You are Ghost's report generator, creating professional security assessment reports. "
+        "Generate comprehensive reports with visual elements (Mermaid diagrams, tables). "
+        "Write with Ghost's distinctive voice - confident, precise, seeing attack paths others miss. "
+        "Output ONLY the final report content. Begin directly with the report header."
     )
 
 
 def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 30) -> str:
     """
     Format evidence list into readable text for the report.
-    
+
     Args:
         evidence: List of evidence dictionaries
         max_items: Maximum number of items to include
-        
+
     Returns:
         Formatted evidence text
     """
     if not evidence:
         return "No specific evidence collected during assessment."
-        
+
     evidence_text = ""
     for i, item in enumerate(evidence[:max_items]):
         category = item.get("category", "unknown").upper()
         content = item.get("content", "")[:500]
-        
+
         if item.get("category") == "finding":
             severity = item.get("severity", "unknown").upper()
             confidence = item.get("confidence", "unknown")
@@ -119,26 +154,26 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                 evidence_text += f"\n{i+1}. [{category} | {severity}] {content}"
         else:
             evidence_text += f"\n{i+1}. [{category}] {content}"
-            
+
         if len(item.get("content", "")) > 500:
             evidence_text += "..."
-            
+
     return evidence_text
 
 
 def format_tools_summary(tools_used: List[str]) -> str:
     """
     Format tools list into a summary.
-    
+
     Args:
         tools_used: List of tool usage strings
-        
+
     Returns:
         Formatted tools summary
     """
     if not tools_used:
         return "No specific tools recorded."
-        
+
     # Count tool usage
     tools_summary = {}
     for tool in tools_used:
@@ -147,6 +182,6 @@ def format_tools_summary(tools_used: List[str]) -> str:
             tools_summary[tool_name] += 1
         else:
             tools_summary[tool_name] = 1
-            
+
     # Format as text
     return "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
