@@ -1,5 +1,5 @@
 /**
- * Cyber-AutoAgent Configuration Context - Enterprise Settings Management
+ * Cyber-AutoAgent Configuration Context - Settings Management
  * 
  * Provides centralized configuration management for all application settings including
  * AI model providers, Docker execution parameters, memory backends, observability,
@@ -11,7 +11,7 @@
  * - Persistent configuration storage in user home directory
  * - Automatic environment variable integration for sensitive credentials
  * - Comprehensive validation and default value management
- * - Professional type safety with TypeScript interfaces
+ * - Type safety with TypeScript interfaces
  * 
  * Configuration Structure:
  * - Model Provider Settings: AI models, regions, authentication
@@ -21,12 +21,10 @@
  * - Observability: Langfuse integration, evaluation metrics
  * - UI Preferences: themes, display options, debugging
  * 
- * @author Cyber-AutoAgent Team
- * @version 0.1.3
- * @since 2025-01-01
+ * Configuration management for all application settings
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -156,9 +154,12 @@ export interface Config {
   
   // Setup Status
   isConfigured: boolean;
+  hasSeenWelcome?: boolean; // Track if user has seen welcome tutorial
+  deploymentMode?: 'local-cli' | 'single-container' | 'full-stack'; // Selected deployment mode
   
   // Backward compatibility
   enableObservability?: boolean; // Deprecated, use observability instead
+  updateChannel?: string; // Update channel for future use
 }
 
 /**
@@ -201,7 +202,7 @@ const defaultConfig: Config = {
     'us.anthropic.claude-sonnet-4-20250514-v1:0': {
       inputCostPer1k: 0.015,
       outputCostPer1k: 0.075,
-      description: 'Claude Sonnet 4 - Latest, premium pricing (5x output cost)'
+      description: 'Claude Sonnet 4 - Latest model (5x output cost)'
     },
     'claude-3-5-sonnet-20241022-v2:0': {
       inputCostPer1k: 0.003,
@@ -289,7 +290,7 @@ const defaultConfig: Config = {
   cohereApiKey: process.env.COHERE_API_KEY,
   
   // Docker Settings
-  dockerImage: 'cyber-autoagent:latest',
+  dockerImage: 'cyber-autoagent:sudo',
   dockerTimeout: 300,
   volumes: [],
   
@@ -370,13 +371,11 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
   const [applicationConfiguration, setApplicationConfiguration] = useState<Config>(defaultConfig);
   
-  // Configuration file path in user's home directory
-  const configurationFilePath = path.join(os.homedir(), '.cyber-autoagent', 'config.json');
-
-  // Load configuration on component mount
-  useEffect(() => {
-    loadConfigurationFromDisk();
-  }, []);
+  // Configuration file path in user's home directory - useMemo to ensure stable reference
+  const configurationFilePath = useMemo(
+    () => path.join(os.homedir(), '.cyber-autoagent', 'config.json'),
+    []
+  );
 
   /**
    * Load configuration from persistent storage with error handling
@@ -440,6 +439,11 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
     }
   }, [configurationFilePath]);
 
+  // Load configuration on component mount - FIXED: Remove function dependency to prevent infinite loops
+  useEffect(() => {
+    loadConfigurationFromDisk();
+  }, []); // CRITICAL FIX: Only run on mount, not when callback changes
+
   /**
    * Persist current configuration to disk with atomic write operations
    * Ensures configuration directory exists and handles write errors gracefully
@@ -466,10 +470,16 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
    * Triggers immediate state update for real-time UI responsiveness
    */
   const updateApplicationConfiguration = useCallback((configurationUpdates: Partial<Config>) => {
-    setApplicationConfiguration(previousConfiguration => ({
-      ...previousConfiguration,
-      ...configurationUpdates
-    }));
+    setApplicationConfiguration(previousConfiguration => {
+      // PREVENT UNNECESSARY UPDATES: Check if config actually changed
+      const newConfig = { ...previousConfiguration, ...configurationUpdates };
+      const prevStr = JSON.stringify(previousConfiguration);
+      const newStr = JSON.stringify(newConfig);
+      if (prevStr === newStr) {
+        return previousConfiguration; // Return same reference to prevent re-renders
+      }
+      return newConfig;
+    });
   }, []);
 
   /**
@@ -480,14 +490,15 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
     setApplicationConfiguration(defaultConfig);
   }, []);
 
-  // Context provider value with all configuration management methods
-  const contextProviderValue: ConfigContextType = {
+  // CRITICAL FIX: Use useMemo to prevent infinite re-renders 
+  // Without this, the contextProviderValue object gets recreated on every render, causing infinite loops
+  const contextProviderValue: ConfigContextType = useMemo(() => ({
     config: applicationConfiguration,
     updateConfig: updateApplicationConfiguration,
     saveConfig: persistConfigurationToDisk,
     loadConfig: loadConfigurationFromDisk,
     resetToDefaults: resetConfigurationToDefaults
-  };
+  }), [applicationConfiguration, updateApplicationConfiguration, persistConfigurationToDisk, loadConfigurationFromDisk, resetConfigurationToDefaults]);
 
   return (
     <ConfigContext.Provider value={contextProviderValue}>

@@ -1,7 +1,8 @@
 /**
- * Professional Configuration Editor V2
- * Expandable sections with inline editing
- * Inspired by Gemini CLI's clean, hierarchical design
+ * Configuration Editor
+ * 
+ * Expandable sections with inline editing for application configuration.
+ * Features hierarchical navigation and real-time validation.
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
@@ -9,8 +10,9 @@ import SelectInput from 'ink-select-input';
 import TextInput from 'ink-text-input';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { themeManager } from '../themes/theme-manager.js';
+import { Header } from './Header.js';
 
-interface ConfigEditorV2Props {
+interface ConfigEditorProps {
   onClose: () => void;
 }
 
@@ -119,7 +121,7 @@ const SECTIONS: ConfigSection[] = [
   { name: 'Output', label: 'Output', description: 'Report and logging', expanded: false }
 ];
 
-export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
+export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const { config, updateConfig, saveConfig } = useConfig();
   const theme = themeManager.getCurrentTheme();
   
@@ -131,6 +133,8 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'sections' | 'fields'>('sections');
+
+  // Screen clearing is handled by modal manager's refreshStatic()
   
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
@@ -200,6 +204,7 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
       } else if (unsavedChanges) {
         setMessage({ text: 'Unsaved changes. Press Ctrl+S to save or Esc again to exit.', type: 'info' });
       } else {
+        // Screen clearing on exit is handled by modal manager
         onClose();
       }
     }
@@ -248,6 +253,36 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
       handleSave();
     }
   }, { isActive: isInteractive && !editingField });
+
+  // Separate input handler for when editing to handle Ctrl+S
+  useInput((input, key) => {
+    if (key.ctrl && input === 's') {
+      // Save the current editing value first
+      if (editingField && tempValue) {
+        const field = getCurrentSectionFields().find(f => f.key === editingField.field);
+        if (field) {
+          if (field.type === 'number') {
+            const numValue = parseInt(tempValue, 10);
+            if (!isNaN(numValue)) {
+              updateConfigValue(field.key, numValue);
+            }
+          } else {
+            updateConfigValue(field.key, tempValue);
+          }
+        }
+      }
+      setEditingField(null);
+      setTempValue('');
+      handleSave();
+      // Prevent the 's' from being added to the input
+      return;
+    }
+    
+    if (key.escape) {
+      setEditingField(null);
+      setTempValue('');
+    }
+  }, { isActive: isInteractive && editingField !== null });
 
   const handleSave = useCallback(async () => {
     try {
@@ -338,8 +373,8 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
         </Box>
         <Text color={theme.muted}>
           {navigationMode === 'sections' 
-            ? 'Navigate sections with arrows, Enter to expand, Ctrl+S to save, Esc to exit'
-            : 'Navigate fields with arrows, Enter to edit, Esc to collapse section'}
+            ? 'Navigate with ↑↓ arrows • Enter to expand section • Ctrl+S to save • Esc to continue and exit'
+            : 'Navigate with ↑↓ arrows • Enter to edit field • Tab/Shift+Tab to navigate • Esc to collapse section'}
         </Text>
       </Box>
     );
@@ -487,14 +522,16 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
 
   // Main render logic
   return (
-    <Box 
-      flexDirection="column"
-      borderStyle="single" 
-      borderColor={theme.primary}
-      padding={1}
-      width="100%"
-    >
-      {renderHeader()}
+    <Box flexDirection="column" width="100%" height="100%">
+      <Box 
+        flexDirection="column"
+        borderStyle="single" 
+        borderColor={theme.primary}
+        padding={1}
+        width="100%"
+        marginTop={1}
+      >
+        {renderHeader()}
       
       {/* Status bar */}
       <Box marginBottom={1}>
@@ -524,14 +561,15 @@ export const ConfigEditorV2: React.FC<ConfigEditorV2Props> = ({ onClose }) => {
         {renderSections()}
       </Box>
       
-      {/* Footer with shortcuts */}
-      <Box marginTop={1} borderStyle="single" borderColor={theme.muted} paddingX={1}>
-        <Text color={theme.muted}>
-          {navigationMode === 'sections'
-            ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
-            : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
-          }
-        </Text>
+        {/* Footer with shortcuts */}
+        <Box marginTop={1} borderStyle="single" borderColor={theme.muted} paddingX={1}>
+          <Text color={theme.muted}>
+            {navigationMode === 'sections'
+              ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to continue and exit'
+              : '↑↓ Navigate fields • Enter to edit • Tab/Shift+Tab to navigate • Esc to collapse section • Ctrl+S to save'
+            }
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

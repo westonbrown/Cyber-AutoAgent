@@ -1,5 +1,5 @@
 /**
- * AssessmentFlow Service - Professional Security Assessment State Machine
+ * AssessmentFlow Service - Security Assessment State Machine
  * 
  * Manages the structured workflow for cybersecurity assessments with a guided
  * three-step process: Module Selection → Target Definition → Objective Setting.
@@ -16,11 +16,7 @@
  * - Context-aware help system and user guidance
  * - Flexible objective setting with intelligent defaults
  * - State persistence and rollback capabilities
- * - Professional error handling with clear user feedback
- * 
- * @author Cyber-AutoAgent Team
- * @version 0.1.3
- * @since 2025-01-01
+ * - Error handling with clear user feedback
  */
 
 import { AssessmentState, AssessmentParams } from '../types/Assessment.js';
@@ -40,12 +36,14 @@ export interface FlowResult {
   nextPrompt?: string;
   /** Detailed error information for debugging (optional) */
   error?: string;
+  /** Indicates that safety warning should be shown immediately (optional) */
+  readyToExecute?: boolean;
 }
 
 /**
- * AssessmentFlow - Professional Security Assessment State Machine
+ * AssessmentFlow - Security Assessment State Machine
  * 
- * Orchestrates the complete assessment configuration workflow with robust
+ * Orchestrates the complete assessment configuration workflow with
  * state management, validation, and user guidance. Ensures consistent
  * security assessment setup across all supported security domains.
  */
@@ -297,36 +295,51 @@ export class AssessmentFlow {
    */
   private processObjectiveSettingInput(userInput: string): FlowResult {
     // Empty input indicates use of module default objective
-    if (!userInput) {
+    if (!userInput || userInput.trim() === '') {
       this.assessmentState.objective = this.generateDefaultObjective(this.assessmentState.module!);
       this.assessmentState.stage = 'ready';
       return {
         success: true,
         message: `Using default ${this.assessmentState.module} assessment objective`,
-        nextPrompt: 'Assessment configuration complete - Press Enter to execute'
+        nextPrompt: 'Type "execute" or press Enter to start assessment'
       };
     }
 
-    // Check if user typed 'execute' - treat as empty objective
-    if (userInput.toLowerCase() === 'execute') {
+    // Check if user typed 'execute' alone - treat as using default objective and trigger execution
+    if (userInput.toLowerCase().trim() === 'execute') {
       this.assessmentState.objective = this.generateDefaultObjective(this.assessmentState.module!);
       this.assessmentState.stage = 'ready';
       
       return {
         success: true,
         message: 'Using default objective',
-        nextPrompt: 'Assessment configuration complete - Press Enter to execute'
+        nextPrompt: 'Ready to execute - Press Enter to start assessment',
+        readyToExecute: true  // Signal that we should trigger safety warning immediately
       };
     }
     
-    // Set custom assessment objective
+    // Check if user typed 'execute' with an objective (e.g., "execute focus on OWASP Top 10")
+    if (userInput.toLowerCase().startsWith('execute ')) {
+      const objective = userInput.substring(8).trim(); // Remove 'execute ' prefix
+      this.assessmentState.objective = objective || this.generateDefaultObjective(this.assessmentState.module!);
+      this.assessmentState.stage = 'ready';
+      
+      return {
+        success: true,
+        message: `Custom objective configured: ${this.assessmentState.objective}`,
+        nextPrompt: 'Ready to execute - Press Enter to start assessment',
+        readyToExecute: true  // Signal that we should trigger safety warning immediately
+      };
+    }
+    
+    // Set custom assessment objective (user typed something else)
     this.assessmentState.objective = userInput;
     this.assessmentState.stage = 'ready';
     
     return {
       success: true,
       message: `Custom objective configured: ${userInput}`,
-      nextPrompt: 'Assessment configuration complete - Press Enter to execute'
+      nextPrompt: 'Type "execute" or press Enter to start assessment'
     };
   }
 

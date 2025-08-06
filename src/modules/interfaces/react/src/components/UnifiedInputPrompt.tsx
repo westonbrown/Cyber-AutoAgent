@@ -3,7 +3,7 @@
  * Supports both guided flow (module→target→objective→execute) and natural language input
  * Provides intelligent autocomplete and suggestions based on current flow state
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { themeManager } from '../themes/theme-manager.js';
@@ -42,78 +42,114 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   recentTargets = []
 }) => {
   const theme = themeManager.getCurrentTheme();
-  const { currentModule } = useModule();
+  const { currentModule, availableModules: contextModules } = useModule();
+  
+  // Use modules from context if not provided as prop
+  const modules = availableModules.length > 1 || availableModules[0] !== 'general' 
+    ? availableModules 
+    : Object.keys(contextModules);
   const [value, setValue] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const previousStep = useRef(flowState.step);
 
   // Generate smart suggestions based on flow state and input
-  const generateSuggestions = useCallback((input: string): Suggestion[] => {
+  // Don't use useCallback here to avoid infinite loop
+  const generateSuggestions = (input: string): Suggestion[] => {
     const suggestions: Suggestion[] = [];
     
     if (!input.trim()) {
-      // No input - show appropriate suggestions based on flow state
+      // No input - show appropriate suggestions based on flow state and user journey
       switch (flowState.step) {
         case 'idle':
-          suggestions.push(
-            { text: 'scan https://example.com', description: 'Quick security scan', type: 'natural' },
-            { text: '/plugins', description: 'Select security plugin', type: 'command' },
-            { text: '/config', description: 'Configure settings', type: 'command' },
-            { text: '/memory', description: 'Search memory', type: 'command' }
-          );
+          // Check if user has existing memories to suggest continuation
+          const hasMemories = recentTargets.length > 0;
+          
+          if (hasMemories) {
+            // Returning user - suggest continuing previous work
+            suggestions.push(
+              { text: `target ${recentTargets[0]}`, description: 'Continue testing recent target', type: 'command' },
+              { text: 'target https://testphp.vulnweb.com', description: 'Test on authorized target', type: 'command' },
+              { text: '/docs', description: 'Browse documentation', type: 'command' },
+              { text: '/config', description: 'Configure settings', type: 'command' }
+            );
+          } else {
+            // First-time user - guide them through basics
+            suggestions.push(
+              { text: 'target https://testphp.vulnweb.com', description: 'Set authorized test target', type: 'command' },
+              { text: '/docs', description: 'Read user instructions', type: 'command' },
+              { text: '/help', description: 'Show all commands', type: 'command' },
+              { text: '/setup', description: 'Choose deployment mode', type: 'command' },
+              { text: '/config', description: 'Configure AI provider', type: 'command' }
+            );
+          }
           break;
         case 'module':
           suggestions.push(
-            { text: '/plugins', description: 'Open plugin selector', type: 'command' }
+            { text: '/plugins', description: 'Browse available security modules', type: 'command' }
           );
           break;
         case 'target':
+          // Prioritize authorized test targets and recent targets
           suggestions.push(
-            { text: 'target https://example.com', description: 'Web application target', type: 'target' },
-            { text: 'target 192.168.1.1', description: 'Network target', type: 'target' },
-            { text: 'target api.example.com', description: 'API endpoint target', type: 'target' }
+            { text: 'target https://testphp.vulnweb.com', description: 'Authorized test application', type: 'target' },
+            { text: 'target https://your-authorized-target.com', description: 'Your authorized web application', type: 'target' },
+            { text: 'target https://api.example.com', description: 'Your authorized API endpoint', type: 'target' },
+            { text: 'target 192.168.1.0/24', description: 'Your authorized network range', type: 'target' }
           );
-          recentTargets.forEach(target => {
-            suggestions.push({ text: `target ${target}`, description: `Recent target`, type: 'target' });
+          // Add recent targets at the top
+          recentTargets.slice(0, 3).forEach(target => {
+            suggestions.unshift({ text: `target ${target}`, description: `Recent: Continue testing`, type: 'target' });
           });
           break;
         case 'objective':
+          // Context-aware objectives - user can press Enter, type execute, or enter custom objective
           suggestions.push(
-            { text: 'execute', description: 'Start with default objective', type: 'command' },
-            { text: 'execute focus on authentication', description: 'Custom: Authentication testing', type: 'command' },
-            { text: 'execute look for SQL injection', description: 'Custom: SQL injection testing', type: 'command' },
-            { text: 'execute comprehensive scan', description: 'Custom: Full security assessment', type: 'command' }
+            { text: '', description: '⏎ Press Enter for default objective', type: 'command' },
+            { text: 'execute', description: 'Use default objective and start assessment', type: 'command' },
+            { text: 'execute focus on OWASP Top 10', description: 'Start with OWASP Top 10 focus', type: 'command' },
+            { text: 'execute test authentication', description: 'Start with auth testing focus', type: 'command' },
+            { text: 'focus on SQL injection', description: 'Set SQL injection as objective', type: 'command' },
+            { text: 'check for misconfigurations', description: 'Set configuration review as objective', type: 'command' }
           );
           break;
         case 'ready':
           suggestions.push(
-            { text: '', description: 'Press Enter to start assessment', type: 'command' },
-            { text: 'reset', description: 'Start over', type: 'command' },
-            { text: '/plugins', description: 'Change plugin', type: 'command' }
+            { text: 'execute', description: '▶ Start security assessment', type: 'command' },
+            { text: '', description: '⏎ Press Enter to start assessment', type: 'command' },
+            { text: 'reset', description: 'Change configuration', type: 'command' }
           );
           break;
       }
     } else {
-      // Filter suggestions based on input
+      // Filter suggestions based on input with enhanced command set
       const allSuggestions: Suggestion[] = [
-        // Commands
-        { text: '/config', description: 'Configure settings', type: 'command' },
-        { text: '/memory', description: 'Search memory', type: 'command' },
-        { text: '/plugins', description: 'Select security plugin', type: 'command' },
-        { text: '/help', description: 'Show help', type: 'command' },
-        { text: '/health', description: 'Check container health', type: 'command' },
-        { text: '/clear', description: 'Clear screen', type: 'command' },
-        { text: '/exit', description: 'Exit application', type: 'command' },
+        // Primary commands
+        { text: '/help', description: 'Show all available commands', type: 'command' },
+        { text: '/docs', description: 'Browse documentation interactively', type: 'command' },
+        { text: '/config', description: 'View and edit configuration', type: 'command' },
+        { text: '/plugins', description: 'Select security assessment module', type: 'command' },
+        { text: '/health', description: 'Check system and container status', type: 'command' },
+        { text: '/setup', description: 'Deployment mode configuration', type: 'command' },
         
-        // Natural language patterns
-        { text: 'scan https://example.com', description: 'Quick security scan', type: 'natural' },
-        { text: 'analyze code in ./src/', description: 'Code security analysis', type: 'natural' },
-        { text: 'test api at api.example.com', description: 'API security testing', type: 'natural' },
+        // Configuration commands
+        { text: '/provider', description: 'Switch AI model provider', type: 'command' },
+        { text: '/iterations', description: 'Set assessment depth (1-200)', type: 'command' },
+        { text: '/observability', description: 'Toggle Langfuse tracing', type: 'command' },
+        { text: '/debug', description: 'Toggle verbose debug output', type: 'command' },
+        
+        // Target patterns (matching user-instructions.md examples)
+        { text: 'target https://testphp.vulnweb.com', description: 'Public authorized test target', type: 'command' },
+        { text: 'target https://your-authorized-target.com', description: 'Your authorized application', type: 'command' },
+        { text: 'target 192.168.1.0/24', description: 'Your authorized network range', type: 'command' },
         
         // Flow commands
-        { text: 'execute', description: 'Start operation', type: 'command' },
-        { text: 'reset', description: 'Reset flow', type: 'command' }
+        { text: 'target', description: 'Set assessment target', type: 'command' },
+        { text: 'execute', description: 'Start security assessment', type: 'command' },
+        { text: 'reset', description: 'Clear current configuration', type: 'command' },
+        { text: '/clear', description: 'Clear terminal screen', type: 'command' },
+        { text: '/exit', description: 'Exit application', type: 'command' }
       ];
 
       const filtered = allSuggestions.filter(suggestion => 
@@ -125,35 +161,50 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
 
     return suggestions.slice(0, 8); // Limit to 8 suggestions
-  }, [flowState, availableModules, recentTargets]);
+  };
 
-  // Update suggestions when input changes
+  // Update suggestions when input changes - use stable dependencies
   useEffect(() => {
     const suggestions = generateSuggestions(value);
-    setFilteredSuggestions(suggestions);
-    setShowSuggestions(suggestions.length > 0 && value.length > 0);
-    setSelectedSuggestionIndex(0);
-  }, [value, generateSuggestions]);
+    
+    // Prevent infinite loops by only updating if suggestions actually changed
+    setFilteredSuggestions(prev => {
+      if (JSON.stringify(prev) === JSON.stringify(suggestions)) {
+        return prev; // Keep same reference if content hasn't changed
+      }
+      return suggestions;
+    });
+    
+    const shouldShow = suggestions.length > 0 && value.length > 0;
+    setShowSuggestions(prev => prev !== shouldShow ? shouldShow : prev);
+    setSelectedSuggestionIndex(prev => prev !== 0 ? 0 : prev);
+  }, [value, flowState.step]); // Only depend on stable values
 
-  // Clear input when flow state changes to target (after module loads)
+  // Clear input when flow state changes to help with transitions
   useEffect(() => {
-    if (flowState.step === 'target' && value.includes('module ')) {
+    // Clear input when transitioning between steps
+    if (previousStep.current !== flowState.step) {
+      // Always clear input when flow state changes to ensure clean transitions
       setValue('');
+      setShowSuggestions(false);
+      
+      // Update the previous step ref
+      previousStep.current = flowState.step;
     }
   }, [flowState.step]);
 
-  // Get prompt indicator (Gemini CLI style)
+  // Get prompt indicator
   const getPromptIndicator = () => {
     if (disabled && !userHandoffActive) return '⏸';
     if (userHandoffActive) return 'response:';
     
     // Show module name if loaded - use currentModule from context
     if (currentModule) {
-      return `${currentModule}:`;
+      return `◆ ${currentModule} >`;
     }
     
     // Default prompt
-    return 'general:'
+    return '◆ general >'
   };
 
   // Get placeholder text
@@ -166,17 +217,17 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       case 'module':
         return '/plugins to select security plugin';
       case 'target':
-        return 'target https://example.com';
+        return 'target https://your-authorized-target.com';
       case 'objective':
-        return 'execute (or "execute [custom objective]")';
+        return 'Press Enter for default, type "execute", or enter custom objective';
       case 'ready':
-        return 'Press Enter to start';
+        return 'Press Enter or type "execute" to start assessment';
       default:
         // If we have a module loaded (by default 'general'), prompt for target
         if (currentModule) {
-          return 'Type target <url> and press Enter';
+          return 'target <url> or type "execute" after setting target';
         }
-        return 'scan example.com or /plugins or /help';
+        return 'target <url> or /plugins or /help';
     }
   };
 
@@ -213,27 +264,16 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       }
     }
 
-    // Handle other shortcuts
-    if (key.ctrl && input === 'l') {
-      onInput('/clear');
-      setValue('');
-      return;
-    }
-    
-    if (key.ctrl && input === 'c') {
-      if (value.length > 0) {
-        setValue('');
-        setShowSuggestions(false);
-      }
-      return;
-    }
+    // Note: Ctrl+L and Ctrl+C are handled at the App level
   }, { isActive: isInteractive });
 
   const handleSubmit = (submittedValue: string) => {
     if (!disabled) {
-      onInput(submittedValue);
+      // Clear the input first to ensure UI updates immediately
       setValue('');
       setShowSuggestions(false);
+      // Then process the command (might trigger state updates)
+      onInput(submittedValue);
     }
   };
 
@@ -243,24 +283,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* Suggestions dropdown */}
-      {showSuggestions && filteredSuggestions.length > 0 && (
-        <Box flexDirection="column" borderStyle="single" borderColor={theme.muted} paddingX={1} marginBottom={1}>
-          <Text color={theme.info} bold>Suggestions:</Text>
-          {filteredSuggestions.map((suggestion, index) => (
-            <Box key={index}>
-              <Text color={index === selectedSuggestionIndex ? theme.primary : theme.foreground}>
-                {index === selectedSuggestionIndex ? '> ' : '  '}
-                {suggestion.text}
-              </Text>
-              <Text color={theme.muted}> - {suggestion.description}</Text>
-            </Box>
-          ))}
-          <Text color={theme.muted} italic>Use ↑↓ to navigate, Tab/Enter to select, Esc to cancel</Text>
-        </Box>
-      )}
-
-      {/* Input prompt - Gemini CLI style with full width */}
+      {/* Input prompt with full width */}
       <Box 
         borderStyle="round" 
         borderColor={disabled ? theme.muted : theme.accent} 
@@ -282,19 +305,36 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Box>
       </Box>
 
+      {/* Suggestions dropdown positioned below input */}
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <Box flexDirection="column" borderStyle="single" borderColor={theme.muted} paddingX={1} marginTop={1} marginBottom={1}>
+          <Text color={theme.info} bold>Suggestions:</Text>
+          {filteredSuggestions.map((suggestion, index) => (
+            <Box key={index}>
+              <Text color={index === selectedSuggestionIndex ? theme.primary : theme.foreground}>
+                {index === selectedSuggestionIndex ? '> ' : '  '}
+                {suggestion.text}
+              </Text>
+              <Text color={theme.muted}> - {suggestion.description}</Text>
+            </Box>
+          ))}
+          <Text color={theme.muted} italic>Use ↑↓ to navigate, Tab/Enter to select, Esc to cancel</Text>
+        </Box>
+      )}
+
       {/* Helpful hints - more subtle */}
       {!showSuggestions && value.length === 0 && (
         <Box marginTop={1} marginBottom={2}>
           <Text color={theme.muted}>
             {(() => {
               if (currentModule && flowState.step === 'target') {
-                return `Type target <url> and press Enter`;
+                return `Set your target: target https://your-authorized-target.com`;
               } else if (flowState.step === 'objective') {
-                return `Type 'execute' and optionally add custom objective, then press Enter`;
+                return `Quick options: Press Enter for default, type "execute", or enter custom objective`;
               } else if (flowState.step === 'ready') {
-                return `Press Enter to start assessment`;
+                return `Press Enter or type "execute" to start assessment`;
               } else {
-                return `Type your command or '/help' for available options`;
+                return `Quick start: target <url> or use /help for all commands`;
               }
             })()}
           </Text>

@@ -1,6 +1,7 @@
 /**
- * Professional Theme System for Cyber-AutoAgent
- * Based on Gemini CLI's color palette for consistency
+ * Theme System for Cyber-AutoAgent
+ * 
+ * Defines color schemes and styling options for consistent UI theming.
  */
 
 export interface CyberTheme {

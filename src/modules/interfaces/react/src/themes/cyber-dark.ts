@@ -1,6 +1,7 @@
 /**
  * Cyber Dark Theme - Default theme for Cyber-AutoAgent
- * Using Gemini CLI's exact color scheme for professional consistency
+ * 
+ * Dark theme with blue and cyan color accents for terminal consistency.
  */
 
 import { CyberTheme } from './types.js';

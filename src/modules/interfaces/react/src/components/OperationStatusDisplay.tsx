@@ -119,7 +119,7 @@ export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = ({
         <Box borderStyle="double" borderColor={theme.primary} paddingX={1}>
           <Box flexDirection="column">
             <Box>
-              <Text color={theme.primary} bold>🔄 Operation {currentOperation.id} </Text>
+              <Text color={theme.primary} bold>Operation {currentOperation.id} </Text>
               <Text color={theme.muted}>({formatDuration(currentOperation.startTime)})</Text>
             </Box>
             <Box>

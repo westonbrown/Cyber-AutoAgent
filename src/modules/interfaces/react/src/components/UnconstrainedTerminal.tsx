@@ -12,7 +12,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, Static } from 'ink';
 import { StreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { DirectDockerService } from '../services/DirectDockerService.js';
-import { EventAggregator } from '../utils/eventAggregator.js';
 import { themeManager } from '../themes/theme-manager.js';
 
 interface UnconstrainedTerminalProps {
@@ -43,12 +42,192 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
     evidence: 0
   });
   
-  const aggregatorRef = useRef(new EventAggregator());
+  // State for event processing - replacing EventAggregator with React patterns
+  const [activeThinking, setActiveThinking] = useState(false);
+  const [activeReasoning, setActiveReasoning] = useState(false);
+  const [currentToolId, setCurrentToolId] = useState<string | undefined>(undefined);
+  const [lastOutputContent, setLastOutputContent] = useState('');
+  const [lastOutputTime, setLastOutputTime] = useState(0);
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Constants for event processing
+  const COMMAND_BUFFER_MS = 100;
+  const OUTPUT_DEDUPE_TIME_MS = 1000;
   const theme = themeManager.getCurrentTheme();
+  
+  // Event processing function - replaces EventAggregator.processEvent
+  const processEvent = (event: any): DisplayStreamEvent[] => {
+    const results: DisplayStreamEvent[] = [];
+    
+    switch (event.type) {
+      case 'step_header':
+        // End any active reasoning session
+        setActiveReasoning(false);
+        
+        results.push({
+          type: 'step_header',
+          step: event.step,
+          maxSteps: event.maxSteps,
+          operation: event.operation,
+          duration: event.duration
+        } as DisplayStreamEvent);
+        break;
+        
+      case 'reasoning':
+        // Python backend sends complete reasoning blocks
+        if (event.content && event.content.trim()) {
+          // Clear any active thinking animations when reasoning is shown
+          if (activeThinking) {
+            results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+            setActiveThinking(false);
+          }
+          
+          // Start reasoning session
+          setActiveReasoning(true);
+          
+          // Emit the complete reasoning block directly
+          results.push({
+            type: 'reasoning',
+            content: event.content.trim()
+          } as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'thinking':
+        // Handle thinking start without conflicting with reasoning
+        if (!activeReasoning && !activeThinking) {
+          setActiveThinking(true);
+          results.push({
+            type: 'thinking',
+            context: event.context,
+            startTime: event.startTime,
+            metadata: event.metadata
+          } as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'thinking_end':
+        if (activeThinking) {
+          setActiveThinking(false);
+          results.push({
+            type: 'thinking_end'
+          } as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'delayed_thinking_start':
+        // Handle delayed thinking start - pass through and mark as active
+        if (!activeThinking && !activeReasoning) {
+          setActiveThinking(true);
+          results.push(event as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'tool_start':
+        // Clear any active thinking when tool starts
+        if (activeThinking) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+        
+        setCurrentToolId(event.toolId);
+        
+        results.push({
+          type: 'tool_start',
+          tool_name: event.toolName || event.tool_name || '',
+          tool_input: event.args || event.tool_input || {},
+          toolId: event.toolId,
+          toolName: event.toolName
+        } as DisplayStreamEvent);
+        break;
+        
+      case 'shell_command':
+        results.push({
+          type: 'shell_command',
+          command: event.command,
+          toolId: currentToolId,
+          id: `shell_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          sessionId: 'current'
+        } as DisplayStreamEvent);
+        
+        // Start thinking animation after commands are shown (use delayed event)
+        if (!activeThinking && !activeReasoning) {
+          results.push({
+            type: 'delayed_thinking_start',
+            context: 'tool_execution',
+            startTime: Date.now(),
+            delay: COMMAND_BUFFER_MS
+          } as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'output':
+        // Handle tool output or general output with deduplication
+        if (event.content) {
+          // Basic deduplication
+          const currentTime = Date.now();
+          if (event.content === lastOutputContent && 
+              currentTime - lastOutputTime < OUTPUT_DEDUPE_TIME_MS) {
+            break; // Skip duplicate
+          }
+          setLastOutputContent(event.content);
+          setLastOutputTime(currentTime);
+          
+          // Clear any active thinking when output appears
+          if (activeThinking) {
+            results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+            setActiveThinking(false);
+          }
+          
+          results.push({
+            type: 'output',
+            content: event.content,
+            toolId: currentToolId
+          } as DisplayStreamEvent);
+        }
+        break;
+        
+      case 'tool_end':
+        // Clear any active thinking when tool ends
+        if (activeThinking) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+        
+        results.push({
+          type: 'tool_end',
+          toolId: event.toolId,
+          tool: event.toolName || 'unknown',
+          id: `tool_end_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          sessionId: 'current'
+        } as DisplayStreamEvent);
+        setCurrentToolId(undefined);
+        break;
+        
+      case 'operation_complete':
+        // Clear any active states
+        setActiveThinking(false);
+        setActiveReasoning(false);
+        
+        results.push({
+          type: 'metrics_update',
+          metrics: event.metrics || {},
+          duration: event.duration
+        } as DisplayStreamEvent);
+        break;
+        
+      default:
+        // Pass through other events as-is
+        results.push(event as DisplayStreamEvent);
+        break;
+    }
+    
+    return results;
+  };
 
   useEffect(() => {
-    let flushInterval: NodeJS.Timeout;
     
     // Listen for events from Docker service
     const handleEvent = (event: any) => {
@@ -83,8 +262,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
         return;
       }
       
-      // Process event through aggregator
-      const processedEvents = aggregatorRef.current.processEvent(event);
+      // Process event using direct React state management
+      const processedEvents = processEvent(event);
       if (processedEvents.length > 0) {
         // Handle delayed thinking start events
         const regularEvents: DisplayStreamEvent[] = [];
@@ -158,41 +337,16 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
     // Subscribe to events
     dockerService.on('event', handleEvent);
     
-    // Set up interval to flush pending events
-    flushInterval = setInterval(() => {
-      if (aggregatorRef.current.hasPendingEvents()) {
-        const pendingEvents = aggregatorRef.current.flushPendingEvents();
-        if (pendingEvents.length > 0) {
-          const newCompletedEvents = pendingEvents
-            .filter(e => e.type !== 'thinking' && e.type !== 'thinking_end');
-          
-          if (newCompletedEvents.length > 0) {
-            setCompletedEvents(prev => [...prev, ...newCompletedEvents]);
-          }
-        }
-      }
-    }, 100);
+    // Event flushing no longer needed - events are processed directly
     
-    // Handle completion to flush buffers
+    // Handle completion to reset state
     const handleComplete = () => {
-      // Clear interval
-      if (flushInterval) {
-        clearInterval(flushInterval);
+      // Clear any delayed thinking timers
+      if (delayedThinkingTimerRef.current) {
+        clearTimeout(delayedThinkingTimerRef.current);
       }
       
-      // Flush any remaining pending events
-      const pendingEvents = aggregatorRef.current.flushPendingEvents();
-      const finalEvents = aggregatorRef.current.flush();
-      const allFinalEvents = [...pendingEvents, ...finalEvents];
-      
-      if (allFinalEvents.length > 0) {
-        const newCompletedEvents = allFinalEvents
-          .filter(e => e.type !== 'thinking' && e.type !== 'thinking_end');
-        
-        if (newCompletedEvents.length > 0) {
-          setCompletedEvents(prev => [...prev, ...newCompletedEvents]);
-        }
-      }
+      // No need to flush events - they are processed immediately
       
       // Clear any active events
       setActiveEvents([]);
@@ -203,9 +357,7 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
 
     // Cleanup
     return () => {
-      if (flushInterval) {
-        clearInterval(flushInterval);
-      }
+      // Clean up any delayed thinking timers
       if (delayedThinkingTimerRef.current) {
         clearTimeout(delayedThinkingTimerRef.current);
       }

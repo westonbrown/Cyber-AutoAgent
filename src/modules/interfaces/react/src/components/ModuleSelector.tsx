@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useModule } from '../contexts/ModuleContext.js';
 import { themeManager } from '../themes/theme-manager.js';
+import { Header } from './Header.js';
 
 interface ModuleSelectorProps {
   onClose: () => void;
@@ -80,20 +81,23 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = React.memo(({ onClo
   useInput(handleKeyInput);
   
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.primary}
-      paddingX={3}
-      paddingY={2}
-      width="60%"
-    >
-      {/* Header */}
-      <Box marginBottom={2}>
-        <Text color={theme.primary} bold>
-          Select Security Module
-        </Text>
-      </Box>
+    <Box flexDirection="column" width="100%" height="100%">
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={theme.primary}
+        paddingX={3}
+        paddingY={2}
+        width="60%"
+        alignSelf="center"
+        marginTop={1}
+      >
+        {/* Section Header */}
+        <Box marginBottom={2}>
+          <Text color={theme.primary} bold>
+            Select Security Module
+          </Text>
+        </Box>
       
       {/* Module List */}
       <Box flexDirection="column">
@@ -126,11 +130,12 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = React.memo(({ onClo
         })}
       </Box>
       
-      {/* Footer Instructions */}
-      <Box marginTop={2} borderStyle="single" borderColor={theme.muted} paddingX={1}>
-        <Text color={theme.muted}>
-          ↑↓ Navigate • Enter to select • Esc to cancel
-        </Text>
+        {/* Footer Instructions */}
+        <Box marginTop={2} borderStyle="single" borderColor={theme.muted} paddingX={1}>
+          <Text color={theme.muted}>
+            ↑↓ Navigate • Enter to select • Esc to cancel
+          </Text>
+        </Box>
       </Box>
     </Box>
   );

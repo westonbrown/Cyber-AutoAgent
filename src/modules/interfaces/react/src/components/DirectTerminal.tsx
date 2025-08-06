@@ -1,5 +1,5 @@
 /**
- * Direct Professional Terminal - Optimized for smooth streaming
+ * Direct Terminal - Optimized for smooth streaming
  * 
  * Features:
  * - Virtual scrolling for large event streams
@@ -13,10 +13,9 @@ import { Box, useInput, Text } from 'ink';
 import { StreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { DirectDockerService } from '../services/DirectDockerService.js';
 import { EventAggregator } from '../utils/eventAggregator.js';
-import { useStreamingOptimization } from '../hooks/useStreamingOptimization.js';
 import { themeManager } from '../themes/theme-manager.js';
 
-interface DirectProfessionalTerminalProps {
+interface DirectTerminalProps {
   dockerService: DirectDockerService;
   sessionId: string;
   terminalWidth?: number;
@@ -26,7 +25,7 @@ interface DirectProfessionalTerminalProps {
   onMetricsUpdate?: (metrics: { tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number }) => void;
 }
 
-export const DirectProfessionalTerminal: React.FC<DirectProfessionalTerminalProps> = React.memo(({
+export const DirectTerminal: React.FC<DirectTerminalProps> = React.memo(({
   dockerService,
   sessionId,
   terminalWidth = 80,
@@ -48,38 +47,9 @@ export const DirectProfessionalTerminal: React.FC<DirectProfessionalTerminalProp
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const theme = themeManager.getCurrentTheme();
   
-  // Use streaming optimization hook
-  const {
-    visibleEvents,
-    scrollPosition,
-    scrollUp,
-    scrollDown,
-    scrollToBottom,
-    isScrollable
-  } = useStreamingOptimization(events, terminalHeight, {
-    maxVisibleEvents: 50,
-    virtualScrolling: true,
-    renderDebounce: 100
-  });
-  
-  // Handle keyboard input for scrolling
-  useInput((input, key) => {
-    if (!isScrollable) return;
-    
-    if (key.upArrow) {
-      scrollUp();
-    } else if (key.downArrow) {
-      scrollDown();
-    } else if (key.pageUp) {
-      scrollUp(10);
-    } else if (key.pageDown) {
-      scrollDown(10);
-    } else if (input === 'h' && key.ctrl) {
-      scrollUp(999999); // Scroll to top (Ctrl+H for Home)
-    } else if (input === 'e' && key.ctrl) {
-      scrollToBottom(); // Ctrl+E for End
-    }
-  });
+  // Simple scrolling logic without optimization
+  const visibleEvents = events.slice(-terminalHeight);
+  const isScrollable = events.length > terminalHeight;
 
   useEffect(() => {
     let flushInterval: NodeJS.Timeout;
@@ -215,16 +185,14 @@ export const DirectProfessionalTerminal: React.FC<DirectProfessionalTerminalProp
         <StreamDisplay events={visibleEvents} />
       </Box>
       
-      {/* Scroll indicator */}
+      {/* Simple scroll indicator */}
       {isScrollable && (
         <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
           <Text color={theme.muted}>
-            {scrollPosition > 0 ? '↑ ' : '  '}
-            Line {scrollPosition + 1}-{Math.min(scrollPosition + visibleEvents.length, events.length)} of {events.length}
-            {scrollPosition + visibleEvents.length < events.length ? ' ↓' : '  '}
+            Showing last {visibleEvents.length} of {events.length} events
           </Text>
           <Text color={theme.muted}>
-            {scrollPosition + visibleEvents.length >= events.length ? '[END]' : '[↓ More]'}
+            [END]
           </Text>
         </Box>
       )}

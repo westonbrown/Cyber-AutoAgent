@@ -23,7 +23,14 @@ export type LegacyStreamEvent =
   | { type: 'metadata'; content: Record<string, string>; [key: string]: any }
   | { type: 'divider'; [key: string]: any }
   | { type: 'user_handoff'; message: string; breakout: boolean; [key: string]: any }
-  | { type: 'metrics_update'; metrics: any; [key: string]: any }; // Pass-through type
+  | { type: 'metrics_update'; metrics: any; [key: string]: any } // Pass-through type
+  | { type: 'model_invocation_start'; modelId?: string; [key: string]: any }
+  | { type: 'model_stream_delta'; delta?: string; [key: string]: any }
+  | { type: 'reasoning_delta'; delta?: string; [key: string]: any }
+  | { type: 'tool_invocation_start'; toolName?: string; toolInput?: any; [key: string]: any }
+  | { type: 'tool_invocation_end'; duration?: number; success?: boolean; [key: string]: any }
+  | { type: 'event_loop_cycle_start'; cycleNumber?: number; [key: string]: any }
+  | { type: 'content_block_delta'; delta?: string; isReasoning?: boolean; [key: string]: any };
 
 // Combined event type supporting both SDK and legacy events
 export type DisplayStreamEvent = StreamEvent | LegacyStreamEvent;
@@ -143,9 +150,17 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
       let agentInfo = '';
       const stepNumber = event.step;
       
-      // For swarm operations, show that sub-agent is active (actual agent name will be parsed from swarm output)
-      if (stepNumber && stepNumber > 2) { // After initial setup steps
-        agentInfo = ' • [SUB-AGENT] Active';
+      // Show specific swarm agent name if available
+      if (event.swarm_agent) {
+        // Capitalize agent name for better visibility
+        const agentName = event.swarm_agent.toUpperCase();
+        agentInfo = ` • [SUB-AGENT: ${agentName}]`;
+      } else if (event.swarm_context) {
+        // If we have swarm context but no specific agent, show operation type
+        agentInfo = ` • [SUB-AGENT: ${event.swarm_context}]`;
+      } else if (event.is_swarm_operation) { 
+        // Show swarm operation indicator
+        agentInfo = ' • [SWARM OPERATION]';
       }
       
       return (
@@ -259,11 +274,6 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
               </Box>
             </Box>
           );
-          
-          
-        case 'think':
-          // think output goes to reasoning, don't show input
-          break;
           
         case 'python_repl':
           const code = event.tool_input.code || '';

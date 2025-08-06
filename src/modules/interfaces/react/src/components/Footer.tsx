@@ -1,7 +1,7 @@
 /**
- * Professional Footer Component
- * Displays model info, context remaining, directory status, and operation metrics
- * Based on Gemini CLI Footer design patterns
+ * Footer Component
+ * 
+ * Displays model info, context remaining, directory status, and operation metrics.
  */
 import React from 'react';
 import { Box, Text } from 'ink';
@@ -124,7 +124,7 @@ export const Footer: React.FC<FooterProps> = ({
         <Text color={theme.muted}>  |  </Text>
         
         {/* Keyboard shortcuts */}
-        <Text color={theme.muted}>[ESC] Kill Operation</Text>
+        <Text color={theme.muted}>[ESC] Kill Switch</Text>
         
         {/* Errors if any */}
         {errorCount > 0 && (
@@ -140,10 +140,13 @@ export const Footer: React.FC<FooterProps> = ({
         <Text color={connIcon.color}>{connIcon.icon}</Text>
         <Text color={theme.muted}> {connectionStatus === 'connected' ? 'bedrock' : connectionStatus}</Text>
         
-        <Text color={theme.muted}>  |  </Text>
-        
-        {/* Model */}
-        <Text color={theme.muted}>{model}</Text>
+        {/* Model - only show if provided */}
+        {model && (
+          <>
+            <Text color={theme.muted}>  |  </Text>
+            <Text color={theme.muted}>{model}</Text>
+          </>
+        )}
       </Box>
     </Box>
   );

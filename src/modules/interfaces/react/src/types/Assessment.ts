@@ -22,8 +22,6 @@ export interface Module {
   path: string;
   description: string;
   tools: string[];
-  executionPrompt?: string;
-  reportPrompt?: string;
 }
 
 export interface Memory {
@@ -35,13 +33,6 @@ export interface Memory {
   confidence?: string;
   created_at: string;
   metadata?: Record<string, any>;
-}
-
-export interface DockerStatus {
-  connected: boolean;
-  running: boolean;
-  containerId?: string;
-  error?: string;
 }
 
 export interface SessionInfo {

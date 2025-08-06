@@ -1,6 +1,6 @@
 /**
  * Slash Commands Hook
- * Implements Gemini CLI-style slash commands for quick actions
+ * Implements slash commands for quick actions and navigation
  */
 
 import { useCallback } from 'react';
@@ -25,15 +25,44 @@ export const useSlashCommands = () => {
         command: '/help',
         description: 'Show available commands and shortcuts',
         action: () => {
-          console.log('Cyber-AutoAgent Slash Commands:');
-          console.log('/scan <target> - Quick vulnerability scan');
-          console.log('/module <name> - Switch security module');
-          console.log('/target <ip/url> - Set assessment target');
-          console.log('/config - Show current configuration');
-          console.log('/health - Check container health status');
-          console.log('/history - Show command history');
-          console.log('/clear - Clear screen');
-          console.log('/exit - Exit application');
+          console.log('\n▣ Cyber-AutoAgent Command Reference\n');
+          console.log('ASSESSMENT COMMANDS:');
+          console.log('  target <url>          - Set assessment target');
+          console.log('  execute [objective]   - Start assessment with optional focus');
+          console.log('  reset                 - Clear current configuration\n');
+          
+          console.log('SLASH COMMANDS:');
+          console.log('  /help                 - Show this help message');
+          console.log('  /docs                 - Browse documentation interactively');
+          console.log('  /plugins              - Select security assessment module');
+          console.log('  /config               - View current configuration');
+          console.log('  /config edit          - Edit configuration interactively');
+          console.log('  /health               - Check system and container status');
+          console.log('  /setup                - Choose deployment mode\n');
+          
+          console.log('CONFIGURATION:');
+          console.log('  /provider <type>      - Switch AI provider (bedrock/ollama/litellm)');
+          console.log('  /iterations <num>     - Set max tool executions (1-200)');
+          console.log('  /region <aws-region>  - Set AWS region for Bedrock');
+          console.log('  /observability <on/off> - Toggle Langfuse tracing');
+          console.log('  /debug <on/off>       - Toggle verbose debug output\n');
+          
+          console.log('UTILITIES:');
+          console.log('  /clear                - Clear terminal screen');
+          console.log('  /exit                 - Exit application\n');
+          
+          console.log('KEYBOARD SHORTCUTS:');
+          console.log('  Tab                   - Autocomplete suggestions');
+          console.log('  ↑↓                    - Navigate suggestions');
+          console.log('  Ctrl+C                - Clear input / Pause assessment');
+          console.log('  Ctrl+L                - Clear screen');
+          console.log('  Esc                   - Close modals (component-specific)\n');
+          
+          console.log('EXAMPLES:');
+          console.log('  target https://testphp.vulnweb.com');
+          console.log('  execute focus on OWASP Top 10\n');
+          
+          console.log('For detailed instructions, use: /docs');
         }
       },
       {
@@ -76,53 +105,50 @@ export const useSlashCommands = () => {
         }
       },
       {
-        command: '/scan',
-        description: 'Quick vulnerability scan of target',
-        action: (args) => {
-          if (args.length === 0) {
-            console.log('Usage: /scan <target>');
-            return;
-          }
-          const target = args[0];
-          // This would trigger a quick scan
-          console.log(`Starting quick scan of ${target}...`);
-        },
-        args: ['target']
-      },
-      {
-        command: '/module',
-        description: 'Switch to different security module',
+        command: '/docs',
+        description: 'Browse documentation interactively',
         action: async (args) => {
-          if (args.length === 0) {
-            console.log('Available modules:', Object.keys(availableModules).join(', '));
-            console.log('Current module:', currentModule);
+          // Parse document number if provided
+          const docNumber = args.length > 0 ? parseInt(args[0]) : undefined;
+          
+          if (docNumber && (isNaN(docNumber) || docNumber < 1 || docNumber > 7)) {
+            console.log('Invalid document number. Please use a number between 1 and 7.');
             return;
           }
           
+          // Signal to open documentation viewer modal
+          // This will be handled by the App component
+          console.log('OPEN_DOCS_MODAL', docNumber);
+        },
+        args: ['document_number']
+      },
+      {
+        command: '/plugins',
+        description: 'Select security assessment module interactively',
+        action: async (args) => {
+          if (args.length === 0) {
+            console.log('\n▣ Security Assessment Modules\n');
+            console.log('Current module:', currentModule || 'general');
+            console.log('\nAvailable modules:');
+            Object.entries(availableModules).forEach(([name, module]) => {
+              const isCurrent = name === currentModule;
+              console.log(`  ${isCurrent ? '▶' : '•'} ${name} - ${module.description || 'Security assessment module'}`);
+            });
+            console.log('\nUse /plugins in the main interface to select interactively.');
+            return;
+          }
+          
+          // Direct module switching if name provided
           const moduleName = args[0];
           if (availableModules[moduleName]) {
             await switchModule(moduleName);
-            console.log(`Switched to module: ${moduleName}`);
+            console.log(`✓ Switched to module: ${moduleName}`);
           } else {
             console.log(`Unknown module: ${moduleName}`);
             console.log('Available modules:', Object.keys(availableModules).join(', '));
           }
         },
         args: ['module_name']
-      },
-      {
-        command: '/target',
-        description: 'Set assessment target',
-        action: (args) => {
-          if (args.length === 0) {
-            console.log('Usage: /target <ip_or_url>');
-            return;
-          }
-          const target = args[0];
-          console.log(`Target set to: ${target}`);
-          // This would update the current target
-        },
-        args: ['ip_or_url']
       },
       {
         command: '/config',
@@ -135,7 +161,14 @@ export const useSlashCommands = () => {
           console.log(`Docker Image: ${config.dockerImage}`);
           console.log(`Iterations: ${config.iterations}`);
           console.log(`Auto Approve: ${config.autoApprove}`);
-          console.log(`Memory Mode: ${config.memoryMode}`);
+        }
+      },
+      {
+        command: '/setup',
+        description: 'Launch deployment setup wizard',
+        action: () => {
+          // This command will be handled by the app router to show InitializationFlow
+          console.log('Opening setup wizard...');
         }
       },
       {
@@ -182,26 +215,6 @@ export const useSlashCommands = () => {
         args: ['number']
       },
       {
-        command: '/memory',
-        description: 'Configure memory settings',
-        action: async (args) => {
-          if (args.length === 0) {
-            console.log('Usage: /memory <auto|fresh>');
-            console.log('Current memory mode:', config.memoryMode);
-            return;
-          }
-          
-          const mode = args[0] as 'auto' | 'fresh';
-          if (['auto', 'fresh'].includes(mode)) {
-            await updateConfig({ memoryMode: mode });
-            console.log(`Memory mode set to: ${mode}`);
-          } else {
-            console.log('Memory mode must be "auto" or "fresh"');
-          }
-        },
-        args: ['mode']
-      },
-      {
         command: '/region',
         description: 'Set AWS region for Bedrock',
         action: async (args) => {
@@ -216,13 +229,6 @@ export const useSlashCommands = () => {
           console.log(`AWS region set to: ${region}`);
         },
         args: ['aws_region']
-      },
-      {
-        command: '/history',
-        description: 'Show command history',
-        action: () => {
-          console.log('Command history feature coming soon...');
-        }
       },
       {
         command: '/clear',

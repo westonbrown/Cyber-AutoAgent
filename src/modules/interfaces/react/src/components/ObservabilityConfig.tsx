@@ -132,10 +132,10 @@ export const ObservabilityConfig: React.FC<ObservabilityConfigProps> = ({
             </div>
           </div>
 
-          {/* Advanced Options */}
+          {/* Additional Options */}
           <details className="mt-4">
             <summary className="text-sm font-medium text-gray-700 cursor-pointer">
-              Advanced Settings
+              Additional Settings
             </summary>
             <div className="mt-3 space-y-3 pl-4">
               {/* Prompt Management */}
