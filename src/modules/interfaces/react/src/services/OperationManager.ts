@@ -182,6 +182,15 @@ export class OperationManager {
     this.addLog(operationId, 'info', `Step ${step}/${totalSteps}: ${description}`);
   }
 
+  // Update operation with partial updates
+  updateOperation(operationId: string, updates: Partial<Operation>): void {
+    const operation = this.operations.get(operationId);
+    if (operation) {
+      Object.assign(operation, updates);
+      this.operations.set(operationId, operation);
+    }
+  }
+
   // Add finding to operation
   addFinding(operationId: string, finding: string): void {
     const operation = this.operations.get(operationId);

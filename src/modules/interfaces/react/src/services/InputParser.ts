@@ -16,10 +16,8 @@ export interface ParsedCommand {
 
 
 export class InputParser {
-  // Available modules list - simplified
-  private availableModules = [
-    'general'
-  ];
+  // Available modules list - dynamically updated
+  private availableModules: string[] = [];
 
   // Common natural language patterns
   private commandPatterns = [
@@ -233,11 +231,14 @@ export class InputParser {
     return this.availableModules;
   }
 
+  // Set available modules (called from App.tsx with dynamic module list)
+  setAvailableModules(modules: string[]): void {
+    this.availableModules = modules;
+  }
+
   // Get module description - simplified
   getModuleDescription(module: string): string {
-    const descriptions: Record<string, string> = {
-      general: 'General security assessment'
-    };
-    return descriptions[module] || 'Security assessment module';
+    // This method is deprecated - descriptions should come from ModuleContext
+    return 'Security assessment module';
   }
 }

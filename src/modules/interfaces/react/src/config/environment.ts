@@ -4,6 +4,8 @@
  * with appropriate fallbacks and validation
  */
 
+import * as path from 'path';
+
 export type Environment = 'development' | 'staging' | 'production';
 
 export interface EnvironmentConfig {
@@ -119,11 +121,11 @@ export function getDockerComposePaths(): string[] {
   const projectRoot = process.cwd();
   
   return [
-    require('path').join(projectRoot, 'docker', config.dockerCompose.file),
-    require('path').join(projectRoot, config.dockerCompose.file),
-    require('path').join(projectRoot, '..', 'docker', config.dockerCompose.file),
+    path.join(projectRoot, 'docker', config.dockerCompose.file),
+    path.join(projectRoot, config.dockerCompose.file),
+    path.join(projectRoot, '..', 'docker', config.dockerCompose.file),
     // Fallback to default
-    require('path').join(projectRoot, 'docker', 'docker-compose.yml'),
-    require('path').join(projectRoot, 'docker-compose.yml')
+    path.join(projectRoot, 'docker', 'docker-compose.yml'),
+    path.join(projectRoot, 'docker-compose.yml')
   ];
 }

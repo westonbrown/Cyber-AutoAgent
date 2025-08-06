@@ -8,7 +8,7 @@
  * Key Features:
  * - Real-time streaming of assessment progress and tool outputs
  * - Structured event parsing with automatic grouping and buffering
- * - Robust error handling and container lifecycle management
+ * - Error handling and container lifecycle management
  * - Full AWS credential and environment variable support
  * 
  * Event Flow: Docker Container → stdout → Event Parser → React Components
@@ -25,6 +25,7 @@ import path from 'path';
 import { AssessmentParams } from '../types/Assessment.js';
 import { Config } from '../contexts/ConfigContext.js';
 import { StreamEvent, EventType } from '../types/events.js';
+import { ContainerManager, DeploymentMode } from './ContainerManager.js';
 
 /**
  * Sanitize target name for filesystem use (matches Python agent logic)
@@ -40,10 +41,10 @@ function sanitizeTargetName(target: string): string {
 }
 
 /**
- * DirectDockerService - Professional Docker container execution service
+ * DirectDockerService - Docker container execution service
  * 
  * Manages the complete lifecycle of Cyber-AutoAgent Docker containers with
- * enterprise-grade error handling, event streaming, and AWS integration.
+ * error handling, event streaming, and AWS integration.
  * 
  * @extends EventEmitter
  * @emits 'event' - Parsed structured events from container stdout
@@ -199,7 +200,7 @@ export class DirectDockerService extends EventEmitter {
       
       // Create container
       this.activeContainer = await this.dockerClient.createContainer({
-        Image: 'cyber-autoagent:latest',
+        Image: 'cyber-autoagent:sudo',
         Cmd: args, // Only pass arguments, entrypoint is already set in Docker image
         Env: env,
         AttachStdout: true,
@@ -266,38 +267,80 @@ export class DirectDockerService extends EventEmitter {
         this.stop();
       });
 
-      // Start container with progressive status updates
-      this.emit('event', {
-        type: 'output',
-        content: '▶ Initializing security assessment container...',
-        timestamp: Date.now()
-      });
+      // Get deployment mode to show appropriate startup messages
+      const containerManager = ContainerManager.getInstance();
+      const deploymentMode = await containerManager.getCurrentMode();
+      
+      // Start container with progressive status updates based on deployment mode
+      if (deploymentMode === 'local-cli') {
+        this.emit('event', {
+          type: 'output',
+          content: '▶ Initializing Python assessment environment...',
+          timestamp: Date.now()
+        });
+      } else {
+        this.emit('event', {
+          type: 'output',
+          content: '▶ Initializing security assessment container...',
+          timestamp: Date.now()
+        });
+      }
       
       await this.activeContainer.start();
       
-      // Initial startup messages
+      // Initial startup messages based on deployment mode
       setTimeout(() => {
-        this.emit('event', {
-          type: 'output',
-          content: '◆ Container started successfully',
-          timestamp: Date.now()
-        });
+        if (deploymentMode === 'local-cli') {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Python environment ready',
+            timestamp: Date.now()
+          });
+        } else {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Container started successfully',
+            timestamp: Date.now()
+          });
+        }
       }, 500);
 
       setTimeout(() => {
-        this.emit('event', {
-          type: 'output', 
-          content: '◆ Setting up isolated security sandbox environment',
-          timestamp: Date.now()
-        });
+        if (deploymentMode === 'local-cli') {
+          this.emit('event', {
+            type: 'output', 
+            content: '◆ Setting up direct Python security assessment environment',
+            timestamp: Date.now()
+          });
+        } else if (deploymentMode === 'single-container') {
+          this.emit('event', {
+            type: 'output', 
+            content: '◆ Setting up minimal containerized security environment',
+            timestamp: Date.now()
+          });
+        } else {
+          this.emit('event', {
+            type: 'output', 
+            content: '◆ Setting up isolated security sandbox environment',
+            timestamp: Date.now()
+          });
+        }
       }, 1000);
 
       setTimeout(() => {
-        this.emit('event', {
-          type: 'output',
-          content: '◆ Discovering cybersecurity assessment tools...',
-          timestamp: Date.now()
-        });
+        if (deploymentMode === 'local-cli') {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Loading Python-based cybersecurity tools...',
+            timestamp: Date.now()
+          });
+        } else {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Discovering cybersecurity assessment tools...',
+            timestamp: Date.now()
+          });
+        }
       }, 1800);
 
       // Emit thinking indicator during tool setup
@@ -306,7 +349,9 @@ export class DirectDockerService extends EventEmitter {
         context: 'startup',
         startTime: Date.now(),
         metadata: {
-          message: 'Preparing security assessment environment'
+          message: deploymentMode === 'local-cli' 
+            ? 'Preparing Python security assessment environment'
+            : 'Preparing security assessment environment'
         }
       });
       
@@ -553,9 +598,9 @@ export class DirectDockerService extends EventEmitter {
     
     // Check if image exists
     try {
-      await dockerClient.getImage('cyber-autoagent:latest').inspect();
+      await dockerClient.getImage('cyber-autoagent:sudo').inspect();
     } catch {
-      throw new Error('Docker image cyber-autoagent:latest not found. Please run setup first.');
+      throw new Error('Docker image cyber-autoagent:sudo not found. Please run setup first.');
     }
   }
 }

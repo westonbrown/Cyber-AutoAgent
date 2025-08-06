@@ -7,11 +7,11 @@
 
 import React from 'react';
 import { Box } from 'ink';
-import { ConfigEditorV2 } from './ConfigEditorV2.js';
-import { MemorySearch } from './MemorySearch.js';
+import { ConfigEditor } from './ConfigEditor.js';
 import { ModuleSelector } from './ModuleSelector.js';
 import { SafetyWarning } from './SafetyWarning.js';
 import { InitializationFlow } from './InitializationFlow.js';
+import { DocumentationViewer } from './DocumentationViewer.js';
 import { ModalType } from '../hooks/useModalManager.js';
 import { AssessmentFlow } from '../services/AssessmentFlow.js';
 
@@ -58,7 +58,7 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
     case ModalType.CONFIG:
       return (
         <ModalWrapper>
-          <ConfigEditorV2 
+          <ConfigEditor 
             onClose={() => {
               onClose();
               // Show welcome message after config if first run
@@ -72,11 +72,8 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
       );
       
     case ModalType.MEMORY_SEARCH:
-      return (
-        <ModalWrapper>
-          <MemorySearch onClose={onClose} />
-        </ModalWrapper>
-      );
+      // Memory functionality removed - requires Python environment with Mem0
+      return null;
       
     case ModalType.MODULE_SELECTOR:
       return (
@@ -119,6 +116,16 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
               // Show config editor after initialization
               setIsConfigurationModalOpen?.(true);
             }}
+          />
+        </ModalWrapper>
+      );
+      
+    case ModalType.DOCUMENTATION:
+      return (
+        <ModalWrapper>
+          <DocumentationViewer 
+            onClose={onClose}
+            selectedDoc={modalContext.documentIndex}
           />
         </ModalWrapper>
       );

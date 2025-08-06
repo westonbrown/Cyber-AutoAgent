@@ -1,7 +1,8 @@
 /**
  * Health Monitor Service
- * Monitors the status of all Docker containers
- * Professional monitoring system inspired by enterprise platforms
+ * 
+ * Monitors the status of all Docker containers and system health.
+ * Provides container status checking and recommendations.
  */
 
 import { exec } from 'child_process';
@@ -9,6 +10,7 @@ import { promisify } from 'util';
 import { getEnvironmentConfig } from '../config/environment.js';
 import { createLogger } from '../utils/logger.js';
 import { RetryConfigs, CircuitBreakers } from '../utils/retry.js';
+import { ContainerManager } from './ContainerManager.js';
 
 const execAsync = promisify(exec);
 
@@ -38,43 +40,89 @@ export class HealthMonitor {
   private readonly envConfig = getEnvironmentConfig();
   private readonly logger = createLogger('HealthMonitor');
 
-  // Container definitions for persistent services only
-  // Note: cyber-autoagent is created on-demand, not persistent
-  private readonly services = [
-    {
+  // Service definitions map for all possible services
+  // Maps docker-compose service names to container names and display info
+  private readonly serviceDefinitions = {
+    // Direct container names
+    'cyber-autoagent': {
+      name: 'cyber-autoagent',
+      displayName: 'Agent',
+      critical: true
+    },
+    'cyber-langfuse': {
       name: 'cyber-langfuse',
       displayName: 'Langfuse',
       port: 3000,
       url: 'http://localhost:3000',
       critical: true
     },
-    {
+    'cyber-langfuse-worker': {
       name: 'cyber-langfuse-worker',
       displayName: 'Langfuse Worker',
       critical: false
     },
-    {
+    'cyber-langfuse-postgres': {
       name: 'cyber-langfuse-postgres',
       displayName: 'PostgreSQL',
       critical: false
     },
-    {
+    'cyber-langfuse-clickhouse': {
       name: 'cyber-langfuse-clickhouse',
       displayName: 'ClickHouse',
       critical: false
     },
-    {
+    'cyber-langfuse-redis': {
       name: 'cyber-langfuse-redis',
       displayName: 'Redis',
       critical: false
     },
-    {
+    'cyber-langfuse-minio': {
+      name: 'cyber-langfuse-minio',
+      displayName: 'MinIO Storage',
+      port: 9090,
+      critical: false
+    },
+    // Docker-compose service names mapping to container names
+    'langfuse-web': {
+      name: 'cyber-langfuse',
+      displayName: 'Langfuse',
+      port: 3000,
+      url: 'http://localhost:3000',
+      critical: true
+    },
+    'postgres': {
+      name: 'cyber-langfuse-postgres',
+      displayName: 'PostgreSQL',
+      critical: false
+    },
+    'clickhouse': {
+      name: 'cyber-langfuse-clickhouse',
+      displayName: 'ClickHouse',
+      critical: false
+    },
+    'redis': {
+      name: 'cyber-langfuse-redis',
+      displayName: 'Redis',
+      critical: false
+    },
+    'minio': {
       name: 'cyber-langfuse-minio',
       displayName: 'MinIO Storage',
       port: 9090,
       critical: false
     }
-  ];
+  };
+
+  // Get current services based on deployment mode
+  private async getCurrentServices() {
+    const containerManager = ContainerManager.getInstance();
+    const currentMode = await containerManager.getCurrentMode();
+    const config = containerManager.getDeploymentConfig(currentMode);
+    
+    return config.services.map(serviceName => 
+      this.serviceDefinitions[serviceName as keyof typeof this.serviceDefinitions]
+    ).filter(Boolean);
+  }
 
   private constructor() {}
 
@@ -151,23 +199,25 @@ export class HealthMonitor {
 
       if (!dockerRunning) {
         status.overall = 'unhealthy';
-        status.services = this.services.map(svc => ({
+        const currentServices = await this.getCurrentServices();
+        status.services = currentServices.map(svc => ({
           name: svc.name,
           displayName: svc.displayName,
           status: 'error',
           message: 'Docker not running'
         }));
       } else {
-        // Check each service
+        // Check each service based on current deployment mode
+        const currentServices = await this.getCurrentServices();
         const serviceStatuses = await Promise.all(
-          this.services.map(svc => this.checkService(svc))
+          currentServices.map(svc => this.checkService(svc))
         );
         
         status.services = serviceStatuses;
 
         // Determine overall health
         const criticalServices = serviceStatuses.filter((svc, idx) => 
-          this.services[idx].critical
+          currentServices[idx].critical
         );
         const hasUnhealthyCritical = criticalServices.some(
           svc => svc.status !== 'running' || svc.health === 'unhealthy'
@@ -185,7 +235,8 @@ export class HealthMonitor {
       } catch (error) {
         this.logger.error('Health check failed', error as Error);
         status.overall = 'unhealthy';
-        status.services = this.services.map(svc => ({
+        const currentServices = await this.getCurrentServices();
+        status.services = currentServices.map(svc => ({
           name: svc.name,
           displayName: svc.displayName,
           status: 'error',
@@ -248,7 +299,7 @@ export class HealthMonitor {
         if (service.name === 'cyber-autoagent') {
           try {
             const { stdout: containerId } = await execAsync(
-              `docker ps --filter "ancestor=cyber-autoagent:latest" --format "{{.ID}}" | head -1`
+              `docker ps --filter "ancestor=cyber-autoagent:sudo" --format "{{.ID}}" | head -1`
             );
             if (containerId.trim()) {
               const { stdout } = await execAsync(

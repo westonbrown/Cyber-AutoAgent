@@ -33,8 +33,6 @@ describe('Module Loading Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
       
       expect(lastFrame()).toContain('module general');
-      expect(lastFrame()).toContain('module web_security');
-      expect(lastFrame()).toContain('module api_security');
     });
   });
   
@@ -46,14 +44,14 @@ describe('Module Loading Integration', () => {
       stdin.write('\r');
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Load web_security module
-      stdin.write('module web_security');
+      // Load general module
+      stdin.write('module general');
       stdin.write('\r');
       await new Promise(resolve => setTimeout(resolve, 50));
       
-      expect(lastFrame()).toContain('Module loaded: web_security');
+      expect(lastFrame()).toContain('Module loaded: general');
       expect(lastFrame()).toContain('Now set your target:');
-      expect(lastFrame()).toContain('[web_security] >');
+      expect(lastFrame()).toContain('[general] >');
     });
     
     it('should reject invalid module names', async () => {
@@ -82,7 +80,7 @@ describe('Module Loading Integration', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
       
       // Load module
-      stdin.write('module api_security');
+      stdin.write('module general');
       stdin.write('\r');
       await new Promise(resolve => setTimeout(resolve, 50));
       
@@ -101,7 +99,7 @@ describe('Module Loading Integration', () => {
       
       expect(lastFrame()).toContain('Objective set');
       expect(lastFrame()).toContain('Press Enter to start assessment');
-      expect(lastFrame()).toContain('[api_security → api.example.com] >');
+      expect(lastFrame()).toContain('[general → api.example.com] >');
     });
   });
   
@@ -112,9 +110,7 @@ describe('Module Loading Integration', () => {
       // Mock glob for module discovery
       const { glob } = require('glob');
       glob.mockResolvedValue([
-        'general/module.yaml',
-        'web_security/module.yaml',
-        'api_security/module.yaml'
+        'general/module.yaml'
       ]);
       
       // Skip welcome and request module list
@@ -127,8 +123,6 @@ describe('Module Loading Integration', () => {
       
       expect(lastFrame()).toContain('Available Modules');
       expect(lastFrame()).toContain('general');
-      expect(lastFrame()).toContain('web_security');
-      expect(lastFrame()).toContain('api_security');
     });
   });
   
@@ -145,7 +139,7 @@ describe('Module Loading Integration', () => {
     it('should complete full flow from CLI arguments', async () => {
       const { lastFrame } = render(
         <App 
-          module="web_security" 
+          module="general" 
           target="example.com"
           objective="XSS testing"
         />
@@ -156,7 +150,7 @@ describe('Module Loading Integration', () => {
       
       // Should be ready to start assessment
       expect(lastFrame()).toContain('Press Enter to start assessment');
-      expect(lastFrame()).toContain('[web_security → example.com] >');
+      expect(lastFrame()).toContain('[general → example.com] >');
     });
   });
 });

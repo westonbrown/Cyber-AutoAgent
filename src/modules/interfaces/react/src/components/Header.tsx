@@ -1,6 +1,7 @@
 /**
  * Compact Header Component
- * Minimal Gemini CLI-inspired design with responsive logo
+ * 
+ * Minimal design with responsive logo and branding
  */
 
 import React from 'react';
@@ -14,7 +15,7 @@ interface HeaderProps {
   nightly?: boolean;
 }
 
-// ASCII art logos inspired by Gemini CLI
+// ASCII art logos for terminal display
 const longAsciiLogo = `
  ██████╗██╗   ██╗██████╗ ███████╗██████╗      █████╗ ██╗   ██╗████████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗
 ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗    ██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝

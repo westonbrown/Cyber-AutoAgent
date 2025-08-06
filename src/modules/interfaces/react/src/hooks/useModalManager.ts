@@ -2,12 +2,12 @@
  * Centralized Modal Management Hook
  * 
  * Provides a unified interface for managing all modal states and transitions
- * in the application. Uses professional screen clearing techniques inspired
- * by Gemini CLI to prevent UI artifacts and context bleed.
+ * in the application. Uses professional screen clearing techniques to 
+ * prevent UI artifacts and context bleed.
  * 
  * Features:
  * - Single source of truth for modal state
- * - Professional screen transition handling (Gemini CLI pattern)
+ * - Professional screen transition handling
  * - Type-safe modal management
  * - Event-driven architecture support
  */
@@ -22,7 +22,8 @@ export enum ModalType {
   MEMORY_SEARCH = 'memorySearch',
   MODULE_SELECTOR = 'moduleSelector',
   SAFETY_WARNING = 'safetyWarning',
-  INITIALIZATION = 'initialization'
+  INITIALIZATION = 'initialization',
+  DOCUMENTATION = 'documentation'
 }
 
 interface ModalContext {
@@ -38,6 +39,9 @@ interface ModalContext {
   
   // Module selector
   onModuleSelect?: (moduleName: string) => void;
+  
+  // Documentation viewer
+  documentIndex?: number;
 }
 
 interface UseModalManagerResult {
@@ -54,12 +58,14 @@ interface UseModalManagerResult {
   openModal: (type: ModalType, context?: Partial<ModalContext>) => void;
   closeModal: () => void;
   refreshStatic: () => void;
+  refreshStaticOnly: () => void;
   
   // Specific modal helpers
   openConfig: (error?: string) => void;
   openMemorySearch: () => void;
   openModuleSelector: (onSelect: (name: string) => void) => void;
   openSafetyWarning: (execution: ModalContext['pendingExecution']) => void;
+  openDocumentation: (docIndex?: number) => void;
   
   // Check if specific modal is open
   isModalOpen: (type: ModalType) => boolean;
@@ -71,55 +77,36 @@ export const useModalManager = (): UseModalManagerResult => {
   const [staticKey, setStaticKey] = useState(0);
   const { stdout } = useStdout();
   
-  // Track if we're in a transition to prevent double-triggers
-  const isTransitioning = useRef(false);
   
-  // Professional Static refresh function (Gemini CLI pattern)
+  // Screen refresh function  
   const refreshStatic = useCallback(() => {
     stdout.write(ansiEscapes.clearTerminal);
     setStaticKey(prev => prev + 1);
   }, [stdout]);
   
-  // Core modal control with professional screen transition (Gemini CLI pattern)
+  // Static key refresh only
+  const refreshStaticOnly = useCallback(() => {
+    setStaticKey(prev => prev + 1);
+  }, []);
+  
+  // Simplified modal control
   const openModal = useCallback((type: ModalType, context?: Partial<ModalContext>) => {
-    if (isTransitioning.current) return;
-    
-    isTransitioning.current = true;
-    
-    // Professional screen clearing when transitioning to modal
-    if (activeModal === ModalType.NONE) {
-      refreshStatic();
-    }
-    
     // Update modal state
     setActiveModal(type);
     if (context) {
       setModalContext(prev => ({ ...prev, ...context }));
     }
-    
-    // Clear transition flag
-    setTimeout(() => {
-      isTransitioning.current = false;
-    }, 50);
-  }, [activeModal, refreshStatic]);
+  }, []);
   
   const closeModal = useCallback(() => {
-    if (isTransitioning.current) return;
-    
-    isTransitioning.current = true;
-    
-    // Professional screen clearing when closing modal (prevents context bleed)
-    refreshStatic();
-    
     // Clear modal state
     setActiveModal(ModalType.NONE);
     setModalContext({});
     
-    // Clear transition flag
-    setTimeout(() => {
-      isTransitioning.current = false;
-    }, 50);
-  }, [refreshStatic]);
+    // Clear terminal to prevent modal/main content overlap
+    stdout.write(ansiEscapes.clearTerminal);
+    setStaticKey(prev => prev + 1);
+  }, [stdout]);
   
   // Specific modal helpers for type safety and convenience
   const openConfig = useCallback((error?: string) => {
@@ -138,6 +125,10 @@ export const useModalManager = (): UseModalManagerResult => {
     openModal(ModalType.SAFETY_WARNING, { pendingExecution: execution });
   }, [openModal]);
   
+  const openDocumentation = useCallback((docIndex?: number) => {
+    openModal(ModalType.DOCUMENTATION, { documentIndex: docIndex });
+  }, [openModal]);
+  
   const isModalOpen = useCallback((type: ModalType) => {
     return activeModal === type;
   }, [activeModal]);
@@ -149,10 +140,12 @@ export const useModalManager = (): UseModalManagerResult => {
     openModal,
     closeModal,
     refreshStatic,
+    refreshStaticOnly,
     openConfig,
     openMemorySearch,
     openModuleSelector,
     openSafetyWarning,
+    openDocumentation,
     isModalOpen
   };
 };

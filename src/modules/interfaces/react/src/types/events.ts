@@ -19,9 +19,7 @@
  * - Legacy Events: backward compatibility with existing React interface
  * - Telemetry Events: cost tracking, performance monitoring, trace correlation
  * 
- * @author Cyber-AutoAgent Team
- * @version 0.2.0 - SDK-Aligned
- * @since 2025-08-02
+ * SDK-aligned event definitions
  */
 
 /**
@@ -29,7 +27,7 @@
  * 
  * Provides the core structure shared by all event types in the system
  * with essential metadata for tracking, correlation, and debugging.
- * Enhanced with SDK-compatible tracing and context preservation.
+ * Includes SDK-compatible tracing and context preservation.
  */
 export interface BaseEvent {
   /** Unique event identifier for correlation and deduplication */
@@ -59,26 +57,6 @@ export enum EventType {
   // =============================================================================
   // SDK NATIVE EVENTS - Strands SDK core event system
   // =============================================================================
-  /** SDK model invocation started */
-  MODEL_INVOCATION_START = 'model_invocation_start',
-  /** SDK model invocation completed */
-  MODEL_INVOCATION_END = 'model_invocation_end',
-  /** SDK model streaming started */
-  MODEL_STREAM_START = 'model_stream_start',
-  /** SDK model streaming delta content */
-  MODEL_STREAM_DELTA = 'model_stream_delta', 
-  /** SDK model streaming completed */
-  MODEL_STREAM_END = 'model_stream_end',
-  /** SDK tool invocation started */
-  TOOL_INVOCATION_START = 'tool_invocation_start',
-  /** SDK tool invocation completed */
-  TOOL_INVOCATION_END = 'tool_invocation_end',
-  /** SDK event loop cycle started */
-  EVENT_LOOP_CYCLE_START = 'event_loop_cycle_start',
-  /** SDK event loop cycle completed */
-  EVENT_LOOP_CYCLE_END = 'event_loop_cycle_end',
-  /** SDK message added to conversation */
-  MESSAGE_ADDED = 'message_added',
   /** SDK agent initialized */
   AGENT_INITIALIZED = 'agent_initialized',
   
@@ -157,16 +135,8 @@ export enum EventType {
   // =============================================================================
   // SDK STREAMING EVENTS - Real-time content and reasoning streams
   // =============================================================================
-  /** SDK content block started */
-  CONTENT_BLOCK_START = 'content_block_start',
-  /** SDK content block delta update */
-  CONTENT_BLOCK_DELTA = 'content_block_delta',
-  /** SDK content block completed */
-  CONTENT_BLOCK_STOP = 'content_block_stop',
   /** SDK reasoning content started */
   REASONING_START = 'reasoning_start',
-  /** SDK reasoning content delta */
-  REASONING_DELTA = 'reasoning_delta',
   /** SDK reasoning content completed */
   REASONING_END = 'reasoning_end',
   
@@ -177,10 +147,6 @@ export enum EventType {
   METRICS_UPDATE = 'metrics_update',
   /** SDK usage/cost update */
   USAGE_UPDATE = 'usage_update',
-  /** SDK trace started */
-  TRACE_START = 'trace_start',
-  /** SDK trace ended */
-  TRACE_END = 'trace_end',
   
   // =============================================================================
   // LEGACY AI REASONING EVENTS - Backward compatibility
@@ -191,18 +157,6 @@ export enum EventType {
   THINK_PROGRESS = 'think_progress',
   /** AI thinking process completed */
   THINK_END = 'think_end',
-  
-  // =============================================================================
-  // DEVELOPMENT TOOL EVENTS - Code execution and file operations
-  // =============================================================================
-  /** Python REPL code execution */
-  PYTHON_REPL = 'python_repl',
-  /** Python execution output */
-  PYTHON_OUTPUT = 'python_output',
-  /** File editor opened */
-  EDITOR_OPEN = 'editor_open',
-  /** File editor saved changes */
-  EDITOR_SAVE = 'editor_save',
   
   // =============================================================================
   // SYSTEM STATUS EVENTS - Infrastructure and health monitoring
@@ -234,93 +188,14 @@ export enum EventType {
   /** Security agent completed */
   AGENT_COMPLETE = 'agent_complete',
   
-  // =============================================================================
-  // USER INTERACTION EVENTS - Manual intervention and responses
-  // =============================================================================
-  /** User intervention required */
-  USER_HANDOFF = 'user_handoff',
-  /** User response provided */
-  USER_RESPONSE = 'user_response',
 }
 
 // =============================================================================
 // SDK NATIVE EVENT INTERFACE DEFINITIONS - Type-safe SDK event structures
 // =============================================================================
 
-/**
- * SDK Model Invocation Event Interface
- * 
- * Represents SDK model invocation lifecycle with comprehensive context
- * from the Strands SDK's event loop and streaming system.
- */
-export interface SDKModelEvent extends BaseEvent {
-  type: EventType.MODEL_INVOCATION_START | EventType.MODEL_INVOCATION_END | 
-        EventType.MODEL_STREAM_START | EventType.MODEL_STREAM_DELTA | EventType.MODEL_STREAM_END;
-  /** Model identifier from SDK config */
-  modelId?: string;
-  /** Messages being sent to model */
-  messages?: any[];
-  /** System prompt being used */
-  systemPrompt?: string;
-  /** Streaming delta content */
-  delta?: string;
-  /** Whether streaming is complete */
-  isComplete?: boolean;
-  /** Stop reason from model */
-  stopReason?: string;
-  /** SDK performance metrics */
-  metrics?: {
-    latencyMs?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
-  };
-  /** Error information */
-  error?: string;
-}
 
-/**
- * SDK Tool Invocation Event Interface
- * 
- * Represents SDK tool execution with native tool registry integration
- * and comprehensive execution context from hook system.
- */
-export interface SDKToolEvent extends BaseEvent {
-  type: EventType.TOOL_INVOCATION_START | EventType.TOOL_INVOCATION_END;
-  /** Tool name from SDK registry */
-  toolName: string;
-  /** Tool input parameters */
-  toolInput?: any;
-  /** Tool execution result */
-  toolResult?: any;
-  /** SDK tool use ID for correlation */
-  toolUseId?: string;
-  /** Tool execution duration in milliseconds */
-  duration?: number;
-  /** Tool execution success status */
-  success?: boolean;
-  /** Error message if tool execution failed */
-  error?: string;
-  /** SDK invocation state context */
-  invocationState?: Record<string, any>;
-}
 
-/**
- * SDK Event Loop Event Interface
- * 
- * Represents SDK event loop lifecycle with cycle tracking and metrics.
- */
-export interface SDKEventLoopEvent extends BaseEvent {
-  type: EventType.EVENT_LOOP_CYCLE_START | EventType.EVENT_LOOP_CYCLE_END;
-  /** Event loop cycle number */
-  cycleNumber?: number;
-  /** Cycle duration in milliseconds */
-  duration?: number;
-  /** Number of tools executed in cycle */
-  toolCallCount?: number;
-  /** Messages processed in cycle */
-  messageCount?: number;
-}
 
 /**
  * SDK Content Streaming Event Interface
@@ -328,8 +203,7 @@ export interface SDKEventLoopEvent extends BaseEvent {
  * Represents SDK's real-time content streaming with delta updates.
  */
 export interface SDKContentEvent extends BaseEvent {
-  type: EventType.CONTENT_BLOCK_START | EventType.CONTENT_BLOCK_DELTA | EventType.CONTENT_BLOCK_STOP |
-        EventType.REASONING_START | EventType.REASONING_DELTA | EventType.REASONING_END;
+  type: EventType.REASONING_START | EventType.REASONING_END;
   /** Content block index */
   contentBlockIndex?: number;
   /** Delta content update */
@@ -348,7 +222,7 @@ export interface SDKContentEvent extends BaseEvent {
  * Represents SDK's built-in telemetry and metrics collection.
  */
 export interface SDKTelemetryEvent extends BaseEvent {
-  type: EventType.METRICS_UPDATE | EventType.USAGE_UPDATE | EventType.TRACE_START | EventType.TRACE_END;
+  type: EventType.METRICS_UPDATE | EventType.USAGE_UPDATE;
   /** Performance metrics */
   metrics?: {
     latencyMs?: number;
@@ -384,7 +258,7 @@ export interface SDKTelemetryEvent extends BaseEvent {
  * Represents SDK agent initialization and lifecycle events.
  */
 export interface SDKAgentEvent extends BaseEvent {
-  type: EventType.AGENT_INITIALIZED | EventType.MESSAGE_ADDED;
+  type: EventType.AGENT_INITIALIZED;
   /** Agent identifier */
   agentId?: string;
   /** Agent name or type */
@@ -491,24 +365,7 @@ export interface ThinkEvent extends BaseEvent {
   };
 }
 
-// Python REPL events
-export interface PythonEvent extends BaseEvent {
-  type: EventType.PYTHON_REPL | EventType.PYTHON_OUTPUT;
-  code?: string;
-  output?: string;
-  error?: string;
-}
 
-// Editor events
-export interface EditorEvent extends BaseEvent {
-  type: EventType.EDITOR_OPEN | EventType.EDITOR_SAVE;
-  file?: string;
-  content?: string;
-  changes?: {
-    added: number;
-    removed: number;
-  };
-}
 
 // System events
 export interface SystemEvent extends BaseEvent {
@@ -536,13 +393,6 @@ export interface AgentEvent extends BaseEvent {
   result?: any;
 }
 
-// User interaction events
-export interface UserEvent extends BaseEvent {
-  type: EventType.USER_HANDOFF | EventType.USER_RESPONSE;
-  prompt?: string;
-  response?: string;
-  context?: any;
-}
 
 // Python event system events
 export interface PythonSystemEvent extends BaseEvent {
@@ -569,9 +419,6 @@ export interface PythonSystemEvent extends BaseEvent {
  */
 export type StreamEvent = 
   // SDK Native Events
-  | SDKModelEvent
-  | SDKToolEvent
-  | SDKEventLoopEvent
   | SDKContentEvent
   | SDKTelemetryEvent
   | SDKAgentEvent
@@ -583,12 +430,9 @@ export type StreamEvent =
   | HttpEvent
   | MemoryEvent
   | ThinkEvent
-  | PythonEvent
-  | EditorEvent
   | SystemEvent
   | ConnectionEvent
   | AgentEvent
-  | UserEvent
   | PythonSystemEvent;
 
 /**

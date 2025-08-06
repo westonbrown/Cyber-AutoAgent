@@ -3,7 +3,7 @@
  * Manages security modules and their capabilities
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
@@ -35,24 +35,14 @@ export interface ModuleContextType {
 
 const ModuleContext = createContext<ModuleContextType | undefined>(undefined);
 
-// Module keyword mappings for smart suggestions
-const MODULE_KEYWORDS: Record<string, string[]> = {
-  general: ['general', 'comprehensive', 'security', 'assessment', 'pentest', 'scan', 'vulnerability', 'recon']
-};
-
 export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentModule, setCurrentModule] = useState<string>('general');
+  const [currentModule, setCurrentModule] = useState<string>('');
   const [availableModules, setAvailableModules] = useState<Record<string, ModuleInfo>>({});
   const [moduleInfo, setModuleInfo] = useState<ModuleInfo>();
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>();
 
-  // Load all available modules on mount
-  useEffect(() => {
-    loadAvailableModules();
-  }, []);
-
-  const loadAvailableModules = async () => {
+  const loadAvailableModules = useCallback(async () => {
     try {
       // The React app is located at: src/modules/interfaces/react
       // The operation_plugins are at: src/modules/operation_plugins
@@ -63,6 +53,17 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (process.env.DEBUG) {
         console.log('[ModuleContext] Looking for modules in:', modulesDir);
       }
+      
+      // Check if directory exists first
+      try {
+        await fs.access(modulesDir);
+      } catch {
+        // Directory doesn't exist yet - this is normal for new installations
+        // Don't log errors, just set empty modules
+        setAvailableModules({});
+        return;
+      }
+      
       const entries = await fs.readdir(modulesDir, { withFileTypes: true });
       
       const modules: Record<string, ModuleInfo> = {};
@@ -76,17 +77,38 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
       
-      setAvailableModules(modules);
+      // PREVENT UNNECESSARY UPDATES: Check if modules actually changed
+      setAvailableModules(prevModules => {
+        const prevStr = JSON.stringify(prevModules);
+        const newStr = JSON.stringify(modules);
+        if (prevStr === newStr) {
+          return prevModules; // Return same reference to prevent re-renders
+        }
+        return modules;
+      });
       
-      // Load default module
-      if (modules.general) {
-        setModuleInfo(modules.general);
+      // Load default module - use first available if general doesn't exist
+      const moduleNames = Object.keys(modules);
+      if (moduleNames.length > 0) {
+        const defaultModule = modules.general || modules[moduleNames[0]];
+        const defaultModuleName = modules.general ? 'general' : moduleNames[0];
+        setCurrentModule(defaultModuleName);
+        setModuleInfo(defaultModule);
       }
     } catch (err) {
-      console.error('Failed to load modules:', err);
-      setError('Failed to load security modules');
+      // Only log in debug mode - don't show errors to users
+      if (process.env.DEBUG) {
+        console.error('Failed to load modules:', err);
+      }
+      // Silently handle the error - modules are optional
+      setAvailableModules({});
     }
-  };
+  }, []); // Empty dependencies - only changes when component mounts
+
+  // Load all available modules on mount
+  useEffect(() => {
+    loadAvailableModules();
+  }, [loadAvailableModules]);
 
   const loadModuleInfo = async (moduleName: string): Promise<ModuleInfo | null> => {
     try {
@@ -140,7 +162,10 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         reportFormat: moduleConfig.report_format
       };
     } catch (err) {
-      console.error(`Failed to load module ${moduleName}:`, err);
+      // Only log in debug mode
+      if (process.env.DEBUG) {
+        console.error(`Failed to load module ${moduleName}:`, err);
+      }
       return null;
     }
   };
@@ -168,21 +193,34 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const suggestModuleForObjective = useCallback((objective: string): string => {
     const objectiveLower = objective.toLowerCase();
     
-    // Check each module's keywords
-    for (const [module, keywords] of Object.entries(MODULE_KEYWORDS)) {
-      for (const keyword of keywords) {
-        if (objectiveLower.includes(keyword)) {
-          return module;
+    // Check each available module's capabilities and description for matches
+    for (const [moduleName, moduleInfo] of Object.entries(availableModules)) {
+      // Check module description
+      if (moduleInfo.description.toLowerCase().includes(objectiveLower)) {
+        return moduleName;
+      }
+      
+      // Check module capabilities
+      for (const capability of moduleInfo.capabilities) {
+        if (objectiveLower.includes(capability.toLowerCase()) || 
+            capability.toLowerCase().includes(objectiveLower)) {
+          return moduleName;
         }
       }
     }
     
-    // Default suggestions based on common patterns
-    // All objectives default to general module
-    return 'general';
-  }, []);
+    // Default to general module if available, otherwise first available module
+    if (availableModules.general) {
+      return 'general';
+    }
+    
+    const moduleNames = Object.keys(availableModules);
+    return moduleNames.length > 0 ? moduleNames[0] : 'general';
+  }, [availableModules]);
 
-  const value: ModuleContextType = {
+  // CRITICAL FIX: Use useMemo to prevent infinite re-renders
+  // Without this, the value object gets recreated on every render, causing all consumers to re-render
+  const value: ModuleContextType = useMemo(() => ({
     currentModule,
     availableModules,
     moduleInfo,
@@ -190,7 +228,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     suggestModuleForObjective,
     isLoading,
     error
-  };
+  }), [currentModule, availableModules, moduleInfo, switchModule, suggestModuleForObjective, isLoading, error]);
 
   return (
     <ModuleContext.Provider value={value}>

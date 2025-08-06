@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { HealthMonitor, HealthStatus } from '../services/HealthMonitor.js';
+import { ContainerManager } from '../services/ContainerManager.js';
 import { themeManager } from '../themes/theme-manager.js';
 
 interface StatusIndicatorProps {
@@ -19,24 +20,46 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   position = 'header' 
 }) => {
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [deploymentMode, setDeploymentMode] = useState<string>('cli');
   const theme = themeManager.getCurrentTheme();
 
   useEffect(() => {
     const monitor = HealthMonitor.getInstance();
+    const containerManager = ContainerManager.getInstance();
     
-    // Start monitoring
-    monitor.startMonitoring(5000); // Check every 5 seconds
+    // Start monitoring more frequently during setup changes
+    monitor.startMonitoring(1000); // Check every 1 second for responsive updates
     
     // Subscribe to updates
     const unsubscribe = monitor.subscribe((status) => {
       setHealthStatus(status);
     });
 
+    // Update deployment mode and handle changes
+    const updateDeploymentMode = async () => {
+      try {
+        const currentMode = await containerManager.getCurrentMode();
+        const modeDisplayName = currentMode === 'local-cli' ? 'cli' : 
+                               currentMode === 'single-container' ? 'agent' : 
+                               'enterprise';
+        setDeploymentMode(modeDisplayName);
+      } catch (error) {
+        console.error('Failed to get deployment mode:', error);
+      }
+    };
+
+    // Set initial deployment mode
+    updateDeploymentMode();
+
+    // Poll for deployment mode changes more frequently during setup transitions
+    const deploymentModeInterval = setInterval(updateDeploymentMode, 500);
+
     // Initial check
     monitor.checkHealth();
 
     return () => {
       unsubscribe();
+      clearInterval(deploymentModeInterval);
     };
   }, []);
 
@@ -80,12 +103,16 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     // Compact view for header/footer
     return (
       <Box>
-        <Text color={theme.muted}>sandbox</Text>
+        <Text color={theme.muted}>{deploymentMode}</Text>
         <Text color={theme.muted}> </Text>
-        <Text color={getStatusColor()}>
-          {getStatusSymbol()} {runningCount}/{totalCount}
-        </Text>
-        {!healthStatus.dockerRunning && (
+        {deploymentMode === 'cli' ? (
+          <Text color={theme.success}>● Python</Text>
+        ) : (
+          <Text color={getStatusColor()}>
+            {getStatusSymbol()} {runningCount}/{totalCount}
+          </Text>
+        )}
+        {!healthStatus.dockerRunning && deploymentMode !== 'cli' && (
           <Text color={theme.danger}> Docker Off</Text>
         )}
       </Box>
