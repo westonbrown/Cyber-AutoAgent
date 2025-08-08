@@ -119,6 +119,11 @@ export class HealthMonitor {
     const currentMode = await containerManager.getCurrentMode();
     const config = containerManager.getDeploymentConfig(currentMode);
     
+    // For single-container mode, don't expect persistent services (runs and exits)
+    if (currentMode === 'single-container') {
+      return [];
+    }
+    
     return config.services.map(serviceName => 
       this.serviceDefinitions[serviceName as keyof typeof this.serviceDefinitions]
     ).filter(Boolean);
@@ -209,27 +214,34 @@ export class HealthMonitor {
       } else {
         // Check each service based on current deployment mode
         const currentServices = await this.getCurrentServices();
-        const serviceStatuses = await Promise.all(
-          currentServices.map(svc => this.checkService(svc))
-        );
         
-        status.services = serviceStatuses;
+        if (currentServices.length === 0) {
+          // Single-container mode or local-cli - no persistent services to monitor
+          status.overall = 'healthy';
+          status.services = [];
+        } else {
+          const serviceStatuses = await Promise.all(
+            currentServices.map(svc => this.checkService(svc))
+          );
+          
+          status.services = serviceStatuses;
 
-        // Determine overall health
-        const criticalServices = serviceStatuses.filter((svc, idx) => 
-          currentServices[idx].critical
-        );
-        const hasUnhealthyCritical = criticalServices.some(
-          svc => svc.status !== 'running' || svc.health === 'unhealthy'
-        );
-        const hasUnhealthyNonCritical = serviceStatuses.some(
-          svc => svc.status !== 'running' || svc.health === 'unhealthy'
-        );
+          // Determine overall health
+          const criticalServices = serviceStatuses.filter((svc, idx) => 
+            currentServices[idx].critical
+          );
+          const hasUnhealthyCritical = criticalServices.some(
+            svc => svc.status !== 'running' || svc.health === 'unhealthy'
+          );
+          const hasUnhealthyNonCritical = serviceStatuses.some(
+            svc => svc.status !== 'running' || svc.health === 'unhealthy'
+          );
 
-        if (hasUnhealthyCritical) {
-          status.overall = 'unhealthy';
-        } else if (hasUnhealthyNonCritical) {
-          status.overall = 'degraded';
+          if (hasUnhealthyCritical) {
+            status.overall = 'unhealthy';
+          } else if (hasUnhealthyNonCritical) {
+            status.overall = 'degraded';
+          }
         }
       }
       } catch (error) {
@@ -299,7 +311,7 @@ export class HealthMonitor {
         if (service.name === 'cyber-autoagent') {
           try {
             const { stdout: containerId } = await execAsync(
-              `docker ps --filter "ancestor=cyber-autoagent:sudo" --format "{{.ID}}" | head -1`
+              `docker ps --filter "ancestor=cyber-autoagent:latest" --format "{{.ID}}" | head -1`
             );
             if (containerId.trim()) {
               const { stdout } = await execAsync(

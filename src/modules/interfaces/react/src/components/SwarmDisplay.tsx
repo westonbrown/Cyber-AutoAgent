@@ -1,5 +1,5 @@
 /**
- * SwarmDisplay - Enhanced display for multi-agent swarm operations
+ * SwarmDisplay - Comprehensive display for multi-agent swarm operations
  * Shows detailed information about sub-agents, their tasks, tools, and collaboration
  */
 
@@ -73,16 +73,16 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
     switch (status) {
       case 'active':
       case 'running':
-        return '⚡';
+        return '[ACTIVE]';
       case 'completed':
-        return '✓';
+        return '[DONE]';
       case 'failed':
-        return '✗';
+        return '[FAIL]';
       case 'pending':
       case 'initializing':
-        return '○';
+        return '[WAIT]';
       default:
-        return '•';
+        return '[?]';
     }
   };
 
@@ -110,11 +110,11 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
         <Box>
           <Text color={theme.primary} bold>[SWARM] </Text>
           <Text color={theme.info}>{swarmState.agents.length} agents</Text>
-          <Text color={theme.muted}> • </Text>
+          <Text color={theme.muted}> | </Text>
           <Text color={theme.warning}>{activeAgents} active</Text>
-          <Text color={theme.muted}> • </Text>
+          <Text color={theme.muted}> | </Text>
           <Text color={theme.success}>{completedAgents} completed</Text>
-          <Text color={theme.muted}> • </Text>
+          <Text color={theme.muted}> | </Text>
           <Text color={theme.info}>{formatDuration(elapsedTime)}</Text>
         </Box>
         <Box marginLeft={2} marginTop={1}>
@@ -188,7 +188,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
             {/* Agent task */}
             {agent.task && (
               <Box marginLeft={3}>
-                <Text color={theme.muted}>→ </Text>
+                <Text color={theme.muted}>{'> '}</Text>
                 <Text color={theme.foreground}>{agent.task}</Text>
               </Box>
             )}
@@ -206,7 +206,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
               <Box flexDirection="column" marginLeft={3}>
                 {agent.toolCalls.slice(-3).map((call, i) => (
                   <Box key={i}>
-                    <Text color={theme.success}>▶ {call.tool}</Text>
+                    <Text color={theme.success}>{'> '}{call.tool}</Text>
                     {call.input && (
                       <Text color={theme.muted}> {JSON.stringify(call.input).slice(0, 50)}...</Text>
                     )}
@@ -218,7 +218,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
             {/* Agent result */}
             {agent.result && (
               <Box marginLeft={3}>
-                <Text color={theme.success}>→ </Text>
+                <Text color={theme.success}>{'> '}</Text>
                 <Text>{agent.result.slice(0, 100)}{agent.result.length > 100 ? '...' : ''}</Text>
               </Box>
             )}
@@ -232,7 +232,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
           <Text color={theme.accent} bold>Collaboration Flow:</Text>
           <Box marginLeft={2}>
             <Text color={theme.info}>
-              {swarmState.collaborationChain.join(' → ')}
+              {swarmState.collaborationChain.join(' > ')}
             </Text>
           </Box>
         </Box>

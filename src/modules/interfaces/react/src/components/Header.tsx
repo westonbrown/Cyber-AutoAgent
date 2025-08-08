@@ -34,7 +34,7 @@ const shortAsciiLogo = `
 const compactLogo = `🔐 Cyber-AutoAgent`;
 const ultraCompactLogo = `🔐 CAA`;
 
-export const Header: React.FC<HeaderProps> = ({ 
+export const Header: React.FC<HeaderProps> = React.memo(({ 
   version = '0.1.3', 
   terminalWidth = 80,
   nightly = false
@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
     >
       {/* Logo - ASCII art or text */}
       {isAsciiArt ? (
-        <Box>
+        <Box key="ascii-logo">
           {useGradient && theme.gradientColors ? (
             <Gradient colors={theme.gradientColors}>
               <Text>{logo}</Text>
@@ -70,12 +70,13 @@ export const Header: React.FC<HeaderProps> = ({
         </Box>
       ) : (
         <Box
+          key="compact-logo"
           flexDirection="row"
           justifyContent="space-between"
           width="100%"
           marginBottom={1}
         >
-          <Box>
+          <Box key="logo-text">
             {useGradient && theme.gradientColors ? (
               <Gradient colors={theme.gradientColors}>
                 <Text>{logo}</Text>
@@ -86,28 +87,30 @@ export const Header: React.FC<HeaderProps> = ({
           </Box>
           
           {/* Version and status for compact mode */}
-          <Box>
+          <Box key="compact-version">
             <Text color={theme.muted}>v{version}</Text>
             {nightly && (
-              <Text color={theme.warning}> • NIGHTLY</Text>
+              <Text color={theme.warning}> | NIGHTLY</Text>
             )}
-            <Text color={theme.muted}> • Full Spectrum Cyber Operations</Text>
+            <Text color={theme.muted}> | Full Spectrum Cyber Operations</Text>
           </Box>
         </Box>
       )}
       
       {/* Version and subtitle for ASCII art mode */}
       {isAsciiArt && (
-        <Box width="100%" flexDirection="row" justifyContent="flex-start">
+        <Box key="ascii-subtitle" width="100%" flexDirection="row" justifyContent="flex-start">
           <Text color={theme.muted}>Full Spectrum Cyber Operations v{version}</Text>
           {nightly && (
-            <Text color={theme.warning}> • NIGHTLY</Text>
+            <Text color={theme.warning}> | NIGHTLY</Text>
           )}
         </Box>
       )}
       
       {/* Add spacing after header */}
-      <Box marginBottom={1} />
+      <Box key="header-spacing" marginBottom={1} />
     </Box>
   );
-};
+});
+
+Header.displayName = 'Header';

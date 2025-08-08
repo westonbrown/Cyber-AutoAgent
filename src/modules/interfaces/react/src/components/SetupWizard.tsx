@@ -6,7 +6,8 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
-import { Box } from 'ink';
+import { Box, useStdout } from 'ink';
+import ansiEscapes from 'ansi-escapes';
 import { useSetupWizard } from '../hooks/useSetupWizard.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { WelcomeScreen } from './setup/WelcomeScreen.js';
@@ -23,6 +24,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   onComplete,
   terminalWidth = 80,
 }) => {
+  const { stdout } = useStdout();
   const { state, actions } = useSetupWizard();
   const { updateConfig, saveConfig } = useConfig();
 
@@ -60,9 +62,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     actions.selectMode(mode);
     actions.nextStep(); // Move to progress screen
     
+    // Clear terminal for clean transition to progress screen
+    stdout.write(ansiEscapes.clearScreen);
+    
     // Pass the mode directly to avoid state timing issues
     await actions.startSetup(mode);
-  }, [actions]);
+  }, [actions, stdout]);
 
   // Handle setup retry
   const handleRetry = useCallback(async () => {
@@ -121,6 +126,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   return (
     <Box flexDirection="column" width="100%">
+      {/* Header is rendered by InitializationWrapper, not here */}
+      
+      {/* Current setup screen */}
       {renderCurrentScreen()}
     </Box>
   );

@@ -5,7 +5,9 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
     container_name: cyber-autoagent
-    profiles: ["on-demand"]  # Only run when explicitly requested
+    # Run in service mode for full-stack deployment
+    # The container stays alive and waits for external requests via React UI
+    command: ["--service-mode"]
     environment:
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
@@ -47,8 +49,8 @@ services:
     
     volumes:
       # Unified output structure persistence
-      - ./outputs:/app/outputs
-      - ./tools:/app/tools
+      - ../outputs:/app/outputs
+      - ../tools:/app/tools
       
     
     # Network configuration - bridge mode to allow Langfuse communication

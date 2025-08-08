@@ -1,11 +1,12 @@
 /**
  * Thinking Indicator Component
  * Shows animated thinking state between tool calls
- * Inspired by Codex's bouncing ball and contextual messages
+ * Optimized using ink-spinner for better performance
  */
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import Spinner from 'ink-spinner';
 import { themeManager } from '../themes/theme-manager.js';
 
 interface ThinkingIndicatorProps {
@@ -13,23 +14,6 @@ interface ThinkingIndicatorProps {
   startTime?: number;
   message?: string;
 }
-
-// Bouncing ball animation frames (inspired by Codex)
-const ballFrames = [
-  '( ●    )',
-  '(  ●   )',
-  '(   ●  )',
-  '(    ● )',
-  '(     ●)',
-  '(    ● )',
-  '(   ●  )',
-  '(  ●   )',
-  '( ●    )',
-  '(●     )'
-];
-
-// Ellipsis animation for text
-const ellipsisFrames = ['', '.', '..', '...'];
 
 // Context-aware messages
 const getContextMessage = (context?: string): string => {
@@ -55,29 +39,9 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   message
 }) => {
   const theme = themeManager.getCurrentTheme();
-  const [ballFrame, setBallFrame] = useState(0);
-  const [ellipsisFrame, setEllipsisFrame] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Ball animation (500ms interval for better performance)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setBallFrame(prev => (prev + 1) % ballFrames.length);
-    }, 500);  // Reduced to 500ms (2 updates/sec) for minimal CPU usage
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Ellipsis animation (500ms interval)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setEllipsisFrame(prev => (prev + 1) % ellipsisFrames.length);
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Elapsed time tracking
+  // Elapsed time tracking (single interval)
   useEffect(() => {
     if (!startTime) return;
 
@@ -104,28 +68,20 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   const displayMessage = message || getContextMessage(context);
 
   return (
-    <Box flexDirection="column">
-      <Box marginY={0}>
-        <Text color={theme.primary}>{ballFrames[ballFrame]}</Text>
-        <Text color={theme.muted}> </Text>
-        {startTime && (
-          <>
-            <Text color={theme.warning}>{formatElapsed(elapsedSeconds)}</Text>
-            <Text color={theme.muted}> </Text>
-          </>
-        )}
-        <Text color={theme.foreground}>
-          {displayMessage}{ellipsisFrames[ellipsisFrame]}
-        </Text>
-      </Box>
-      
-      {/* Add spacing after thinking animation for better footer separation */}
-      <Box marginTop={2}>
-        <Text> </Text>
-        <Text> </Text>
-        <Text> </Text>
-        <Text> </Text>
-      </Box>
+    <Box>
+      <Text color={theme.primary}>
+        <Spinner type="dots" />
+      </Text>
+      <Text color={theme.muted}> </Text>
+      <Text color={theme.foreground}>
+        {displayMessage}
+      </Text>
+      {startTime && (
+        <>
+          <Text color={theme.muted}> </Text>
+          <Text color={theme.muted}>[{formatElapsed(elapsedSeconds)}]</Text>
+        </>
+      )}
     </Box>
   );
 };

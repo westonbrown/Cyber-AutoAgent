@@ -150,6 +150,9 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTSTP, signal_handler)
 
+    # Check for service mode before normal argument parsing to avoid validation issues
+    is_service_mode = "--service-mode" in sys.argv
+    
     # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
         description="Cyber-AutoAgent - Autonomous Cybersecurity Assessment Tool",
@@ -161,12 +164,22 @@ def main():
         default="general",
         help="Security module to use (e.g., general, web_security, api_security)",
     )
-    parser.add_argument("--objective", type=str, required=True, help="Security assessment objective")
+    parser.add_argument(
+        "--objective", 
+        type=str, 
+        required=not is_service_mode,
+        help="Security assessment objective (required unless in service mode)"
+    )
     parser.add_argument(
         "--target",
         type=str,
-        required=True,
+        required=not is_service_mode,
         help="Target system/network to assess (ensure you have permission!)",
+    )
+    parser.add_argument(
+        "--service-mode",
+        action="store_true",
+        help="Run in service mode for containerized deployments (keeps container alive)",
     )
     parser.add_argument(
         "--iterations",
@@ -227,6 +240,24 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Handle service mode
+    if args.service_mode:
+        print("Starting Cyber-AutoAgent in service mode...")
+        print("Container will stay alive and wait for external requests.")
+        print("Use the React UI to submit assessment requests.")
+        
+        # Keep the container alive
+        try:
+            while True:
+                time.sleep(30)  # Check every 30 seconds
+                # TODO: Add health check endpoint or message queue listener here
+        except KeyboardInterrupt:
+            print("Service mode interrupted. Shutting down...")
+            return
+        except Exception as e:
+            print(f"Service mode error: {e}")
+            return
 
     if not args.confirmations:
         os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -369,6 +400,7 @@ def main():
 
     try:
         # Create agent
+        logger.warning("Creating agent with iterations=%d", args.iterations)
         agent, callback_handler = create_agent(
             target=args.target,
             objective=args.objective,
@@ -425,6 +457,8 @@ def main():
                     remaining_steps = (
                         args.iterations - callback_handler.current_step if callback_handler else args.iterations
                     )
+                    logger.warning("Remaining steps check: iterations=%d, current_step=%d, remaining=%d", 
+                                 args.iterations, callback_handler.current_step if callback_handler else 0, remaining_steps)
                     if remaining_steps > 0:
                         current_message = get_continuation_prompt(remaining_steps, args.iterations)
                     else:

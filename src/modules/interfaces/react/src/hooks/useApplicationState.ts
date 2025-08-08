@@ -9,6 +9,8 @@
 import { useReducer, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Operation } from '../services/OperationManager.js';
 import { ModalType } from './useModalManager.js';
+import { useDebouncedState } from './useDebouncedState.js';
+import { ExecutionService } from '../services/ExecutionService.js';
 
 // State shape definition
 export interface ApplicationState {
@@ -33,6 +35,9 @@ export interface ApplicationState {
   userHandoffActive: boolean;
   contextUsage: number;
   operationMetrics: any | null;
+  
+  // Execution service - the active service instance for current operation
+  executionService: ExecutionService | null;
   
   // Recent activity  
   recentTargets: string[];
@@ -63,6 +68,7 @@ export enum ActionType {
   UPDATE_OPERATION = 'UPDATE_OPERATION',
   SET_USER_HANDOFF = 'SET_USER_HANDOFF',
   UPDATE_METRICS = 'UPDATE_METRICS',
+  SET_EXECUTION_SERVICE = 'SET_EXECUTION_SERVICE',
   
   // Target management
   ADD_RECENT_TARGET = 'ADD_RECENT_TARGET',
@@ -94,6 +100,7 @@ type Action =
   | { type: ActionType.UPDATE_OPERATION; payload: Partial<Operation> }
   | { type: ActionType.SET_USER_HANDOFF; payload: boolean }
   | { type: ActionType.UPDATE_METRICS; payload: any }
+  | { type: ActionType.SET_EXECUTION_SERVICE; payload: ExecutionService | null }
   | { type: ActionType.ADD_RECENT_TARGET; payload: string }
   | { type: ActionType.INCREMENT_ERROR_COUNT }
   | { type: ActionType.RESET_ERROR_COUNT }
@@ -166,6 +173,9 @@ function applicationReducer(state: ApplicationState, action: Action): Applicatio
     case ActionType.UPDATE_METRICS:
       return { ...state, operationMetrics: action.payload };
       
+    case ActionType.SET_EXECUTION_SERVICE:
+      return { ...state, executionService: action.payload };
+      
     case ActionType.ADD_RECENT_TARGET:
       const targets = [action.payload, ...state.recentTargets.filter(t => t !== action.payload)];
       return { ...state, recentTargets: targets.slice(0, 5) };
@@ -206,6 +216,7 @@ function getInitialState(): ApplicationState {
     userHandoffActive: false,
     contextUsage: 0,
     operationMetrics: null,
+    executionService: null,
     recentTargets: [],
     terminalDisplayHeight: process.stdout.rows || 24,
     terminalDisplayWidth: process.stdout.columns || 80,
@@ -218,8 +229,14 @@ function getInitialState(): ApplicationState {
 export function useApplicationState() {
   const [state, dispatch] = useReducer(applicationReducer, getInitialState());
   
+  // Debounced state for preventing UI flicker
+  const [debouncedMetrics, setDebouncedMetrics, flushMetrics] = useDebouncedState(null, 150);
+  const [debouncedContextUsage, setDebouncedContextUsage, flushContextUsage] = useDebouncedState(0, 200);
+  
   // Refs for cleanup
   const cleanupFunctions = useRef<(() => void)[]>([]);
+  const metricsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const staticRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Actions - all useCallback calls must be at top level (Rules of Hooks)
   const initializeApp = (sessionId: string) => {
@@ -242,9 +259,17 @@ export function useApplicationState() {
     dispatch({ type: ActionType.SET_TERMINAL_VISIBLE, payload: visible });
   };
   
-  const refreshStatic = () => {
-    dispatch({ type: ActionType.REFRESH_STATIC });
-  };
+  const refreshStatic = useCallback(() => {
+    // Debounce static refreshes to prevent excessive re-renders
+    if (staticRefreshTimeoutRef.current) {
+      clearTimeout(staticRefreshTimeoutRef.current);
+    }
+    
+    staticRefreshTimeoutRef.current = setTimeout(() => {
+      dispatch({ type: ActionType.REFRESH_STATIC });
+      staticRefreshTimeoutRef.current = null;
+    }, 100);
+  }, []);
   
   const setStaticNeedsRefresh = (needsRefresh: boolean) => {
     dispatch({ type: ActionType.SET_STATIC_NEEDS_REFRESH, payload: needsRefresh });
@@ -274,9 +299,20 @@ export function useApplicationState() {
     dispatch({ type: ActionType.SET_USER_HANDOFF, payload: active });
   };
   
-  const updateMetrics = (metrics: any) => {
-    dispatch({ type: ActionType.UPDATE_METRICS, payload: metrics });
-  };
+  const updateMetrics = useCallback((metrics: any) => {
+    // Use debounced metrics to prevent UI flicker from frequent updates
+    setDebouncedMetrics(metrics);
+    
+    // Also debounce the actual dispatch to prevent excessive re-renders
+    if (metricsTimeoutRef.current) {
+      clearTimeout(metricsTimeoutRef.current);
+    }
+    
+    metricsTimeoutRef.current = setTimeout(() => {
+      dispatch({ type: ActionType.UPDATE_METRICS, payload: metrics });
+      metricsTimeoutRef.current = null;
+    }, 150);
+  }, [setDebouncedMetrics]);
   
   const addRecentTarget = (target: string) => {
     dispatch({ type: ActionType.ADD_RECENT_TARGET, payload: target });
@@ -294,8 +330,14 @@ export function useApplicationState() {
     dispatch({ type: ActionType.SET_DOCKER_AVAILABLE, payload: available });
   };
   
-  const updateContextUsage = (usage: number) => {
+  const updateContextUsage = useCallback((usage: number) => {
+    // Use debounced context usage to prevent excessive updates
+    setDebouncedContextUsage(usage);
     dispatch({ type: ActionType.UPDATE_CONTEXT_USAGE, payload: usage });
+  }, [setDebouncedContextUsage]);
+  
+  const setExecutionService = (service: ExecutionService | null) => {
+    dispatch({ type: ActionType.SET_EXECUTION_SERVICE, payload: service });
   };
   
   const registerCleanup = (cleanup: () => void) => {
@@ -323,6 +365,7 @@ export function useApplicationState() {
     resetErrorCount,
     setDockerAvailable,
     updateContextUsage,
+    setExecutionService,
     registerCleanup
   }), [
     initializeApp, setConfigLoaded, setInitializationFlow, dismissInit,
@@ -330,15 +373,28 @@ export function useApplicationState() {
     setHasCompletedOperation, clearCompletedOperation,
     setActiveOperation, updateOperation, setUserHandoff, updateMetrics,
     addRecentTarget, incrementErrorCount, resetErrorCount, setDockerAvailable, 
-    updateContextUsage, registerCleanup
+    updateContextUsage, setExecutionService, registerCleanup
   ]);
   
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Clear any pending timeouts
+      if (metricsTimeoutRef.current) {
+        clearTimeout(metricsTimeoutRef.current);
+      }
+      if (staticRefreshTimeoutRef.current) {
+        clearTimeout(staticRefreshTimeoutRef.current);
+      }
+      
+      // Flush any pending debounced updates
+      flushMetrics();
+      flushContextUsage();
+      
+      // Run registered cleanup functions
       cleanupFunctions.current.forEach(cleanup => cleanup());
     };
-  }, []);
+  }, [flushMetrics, flushContextUsage]);
   
   // CRITICAL FIX: Use useMemo to prevent infinite re-renders
   // Without this, the return object gets recreated on every render, causing all consumers to re-render
@@ -346,5 +402,11 @@ export function useApplicationState() {
     state,
     actions,
     dispatch,
-  }), [state, actions, dispatch]);
+    // Expose debounced values for components that need stable references
+    debouncedMetrics,
+    debouncedContextUsage,
+    // Expose flush functions for components that need immediate updates
+    flushMetrics,
+    flushContextUsage,
+  }), [state, actions, dispatch, debouncedMetrics, debouncedContextUsage, flushMetrics, flushContextUsage]);
 }

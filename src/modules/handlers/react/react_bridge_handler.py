@@ -175,17 +175,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Handle step progression
         if message.get("role") == "assistant":
             if has_tool_use:
-                self.current_step += 1
+                # Don't increment here - let tool announcement handle it
                 self.pending_step_header = True
             else:
+                # Pure reasoning step without tools
                 self.current_step += 1
                 self._emit_step_header()
-
-            # Check if step limit reached and raise exception
-            if self.current_step >= self.max_steps:
-                from modules.handlers.base import StepLimitReached
-
-                raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
+                
+                # Check if step limit reached and raise exception
+                if self.current_step >= self.max_steps:
+                    from modules.handlers.base import StepLimitReached
+                    raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
 
             # Count output tokens
             for item in content:
@@ -219,12 +219,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Emit accumulated reasoning first
             self._emit_accumulated_reasoning()
 
-            # Emit step header if pending
+            # Emit step header if pending or first tool
             if self.pending_step_header or (self.current_step == 0 and tool_id):
-                if self.current_step == 0:
-                    self.current_step = 1
+                if self.current_step == 0 or self.pending_step_header:
+                    self.current_step += 1
                 self._emit_step_header()
                 self.pending_step_header = False
+                
+                # Check if step limit reached and raise exception
+                if self.current_step >= self.max_steps:
+                    from modules.handlers.base import StepLimitReached
+                    raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
 
             # Track tool
             self.announced_tools.add(tool_id)
@@ -284,6 +289,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Get original tool input
         tool_input = self.tool_input_buffer.get(tool_use_id, {})
 
+        # Emit tool completion event
+        success = status != "error"
+        self._emit_ui_event({
+            "type": "tool_invocation_end", 
+            "success": success,
+            "tool_name": self.last_tool_name
+        })
+
         # Handle errors
         if status == "error":
             error_text = ""
@@ -299,6 +312,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit output or status
         if output_text.strip():
+            # Detect swarm agent changes in output
+            if self.in_swarm_operation:
+                self._detect_current_swarm_agent(output_text)
+            
             self._emit_ui_event({"type": "output", "content": output_text.strip()})
         elif self.last_tool_name in ["handoff_to_user", "handoff_to_agent", "stop", "mem0_memory", "shell"]:
             status_messages = {
@@ -362,15 +379,24 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _emit_step_header(self) -> None:
         """Emit step header with current progress."""
-        self._emit_ui_event(
-            {
-                "type": "step_header",
-                "step": self.current_step,
-                "maxSteps": self.max_steps,
-                "operation": self.operation_id,
-                "duration": self._format_duration(time.time() - self.start_time),
-            }
-        )
+        event = {
+            "type": "step_header",
+            "step": self.current_step,
+            "maxSteps": self.max_steps,
+            "operation": self.operation_id,
+            "duration": self._format_duration(time.time() - self.start_time),
+        }
+        
+        # Add swarm agent information if in swarm operation
+        if self.in_swarm_operation:
+            event["is_swarm_operation"] = True
+            if self.current_swarm_agent:
+                event["swarm_agent"] = self.current_swarm_agent
+                event["swarm_context"] = f"Agent: {self.current_swarm_agent}"
+            else:
+                event["swarm_context"] = "Multi-Agent Operation"
+        
+        self._emit_ui_event(event)
 
     def _emit_initial_metrics(self) -> None:
         """Emit initial metrics on startup."""
@@ -493,10 +519,38 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.swarm_agents = []
             self.current_swarm_agent = None
             self.swarm_handoff_count = 0
+    
+    def _detect_current_swarm_agent(self, text: str) -> None:
+        """Detect which agent is currently executing based on output text."""
+        if not self.in_swarm_operation or not text:
+            return
+        
+        # Common patterns for agent identification in swarm output
+        agent_patterns = [
+            r"\*\*([^*]+):\*\*",  # **AGENT_NAME:**
+            r"Agent ([^:]+):",      # Agent NAME:
+            r"\[([^]]+)\]:",        # [AGENT_NAME]:
+            r"• ([^:]+):",          # • AGENT_NAME:
+        ]
+        
+        import re
+        for pattern in agent_patterns:
+            match = re.search(pattern, text)
+            if match:
+                agent_name = match.group(1).strip()
+                # Skip section headers
+                if agent_name in ['Individual Agent Contributions', 'Final Team Result', 'Team Resource Usage']:
+                    continue
+                # Check if this is a known agent or add it
+                if agent_name not in self.swarm_agents:
+                    self.swarm_agents.append(agent_name)
+                self.current_swarm_agent = agent_name
+                break
 
     def _is_valid_input(self, tool_input: Any) -> bool:
         """Check if tool input is valid."""
-        return bool(tool_input) and (isinstance(tool_input, dict) or isinstance(tool_input, str))
+        # Allow empty dicts as valid - tools may have no required parameters
+        return isinstance(tool_input, (dict, str))
 
     def _extract_output_text(self, content_items: List[Any]) -> str:
         """Extract text from content items."""

@@ -31,7 +31,7 @@ interface FooterProps {
   connectionStatus?: 'connected' | 'connecting' | 'error' | 'offline';
 }
 
-export const Footer: React.FC<FooterProps> = ({
+export const Footer: React.FC<FooterProps> = React.memo(({
   model,
   contextRemaining,
   directory,
@@ -86,7 +86,7 @@ export const Footer: React.FC<FooterProps> = ({
         <Text color={theme.muted}>
           {operationMetrics ? (operationMetrics.tokens || 0).toLocaleString() : '0'} tokens
         </Text>
-        <Text color={theme.muted}> • </Text>
+        <Text color={theme.muted}> | </Text>
         <Text color={theme.muted}>
           {operationMetrics ? formatCost(operationMetrics.cost || 0) : '$0.00'}
         </Text>
@@ -94,7 +94,7 @@ export const Footer: React.FC<FooterProps> = ({
         {/* Duration when available */}
         {operationMetrics && operationMetrics.duration !== '0s' && (
           <>
-            <Text color={theme.muted}> • </Text>
+            <Text color={theme.muted}> | </Text>
             <Text color={theme.muted}>{operationMetrics.duration}</Text>
           </>
         )}
@@ -102,7 +102,7 @@ export const Footer: React.FC<FooterProps> = ({
         {/* Memory and evidence metrics when available */}
         {operationMetrics && (operationMetrics.memoryOps > 0 || operationMetrics.evidence > 0) && (
           <>
-            <Text color={theme.muted}> • </Text>
+            <Text color={theme.muted}> | </Text>
             {operationMetrics.memoryOps > 0 && (
               <>
                 <Text color={theme.muted}>{operationMetrics.memoryOps}</Text>
@@ -110,7 +110,7 @@ export const Footer: React.FC<FooterProps> = ({
               </>
             )}
             {operationMetrics.memoryOps > 0 && operationMetrics.evidence > 0 && (
-              <Text color={theme.muted}> • </Text>
+              <Text color={theme.muted}> | </Text>
             )}
             {operationMetrics.evidence > 0 && (
               <>
@@ -123,16 +123,16 @@ export const Footer: React.FC<FooterProps> = ({
         
         <Text color={theme.muted}>  |  </Text>
         
-        {/* Keyboard shortcuts */}
-        <Text color={theme.muted}>[ESC] Kill Switch</Text>
-        
         {/* Errors if any */}
         {errorCount > 0 && (
           <>
-            <Text color={theme.muted}>  |  </Text>
             <Text color={theme.danger}>{errorCount} error{errorCount > 1 ? 's' : ''}</Text>
+            <Text color={theme.muted}>  |  </Text>
           </>
         )}
+        
+        {/* Keyboard shortcuts */}
+        <Text color={theme.muted}>[ESC] Kill Switch</Text>
         
         <Text color={theme.muted}>  |  </Text>
         
@@ -150,4 +150,6 @@ export const Footer: React.FC<FooterProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+Footer.displayName = 'Footer';

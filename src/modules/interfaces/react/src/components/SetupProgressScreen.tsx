@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Text, Static } from 'ink';
+import { Box, Text, Static, useInput } from 'ink';
 import { createLogger } from '../utils/logger.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { LogContainer, LogEntry } from './LogContainer.js';
@@ -228,24 +228,11 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     }
   }, [hasFailed, isComplete, onRetry, onBackToSetup, onContinue]);
 
-  // Register input handler
-  useEffect(() => {
-    process.stdin.setRawMode?.(true);
-    process.stdin.resume();
-    process.stdin.on('data', (data) => {
-      const input = data.toString();
-      const key = {
-        return: input === '\r' || input === '\n',
-        escape: input === '\u001b'
-      };
-      handleInput(input, key);
-    });
-
-    return () => {
-      process.stdin.setRawMode?.(false);
-      process.stdin.removeAllListeners('data');
-    };
-  }, [handleInput]);
+  // Use React Ink's useInput hook instead of manually handling stdin
+  // This prevents conflicts and memory leaks
+  useInput((input, key) => {
+    handleInput(input, key);
+  });
 
   return (
     <Box flexDirection="column" minHeight={process.stdout.rows || 24}>

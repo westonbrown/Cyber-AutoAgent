@@ -133,8 +133,20 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'sections' | 'fields'>('sections');
+  
+  // Use ref to track timeout for cleanup
+  const messageTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Screen clearing is handled by modal manager's refreshStatic()
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+    };
+  }, []);
   
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
@@ -288,11 +300,26 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     try {
       // Mark configuration as complete when saving
       updateConfig({ isConfigured: true });
+      
+      // Small delay to ensure state has updated before saving
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       await saveConfig();
       setUnsavedChanges(false);
-      setMessage({ text: 'Configuration saved', type: 'success' });
-      setTimeout(() => setMessage(null), 3000);
+      setMessage({ text: 'Configuration saved successfully', type: 'success' });
+      
+      // Clear existing timeout if any
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+      
+      // Set new timeout with cleanup
+      messageTimeoutRef.current = setTimeout(() => {
+        setMessage(null);
+        messageTimeoutRef.current = null;
+      }, 3000);
     } catch (error) {
+      console.error('Config save error:', error);
       setMessage({ text: `Save failed: ${error}`, type: 'error' });
     }
   }, [saveConfig, updateConfig]);
@@ -309,7 +336,17 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         text: 'Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"', 
         type: 'info' 
       });
-      setTimeout(() => setMessage(null), 3000);
+      
+      // Clear existing timeout if any
+      if (messageTimeoutRef.current) {
+        clearTimeout(messageTimeoutRef.current);
+      }
+      
+      // Set new timeout with cleanup
+      messageTimeoutRef.current = setTimeout(() => {
+        setMessage(null);
+        messageTimeoutRef.current = null;
+      }, 3000);
       return;
     }
     

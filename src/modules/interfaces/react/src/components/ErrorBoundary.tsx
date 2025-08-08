@@ -8,6 +8,7 @@
 import React, { Component, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
+import { Header } from './Header.js';
 
 interface Props {
   children: ReactNode;
@@ -51,8 +52,8 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   handleRestart = () => {
-    // Force application restart
-    window.location.reload();
+    // Force application restart in CLI environment
+    process.exit(1);
   };
 
   render() {
@@ -64,17 +65,25 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <Box flexDirection="column" padding={2}>
-          <Box borderStyle="double" borderColor="red" padding={1} marginBottom={1}>
-            <Box flexDirection="column">
-              <Text color="red" bold>
-                ⚠️ Application Error
-              </Text>
-              <Text color={theme.muted}>
-                Cyber-AutoAgent encountered an unexpected error
-              </Text>
+        <Box flexDirection="column" width="100%">
+          {/* Always show header for visual continuity */}
+          <Header 
+            version="0.1.3" 
+            terminalWidth={80} 
+            nightly={false} 
+          />
+          
+          <Box flexDirection="column" padding={2}>
+            <Box borderStyle="double" borderColor="red" padding={1} marginBottom={1}>
+              <Box flexDirection="column">
+                <Text color="red" bold>
+                  ⚠️ Application Error
+                </Text>
+                <Text color={theme.muted}>
+                  Cyber-AutoAgent encountered an unexpected error
+                </Text>
+              </Box>
             </Box>
-          </Box>
 
           <Box flexDirection="column" marginBottom={2}>
             <Text color={theme.foreground} bold>
@@ -118,6 +127,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <Text color={theme.primary}>
               https://github.com/westonbrown/Cyber-AutoAgent/issues
             </Text>
+          </Box>
           </Box>
         </Box>
       );

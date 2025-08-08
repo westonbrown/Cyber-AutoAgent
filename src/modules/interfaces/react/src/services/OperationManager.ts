@@ -325,6 +325,27 @@ export class OperationManager {
     return Math.max(0, Math.min(100, (tokensUsed / model.contextLimit) * 100));
   }
 
+  // Get operation duration as formatted string
+  getOperationDuration(operationId: string): string {
+    const operation = this.operations.get(operationId);
+    if (!operation) return '0s';
+    
+    const endTime = operation.endTime || new Date();
+    const duration = endTime.getTime() - operation.startTime.getTime();
+    
+    const seconds = Math.floor(duration / 1000) % 60;
+    const minutes = Math.floor(duration / (1000 * 60)) % 60;
+    const hours = Math.floor(duration / (1000 * 60 * 60));
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
+
   // Private methods
   private generateOperationId(): string {
     const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15);
@@ -354,8 +375,9 @@ export class OperationManager {
     // In production, this would use a file-based storage or database
     try {
       // For now, just use in-memory storage
-      console.log('Session data initialized');
+      // Session data initialized silently
     } catch (error) {
+      // Only log errors to avoid interfering with React Ink UI
       console.warn('Failed to load session data:', error);
     }
   }
@@ -365,7 +387,7 @@ export class OperationManager {
     // In production, this would use a file-based storage or database
     try {
       // For now, just use in-memory storage
-      console.log('Session data saved to memory');
+      // Session data saved to memory - silent operation
     } catch (error) {
       console.warn('Failed to save session data:', error);
     }

@@ -24,7 +24,7 @@
  * Configuration management for all application settings
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -100,6 +100,12 @@ export interface Config {
   outputFormat: 'markdown' | 'json' | 'html';
   /** Enable detailed debug logging and verbose output */
   verbose: boolean;
+  
+  // Execution Configuration  
+  /** Preferred execution mode for assessments */
+  executionMode?: 'python-cli' | 'docker-single' | 'docker-stack';
+  /** Allow fallback to other execution modes if preferred is unavailable */
+  allowExecutionFallback: boolean;
   
   // Memory Settings
   memoryPath?: string; // Path to existing FAISS memory store to load
@@ -181,7 +187,7 @@ interface ConfigContextType {
   resetToDefaults: () => void;
 }
 
-const defaultConfig: Config = {
+export const defaultConfig: Config = {
   // Model Provider Settings
   modelProvider: 'bedrock',
   modelId: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
@@ -290,7 +296,7 @@ const defaultConfig: Config = {
   cohereApiKey: process.env.COHERE_API_KEY,
   
   // Docker Settings
-  dockerImage: 'cyber-autoagent:sudo',
+  dockerImage: 'cyber-autoagent:latest',
   dockerTimeout: 300,
   volumes: [],
   
@@ -301,6 +307,10 @@ const defaultConfig: Config = {
   maxThreads: 10,
   outputFormat: 'markdown',
   verbose: false, // Default to non-verbose mode
+  
+  // Execution Configuration
+  executionMode: undefined, // Auto-select based on availability
+  allowExecutionFallback: true, // Allow fallback modes by default
   
   // Memory Settings
   memoryPath: undefined, // No existing memory path by default
@@ -370,6 +380,12 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
  */
 export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
   const [applicationConfiguration, setApplicationConfiguration] = useState<Config>(defaultConfig);
+  
+  // Use a ref to always have access to the latest configuration for saving
+  const configRef = useRef<Config>(applicationConfiguration);
+  
+  // Update ref immediately when state changes (not in effect)
+  configRef.current = applicationConfiguration;
   
   // Configuration file path in user's home directory - useMemo to ensure stable reference
   const configurationFilePath = useMemo(
@@ -453,17 +469,17 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
       const configurationDirectory = path.dirname(configurationFilePath);
       await fs.mkdir(configurationDirectory, { recursive: true });
       
+      // Use the ref to get the latest configuration
+      const currentConfig = configRef.current;
+      
       // Atomic write operation with pretty formatting for manual editing
-      await fs.writeFile(
-        configurationFilePath, 
-        JSON.stringify(applicationConfiguration, null, 2),
-        'utf-8'
-      );
+      const configContent = JSON.stringify(currentConfig, null, 2);
+      await fs.writeFile(configurationFilePath, configContent, 'utf-8');
     } catch (error) {
       console.error('Failed to persist configuration to disk:', error);
       throw new Error(`Configuration save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [applicationConfiguration, configurationFilePath]);
+  }, [configurationFilePath]); // Use ref instead of state dependency
 
   /**
    * Update configuration with partial changes using deep merge

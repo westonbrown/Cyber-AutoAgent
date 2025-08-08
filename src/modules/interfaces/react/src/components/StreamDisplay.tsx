@@ -1,5 +1,5 @@
 /**
- * StreamDisplay - SDK-Enhanced event streaming for cyber operations
+ * StreamDisplay - SDK-integrated event streaming for cyber operations
  * Designed for infinite scroll with SDK native events and backward compatibility
  */
 
@@ -8,6 +8,13 @@ import { Box, Text } from 'ink';
 import { ThinkingIndicator } from './ThinkingIndicator.js';
 import { StreamEvent } from '../types/events.js';
 import { SwarmDisplay, SwarmState, SwarmAgent } from './SwarmDisplay.js';
+import { formatToolInput } from '../utils/toolFormatters.js';
+import { 
+  getToolCategory, 
+  formatToolWithIcon, 
+  isHighPriorityTool,
+  getExecutionStatus 
+} from '../utils/toolCategories.js';
 
 // Legacy simplified event types for backward compatibility
 export type LegacyStreamEvent = 
@@ -30,7 +37,10 @@ export type LegacyStreamEvent =
   | { type: 'tool_invocation_start'; toolName?: string; toolInput?: any; [key: string]: any }
   | { type: 'tool_invocation_end'; duration?: number; success?: boolean; [key: string]: any }
   | { type: 'event_loop_cycle_start'; cycleNumber?: number; [key: string]: any }
-  | { type: 'content_block_delta'; delta?: string; isReasoning?: boolean; [key: string]: any };
+  | { type: 'content_block_delta'; delta?: string; isReasoning?: boolean; [key: string]: any }
+  | { type: 'swarm_start'; agent_names?: any[]; agent_details?: any[]; task?: string; [key: string]: any }
+  | { type: 'swarm_handoff'; from_agent?: string; to_agent?: string; message?: string; [key: string]: any }
+  | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any };
 
 // Combined event type supporting both SDK and legacy events
 export type DisplayStreamEvent = StreamEvent | LegacyStreamEvent;
@@ -46,12 +56,21 @@ interface StreamDisplayProps {
   enableCostTracking?: boolean;
 }
 
+// Tool execution state tracking
+interface ToolState {
+  status: 'executing' | 'completed' | 'failed';
+  startTime: number;
+}
+
 const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 
-const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }) => {
+const EventLine: React.FC<{ 
+  event: DisplayStreamEvent; 
+  toolStates?: Map<string, ToolState>;
+}> = React.memo(({ event, toolStates }) => {
   switch (event.type) {
     // =======================================================================
-    // SDK NATIVE EVENT HANDLERS - Enhanced with SDK context
+    // SDK NATIVE EVENT HANDLERS - Integrated with SDK context
     // =======================================================================
     case 'model_invocation_start':
       return (
@@ -78,29 +97,54 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
       return null;
       
     case 'tool_invocation_start':
+      const sdkToolName = 'toolName' in event ? event.toolName : 'unknown';
+      const sdkToolInput = 'toolInput' in event ? event.toolInput : null;
+      
+      if (sdkToolInput && typeof sdkToolInput === 'object') {
+        const inputKeys = Object.keys(sdkToolInput);
+        const maxKeys = 4;
+        const displayKeys = inputKeys.slice(0, maxKeys);
+        const hasMore = inputKeys.length > maxKeys;
+        
+        return (
+          <Box flexDirection="column">
+            <Text color="green" bold>tool: {sdkToolName}</Text>
+            {displayKeys.map((key, i) => {
+              const value = sdkToolInput[key];
+              const displayValue = typeof value === 'string' && value.length > 50 
+                ? value.substring(0, 50) + '...' 
+                : typeof value === 'object' ? JSON.stringify(value).substring(0, 50) + '...'
+                : String(value);
+              const isLast = i === displayKeys.length - 1 && !hasMore;
+              
+              return (
+                <Box key={key} marginLeft={2}>
+                  <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
+                </Box>
+              );
+            })}
+            {hasMore && (
+              <Box marginLeft={2}>
+                <Text dimColor>└─ ... (+{inputKeys.length - maxKeys} more)</Text>
+              </Box>
+            )}
+            <Box marginLeft={2}>
+              </Box>
+          </Box>
+        );
+      }
+      
       return (
-        <>
-          <Text color="green" bold>tool: {'toolName' in event ? event.toolName : 'unknown'}</Text>
-          {'toolInput' in event && event.toolInput && (
-            <Text dimColor>{JSON.stringify(event.toolInput, null, 2)}</Text>
-          )}
-          <Text> </Text>
-        </>
+        <Box flexDirection="column">
+          <Text color="green" bold>tool: {sdkToolName}</Text>
+          <Box marginLeft={2}>
+          </Box>
+        </Box>
       );
       
     case 'tool_invocation_end':
-      return (
-        <>
-          <Text color="green">tool completed</Text>
-          {'duration' in event && event.duration && (
-            <Text dimColor>Duration: {event.duration}ms</Text>
-          )}
-          {'success' in event && event.success === false && (
-            <Text color="red">Tool execution failed</Text>
-          )}
-          <Text> </Text>
-        </>
-      );
+      // Don't show "tool completed" - just let the output speak for itself
+      return null;
       
     case 'event_loop_cycle_start':
       return (
@@ -213,46 +257,93 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
       switch (event.tool_name) {
         case 'mem0_memory':
           const action = event.tool_input.action || 'unknown';
-          if (action === 'unknown') {
-            // Don't show confusing unknown action, metadata event will provide clean info
-            inputDisplay = '';
-          } else {
+          if (action !== 'unknown') {
             const content = event.tool_input.content || event.tool_input.query || '';
             const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
-            const actionDisplay = action === 'store' ? 'storing memory' : action === 'retrieve' ? 'retrieving memory' : action;
-            const labelDisplay = action === 'store' ? 'preview' : 'query';
-            inputDisplay = preview ? `${actionDisplay} | ${labelDisplay}: ${preview}` : actionDisplay;
+            
+            return (
+              <Box flexDirection="column">
+                <Text color="green" bold>tool: mem0_memory</Text>
+                <Box marginLeft={2}>
+                  <Text dimColor>├─ action: {action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
+                </Box>
+                {preview && (
+                  <Box marginLeft={2}>
+                    <Text dimColor>└─ {action === 'store' ? 'content' : 'query'}: {preview}</Text>
+                  </Box>
+                )}
+              </Box>
+            );
           }
           break;
           
         case 'shell':
-          // For shell, extract commands and try to identify the agent context
-          const commands = event.tool_input.command || event.tool_input.commands || 
-                          event.tool_input.cmd || event.tool_input.input || '';
-          
-          // Don't hardcode agent names - they come from swarm tool output
-          inputDisplay = `Commands: ${commands}`;
+          // For shell, don't show commands here - they come via 'command' events
+          // This matches the original working behavior from commit 96914be3
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: shell</Text>
+            </Box>
+          );
           break;
           
         case 'http_request':
           const method = event.tool_input.method || 'GET';
           const url = event.tool_input.url || '';
-          inputDisplay = `method: ${method} | url: ${url}`;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: http_request</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ method: {method}</Text>
+              </Box>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ url: {url}</Text>
+              </Box>
+            </Box>
+          );
           break;
           
         case 'file_write':
           const filePath = event.tool_input.path || 'unknown';
           const fileContent = event.tool_input.content || '';
-          const contentInfo = fileContent ? ` | ${fileContent.length} chars` : '';
-          inputDisplay = `path: ${filePath}${contentInfo}`;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: file_write</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ path: {filePath}</Text>
+              </Box>
+              {fileContent && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ size: {fileContent.length} chars</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'editor':
           const editorCmd = event.tool_input.command || 'edit';
           const editorPath = event.tool_input.path || '';
           const editorContent = event.tool_input.content || '';
-          const editorInfo = editorContent ? ` | ${editorContent.length} chars` : '';
-          inputDisplay = `${editorCmd}: ${editorPath}${editorInfo}`;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: editor</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ command: {editorCmd}</Text>
+              </Box>
+              <Box marginLeft={2}>
+                <Text dimColor>{editorContent ? '├─' : '└─'} path: {editorPath}</Text>
+              </Box>
+              {editorContent && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ size: {editorContent.length} chars</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'swarm':
@@ -263,108 +354,234 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
           
           return (
             <Box flexDirection="column">
-              <Text color="green" bold>[SWARM] Multi-Agent Operation</Text>
+              <Text color="green" bold>tool: swarm</Text>
               <Box marginLeft={2}>
-                <Text color="blue" bold>Agents: </Text>
-                <Text color="blue">{agents}</Text>
+                <Text dimColor>├─ agents: {agents}</Text>
               </Box>
-              <Box marginLeft={2} flexDirection="column">
-                <Text color="yellow" bold>Mission:</Text>
-                <Text color="white">{taskDisplay}</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ task: {taskDisplay}</Text>
               </Box>
             </Box>
           );
           
+        case 'think':
+          // think output goes to reasoning, but still show tool invocation
+          const thought = event.tool_input.thought || event.tool_input.content || '';
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: think</Text>
+              {thought && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ {thought.length > 100 ? thought.substring(0, 100) + '...' : thought}</Text>
+                </Box>
+              )}
+            </Box>
+          );
+          break;
+          
         case 'python_repl':
           const code = event.tool_input.code || '';
           const codeLines = code.split('\n');
+          const previewLines = 5;
           
-          // Show more lines for better context (8 lines instead of 3)
-          const previewLines = 8;
-          let codePreview;
-          
+          let displayLines;
           if (codeLines.length <= previewLines) {
-            // Show all code if it's short enough
-            codePreview = code;
+            displayLines = codeLines;
           } else {
-            // Show first lines with smart truncation
-            const truncatedLines = codeLines.slice(0, previewLines);
-            codePreview = truncatedLines.join('\n') + '\n...';
+            displayLines = [...codeLines.slice(0, previewLines), `... (${codeLines.length - previewLines} more lines)`];
           }
           
-          inputDisplay = `code:\n${codePreview}`;
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: python_repl</Text>
+              <Box marginLeft={2} flexDirection="column">
+                <Text dimColor>├─ code:</Text>
+                {displayLines.map((line, i) => (
+                  <Box key={i} marginLeft={2}>
+                    <Text dimColor>{i === displayLines.length - 1 && !line.startsWith('...') ? '└─' : '│ '} {line}</Text>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          );
           break;
           
         case 'report_generator':
           const target = event.tool_input.target || 'unknown';
           const reportType = event.tool_input.report_type || event.tool_input.type || 'general';
-          inputDisplay = `target: ${target} | type: ${reportType}`;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: report_generator</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ target: {target}</Text>
+              </Box>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ type: {reportType}</Text>
+              </Box>
+            </Box>
+          );
           break;
           
         case 'handoff_to_user':
           // Message will be shown in the special user handoff display
+          const userMessage = event.tool_input.message || '';
+          
+          // Still show tool call with tree format even though there's a special display
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: handoff_to_user</Text>
+              {userMessage && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ message: {userMessage.length > 80 ? userMessage.substring(0, 80) + '...' : userMessage}</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'handoff_to_agent':
           const toAgent = event.tool_input.agent || event.tool_input.target_agent || 'unknown';
           const handoffMsg = event.tool_input.message || '';
           const msgPreview = handoffMsg.length > 80 ? handoffMsg.substring(0, 80) + '...' : handoffMsg;
-          inputDisplay = `target: ${toAgent} | message: ${msgPreview}`;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: handoff_to_agent</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ target: {toAgent}</Text>
+              </Box>
+              {msgPreview && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ message: {msgPreview}</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'load_tool':
           const toolName = event.tool_input.tool_name || event.tool_input.tool || 'unknown';
           const toolPath = event.tool_input.path || '';
           const toolDescription = event.tool_input.description || '';
-          const pathInfo = toolPath ? ` | path: ${toolPath}` : '';
-          const descInfo = toolDescription ? ` | ${toolDescription}` : '';
-          inputDisplay = `loading: ${toolName}${pathInfo}${descInfo}`;
+          
+          const hasPath = !!toolPath;
+          const hasDesc = !!toolDescription;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: load_tool</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>{hasPath || hasDesc ? '├─' : '└─'} loading: {toolName}</Text>
+              </Box>
+              {toolPath && (
+                <Box marginLeft={2}>
+                  <Text dimColor>{hasDesc ? '├─' : '└─'} path: {toolPath}</Text>
+                </Box>
+              )}
+              {toolDescription && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ description: {toolDescription}</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'stop':
-          inputDisplay = event.tool_input.reason || 'Manual stop requested';
+          const stopReason = event.tool_input.reason || 'Manual stop requested';
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: stop</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ reason: {stopReason}</Text>
+              </Box>
+            </Box>
+          );
           break;
           
         default:
-          // For unknown tools, show key parameters in clean format
+          // For unknown tools, show key parameters in tree format
           if (event.tool_input && typeof event.tool_input === 'object') {
             const keys = Object.keys(event.tool_input);
-            if (keys.length === 0) {
-              inputDisplay = '';
-            } else if (keys.length <= 4) {
-              // Show key-value pairs for small objects
-              inputDisplay = keys.map(k => {
-                const value = event.tool_input[k];
-                const displayValue = typeof value === 'string' && value.length > 50 
-                  ? value.substring(0, 50) + '...' 
-                  : String(value);
-                return `${k}: ${displayValue}`;
-              }).join(' | ');
-            } else {
-              // For larger objects, show key summary
-              const importantKeys = keys.slice(0, 3);
-              const remainingCount = keys.length - 3;
-              inputDisplay = `${importantKeys.join(', ')}${remainingCount > 0 ? ` (+${remainingCount} more)` : ''}`;
+            if (keys.length > 0) {
+              const maxKeys = 4;
+              const displayKeys = keys.slice(0, maxKeys);
+              const hasMore = keys.length > maxKeys;
+              
+              return (
+                <Box flexDirection="column">
+                  <Text color="green" bold>tool: {event.tool_name}</Text>
+                  {displayKeys.map((key, i) => {
+                    const value = event.tool_input[key];
+                    const displayValue = typeof value === 'string' && value.length > 50 
+                      ? value.substring(0, 50) + '...' 
+                      : String(value);
+                    const isLast = i === displayKeys.length - 1 && !hasMore;
+                    
+                    return (
+                      <Box key={key} marginLeft={2}>
+                        <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
+                      </Box>
+                    );
+                  })}
+                  {hasMore && (
+                    <Box marginLeft={2}>
+                      <Text dimColor>└─ ... (+{keys.length - maxKeys} more)</Text>
+                    </Box>
+                  )}
+                  <Box marginLeft={2}>
+                      </Box>
+                </Box>
+              );
             }
           }
       }
       
-      // NO dividers before tools - they come after step headers
-      if (event.tool_name !== 'shell') {
-        return (
-          <Box flexDirection="column">
-            <Text color="green" bold>tool: {event.tool_name}</Text>
-            {inputDisplay && <Text dimColor>{inputDisplay}</Text>}
-          </Box>
-        );
-      } else {
-        // For shell, don't hardcode agent names - they come from swarm output
-        return (
-          <Box flexDirection="column">
-            <Text color="green" bold>tool: shell</Text>
-          </Box>
-        );
+      // Fallback: Always show tool with any parameters in tree format
+      if (event.tool_input && typeof event.tool_input === 'object') {
+        const keys = Object.keys(event.tool_input);
+        if (keys.length > 0) {
+          const maxKeys = 4;
+          const displayKeys = keys.slice(0, maxKeys);
+          const hasMore = keys.length > maxKeys;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: {event.tool_name}</Text>
+              {displayKeys.map((key, i) => {
+                const value = event.tool_input[key];
+                const displayValue = typeof value === 'string' && value.length > 50 
+                  ? value.substring(0, 50) + '...' 
+                  : String(value);
+                const isLast = i === displayKeys.length - 1 && !hasMore;
+                
+                return (
+                  <Box key={key} marginLeft={2}>
+                    <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
+                  </Box>
+                );
+              })}
+              {hasMore && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ ... (+{keys.length - maxKeys} more)</Text>
+                </Box>
+              )}
+            </Box>
+          );
+        }
       }
+      
+      // Ultimate fallback: Just show tool name with animation
+      return (
+        <Box flexDirection="column">
+          <Text color="green" bold>tool: {event.tool_name}</Text>
+          <Box marginLeft={2}>
+          </Box>
+        </Box>
+      );
       
     case 'command':
       return (
@@ -379,6 +596,11 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
         return null;
       }
       
+      // Skip raw "output" or "reasoning" text that shouldn't be displayed
+      if (event.content.trim() === 'output' || event.content.trim() === 'reasoning') {
+        return null;
+      }
+      
       const metadata = [];
       if (event.exitCode !== undefined) metadata.push(`exit: ${event.exitCode}`);
       if (event.duration) metadata.push(`duration: ${event.duration}`);
@@ -388,50 +610,59 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
         event.content.includes('▶') || 
         event.content.includes('◆') || 
         event.content.includes('✓') ||
-        event.content.includes('○')
+        event.content.includes('○') ||
+        event.content.startsWith('[Observability]')
       )) {
         return (
           <Text color="blue">{event.content}</Text>
         );
       }
       
-      // For command output, show with metadata
+      // For command output, show with consistent spacing
+      const lines = event.content.split('\n');
+      const shouldCollapse = lines.length > 10;
+      const displayLines = shouldCollapse ? [...lines.slice(0, 5), '...', ...lines.slice(-3)] : lines;
+      
       return (
-        <Box flexDirection="column">
-          <Text> </Text>
-          <Text> </Text>
-          <Text color="yellow" bold>
-            output {metadata.length > 0 && <Text dimColor>({metadata.join(', ')})</Text>}
-          </Text>
-          <Text dimColor>{event.content}</Text>
-          <Text> </Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color="yellow">output</Text>
+            {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
+            {shouldCollapse && <Text dimColor> [{lines.length} lines]</Text>}
+          </Box>
+          <Box marginLeft={2} flexDirection="column">
+            {displayLines.map((line, i) => (
+              <Text key={i} dimColor>{line}</Text>
+            ))}
+          </Box>
         </Box>
       );
       
     case 'error':
       return (
-        <>
-          <Text color="red" bold>error</Text>
-          <Text color="red">{event.content}</Text>
-          <Text> </Text>
-        </>
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color="red" bold>[ERROR]</Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text color="red">{event.content}</Text>
+          </Box>
+        </Box>
       );
       
     case 'metadata':
-      if ('content' in event && typeof event.content === 'object') {
-        const entries = Object.entries(event.content);
-        // Check if this is memory operation metadata for better styling
-        const isMemoryOperation = entries.some(([key]) => key === 'action' && 
-          (event.content as any).action?.includes('memory'));
-        
-        return (
-          <>
-            <Text color={isMemoryOperation ? "cyan" : "gray"} dimColor={!isMemoryOperation}>
-              {entries.map(([key, value]) => `${key}: ${value}`).join(' | ')}
-            </Text>
-            <Text> </Text>
-          </>
-        );
+      // Display metadata parameters for tools that don't have built-in formatting
+      if (event.content && typeof event.content === 'object') {
+        const metadataEntries = Object.entries(event.content);
+        if (metadataEntries.length > 0) {
+          return (
+            <Box flexDirection="column">
+              {metadataEntries.map(([key, value], index) => (
+                <Text key={index} dimColor>{key}: {String(value)}</Text>
+              ))}
+            </Box>
+          );
+        }
       }
       return null;
       
@@ -456,6 +687,69 @@ const EventLine: React.FC<{ event: DisplayStreamEvent }> = React.memo(({ event }
           <Text color="yellow">Please provide your response in the input below:</Text>
           <Text> </Text>
         </>
+      );
+      
+    case 'swarm_start':
+      // Display swarm operation start with agent details
+      const swarmAgents = 'agent_names' in event ? (event.agent_names as any[] || []) : [];
+      const swarmDetails = 'agent_details' in event ? (event.agent_details as any[] || []) : [];
+      const swarmTask = 'task' in event ? String(event.task || '') : '';
+      
+      return (
+        <Box flexDirection="column">
+          <Text> </Text>
+          <Text color="green" bold>[SWARM] Multi-Agent Operation Starting</Text>
+          <Box marginLeft={2}>
+            <Text color="blue" bold>Agents ({swarmAgents.length}):</Text>
+          </Box>
+          {swarmDetails.map((detail, i) => (
+            <Box key={i} marginLeft={4}>
+              <Text color="cyan">• {detail}</Text>
+            </Box>
+          ))}
+          <Box marginLeft={2}>
+            <Text color="yellow" bold>Task: </Text>
+            <Text>{swarmTask}</Text>
+          </Box>
+          <Text> </Text>
+        </Box>
+      );
+      
+    case 'swarm_handoff':
+      // Display agent handoff in swarm
+      const fromAgent = 'from_agent' in event ? String(event.from_agent || 'unknown') : 'unknown';
+      const toAgent = 'to_agent' in event ? String(event.to_agent || 'unknown') : 'unknown';
+      const handoffMessage = 'message' in event ? String(event.message || '') : '';
+      
+      return (
+        <Box flexDirection="column">
+          <Text color="magenta" bold>[HANDOFF] Agent Handoff</Text>
+          <Box marginLeft={2}>
+            <Text color="cyan">{fromAgent} → {toAgent}</Text>
+          </Box>
+          {handoffMessage && (
+            <Box marginLeft={2}>
+              <Text dimColor>Message: {handoffMessage}</Text>
+            </Box>
+          )}
+        </Box>
+      );
+      
+    case 'swarm_complete':
+      // Display swarm completion
+      const finalAgent = 'final_agent' in event ? String(event.final_agent || 'unknown') : 'unknown';
+      const executionCount = 'execution_count' in event ? Number(event.execution_count || 0) : 0;
+      
+      return (
+        <Box flexDirection="column">
+          <Text> </Text>
+          <Text color="green" bold>[SWARM] Operation Complete</Text>
+          <Box marginLeft={2}>
+            <Text>Final Agent: {finalAgent}</Text>
+            <Text>Total Handoffs: {executionCount}</Text>
+          </Box>
+          <Text> </Text>
+        </Box>
       );
       
     default:
@@ -651,6 +945,31 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events 
     setSwarmStates(newSwarmStates);
   }, [events]);
   
+  // Track tool execution states
+  const [toolStates, setToolStates] = React.useState<Map<string, ToolState>>(new Map());
+  
+  React.useEffect(() => {
+    const newToolStates = new Map<string, ToolState>();
+    
+    events.forEach(event => {
+      if (event.type === 'tool_start') {
+        newToolStates.set(event.tool_name, {
+          status: 'executing',
+          startTime: Date.now()
+        });
+      } else if (event.type === 'tool_invocation_end') {
+        const toolName = ('tool_name' in event && event.tool_name) || 'unknown';
+        const success = ('success' in event && event.success !== false);
+        newToolStates.set(toolName, {
+          status: success ? 'completed' : 'failed',
+          startTime: newToolStates.get(toolName)?.startTime || Date.now()
+        });
+      }
+    });
+    
+    setToolStates(newToolStates);
+  }, [events]);
+  
   // Group consecutive reasoning events to prevent multiple labels
   const displayGroups = React.useMemo(() => {
     const groups: Array<{
@@ -768,7 +1087,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events 
         } else {
           // Display single events normally
           return group.events.map((event, idx) => (
-            <MemoizedEventLine key={`${group.startIdx}-${idx}`} event={event} />
+            <MemoizedEventLine key={`${group.startIdx}-${idx}`} event={event} toolStates={toolStates} />
           ));
         }
       })}

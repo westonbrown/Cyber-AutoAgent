@@ -17,6 +17,7 @@ export interface SetupState {
   error: string | null;
   progress: SetupProgress | null;
   isComplete: boolean;
+  lastProgressUpdate: number;
 }
 
 type SetupAction =
@@ -37,6 +38,7 @@ const initialState: SetupState = {
   error: null,
   progress: null,
   isComplete: false,
+  lastProgressUpdate: 0,
 };
 
 function setupReducer(state: SetupState, action: SetupAction): SetupState {
@@ -67,7 +69,12 @@ function setupReducer(state: SetupState, action: SetupAction): SetupState {
       };
 
     case 'UPDATE_PROGRESS':
-      return { ...state, progress: action.payload };
+      // Throttle progress updates at the reducer level
+      const now = Date.now();
+      if (now - state.lastProgressUpdate < 500) {
+        return state; // Ignore rapid updates
+      }
+      return { ...state, progress: action.payload, lastProgressUpdate: now };
 
     case 'COMPLETE_SETUP':
       return {

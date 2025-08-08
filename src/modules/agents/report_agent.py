@@ -8,8 +8,7 @@ avoid code duplication.
 """
 
 import logging
-import re
-from typing import Dict, Any, List, Optional
+from typing import Optional
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -80,100 +79,13 @@ class ReportGenerator:
             trace_attributes=trace_attrs if operation_id else None,
         )
 
-    @staticmethod
-    def extract_report_content(raw_content: str) -> str:
-        """
-        Extract the actual report content from LLM response.
+    # Removed extract_report_content() - no longer needed with structured prompts
+    # The new system prompt explicitly instructs the LLM to begin directly with
+    # "# SECURITY ASSESSMENT REPORT" making content extraction unnecessary
 
-        The LLM sometimes includes thinking/preamble before the actual report.
-        This method extracts only the report starting from the first report header.
-
-        Args:
-            raw_content: Raw content from LLM including possible preamble
-
-        Returns:
-            Extracted report content
-        """
-        # Look for common report headers
-        report_markers = [
-            "# PENETRATION TESTING REPORT",
-            "# PENETRATION TESTING SECURITY ASSESSMENT REPORT",
-            "# Security Assessment Report",
-            "# SECURITY ASSESSMENT REPORT",
-            "## EXECUTIVE SUMMARY",
-            "## 1. EXECUTIVE SUMMARY",
-            "PENETRATION TESTING SECURITY ASSESSMENT REPORT",
-            "1. EXECUTIVE SUMMARY",
-            "EXECUTIVE SUMMARY",
-        ]
-
-        lines = raw_content.split("\n")
-        report_start_idx = None
-
-        # Find the first occurrence of a report marker
-        for i, line in enumerate(lines):
-            for marker in report_markers:
-                if marker in line:
-                    report_start_idx = i
-                    break
-            if report_start_idx is not None:
-                break
-
-        if report_start_idx is not None:
-            # Return content from the report start
-            return "\n".join(lines[report_start_idx:])
-
-        # If no marker found, log and return original content
-        logger.warning("No report markers found in content. Returning original content.")
-        return raw_content
-
-    @staticmethod
-    def clean_duplicate_content(report_content: str) -> str:
-        """
-        Remove duplicate sections from report content.
-
-        Args:
-            report_content: The raw report content
-
-        Returns:
-            Cleaned report content
-        """
-        lines = report_content.split("\n")
-        seen_lines = set()
-        cleaned_lines = []
-
-        # Track section headers to avoid duplicate sections
-        section_pattern = re.compile(r"^#+\s+(.+)$|^[A-Z][A-Z\s]+:?\s*$")
-        seen_sections = set()
-
-        skip_until_next_section = False
-
-        for line in lines:
-            # Check if this is a section header
-            section_match = section_pattern.match(line.strip())
-            if section_match:
-                section_name = section_match.group(1) if section_match.group(1) else line.strip()
-                section_name = section_name.upper().strip(":")
-
-                if section_name in seen_sections:
-                    skip_until_next_section = True
-                    continue
-
-                seen_sections.add(section_name)
-                skip_until_next_section = False
-
-            # Skip content if we're in a duplicate section
-            if skip_until_next_section:
-                continue
-
-            # Add non-duplicate lines
-            if line.strip() and line not in seen_lines:
-                cleaned_lines.append(line)
-                seen_lines.add(line)
-            elif not line.strip():  # Preserve blank lines
-                cleaned_lines.append(line)
-
-        return "\n".join(cleaned_lines)
+    # Removed clean_duplicate_content() - harmful to structured XML output
+    # The function could corrupt XML tags and remove legitimate repeated content
+    # like numbered findings. The structured prompt system handles formatting.
 
 
 # For backward compatibility - in case anything is importing ReportAgent

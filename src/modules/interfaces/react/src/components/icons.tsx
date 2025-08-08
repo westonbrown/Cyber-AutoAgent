@@ -15,40 +15,40 @@ import { themeManager } from '../themes/theme-manager.js';
  */
 export const StatusIcons = {
   // Success states
-  Success: () => <Text color="green">✓</Text>,
-  Complete: () => <Text color="green">✔</Text>,
+  Success: () => <Text color="green">[OK]</Text>,
+  Complete: () => <Text color="green">[OK]</Text>,
   
   // Error states
-  Error: () => <Text color="red">✗</Text>,
-  Failed: () => <Text color="red" bold>✖</Text>,
+  Error: () => <Text color="red">[ERR]</Text>,
+  Failed: () => <Text color="red" bold>[ERR]</Text>,
   
   // Warning states
-  Warning: () => <Text color="yellow">⚠</Text>,
+  Warning: () => <Text color="yellow">[WARN]</Text>,
   Caution: () => <Text color="yellow">!</Text>,
   
   // Progress states
-  Pending: () => <Text color="cyan">○</Text>,
-  Running: () => <Text color="cyan">●</Text>,
+  Pending: () => <Text color="cyan">[WAIT]</Text>,
+  Running: () => <Text color="cyan">[ACTIVE]</Text>,
   Loading: () => <Spinner type="dots" />,
   
   // Information states
-  Info: () => <Text color="blue">ℹ</Text>,
+  Info: () => <Text color="blue">[INFO]</Text>,
   Question: () => <Text color="yellow">?</Text>,
   
   // Action states
   Canceled: () => <Text color="yellow" bold>-</Text>,
-  Skipped: () => <Text color="gray">⊘</Text>,
-  Paused: () => <Text color="yellow">⏸</Text>,
+  Skipped: () => <Text color="gray">[SKIP]</Text>,
+  Paused: () => <Text color="yellow">[PAUSE]</Text>,
   
   // Navigation
-  Arrow: () => <Text color="cyan">→</Text>,
-  Chevron: () => <Text color="gray">›</Text>,
+  Arrow: () => <Text color="cyan">{'>'}</Text>,
+  Chevron: () => <Text color="gray">{'>'}</Text>,
   
   // Security specific
-  Secure: () => <Text color="green">🔒</Text>,
-  Insecure: () => <Text color="red">🔓</Text>,
-  Shield: () => <Text color="green">🛡</Text>,
-  Alert: () => <Text color="red">🚨</Text>,
+  Secure: () => <Text color="green">[SEC]</Text>,
+  Insecure: () => <Text color="red">[UNSEC]</Text>,
+  Shield: () => <Text color="green">[SHIELD]</Text>,
+  Alert: () => <Text color="red">[ALERT]</Text>,
 };
 
 /**
@@ -63,10 +63,10 @@ export const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({ status
   const theme = themeManager.getCurrentTheme();
   
   const indicators = {
-    pending: compact ? '○' : '○ Pending',
+    pending: compact ? '[WAIT]' : '[WAIT] Pending',
     executing: compact ? <Spinner type="dots" /> : <><Spinner type="dots" /> Executing</>,
-    success: compact ? '✓' : '✓ Success',
-    error: compact ? '✗' : '✗ Error',
+    success: compact ? '[OK]' : '[OK] Success',
+    error: compact ? '[ERR]' : '[ERR] Error',
     canceled: compact ? '-' : '- Canceled',
     confirming: compact ? '?' : '? Confirming',
   };
@@ -131,10 +131,10 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ status, show
   const theme = themeManager.getCurrentTheme();
   
   const indicators = {
-    connected: { icon: '●', color: theme.success, label: 'Connected' },
+    connected: { icon: '[ACTIVE]', color: theme.success, label: 'Connected' },
     connecting: { icon: <Spinner type="dots" />, color: theme.warning, label: 'Connecting' },
-    disconnected: { icon: '○', color: theme.muted, label: 'Disconnected' },
-    error: { icon: '✗', color: theme.danger, label: 'Error' }
+    disconnected: { icon: '[WAIT]', color: theme.muted, label: 'Disconnected' },
+    error: { icon: '[ERR]', color: theme.danger, label: 'Error' }
   };
   
   const { icon, color, label } = indicators[status];
@@ -152,7 +152,7 @@ export const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ status, show
  */
 export const Bullet: React.FC<{ level?: number }> = ({ level = 0 }) => {
   const theme = themeManager.getCurrentTheme();
-  const bullets = ['•', '◦', '▪', '▫'];
+  const bullets = ['-', '-', '-', '[ ]'];
   const bullet = bullets[level % bullets.length];
   
   return <Text color={theme.muted}>{bullet} </Text>;
@@ -173,11 +173,11 @@ export const LogLevelIcon: React.FC<{ level: 'info' | 'success' | 'warning' | 'e
   const theme = themeManager.getCurrentTheme();
   
   const icons = {
-    info: { icon: 'ℹ', color: theme.info },
-    success: { icon: '✓', color: theme.success },
-    warning: { icon: '⚠', color: theme.warning },
-    error: { icon: '✗', color: theme.danger },
-    debug: { icon: '⟡', color: theme.muted }
+    info: { icon: '[INFO]', color: theme.info },
+    success: { icon: '[OK]', color: theme.success },
+    warning: { icon: '[WARN]', color: theme.warning },
+    error: { icon: '[ERR]', color: theme.danger },
+    debug: { icon: '[DEBUG]', color: theme.muted }
   };
   
   const { icon, color } = icons[level];
@@ -192,8 +192,8 @@ export const SecurityIcon: React.FC<{ type: 'scanning' | 'vulnerable' | 'secure'
   
   const icons = {
     scanning: { icon: <Spinner type="dots" />, color: theme.primary },
-    vulnerable: { icon: '⚠', color: theme.danger },
-    secure: { icon: '✓', color: theme.success },
+    vulnerable: { icon: '[WARN]', color: theme.danger },
+    secure: { icon: '[OK]', color: theme.success },
     unknown: { icon: '?', color: theme.muted }
   };
   

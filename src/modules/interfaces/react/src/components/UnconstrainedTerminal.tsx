@@ -11,11 +11,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, Static } from 'ink';
 import { StreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
-import { DirectDockerService } from '../services/DirectDockerService.js';
+import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
 
 interface UnconstrainedTerminalProps {
-  dockerService: DirectDockerService;
+  executionService: ExecutionService | null;
   sessionId: string;
   terminalWidth?: number;
   collapsed?: boolean;
@@ -24,7 +24,7 @@ interface UnconstrainedTerminalProps {
 }
 
 export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React.memo(({
-  dockerService,
+  executionService,
   sessionId,
   terminalWidth = 80,
   collapsed = false,
@@ -334,8 +334,13 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       }
     };
 
+    // Early return if no execution service
+    if (!executionService) {
+      return;
+    }
+
     // Subscribe to events
-    dockerService.on('event', handleEvent);
+    executionService.on('event', handleEvent);
     
     // Event flushing no longer needed - events are processed directly
     
@@ -352,8 +357,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       setActiveEvents([]);
     };
     
-    dockerService.on('complete', handleComplete);
-    dockerService.on('stopped', handleComplete);
+    executionService.on('complete', handleComplete);
+    executionService.on('stopped', handleComplete);
 
     // Cleanup
     return () => {
@@ -361,11 +366,11 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       if (delayedThinkingTimerRef.current) {
         clearTimeout(delayedThinkingTimerRef.current);
       }
-      dockerService.off('event', handleEvent);
-      dockerService.off('complete', handleComplete);
-      dockerService.off('stopped', handleComplete);
+      executionService.off('event', handleEvent);
+      executionService.off('complete', handleComplete);
+      executionService.off('stopped', handleComplete);
     };
-  }, [dockerService, onEvent, metrics, onMetricsUpdate, sessionId]);
+  }, [executionService, onEvent, metrics, onMetricsUpdate, sessionId]);
 
   if (collapsed) {
     return null;
@@ -375,7 +380,7 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
     <Box flexDirection="column" width="100%" flexGrow={1}>
       {/* Completed events - use Static for proper scrolling */}
       {completedEvents.length > 0 && (
-        <Static items={completedEvents}>
+        <Static key={`terminal-events-${sessionId}`} items={completedEvents}>
           {(event, index) => (
             <Box key={`event-${index}-${event.type}-${Date.now()}`}>
               <StreamDisplay events={[event]} />

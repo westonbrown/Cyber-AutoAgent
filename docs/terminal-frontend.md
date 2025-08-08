@@ -195,59 +195,19 @@ State updates flow through well-defined actions:
 - **Background Processing**: Non-blocking event parsing
 - **Efficient State Updates**: Batched state changes where possible
 
-## Configuration Integration
+## Configuration System
 
-### Backend Configuration Bridge
+**ConfigContext** provides centralized configuration management:
 
-The frontend seamlessly integrates with the Python backend configuration system:
+- **Multi-provider Support**: AWS Bedrock, Ollama, LiteLLM
+- **Persistent Storage**: `~/.cyber-autoagent/config.json`
+- **Environment Integration**: Automatic env var loading
+- **Real-time Updates**: Live configuration changes
+- **Validation**: Comprehensive settings validation
 
-#### Configuration Display
-- **Provider Settings**: Visual display of model and provider configuration
-- **Tool Configuration**: Available tools and their settings
-- **Memory Settings**: Memory backend and storage configuration
-
-#### Dynamic Updates
-- **Live Configuration**: Real-time updates as configuration changes
-- **Validation Feedback**: Immediate feedback on configuration errors
-- **Status Monitoring**: Configuration health and connectivity status
-
-## Error Handling and Resilience
-
-### Robust Error Management
-
-#### Backend Communication
-- **Connection Monitoring**: Detection of backend communication issues
-- **Graceful Degradation**: Continued operation during partial failures
-- **Error Recovery**: Automatic retry mechanisms for transient failures
-
-#### User Experience
-- **Clear Error Messages**: User-friendly error descriptions
-- **Recovery Suggestions**: Actionable recommendations for error resolution
-- **State Preservation**: Maintaining UI state during error conditions
-
-## Accessibility and Usability
-
-### Terminal Accessibility
-- **Screen Reader Support**: Compatible with terminal screen readers
-- **Keyboard Navigation**: Full keyboard-only operation support
-- **Color Accessibility**: High contrast modes and color-blind friendly options
-
-### User Experience Design
-- **Intuitive Layout**: Logical information hierarchy
-- **Consistent Behavior**: Predictable UI patterns throughout
-- **Responsive Design**: Adapts to different terminal sizes
-- **Performance Feedback**: Clear indicators of system responsiveness
-
-## Development and Maintenance
-
-### Development Workflow
-
-#### Local Development
-```bash
-cd src/modules/interfaces/react
-npm install
-npm run develop    # Watch mode with hot reloading
-npm run build      # Production build
-npm run test       # Test suite execution
-npm run lint       # Code quality checks
-```
+**Features:**
+- Model pricing configuration
+- Docker execution settings  
+- Observability with Langfuse
+- Memory backend selection
+- Assessment parameters

@@ -78,7 +78,20 @@ export class SetupService extends EventEmitter {
     const totalSteps = 4;
     let currentStep = 0;
 
-    // Step 1: Check Python installation
+    // Step 1: Update deployment mode first (fast operation)
+    currentStep++;
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Configuring CLI mode...',
+      stepName: 'mode-setup'
+    });
+
+    // Update ContainerManager's deployment mode early to avoid Docker operations
+    const containerManager = ContainerManager.getInstance();
+    await containerManager.switchToMode('local-cli');
+
+    // Step 2: Check Python installation
     currentStep++;
     onProgress?.({
       current: currentStep,
@@ -95,21 +108,12 @@ export class SetupService extends EventEmitter {
       throw new Error(pythonCheck.error || 'Python 3.10+ is required');
     }
 
-    // Step 2: Setup virtual environment
+    // Step 3: Setup virtual environment and dependencies
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
-      message: `Python ${pythonCheck.version} detected. Setting up virtual environment...`,
-      stepName: 'venv-setup'
-    });
-
-    // Step 3: Install dependencies
-    currentStep++;
-    onProgress?.({
-      current: currentStep,
-      total: totalSteps,
-      message: 'Installing dependencies...',
+      message: `Python ${pythonCheck.version} detected. Setting up environment...`,
       stepName: 'dependencies'
     });
 
@@ -122,18 +126,14 @@ export class SetupService extends EventEmitter {
       });
     });
 
-    // Step 4: Update deployment mode and verify setup
+    // Step 4: Final verification
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
-      message: 'Python environment setup complete!',
+      message: 'CLI environment setup complete!',
       stepName: 'verification'
     });
-
-    // Update ContainerManager's deployment mode for CLI mode
-    const containerManager = ContainerManager.getInstance();
-    await containerManager.switchToMode('local-cli');
 
     return {
       success: true,

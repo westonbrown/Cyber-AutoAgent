@@ -24,15 +24,29 @@ class ModulePromptLoader:
 
         Args:
             modules_base_path: Base path to modules directory.
-                              Defaults to project root /modules
+                              Defaults to operation_plugins directory
         """
         if modules_base_path:
             self.modules_path = Path(modules_base_path)
         else:
-            # Find modules directory relative to this file
+            # Find operation_plugins directory with robust path discovery
             current_file = Path(__file__)
-            project_root = current_file.parent.parent.parent.parent  # Up to project root
-            self.modules_path = project_root / "modules"
+            potential_paths = [
+                current_file.parent.parent / "operation_plugins",  # Normal location
+                Path.cwd() / "src" / "modules" / "operation_plugins",  # CWD based
+                Path("/app/src/modules/operation_plugins"),  # Docker path
+                current_file.parent.parent.parent.parent / "src" / "modules" / "operation_plugins"  # Project root
+            ]
+            
+            for path in potential_paths:
+                if path.exists():
+                    self.modules_path = path
+                    logger.info(f"Found operation_plugins at: {path}")
+                    break
+            else:
+                # Fallback to expected location
+                self.modules_path = current_file.parent.parent / "operation_plugins"
+                logger.warning(f"Operation_plugins directory not found, using fallback: {self.modules_path}")
 
         logger.debug(f"ModulePromptLoader initialized with path: {self.modules_path}")
 

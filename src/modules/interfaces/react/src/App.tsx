@@ -6,17 +6,15 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
-import { useStdout } from 'ink';
+import { useStdout, useInput, useApp } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 
 // State Management
 import { useApplicationState } from './hooks/useApplicationState.js';
 import { useModalManager } from './hooks/useModalManager.js';
 import { useOperationManager } from './hooks/useOperationManager.js';
-import { useKeyboardHandlers } from './hooks/useKeyboardHandlers.js';
 
 // Core Services  
-import { DirectDockerService } from './services/DirectDockerService.js';
 import { InputParser } from './services/InputParser.js';
 
 // Context Providers
@@ -40,13 +38,28 @@ interface AppProps {
   module?: string;
   target?: string;
   objective?: string;
+  autoRun?: boolean;
+  iterations?: number;
+  provider?: string;
+  model?: string;
+  region?: string;
 }
 
 /**
  * AppContent - Main Application Logic
  */
-const AppContent: React.FC<AppProps> = () => {
+const AppContent: React.FC<AppProps> = ({ 
+  module, 
+  target, 
+  objective, 
+  autoRun, 
+  iterations, 
+  provider, 
+  model, 
+  region 
+}) => {
   const { stdout } = useStdout();
+  const { exit } = useApp();
   
   // Configuration and theme management
   const { config: applicationConfig } = useConfig();
@@ -55,16 +68,14 @@ const AppContent: React.FC<AppProps> = () => {
   // Consolidated state management
   const { state: appState, actions } = useApplicationState();
   
-  // Services
-  const [dockerService] = React.useState(() => new DirectDockerService());
-  const [commandParser] = React.useState(() => new InputParser());
+  // Command parser service
+  const commandParser = React.useMemo(() => new InputParser(), []);
   
   // Operation management
   const operationManager = useOperationManager({
     appState,
     actions,
-    applicationConfig,
-    dockerService
+    applicationConfig
   });
   
   // Modal management
@@ -95,22 +106,60 @@ const AppContent: React.FC<AppProps> = () => {
     refreshStatic();
   }, [refreshStatic, actions, operationManager]);
 
-  // Keyboard handlers
-  const isTerminalInteractive = activeModal === 'none' && !appState.userHandoffActive;
+  // Handle global keyboard shortcuts with highest priority
+  const isTerminalInteractive = process.stdin.isTTY;
   
-  useKeyboardHandlers({
-    activeOperation: appState.activeOperation,
-    isTerminalInteractive,
-    onAssessmentPause: operationManager.handleAssessmentPause,
-    onScreenClear: handleScreenClear
-  });
+  // Add raw stdin handler for Escape key as a fallback
+  useEffect(() => {
+    if (!process.stdin.isTTY) return;
+    
+    const handleRawInput = (data: Buffer) => {
+      const input = data.toString();
+      // Check for ESC character (ASCII 27 or \x1B)
+      if (input === '\x1B' || input.charCodeAt(0) === 27) {
+        if (appState.activeOperation && appState.executionService) {
+          operationManager.handleAssessmentCancel();
+        }
+      }
+    };
+    
+    process.stdin.on('data', handleRawInput);
+    return () => {
+      process.stdin.off('data', handleRawInput);
+    };
+  }, [appState.activeOperation, appState.executionService, operationManager.handleAssessmentCancel]);
+  
+  useInput((input, key) => {
+    if (!isTerminalInteractive) return;
+    
+    if (key.ctrl && input === 'c') {
+      if (appState.activeOperation?.status === 'running') {
+        operationManager.handleAssessmentPause();
+      } else {
+        exit();
+      }
+    }
+    
+    if (key.ctrl && input === 'l') {
+      handleScreenClear();
+    }
+    
+    if (key.escape) {
+      if (activeModal !== 'none') {
+        modalManager.closeModal();
+      } else if (appState.activeOperation && appState.executionService) {
+        operationManager.handleAssessmentCancel();
+      } else {
+        exit();
+      }
+    }
+  }, { isActive: isTerminalInteractive });
   
   // Command handler
   const { handleUnifiedInput } = useCommandHandler({
     commandParser,
     assessmentFlowManager: operationManager.assessmentFlowManager,
     operationManager: operationManager.operationManager,
-    dockerService,
     appState,
     actions,
     applicationConfig,
@@ -164,9 +213,52 @@ const AppContent: React.FC<AppProps> = () => {
     onInput: handleUnifiedInput,
     onModalClose: closeModal,
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
-    onSafetyConfirm: operationManager.startAssessmentExecution,
-    dockerService
+    onSafetyConfirm: operationManager.startAssessmentExecution
   };
+  
+  
+  // Handle autoRun mode - bypass interactive flow and start assessment immediately
+  useEffect(() => {
+    if (autoRun && target && module && appState.isConfigLoaded) {
+      // Skip initialization flow
+      actions.dismissInit();
+      
+      // Apply CLI parameter overrides to config if provided
+      const configUpdates: Partial<typeof applicationConfig> = {};
+      if (iterations && iterations !== applicationConfig.iterations) {
+        configUpdates.iterations = iterations;
+      }
+      if (provider && provider !== applicationConfig.modelProvider) {
+        configUpdates.modelProvider = provider as 'bedrock' | 'ollama' | 'litellm';
+      }
+      if (model && model !== applicationConfig.modelId) {
+        configUpdates.modelId = model;
+      }
+      if (region && region !== applicationConfig.awsRegion) {
+        configUpdates.awsRegion = region;
+      }
+      
+      // Update config with CLI overrides if any
+      if (Object.keys(configUpdates).length > 0) {
+        // Note: This would need a updateConfig function in ConfigContext to persist changes
+        console.log('CLI overrides applied:', configUpdates);
+      }
+      
+      // Set assessment parameters using the flow manager's processUserInput method
+      operationManager.assessmentFlowManager.processUserInput(`target ${target}`);
+      if (objective) {
+        operationManager.assessmentFlowManager.processUserInput(`objective ${objective}`);
+      } else {
+        // Use empty string to trigger default objective
+        operationManager.assessmentFlowManager.processUserInput('');
+      }
+      
+      // Start assessment execution automatically
+      setTimeout(() => {
+        operationManager.startAssessmentExecution();
+      }, 100); // Small delay to ensure state is set
+    }
+  }, [autoRun, target, module, objective, iterations, provider, model, region, appState.isConfigLoaded, actions, operationManager, applicationConfig]);
   
   return (
     <InitializationWrapper

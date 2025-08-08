@@ -76,6 +76,20 @@ def generate_security_report(
         # If evidence not provided, retrieve from memory
         if evidence is None:
             evidence = _retrieve_evidence_from_memory(operation_id)
+            
+        # Validate evidence collection
+        if not evidence or len(evidence) == 0:
+            logger.warning("No evidence retrieved for operation %s - report may be incomplete", operation_id)
+            # Add system warning to indicate missing evidence
+            evidence = [{
+                "category": "system_warning", 
+                "content": "⚠️ WARNING: No evidence collected during assessment - this may indicate incomplete operation or configuration issues",
+                "severity": "MEDIUM",
+                "confidence": "SYSTEM"
+            }]
+        else:
+            finding_count = len([e for e in evidence if e.get("category") == "finding"])
+            logger.info("Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count)
 
         # Use centralized formatting functions from prompts module
         from modules.prompts.report import format_evidence_for_report, format_tools_summary
@@ -115,11 +129,21 @@ def generate_security_report(
                     if isinstance(block, dict) and "text" in block:
                         report_text += block["text"]
 
-                # Use utility methods for cleaning
-                report_text = ReportGenerator.extract_report_content(report_text)
-                report_text = ReportGenerator.clean_duplicate_content(report_text)
+                # Simple validation - trust the structured prompt system
+                if not report_text.strip().startswith("# SECURITY ASSESSMENT REPORT"):
+                    logger.warning("Report doesn't start with expected header, but proceeding with output")
 
                 logger.info("Report generated successfully (%d characters)", len(report_text))
+                
+                # Validate report length and content
+                report_length = len(report_text.strip())
+                if report_length < 50:
+                    logger.warning("Generated report is unusually short (%d chars) - may indicate generation issues", report_length)
+                    # Don't fail completely, but add warning to report
+                    report_text = f"⚠️ **REPORT GENERATION WARNING**: Unusually short report ({report_length} characters) - please verify completeness.\n\n{report_text}"
+                elif report_length < 200:
+                    logger.info("Generated report is shorter than typical (%d chars) but proceeding", report_length)
+                
                 return report_text
 
         logger.error("Failed to generate report - no content in response")
@@ -144,11 +168,19 @@ def _retrieve_evidence_from_memory(operation_id: str) -> List[Dict[str, Any]]:
 
     try:
         # Import memory client
-        from .memory import get_memory_client
+        from modules.tools.memory import get_memory_client
 
         memory_client = get_memory_client()
         if not memory_client:
-            logger.warning("Memory client not available - proceeding without stored evidence")
+            error_msg = "Critical: Memory service unavailable - cannot generate comprehensive report with stored evidence"
+            logger.error(error_msg)
+            # Still proceed but with clear indication of missing data
+            evidence.append({
+                "category": "system_warning",
+                "content": "⚠️ WARNING: Memory service unavailable - report generated without stored evidence from previous assessment steps",
+                "severity": "HIGH",
+                "confidence": "SYSTEM"
+            })
             return evidence
 
         # Retrieve memories for this operation
@@ -228,5 +260,13 @@ def _get_module_report_prompt(module_name: Optional[str]) -> Optional[str]:
         return module_report_prompt
 
     except Exception as e:
-        logger.error("Error loading report prompt for module '%s': %s", module_name, e)
-        return None
+        logger.warning("Error loading report prompt for module '%s': %s. Using default guidance.", module_name, e)
+        # Return default security assessment guidance as fallback
+        return (
+            "DOMAIN_LENS:\n"
+            "overview: Security assessment focused on identifying vulnerabilities and risks\n"
+            "analysis: Analyze findings for exploitability and business impact\n"
+            "immediate: Address critical security vulnerabilities immediately\n"
+            "short_term: Implement security controls and monitoring\n"
+            "long_term: Establish comprehensive security program\n"
+        )
