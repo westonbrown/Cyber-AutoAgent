@@ -77,9 +77,9 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --chown=cyberagent:cyberagent src/ ./src/
 COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
-# Create directories for evidence storage, logs, outputs, and tools with proper permissions
-RUN mkdir -p /app/evidence /app/logs /app/outputs /app/tools && \
-    chmod 755 /app/evidence /app/logs /app/outputs /app/tools && \
+# Create directories for evidence storage and logs with proper permissions
+RUN mkdir -p /app/evidence /app/logs && \
+    chmod 755 /app/evidence /app/logs && \
     chown -R cyberagent:cyberagent /app
 
 # Switch to non-root user
@@ -88,14 +88,11 @@ USER cyberagent
 # Add virtual environment to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Set Python path to include src and dynamic module loading
-ENV PYTHONPATH="/app/src:/app"
+# Set Python path
+ENV PYTHONPATH="/app/src"
 
-# Enable React UI mode for proper event emission
-ENV __REACT_INK__="true"
-
-# Create volume for evidence persistence and outputs
-VOLUME ["/app/evidence", "/app/logs", "/app/outputs", "/app/tools"]
+# Create volume for evidence persistence
+VOLUME ["/app/evidence", "/app/logs"]
 
 # Expose port for any web interfaces 
 EXPOSE 8080
@@ -107,5 +104,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Default entrypoint
 ENTRYPOINT ["python", "/app/src/cyberautoagent.py"]
 
-# Default command shows help
-CMD ["--help"]
+# No default CMD - arguments must be provided when running container
+# This prevents accidental execution with --help only

@@ -46,13 +46,13 @@ class ToolEventEmitter:
             "think": self._emit_think_operation,
         }
 
-        emitter = emitter_map.get(tool_name, self._emit_generic_tool_params)
-        if emitter is self._emit_generic_tool_params:
-            # Generic emitter needs tool_name
-            emitter(tool_name, tool_input)
-        else:
+        emitter = emitter_map.get(tool_name)
+        if emitter:
             # Specific emitters only need tool_input
             emitter(tool_input)
+        else:
+            # Generic emitter needs tool_name and tool_input
+            self._emit_generic_tool_params(tool_name, tool_input)
 
     def _emit_shell_commands(self, tool_input: Any) -> None:
         """Extract and emit shell commands for display."""
@@ -92,30 +92,18 @@ class ToolEventEmitter:
 
     def _emit_memory_operation(self, tool_input: Any) -> None:
         """Emit memory operation details."""
-        if isinstance(tool_input, dict):
-            action = tool_input.get("action", "unknown")
-            if action == "store":
-                content = tool_input.get("content", "")
-                preview = content[:100] + "..." if len(content) > 100 else content
-                self.emit_ui_event({"type": "metadata", "content": {"action": "storing memory", "preview": preview}})
-            elif action == "retrieve":
-                query = tool_input.get("query", "")
-                self.emit_ui_event({"type": "metadata", "content": {"action": "retrieving memory", "query": query}})
+        # Skip redundant metadata - tool formatter already shows this
+        pass
 
     def _emit_http_request(self, tool_input: Any) -> None:
         """Emit HTTP request details."""
-        if isinstance(tool_input, dict):
-            method = tool_input.get("method", "GET")
-            url = tool_input.get("url", "")
-            self.emit_ui_event({"type": "metadata", "content": {"method": method, "url": url}})
+        # Skip redundant metadata - tool formatter already shows this
+        pass
 
     def _emit_file_write(self, tool_input: Any) -> None:
         """Emit file write operation details."""
-        if isinstance(tool_input, dict):
-            path = tool_input.get("path", "")
-            content = str(tool_input.get("content", ""))
-            preview = content[:50] + "..." if len(content) > 50 else content
-            self.emit_ui_event({"type": "metadata", "content": {"path": path, "preview": preview}})
+        # Skip redundant metadata - tool formatter already shows this
+        pass
 
     def _emit_editor_operation(self, tool_input: Any) -> None:
         """Emit editor operation details."""

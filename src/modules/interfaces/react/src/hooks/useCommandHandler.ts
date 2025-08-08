@@ -9,14 +9,12 @@ import { useCallback } from 'react';
 import { InputParser, ParsedCommand } from '../services/InputParser.js';
 import { AssessmentFlow } from '../services/AssessmentFlow.js';
 import { OperationManager } from '../services/OperationManager.js';
-import { DirectDockerService } from '../services/DirectDockerService.js';
 import { ApplicationState } from './useApplicationState.js';
 
 interface UseCommandHandlerProps {
   commandParser: InputParser;
   assessmentFlowManager: AssessmentFlow;
   operationManager: OperationManager;
-  dockerService: DirectDockerService;
   appState: ApplicationState;
   actions: any;
   applicationConfig: any;
@@ -36,7 +34,6 @@ export function useCommandHandler({
   commandParser,
   assessmentFlowManager,
   operationManager,
-  dockerService,
   appState,
   actions,
   applicationConfig,
@@ -56,12 +53,20 @@ export function useCommandHandler({
     if (!userInput.trim()) return;
     
     // Check if user handoff is active - send input to container
-    if (appState.userHandoffActive) {
+    if (appState.userHandoffActive && appState.executionService) {
       try {
-        await dockerService.sendUserInput(userInput);
-        addOperationHistoryEntry('info', `User response sent: ${userInput}`);
-        actions.setUserHandoff(false);
-        return;
+        // ExecutionService doesn't have sendUserInput, but DirectDockerService does
+        // We need to check if the service has this method
+        const service = appState.executionService as any;
+        if (service.sendUserInput) {
+          await service.sendUserInput(userInput);
+          addOperationHistoryEntry('info', `User response sent: ${userInput}`);
+          actions.setUserHandoff(false);
+          return;
+        } else {
+          addOperationHistoryEntry('error', 'Current execution service does not support user input');
+          return;
+        }
       } catch (error) {
         addOperationHistoryEntry('error', `Failed to send input to agent: ${error}`);
         return;
@@ -87,10 +92,11 @@ export function useCommandHandler({
           addOperationHistoryEntry('error', 'Unknown command format. Type /help for available commands.');
       }
     } catch (error) {
-      console.error('Input handling error:', error);
+      // Use addOperationHistoryEntry instead of console.error to keep everything in React Ink
+      addOperationHistoryEntry('error', `Input handling error: ${error}`);
       addOperationHistoryEntry('error', `Error processing command: ${error}`);
     }
-  }, [commandParser, appState.userHandoffActive, dockerService, actions, addOperationHistoryEntry]);
+  }, [commandParser, appState.userHandoffActive, appState.executionService, actions, addOperationHistoryEntry]);
 
   const handleHealthCheck = useCallback(async () => {
     try {
@@ -262,6 +268,7 @@ For detailed instructions, use: /docs`;
         );
         break;
       case 'setup':
+      case 'set':  // Support /set as alias for /setup
         // Clear all previous content for clean setup experience
         handleScreenClear();
         
@@ -269,7 +276,6 @@ For detailed instructions, use: /docs`;
         actions.setInitializationFlow(true);
         
         process.env.CYBER_SHOW_SETUP = 'true';
-        modalManager.refreshStatic();
         
         // Don't add to operation history - let setup wizard handle its own display
         break;

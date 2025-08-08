@@ -7,11 +7,15 @@
 
 import React from 'react';
 import { Box } from 'ink';
-import { ConfigEditor } from './ConfigEditor.js';
-import { ModuleSelector } from './ModuleSelector.js';
+// Use lazy-loaded components for better performance
+import { 
+  ConfigEditorLazy,
+  ModuleSelectorLazy,
+  DocumentationViewerLazy 
+} from './LazyComponents.js';
+// These components are small enough to load directly
 import { SafetyWarning } from './SafetyWarning.js';
 import { InitializationFlow } from './InitializationFlow.js';
-import { DocumentationViewer } from './DocumentationViewer.js';
 import { ModalType } from '../hooks/useModalManager.js';
 import { AssessmentFlow } from '../services/AssessmentFlow.js';
 
@@ -58,7 +62,7 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
     case ModalType.CONFIG:
       return (
         <ModalWrapper>
-          <ConfigEditor 
+          <ConfigEditorLazy 
             onClose={() => {
               onClose();
               // Show welcome message after config if first run
@@ -78,7 +82,7 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
     case ModalType.MODULE_SELECTOR:
       return (
         <ModalWrapper>
-          <ModuleSelector 
+          <ModuleSelectorLazy 
             onClose={onClose}
             onSelect={(moduleName) => {
               onClose();
@@ -123,7 +127,7 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
     case ModalType.DOCUMENTATION:
       return (
         <ModalWrapper>
-          <DocumentationViewer 
+          <DocumentationViewerLazy 
             onClose={onClose}
             selectedDoc={modalContext.documentIndex}
           />

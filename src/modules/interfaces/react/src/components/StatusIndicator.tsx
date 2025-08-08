@@ -60,6 +60,8 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     return () => {
       unsubscribe();
       clearInterval(deploymentModeInterval);
+      // Stop monitoring when component unmounts to prevent memory leaks
+      monitor.stopMonitoring();
     };
   }, []);
 
@@ -107,6 +109,11 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         <Text color={theme.muted}> </Text>
         {deploymentMode === 'cli' ? (
           <Text color={theme.success}>● Python</Text>
+        ) : deploymentMode === 'agent' && totalCount === 0 ? (
+          // Single container mode - show Docker status
+          <Text color={getStatusColor()}>
+            {getStatusSymbol()} Docker
+          </Text>
         ) : (
           <Text color={getStatusColor()}>
             {getStatusSymbol()} {runningCount}/{totalCount}

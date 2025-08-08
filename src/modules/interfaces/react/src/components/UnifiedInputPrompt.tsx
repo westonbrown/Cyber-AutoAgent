@@ -53,6 +53,9 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const previousStep = useRef(flowState.step);
+  
+  // Track a key to force TextInput re-mount when needed
+  const [inputKey, setInputKey] = useState(0);
 
   // Generate smart suggestions based on flow state and input
   // Don't use useCallback here to avoid infinite loop
@@ -123,7 +126,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
           break;
       }
     } else {
-      // Filter suggestions based on input with enhanced command set
+      // Filter suggestions based on input with comprehensive command set
       const allSuggestions: Suggestion[] = [
         // Primary commands
         { text: '/help', description: 'Show all available commands', type: 'command' },
@@ -132,12 +135,6 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         { text: '/plugins', description: 'Select security assessment module', type: 'command' },
         { text: '/health', description: 'Check system and container status', type: 'command' },
         { text: '/setup', description: 'Deployment mode configuration', type: 'command' },
-        
-        // Configuration commands
-        { text: '/provider', description: 'Switch AI model provider', type: 'command' },
-        { text: '/iterations', description: 'Set assessment depth (1-200)', type: 'command' },
-        { text: '/observability', description: 'Toggle Langfuse tracing', type: 'command' },
-        { text: '/debug', description: 'Toggle verbose debug output', type: 'command' },
         
         // Target patterns (matching user-instructions.md examples)
         { text: 'target https://testphp.vulnweb.com', description: 'Public authorized test target', type: 'command' },
@@ -182,11 +179,12 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
 
   // Clear input when flow state changes to help with transitions
   useEffect(() => {
-    // Clear input when transitioning between steps
     if (previousStep.current !== flowState.step) {
-      // Always clear input when flow state changes to ensure clean transitions
+      // Clear input and force TextInput re-mount when flow state changes
       setValue('');
       setShowSuggestions(false);
+      setSelectedSuggestionIndex(0);
+      setInputKey(prev => prev + 1); // Force re-mount for clean state
       
       // Update the previous step ref
       previousStep.current = flowState.step;
@@ -259,21 +257,30 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         }
       }
       if (key.escape) {
-        setShowSuggestions(false);
-        return;
+        // Only handle ESC for hiding suggestions if we're not disabled
+        // When disabled (e.g., during assessment), let ESC bubble up to stop the operation
+        if (!disabled && showSuggestions) {
+          setShowSuggestions(false);
+          return;
+        }
+        // Don't consume the ESC key if disabled - let it bubble up for kill switch
       }
     }
 
     // Note: Ctrl+L and Ctrl+C are handled at the App level
-  }, { isActive: isInteractive });
+  }, { isActive: isInteractive && !disabled }); // Don't capture keyboard when disabled (during assessment)
 
   const handleSubmit = (submittedValue: string) => {
     if (!disabled) {
-      // Clear the input first to ensure UI updates immediately
+      // Clear state and force re-mount of TextInput to ensure clean state
       setValue('');
       setShowSuggestions(false);
-      // Then process the command (might trigger state updates)
-      onInput(submittedValue);
+      setInputKey(prev => prev + 1); // Force TextInput to re-mount with clean state
+      
+      // Process the command after ensuring clean state
+      setTimeout(() => {
+        onInput(submittedValue);
+      }, 0);
     }
   };
 
@@ -295,6 +302,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Text>
         <Box marginLeft={1} flexGrow={1}>
           <TextInput
+            key={inputKey} // Force re-mount when key changes to ensure clean state
             value={value}
             onChange={handleChange}
             onSubmit={handleSubmit}

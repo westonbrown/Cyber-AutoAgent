@@ -11,9 +11,12 @@ Adapt methodology based on discovered attack surface.
 </assessment_priorities>
 
 <module_tools>
+Operation plugin tools for this assessment:
 - quick_recon: Fast port/service discovery with technology identification
 - identify_technology: Web stack fingerprinting and security header analysis
-Load with: load_tool(tool_name="quick_recon")
+
+Note: These tools may be pre-loaded and ready to use directly, or you may need to load them.
+Check the system prompt for specific instructions.
 </module_tools>
 
 <general_patterns>

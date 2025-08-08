@@ -54,13 +54,40 @@ export class PythonExecutionService extends EventEmitter {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     
-    // Determine project root (6 levels up from dist/services)
-    this.projectRoot = path.resolve(__dirname, '..', '..', '..', '..', '..', '..');
+    // Determine project root by searching for pyproject.toml
+    this.projectRoot = this.findProjectRoot();
     this.venvPath = path.join(this.projectRoot, '.venv');
     this.pythonPath = path.join(this.venvPath, process.platform === 'win32' ? 'Scripts/python' : 'bin/python');
     this.pipPath = path.join(this.venvPath, process.platform === 'win32' ? 'Scripts/pip' : 'bin/pip');
     this.srcPath = path.join(this.projectRoot, 'src');
     this.requirementsPath = path.join(this.projectRoot, 'requirements.txt');
+  }
+
+  /**
+   * Find the project root by searching upward for pyproject.toml
+   */
+  private findProjectRoot(): string {
+    // Get __dirname equivalent for ES modules
+    const __filename = fileURLToPath(import.meta.url);
+    let currentDir = path.dirname(__filename);
+    
+    // Search upward until we find pyproject.toml or reach filesystem root
+    while (currentDir !== path.dirname(currentDir)) {
+      const pyprojectPath = path.join(currentDir, 'pyproject.toml');
+      if (fs.existsSync(pyprojectPath)) {
+        return currentDir;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+    
+    // Fallback to environment variable or current working directory
+    if (process.env.CYBER_PROJECT_ROOT && fs.existsSync(process.env.CYBER_PROJECT_ROOT)) {
+      return process.env.CYBER_PROJECT_ROOT;
+    }
+    
+    // Last resort: assume we're in a subdirectory and go up a few levels
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    return path.resolve(__dirname, '..', '..', '..', '..', '..');
   }
   
   /**
@@ -241,7 +268,9 @@ export class PythonExecutionService extends EventEmitter {
             cwd: this.projectRoot
           });
         } else if (status.requirementsFile === 'pyproject.toml' || status.requirementsFile === 'setup.py') {
-          await execAsync(`"${this.pipPath}" install -e .`, {
+          // For pyproject.toml, install in editable mode with all dependencies
+          progress('Installing from pyproject.toml...');
+          await execAsync(`"${this.pipPath}" install -e . --verbose`, {
             cwd: this.projectRoot
           });
         }
@@ -290,7 +319,8 @@ export class PythonExecutionService extends EventEmitter {
     this.isExecutionActive = true;
     this.abortController = new AbortController();
     
-    try {
+    return new Promise<void>((resolve, reject) => {
+      try {
       // Ensure environment is set up
       const venvExists = fs.existsSync(this.pythonPath);
       if (!venvExists) {
@@ -323,6 +353,11 @@ export class PythonExecutionService extends EventEmitter {
         PYTHONPATH: this.srcPath,
         PYTHONUNBUFFERED: '1',
         FORCE_COLOR: '1',
+        // React UI integration - critical for event emission
+        BYPASS_TOOL_CONSENT: config.confirmations ? 'false' : 'true',
+        __REACT_INK__: 'true',
+        CYBERAGENT_NO_BANNER: 'true',  // Suppress banner in React mode
+        DEV: config.verbose ? 'true' : 'false',
         // AWS Configuration
         AWS_ACCESS_KEY_ID: config.awsAccessKeyId || '',
         AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey || '',
@@ -330,13 +365,77 @@ export class PythonExecutionService extends EventEmitter {
         AWS_REGION: config.awsRegion || 'us-east-1',
         // Ollama Configuration
         OLLAMA_HOST: config.ollamaHost || '',
-        // Disable Docker-specific features
-        ENABLE_OBSERVABILITY: 'false',
-        ENABLE_AUTO_EVALUATION: 'false',
-        ENABLE_LANGFUSE_PROMPTS: 'false'
+        // Observability settings from config (matching Docker service behavior)
+        ENABLE_OBSERVABILITY: config.observability ? 'true' : 'false',
+        ENABLE_AUTO_EVALUATION: config.autoEvaluation ? 'true' : 'false',
+        ENABLE_LANGFUSE_PROMPTS: config.enableLangfusePrompts ? 'true' : 'false',
+        // Langfuse configuration when observability is enabled
+        ...(config.observability && {
+          LANGFUSE_HOST: config.langfuseHost,
+          LANGFUSE_PUBLIC_KEY: config.langfusePublicKey,
+          LANGFUSE_SECRET_KEY: config.langfuseSecretKey,
+          LANGFUSE_PROMPT_LABEL: config.langfusePromptLabel,
+          LANGFUSE_PROMPT_CACHE_TTL: String(config.langfusePromptCacheTTL)
+        }),
+        // Evaluation settings when auto-evaluation is enabled
+        ...(config.autoEvaluation && {
+          RAGAS_EVALUATOR_MODEL: config.evaluationModel,
+          EVALUATION_BATCH_SIZE: String(config.evaluationBatchSize)
+        })
       };
       
-      this.logger.info('Starting Python assessment', { args, cwd: this.projectRoot });
+      this.logger.info('Starting Python assessment', { 
+        args, 
+        cwd: this.projectRoot,
+        config: {
+          iterations: config.iterations,
+          modelProvider: config.modelProvider,
+          modelId: config.modelId,
+          observability: config.observability,
+          autoEvaluation: config.autoEvaluation
+        }
+      });
+      
+      // Emit startup events exactly like Docker mode for consistency
+      this.emit('event', {
+        type: 'output',
+        content: '▶ Initializing Python assessment environment...',
+        timestamp: Date.now()
+      });
+      
+      setTimeout(() => {
+        this.emit('event', {
+          type: 'output',
+          content: '◆ Python environment ready',
+          timestamp: Date.now()
+        });
+      }, 500);
+      
+      setTimeout(() => {
+        this.emit('event', {
+          type: 'output',
+          content: '◆ Setting up direct Python security assessment environment',
+          timestamp: Date.now()
+        });
+      }, 1000);
+      
+      setTimeout(() => {
+        this.emit('event', {
+          type: 'output',
+          content: '◆ Loading Python-based cybersecurity tools...',
+          timestamp: Date.now()
+        });
+      }, 1800);
+      
+      // Emit thinking indicator during tool setup
+      this.emit('event', {
+        type: 'thinking',
+        context: 'startup',
+        startTime: Date.now(),
+        metadata: {
+          message: 'Preparing Python security assessment environment'
+        }
+      });
       
       // Spawn Python process
       this.activeProcess = spawn(this.pythonPath, args, {
@@ -367,10 +466,16 @@ export class PythonExecutionService extends EventEmitter {
         
         if (signal === 'SIGTERM' || signal === 'SIGINT') {
           this.emit('stopped');
+          resolve(); // Process was stopped intentionally
         } else if (code === 0) {
           this.emit('complete');
+          resolve(); // Process completed successfully
         } else {
-          this.emit('error', new Error(`Process exited with code ${code}`));
+          // Provide more detailed error information
+          const errorMsg = `Python process exited with code ${code}. Check that all dependencies are installed and the cyberautoagent module can be imported.`;
+          const error = new Error(errorMsg);
+          this.emit('error', error);
+          reject(error); // Process failed
         }
         
         this.activeProcess = undefined;
@@ -382,57 +487,126 @@ export class PythonExecutionService extends EventEmitter {
         this.emit('error', error);
         this.isExecutionActive = false;
         this.activeProcess = undefined;
+        reject(error); // Process startup failed
       });
       
-    } catch (error) {
-      this.isExecutionActive = false;
-      this.logger.error('Failed to start assessment', error as Error);
-      throw error;
-    }
+      } catch (error) {
+        this.isExecutionActive = false;
+        this.logger.error('Failed to start assessment', error as Error);
+        reject(error);
+      }
+    });
   }
   
   /**
    * Process output stream and emit structured events
+   * UNIFIED APPROACH: Use the exact same event parsing as DirectDockerService
    */
   private processOutputStream(data: string): void {
     // Add to buffer
     this.streamEventBuffer += data;
     
-    // Process complete lines
-    const lines = this.streamEventBuffer.split('\n');
-    this.streamEventBuffer = lines.pop() || '';
+    // Look for structured event markers (UNIFIED with Docker service)
+    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
+    let match;
     
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      
+    while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
       try {
-        // Try to parse as JSON event
-        if (line.startsWith('{') && line.endsWith('}')) {
-          const event = JSON.parse(line);
-          this.emit('event', event);
+        const eventData = JSON.parse(match[1]);
+        // Pass through the event with all properties
+        const event: any = {
+          type: eventData.type as EventType,
+          content: eventData.content,
+          data: eventData.data || {},
+          metadata: eventData.metadata || {},
+          timestamp: eventData.timestamp || Date.now(),
+          id: eventData.id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sessionId: eventData.sessionId || this.sessionId,
+          // Include all original properties for compatibility
+          ...eventData
+        };
+        
+        // Handle special event types that Docker service also handles
+        if (event.type === 'tool_discovery_start') {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Loading cybersecurity assessment tools:',
+            timestamp: Date.now()
+          });
+        } else if (event.type === 'tool_available') {
+          this.emit('event', {
+            type: 'output',
+            content: `  ✓ ${eventData.tool_name} (${eventData.description})`,
+            timestamp: Date.now()
+          });
+        } else if (event.type === 'tool_unavailable') {
+          this.emit('event', {
+            type: 'output',
+            content: `  ○ ${eventData.tool_name} (${eventData.description} - not available)`,
+            timestamp: Date.now()
+          });
+        } else if (event.type === 'environment_ready') {
+          this.emit('event', {
+            type: 'output',
+            content: `◆ Environment ready - ${eventData.tool_count} cybersecurity tools loaded`,
+            timestamp: Date.now()
+          });
+          
+          setTimeout(() => {
+            this.emit('event', {
+              type: 'output',
+              content: '◆ Configuring assessment parameters and evidence collection',
+              timestamp: Date.now()
+            });
+          }, 500);
+          
+          setTimeout(() => {
+            this.emit('event', {
+              type: 'output',
+              content: '◆ Security assessment environment ready - Beginning evaluation',
+              timestamp: Date.now()
+            });
+            // Add spacing and start thinking animation
+            setTimeout(() => {
+              this.emit('event', {
+                type: 'output',
+                content: '',
+                timestamp: Date.now()
+              });
+              this.emit('event', {
+                type: 'output',
+                content: '',
+                timestamp: Date.now()
+              });
+              
+              // Start thinking animation while waiting for first reasoning
+              this.emit('event', {
+                type: 'delayed_thinking_start',
+                context: 'reasoning',
+                startTime: Date.now(),
+                delay: 200
+              });
+            }, 100);
+          }, 1000);
         } else {
-          // Emit as output event
-          const event: OutputEvent = {
-            type: EventType.OUTPUT,
-            content: line,
-            timestamp: Date.now(),
-            id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            sessionId: this.sessionId
-          };
+          // Emit all other events as-is
           this.emit('event', event);
         }
       } catch (error) {
-        // If not JSON, emit as output
-        const event: OutputEvent = {
-          type: EventType.OUTPUT,
-          content: line,
-          timestamp: Date.now(),
-          id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          sessionId: this.sessionId
-        };
-        this.emit('event', event);
+        // Silently skip parsing errors - don't pollute output
       }
     }
+    
+    // Clean processed events from buffer
+    this.streamEventBuffer = this.streamEventBuffer.replace(eventRegex, '');
+    
+    // Keep only last 10KB to prevent memory issues (same as Docker service)
+    if (this.streamEventBuffer.length > 10240) {
+      this.streamEventBuffer = this.streamEventBuffer.slice(-5120);
+    }
+    
+    // DO NOT process remaining lines - let structured events handle everything
+    // This ensures consistency across all execution modes
   }
   
   /**
@@ -449,8 +623,12 @@ export class PythonExecutionService extends EventEmitter {
         this.activeProcess.kill('SIGTERM');
       }
       
-      // Give it time to clean up
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Give it time to clean up with timeout cleanup
+      await new Promise<void>(resolve => {
+        const timeout = setTimeout(resolve, 1000);
+        // Ensure timeout is cleaned up
+        timeout.unref();
+      });
       
       // Force kill if still running
       if (this.activeProcess) {
@@ -467,5 +645,35 @@ export class PythonExecutionService extends EventEmitter {
    */
   isActive(): boolean {
     return this.isExecutionActive;
+  }
+  
+  /**
+   * Cleanup resources and remove all event listeners
+   */
+  cleanup(): void {
+    // Stop any active process
+    if (this.activeProcess) {
+      this.activeProcess.kill('SIGKILL');
+      this.activeProcess = undefined;
+    }
+    
+    // Abort any pending operations
+    this.abortController?.abort();
+    
+    // Remove all event listeners to prevent memory leaks
+    this.removeAllListeners();
+    
+    // Reset state
+    this.isExecutionActive = false;
+    this.streamEventBuffer = '';
+    
+    this.logger.info('PythonExecutionService cleaned up');
+  }
+  
+  /**
+   * Dispose of the service (alias for cleanup)
+   */
+  dispose(): void {
+    this.cleanup();
   }
 }

@@ -24,14 +24,14 @@ def _get_swarm_model_guidance(provider: str) -> str:
         return f"""## SWARM MODEL CONFIGURATION (OLLAMA PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "ollama" 
-- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
+- model_settings: {{"model_id":"{swarm_config.llm.model_id}"}} 
 """
     elif provider == "bedrock":
         # Use dedicated swarm LLM configuration
         return f"""## SWARM MODEL CONFIGURATION (BEDROCK PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "bedrock" 
-- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}} 
+- model_settings: {{"model_id":"{swarm_config.llm.model_id}"}} 
 You can also use different models for different agents:
 - model_provider: "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0" for simple tasks
 - model_provider: "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0" for complex analysis 
@@ -41,7 +41,7 @@ You can also use different models for different agents:
         return f"""## SWARM MODEL CONFIGURATION (LITELLM PROVIDER)
 When configuring swarm agents, you can optionally set:
 - model_provider: "litellm" 
-- model_settings: {{"model_id": "{swarm_config.llm.model_id}"}}
+- model_settings: {{"model_id":"{swarm_config.llm.model_id}"}}
 """
 
 
@@ -167,6 +167,9 @@ def get_system_prompt(
         has_existing_memories=has_existing_memories,
         output_config=output_config,
         memory_overview=memory_overview,
+        is_initial=is_initial,
+        current_step=current_step,
+        remaining_steps=remaining_steps,
         module_context=module_context,
     )
 
@@ -182,6 +185,9 @@ def _get_local_system_prompt(
     has_existing_memories: bool = False,
     output_config: Optional[Dict] = None,
     memory_overview: Optional[Dict] = None,
+    is_initial: bool = False,
+    current_step: int = 1,
+    remaining_steps: int = 100,
     module_context: Optional[str] = None,
 ) -> str:
     """Generate hardcoded system prompt (original implementation)."""
@@ -282,7 +288,7 @@ def adaptive_scanner(target: str, technique: str) -> str:
     # Custom implementation based on discovered technology stack
     return scan_results
 \"\"\")
-load_tool(tool_name="custom_scanner")
+load_tool(path="tools/custom_scanner.py", name="custom_scanner")
 ```
 
 ### Autonomous Exploitation
@@ -307,18 +313,18 @@ mem0_memory(
     action="store",
     content="[WHAT] Discovery [WHERE] Location [IMPACT] Business Risk [EVIDENCE] Proof",
     user_id="cyber_agent", 
-    metadata={{"category": "finding", "severity": "level", "confidence": "percentage"}}
+    metadata={{"category":"finding", "severity":"level", "confidence":"percentage"}}
 )
 
 # Strategic planning
 mem0_memory(
     action="store_plan",
     content={{
-        "objective": "{objective}",
+        "objective":"{objective}",
         "phases": [
-            {{"id": 1, "goal": "Intelligence gathering", "status": "active"}},
-            {{"id": 2, "goal": "Vulnerability identification", "status": "pending"}},
-            {{"id": 3, "goal": "Exploitation and evidence", "status": "pending"}}
+            {{"id":1, "goal":"Intelligence gathering", "status":"active"}},
+            {{"id":2, "goal":"Vulnerability identification", "status":"pending"}},
+            {{"id":3, "goal":"Exploitation and evidence", "status":"pending"}}
         ]
     }},
     user_id="cyber_agent"
@@ -333,8 +339,8 @@ mem0_memory(action="reflect", user_id="cyber_agent")
 swarm(
     task="CONTEXT: [Current findings]. OBJECTIVE: [Specific goal]. FOCUS: [Key areas]",
     agents=[
-        {{"name": "specialist_1", "system_prompt": "Domain expertise", "tools": ["relevant", "tools"]}},
-        {{"name": "specialist_2", "system_prompt": "Complementary focus", "tools": ["additional", "tools"]}}
+        {{"name":"specialist_1", "system_prompt":"Domain expertise", "tools":["relevant", "tools"]}},
+        {{"name":"specialist_2", "system_prompt":"Complementary focus", "tools":["additional", "tools"]}}
     ],
     max_handoffs=20
 )
@@ -351,6 +357,44 @@ swarm(
 - **handoff_to_user**: Escalation for complex decisions only
 - **stop**: Operation termination
 
+<critical_tool_protocols>
+**Protocol: Editor Tool - Meta-Tooling Only**
+- Purpose: Creating custom Python tools with @tool decorator ONLY
+- Never use for: Report files, analysis documents, findings storage, non-Python files
+- Only use for: Custom Python tools in tools/ directory with @tool decorator
+- Must follow pattern: editor → load_tool → custom tool usage
+
+```python
+# Correct editor usage for meta-tooling
+editor(file_path="tools/custom_exploit.py", content='''
+from strands import tool
+
+@tool  
+def custom_exploit(target: str) -> str:
+    \"\"\"Custom exploitation functionality\"\"\"
+    # Implementation here
+    return "Exploitation results"
+''')
+load_tool(path="tools/custom_exploit.py", name="custom_exploit")
+result = custom_exploit(target="example.com")
+```
+
+**Protocol: Findings Storage - Memory Only**
+- All discoveries, vulnerabilities, and analysis results go to mem0_memory
+- Use category="finding" for report generation
+- Never create report files - use structured memory storage
+
+```python
+# Correct findings storage
+mem0_memory(
+    action="store",
+    content="[VULNERABILITY] SQL injection in /login [IMPACT] Authentication bypass [EVIDENCE] ' OR 1=1--",
+    user_id="cyber_agent",
+    metadata={{"category":"finding", "severity":"critical"}}
+)
+```
+</critical_tool_protocols>
+
 ## OPERATIONAL PROTOCOLS
 
 ### Memory Management
@@ -365,9 +409,9 @@ swarm(
 mem0_memory(action="store_plan", content={{
     "objective": "Web application compromise", 
     "phases": [
-        {{"id": 1, "goal": "Surface enumeration", "status": "active"}},
-        {{"id": 2, "goal": "Authentication bypass", "status": "pending"}},
-        {{"id": 3, "goal": "Privilege escalation", "status": "pending"}}
+        {{"id":1, "goal":"Surface enumeration", "status":"active"}},
+        {{"id":2, "goal":"Authentication bypass", "status":"pending"}},
+        {{"id":3, "goal":"Privilege escalation", "status":"pending"}}
     ]
 }}, user_id="cyber_agent")
 

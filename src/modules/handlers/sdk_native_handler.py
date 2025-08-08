@@ -419,8 +419,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
             self._emit_report_generator(tool_input)
         elif tool_name == "handoff_to_agent":
             self._emit_agent_handoff(tool_input)
-        elif tool_name == "think":
-            self._emit_think_operation(tool_input)
         else:
             # For other tools, show the input parameters
             self._emit_generic_tool_params(tool_name, tool_input)
@@ -587,30 +585,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
 
             self._emit_ui_event({"type": "metadata", "content": {"handoff_to": agent_name, "message": message_preview}})
 
-    def _emit_think_operation(self, tool_input: Any) -> None:
-        """Emit think operation details"""
-        if isinstance(tool_input, dict):
-            # Think tool might have various input formats
-            thought = ""
-            for field in ["thought", "thinking", "content", "text"]:
-                if field in tool_input:
-                    thought = str(tool_input[field])
-                    break
-
-            if thought:
-                self._emit_ui_event(
-                    {
-                        "type": "metadata",
-                        "content": {"thinking": thought[:100] + "..." if len(thought) > 100 else thought},
-                    }
-                )
-        elif isinstance(tool_input, str):
-            self._emit_ui_event(
-                {
-                    "type": "metadata",
-                    "content": {"thinking": tool_input[:100] + "..." if len(tool_input) > 100 else tool_input},
-                }
-            )
 
     def _accumulate_reasoning_text(self, text):
         """Silently accumulate reasoning text without emitting anything"""

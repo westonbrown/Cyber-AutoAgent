@@ -6,62 +6,62 @@
 
 export const Icons = {
   // Status indicators
-  success: '✓',      // Check mark
-  error: '✕',        // Multiplication X
-  warning: '⚠',      // Warning sign
-  info: 'ℹ',         // Information
-  pending: '○',      // Empty circle
-  active: '●',       // Filled circle
+  success: '[OK]',      // Check mark
+  error: '[ERR]',        // Multiplication X
+  warning: '[WARN]',      // Warning sign
+  info: '[INFO]',         // Information
+  pending: '[WAIT]',      // Empty circle
+  active: '[ACTIVE]',       // Filled circle
   
   // Navigation
-  chevronRight: '▸', // Right-pointing triangle
-  chevronDown: '▾',  // Down-pointing triangle
-  arrow: '▶',        // Filled right arrow
-  bullet: '•',       // Bullet point
+  chevronRight: '>', // Right-pointing triangle
+  chevronDown: 'v',  // Down-pointing triangle
+  arrow: '>',        // Filled right arrow
+  bullet: '-',       // Bullet point
   
   // Special indicators
-  diamond: '◆',      // Filled diamond
-  diamondEmpty: '◇', // Empty diamond
-  square: '▪',       // Filled square
-  squareEmpty: '▫',  // Empty square
+  diamond: '[*]',      // Filled diamond
+  diamondEmpty: '[ ]', // Empty diamond
+  square: '[#]',       // Filled square
+  squareEmpty: '[ ]',  // Empty square
   
   // Target types
-  all: '◉',          // Circle with center dot
-  host: '▶',         // Filled right arrow
-  web: '▸',          // Right triangle
-  ip: '▪',           // Filled square
-  local: '⬡',        // Hexagon
-  test: '◈',         // Diamond with cross
-  null: '○',         // Empty circle
+  all: '[TARGET]',          // Circle with center dot
+  host: '>>',         // Filled right arrow
+  web: '[WEB]',          // Right triangle
+  ip: '[IP]',           // Filled square
+  local: '[LOCAL]',        // Hexagon
+  test: '[TEST]',         // Diamond with cross
+  null: '[WAIT]',         // Empty circle
   
   // Memory specific
-  memory: '◆',       // Diamond for memory operations
-  search: '◉',       // Circle with dot for search
-  results: '▶',      // Arrow for results
-  target: '▸',       // Triangle for targets
+  memory: '[MEM]',       // Diamond for memory operations
+  search: '[SEARCH]',       // Circle with dot for search
+  results: '>>',      // Arrow for results
+  target: '[TGT]',       // Triangle for targets
   
   // Progress indicators
-  spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
-  dots: ['⢎ ', '⠎⠁', '⠊⠑', '⠈⠱', ' ⡱', '⢀⡰', '⢄⡠', '⢆⡀'],
+  spinner: ['|', '/', '-', '\\'],
+  dots: ['.', '..', '...', '....'],
   
   // Box drawing
-  cornerTopLeft: '┌',
-  cornerTopRight: '┐',
-  cornerBottomLeft: '└',
-  cornerBottomRight: '┘',
-  horizontal: '─',
-  vertical: '│',
+  cornerTopLeft: '+',
+  cornerTopRight: '+',
+  cornerBottomLeft: '+',
+  cornerBottomRight: '+',
+  horizontal: '-',
+  vertical: '|',
   
   // Professional prefixes
   prefix: {
-    error: '✕ ',
-    warning: '⚠ ',
-    info: 'ℹ ',
-    success: '✓ ',
-    memory: '◆ ',
-    target: '▸ ',
-    result: '▶ ',
-    all: '◉ ',
+    error: '[ERR] ',
+    warning: '[WARN] ',
+    info: '[INFO] ',
+    success: '[OK] ',
+    memory: '[MEM] ',
+    target: '[TGT] ',
+    result: '> ',
+    all: '[ALL] ',
   }
 };
 

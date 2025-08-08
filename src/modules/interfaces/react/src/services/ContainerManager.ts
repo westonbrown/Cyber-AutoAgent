@@ -39,6 +39,20 @@ export class ContainerManager extends EventEmitter {
   private currentMode: DeploymentMode = 'full-stack';
   private initialized = false;
 
+  // Configurable constants - can be overridden via environment variables
+  private readonly config = {
+    // Container startup timeout in milliseconds (5 minutes for complex deployments)
+    containerStartupTimeout: parseInt(process.env.CYBER_CONTAINER_TIMEOUT || '300000'),
+    // Full stack mode detection threshold (minimum containers for full-stack)
+    fullStackThreshold: parseInt(process.env.CYBER_FULLSTACK_THRESHOLD || '4'),
+    // Container readiness check interval in milliseconds
+    readinessCheckInterval: parseInt(process.env.CYBER_READINESS_INTERVAL || '2000'),
+    // Maximum directory depth for project root search
+    maxProjectSearchDepth: parseInt(process.env.CYBER_PROJECT_SEARCH_DEPTH || '10'),
+    // Docker command timeout for individual operations
+    dockerCommandTimeout: parseInt(process.env.CYBER_DOCKER_CMD_TIMEOUT || '2000')
+  };
+
   private readonly deploymentConfigs: Record<DeploymentMode, DeploymentConfig> = {
     'local-cli': {
       mode: 'local-cli',
@@ -57,13 +71,14 @@ export class ContainerManager extends EventEmitter {
       services: [
         'cyber-autoagent',
         'langfuse-web',
+        'langfuse-worker',
         'postgres',
         'clickhouse', 
         'redis',
         'minio'
       ],
       composeFile: 'docker-compose.yml', // Use same file, start all services
-      description: 'Full observability stack (6 services)'
+      description: 'Full observability stack (7 services)'
     }
   };
 
@@ -123,10 +138,10 @@ export class ContainerManager extends EventEmitter {
     for (const [mode, config] of Object.entries(this.deploymentConfigs)) {
       const services = config.services;
       const running = services.filter(service =>
-        runningNames.some(name => name.includes(service.replace('cyber-', '')))
+        runningNames.some(name => this.isServiceContainerMatch(name, service))
       );
       const missing = services.filter(service =>
-        !runningNames.some(name => name.includes(service.replace('cyber-', '')))
+        !runningNames.some(name => this.isServiceContainerMatch(name, service))
       );
       
       // Check if containers exist but are stopped
@@ -172,11 +187,45 @@ export class ContainerManager extends EventEmitter {
     await this.ensureInitialized();
     this.logger.info(`Switching deployment mode from ${this.currentMode} to ${targetMode}`);
 
-    // Step 1: Analyze current container state
+    // Fast path for CLI mode - skip Docker checks entirely
+    if (targetMode === 'local-cli') {
+      this.emit('progress', 'Configuring CLI mode (no containers required)...');
+      
+      // Only check for containers if Docker is available (quick check)
+      let dockerAvailable = false;
+      try {
+        await execAsync('docker info', { timeout: this.config.dockerCommandTimeout });
+        dockerAvailable = true;
+      } catch {
+        // Docker not available - that's fine for CLI mode
+        this.emit('progress', `✓ CLI mode configured - Docker not available (not needed)`);
+        this.currentMode = targetMode;
+        this.emit('progress', `✓ Successfully switched to ${targetMode} mode`);
+        return;
+      }
+
+      if (dockerAvailable) {
+        // Quick container check and cleanup if needed
+        const containers = await this.getRunningContainers();
+        if (containers.length > 0) {
+          this.emit('progress', `Stopping ${containers.length} containers for CLI-only mode...`);
+          await this.stopAllContainers();
+          this.emit('progress', `✓ Stopped all containers`);
+        } else {
+          this.emit('progress', `✓ CLI mode configured - no containers were running`);
+        }
+      }
+      
+      this.currentMode = targetMode;
+      this.emit('progress', `✓ Successfully switched to ${targetMode} mode`);
+      return;
+    }
+
+    // For container modes, do full analysis
     this.emit('progress', 'Analyzing current container environment...');
     const status = await this.checkContainerStatus();
     
-    if (!status.dockerAvailable && targetMode !== 'local-cli') {
+    if (!status.dockerAvailable) {
       throw new Error('Docker is not running. Please start Docker Desktop and try again.');
     }
 
@@ -194,26 +243,10 @@ export class ContainerManager extends EventEmitter {
     }
 
     try {
-      // Step 2: Handle local CLI mode (no containers needed)
-      if (targetMode === 'local-cli') {
-        // Stop any running containers from other modes
-        const allRunning = status.runningContainers;
-        if (allRunning.length > 0) {
-          this.emit('progress', `Stopping ${allRunning.length} containers for CLI-only mode...`);
-          await this.stopAllContainers();
-          this.emit('progress', `✓ Stopped all containers`);
-        } else {
-          this.emit('progress', `✓ CLI mode selected - no containers were running`);
-        }
-        
-        this.currentMode = targetMode;
-        this.emit('progress', `✓ Successfully switched to ${targetMode} mode`);
-        return;
-      }
 
       // Step 3: Handle container modes - stop containers not needed for target mode
       const containersToStop = status.runningContainers.filter(container =>
-        !targetStatus.services.some(service => container.name.includes(service.replace('cyber-', '')))
+        !targetStatus.services.some(service => this.isServiceContainerMatch(container.name, service))
       );
 
       if (containersToStop.length > 0) {
@@ -296,7 +329,14 @@ export class ContainerManager extends EventEmitter {
           };
         });
     } catch (error) {
-      this.logger.error('Failed to get running containers', error as Error);
+      // Log at debug level instead of error when Docker is not available
+      // This is expected behavior in local-cli mode
+      const errorMessage = (error as Error).message || String(error);
+      if (errorMessage.includes('docker daemon') || errorMessage.includes('Cannot connect')) {
+        this.logger.debug('Docker not available - expected in local-cli mode');
+      } else {
+        this.logger.error('Failed to get running containers', error as Error);
+      }
       return [];
     }
   }
@@ -306,22 +346,35 @@ export class ContainerManager extends EventEmitter {
    */
   private async detectCurrentMode(): Promise<void> {
     try {
+      // First check if Docker is available
+      let dockerAvailable = false;
+      try {
+        await execAsync('docker info');
+        dockerAvailable = true;
+      } catch {
+        // Docker not available, default to local-cli mode
+        this.currentMode = 'local-cli';
+        this.logger.info('Docker not available, defaulting to local-cli mode');
+        return;
+      }
+
+      // If Docker is available, check running containers
       const containers = await this.getRunningContainers();
       const containerNames = containers.map(c => c.name);
 
       // Count running services for each mode
       const fullStackServices = this.deploymentConfigs['full-stack'].services;
       const fullStackRunning = fullStackServices.filter(service => 
-        containerNames.some(name => name.includes(service.replace('cyber-', '')))
+        containerNames.some(name => this.isServiceContainerMatch(name, service))
       ).length;
 
       const singleContainerServices = this.deploymentConfigs['single-container'].services;
       const singleContainerRunning = singleContainerServices.filter(service =>
-        containerNames.some(name => name.includes(service.replace('cyber-', '')))
+        containerNames.some(name => this.isServiceContainerMatch(name, service))
       ).length;
 
       // Determine current mode based on running services
-      if (fullStackRunning >= 4) {
+      if (fullStackRunning >= this.config.fullStackThreshold) {
         this.currentMode = 'full-stack';
       } else if (singleContainerRunning > 0) {
         this.currentMode = 'single-container';
@@ -331,7 +384,7 @@ export class ContainerManager extends EventEmitter {
 
       this.logger.info(`Detected current deployment mode: ${this.currentMode} (${containers.length} containers running)`);
     } catch (error) {
-      this.logger.error('Failed to detect current deployment mode', error as Error);
+      this.logger.warn('Failed to detect deployment mode, defaulting to local-cli', error as Error);
       this.currentMode = 'local-cli'; // Default to CLI mode on error
     }
   }
@@ -415,23 +468,21 @@ export class ContainerManager extends EventEmitter {
       // Build the docker-compose command with specific services
       const serviceList = config.services.join(' ');
       
-      // For single container mode, use --no-deps to skip dependencies and set environment variables
+      // For single container mode, use --no-deps to skip dependencies
       let upCommand: string;
       let buildCommand: string;
       
       if (config.mode === 'single-container') {
-        // Single container mode: disable observability and evaluation, skip dependencies
-        const envVars = [
-          'ENABLE_OBSERVABILITY=false',
-          'ENABLE_AUTO_EVALUATION=false',
-          'ENABLE_LANGFUSE_PROMPTS=false'
-        ].join(' ');
-        
-        upCommand = `${envVars} docker-compose -f "${composePath}" up -d --no-deps ${serviceList}`;
+        // Single container mode: skip dependencies but respect user configuration
+        // Note: Observability settings will be handled by the DirectDockerService 
+        // based on user config, not hardcoded here
+        // Add --force-recreate to handle existing containers
+        upCommand = `docker-compose -f "${composePath}" up -d --force-recreate --no-deps ${serviceList}`;
         buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
       } else {
-        // Full stack mode: start all services with observability enabled
-        upCommand = `docker-compose -f "${composePath}" up -d ${serviceList}`;
+        // Full stack mode: start all services with full dependency management
+        // Add --force-recreate and --remove-orphans to handle existing containers
+        upCommand = `docker-compose -f "${composePath}" up -d --force-recreate --remove-orphans ${serviceList}`;
         buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
       }
       
@@ -465,7 +516,7 @@ export class ContainerManager extends EventEmitter {
       }
       
       // Wait for containers to be ready
-      await this.waitForContainers(config.services, 30000); // 30 second timeout
+      await this.waitForContainers(config.services, this.config.containerStartupTimeout);
       
     }, 'startContainers');
   }
@@ -483,7 +534,7 @@ export class ContainerManager extends EventEmitter {
         .map(c => c.name);
 
       const expectedRunning = services.filter(service =>
-        runningServices.some(name => name.includes(service.replace('cyber-', '')))
+        runningServices.some(name => this.isServiceContainerMatch(name, service))
       );
 
       // For single container mode, just need 1 service running
@@ -495,23 +546,112 @@ export class ContainerManager extends EventEmitter {
         return;
       }
 
-      // Wait 2 seconds before checking again
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait before checking again
+      await new Promise(resolve => setTimeout(resolve, this.config.readinessCheckInterval));
     }
 
     throw new Error(`Timeout waiting for containers to start (${timeoutMs}ms)`);
   }
 
   /**
-   * Get full path to docker-compose file
+   * Check if a container name matches a service name using robust pattern matching
+   * Handles Docker Compose naming conventions and prevents false positives
+   */
+  private isServiceContainerMatch(containerName: string, serviceName: string): boolean {
+    // Handle our specific docker-compose.yml container_name mappings
+    const serviceToContainerMap: Record<string, string> = {
+      'cyber-autoagent': 'cyber-autoagent',
+      'langfuse-web': 'cyber-langfuse',
+      'langfuse-worker': 'cyber-langfuse-worker',
+      'postgres': 'cyber-langfuse-postgres',
+      'clickhouse': 'cyber-langfuse-clickhouse',
+      'redis': 'cyber-langfuse-redis',
+      'minio': 'cyber-langfuse-minio'
+    };
+    
+    // Check if we have an explicit mapping
+    if (serviceToContainerMap[serviceName] === containerName) {
+      return true;
+    }
+    
+    // Pattern 1: Exact match (for unmapped services)
+    if (containerName === serviceName) {
+      return true;
+    }
+    
+    // Pattern 2: Docker Compose naming with number suffix (project_service_1 or project-service-1)
+    // This handles cases where container_name is not explicitly set
+    const normalizedService = serviceName.replace('cyber-', '');
+    
+    // Check for underscore format: project_service_1
+    const underscorePattern = new RegExp(`_${normalizedService}_\\d+$`);
+    if (underscorePattern.test(containerName)) {
+      return true;
+    }
+    
+    // Check for hyphen format: project-service-1
+    const hyphenPattern = new RegExp(`-${normalizedService}-\\d+$`);
+    if (hyphenPattern.test(containerName)) {
+      return true;
+    }
+    
+    // Pattern 3: Service name at start (for variations)
+    if (containerName.startsWith(serviceName)) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Get full path to docker-compose file using environment-based path resolution
    */
   private getComposePath(filename: string): string {
-    // Look in docker directory relative to project root
-    // Current working directory is: /Users/aaronbrown/Downloads/DEV/Cyber-AutoAgent/src/modules/interfaces/react
-    // We need to go up to: /Users/aaronbrown/Downloads/DEV/Cyber-AutoAgent/docker/
-    const currentDir = process.cwd();
-    const projectRoot = path.join(currentDir, '..', '..', '..', '..');
-    return path.join(projectRoot, 'docker', filename);
+    // Priority order for finding project root:
+    // 1. CYBER_PROJECT_ROOT environment variable (explicit override)
+    // 2. Search upward from current directory for package.json or docker directory
+    // 3. Fallback to relative path calculation
+    
+    if (process.env.CYBER_PROJECT_ROOT) {
+      return path.join(process.env.CYBER_PROJECT_ROOT, 'docker', filename);
+    }
+    
+    // Search upward from current directory for project markers
+    let currentDir = process.cwd();
+    const maxDepth = this.config.maxProjectSearchDepth;
+    
+    for (let i = 0; i < maxDepth; i++) {
+      const dockerDir = path.join(currentDir, 'docker');
+      const packageJson = path.join(currentDir, 'package.json');
+      
+      // Check if we found a docker directory or package.json indicating project root
+      if (fs.existsSync(dockerDir) && fs.existsSync(path.join(dockerDir, filename))) {
+        this.logger.debug(`Found docker compose file via upward search: ${path.join(dockerDir, filename)}`);
+        return path.join(dockerDir, filename);
+      }
+      
+      // Also check for package.json as project root indicator
+      if (fs.existsSync(packageJson)) {
+        const dockerPath = path.join(currentDir, 'docker', filename);
+        if (fs.existsSync(dockerPath)) {
+          this.logger.debug(`Found docker compose file via package.json search: ${dockerPath}`);
+          return dockerPath;
+        }
+      }
+      
+      // Move up one directory
+      const parentDir = path.dirname(currentDir);
+      if (parentDir === currentDir) {
+        // Reached filesystem root
+        break;
+      }
+      currentDir = parentDir;
+    }
+    
+    // Fallback to relative path calculation (legacy behavior)
+    this.logger.warn('Using fallback relative path calculation - consider setting CYBER_PROJECT_ROOT');
+    const fallbackProjectRoot = path.join(process.cwd(), '..', '..', '..', '..');
+    return path.join(fallbackProjectRoot, 'docker', filename);
   }
 
   /**
@@ -528,12 +668,32 @@ export class ContainerManager extends EventEmitter {
 
     const expectedContainers = config.services;
     const runningCount = expectedContainers.filter(service =>
-      containers.some(c => c.name.includes(service.replace('cyber-', '')) && c.status.includes('Up'))
+      containers.some(c => this.isServiceContainerMatch(c.name, service) && c.status.includes('Up'))
     ).length;
 
     return {
       running: runningCount,
       total: expectedContainers.length
     };
+  }
+  
+  /**
+   * Cleanup resources and remove all event listeners
+   */
+  cleanup(): void {
+    // Remove all event listeners to prevent memory leaks
+    this.removeAllListeners();
+    
+    // Reset state
+    this.initialized = false;
+    
+    this.logger.info('ContainerManager cleaned up');
+  }
+  
+  /**
+   * Dispose of the service (alias for cleanup)
+   */
+  dispose(): void {
+    this.cleanup();
   }
 }

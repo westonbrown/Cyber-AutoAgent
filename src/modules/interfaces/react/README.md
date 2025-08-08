@@ -8,7 +8,7 @@ This React-based CLI wraps the Python Cyber-AutoAgent implementation, providing:
 - Simple module → target → objective flow
 - Direct output streaming from Python Docker container
 - No parsing or interpretation of agent output
-- Minimal UI inspired by Claude Code and Gemini CLI
+- Minimal, focused UI following modern CLI design principles
 - Elegant ASCII logo with real-time status indicators
 - Slash commands for quick configuration access
 

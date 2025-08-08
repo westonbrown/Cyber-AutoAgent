@@ -76,6 +76,7 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
   const [isSetupComplete, setIsSetupComplete] = useState(false);
   const [setupHasFailed, setSetupHasFailed] = useState(false);
   const [setupErrorMessage, setSetupErrorMessage] = useState<string>('');
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
 
   const addSetupLog = (message: string, level: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     // Prevent duplicate consecutive messages
@@ -139,13 +140,17 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
 
   useEffect(() => {
     // Only auto-proceed if we're past the selection screens and not in setup progress
+    // Add more guards to prevent infinite loops
     if (currentStep !== 'welcome' && 
         currentStep !== 'deployment-selection' && 
         currentStep !== 'setup-progress-screen' &&
-        currentStep !== 'container-setup-progress') {
+        currentStep !== 'switching-containers' &&
+        currentStep !== 'starting-containers' &&
+        currentStep !== 'checking-containers' &&
+        currentStep !== 'checking-config') {
       checkInitialization();
     }
-  }, [currentStep]);
+  }, [currentStep]); // checkInitialization is a stable function
 
   // Handle keyboard input
   useInput((input, key) => {
@@ -162,6 +167,9 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
       } else if (key.downArrow) {
         setSelectedModeIndex(prev => prev < deploymentModes.length - 1 ? prev + 1 : 0);
       } else if (key.return) {
+        // Prevent multiple invocations
+        if (isSwitchingMode) return;
+        
         const selected = deploymentModes[selectedModeIndex];
         setDeploymentMode(selected.id);
         
@@ -173,14 +181,20 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
           logger.error('Failed to save deployment mode', err);
         });
         
-        // Don't clear screen - let React Ink handle rendering properly
-        
-        // Show container setup progress screen
-        setCurrentStep('container-setup-progress');
+        // Clear logs and set initial state
         setSetupLogs([]);
+        setSetupHasFailed(false);
+        setSetupErrorMessage('');
+        setIsSetupComplete(false);
         
         // Add initial log
         addSetupLog(`▶ Initializing ${selected.name} mode...`);
+        
+        // Transition directly to setup progress screen
+        setCurrentStep('setup-progress-screen');
+        
+        // Mark that we're switching mode to prevent duplicates
+        setIsSwitchingMode(true);
         
         // Switch containers based on selected mode
         setTimeout(() => {
@@ -381,9 +395,13 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
   };
 
   const switchDeploymentMode = async (targetMode: DeploymentMode) => {
-    try {
-      // Transition to setup progress screen
+    // Prevent multiple simultaneous invocations
+    if (!isSwitchingMode && currentStep !== 'setup-progress-screen') {
       setCurrentStep('setup-progress-screen');
+      setIsSwitchingMode(true);
+    }
+    
+    try {
       setDeploymentMode(targetMode);
       setSetupHasFailed(false);
       setSetupErrorMessage('');
@@ -440,6 +458,7 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
       
       // Mark setup as complete
       setIsSetupComplete(true);
+      setIsSwitchingMode(false);
       
       // Auto-continue after a short delay to show success
       setTimeout(() => {
@@ -474,6 +493,7 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
       // Mark setup as failed and set error details
       setSetupHasFailed(true);
       setSetupErrorMessage(errorMessage);
+      setIsSwitchingMode(false);
       addSetupLog(`Setup failed: ${errorMessage}`, 'error');
     }
   };
@@ -490,7 +510,12 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
     setSetupHasFailed(false);
     setSetupErrorMessage('');
     setIsSetupComplete(false);
-    switchDeploymentMode(deploymentMode);
+    setIsSwitchingMode(true);
+    
+    // Retry after a small delay to ensure state is clean
+    setTimeout(() => {
+      switchDeploymentMode(deploymentMode);
+    }, 100);
   };
 
   const handleBackToSetup = () => {
@@ -628,97 +653,6 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
     );
   }
 
-  // Container setup progress screen
-  if (currentStep === 'container-setup-progress') {
-    // Calculate deployment mode display info
-    const modeInfo = deploymentModes.find(m => m.id === deploymentMode);
-    const isComplete = setupLogs.length > 0 && setupLogs[setupLogs.length - 1].message.includes('Container setup complete');
-    
-    return (
-      <Box flexDirection="column" paddingX={2} paddingY={1} width="100%">
-        {/* Header rendered by main App.tsx - no duplicate needed */}
-        
-        <Box marginTop={2} marginBottom={2}>
-          <Text bold color={theme.primary}>
-            {deploymentMode === 'local-cli' ? 'Python Environment Setup' : 'Deployment Configuration'}
-          </Text>
-        </Box>
-        
-        <Divider dividerColor={theme.muted} />
-        
-        {/* Deployment mode selection summary */}
-        <Box marginY={2} flexDirection="column">
-          <Box marginBottom={1}>
-            <Text color={theme.info}>Selected Mode: </Text>
-            <Text bold color={theme.primary}>{modeInfo?.name || deploymentMode}</Text>
-          </Box>
-          <Box marginBottom={2}>
-            <Text color={theme.muted}>{modeInfo?.description}</Text>
-          </Box>
-        </Box>
-        
-        <Divider title="Setup Progress" titleColor={theme.primary} dividerColor={theme.muted} />
-        
-        {/* Progress logs in a controlled box with fixed height */}
-        <Box flexDirection="column" marginY={2}>
-          <Box 
-            borderStyle="round" 
-            borderColor={isComplete ? theme.success : theme.muted} 
-            padding={1}
-            flexDirection="column"
-            height={12}
-          >
-            <Box flexDirection="column" overflow="hidden">
-              {/* Show only last 8 logs to prevent overflow */}
-              {setupLogs.slice(-8).map((log, index) => (
-                <Text key={index} color={
-                  log.message.includes('✓') ? theme.success :
-                  log.message.includes('▶') ? theme.info :
-                  log.message.includes('Error') || log.message.includes('Failed') ? theme.danger :
-                  log.message.includes('◆') ? theme.foreground :
-                  theme.muted
-                }>
-                  [{log.timestamp}] {log.message}
-                </Text>
-              ))}
-              {!isComplete && (
-                <Box marginTop={1}>
-                  <Spinner type="dots" />
-                  <Text color={theme.info}> Configuring environment...</Text>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </Box>
-        
-        {/* Status summary */}
-        <Box flexDirection="column" marginTop={1}>
-          {isComplete ? (
-            <Box>
-              <Text color={theme.success}>✓ </Text>
-              <Text bold color={theme.success}>Setup Complete</Text>
-              <Text color={theme.muted}> - Transitioning to main interface...</Text>
-            </Box>
-          ) : (
-            <Box>
-              <Text color={theme.info}>◆ </Text>
-              <Text color={theme.foreground}>Please wait while we configure your deployment...</Text>
-            </Box>
-          )}
-        </Box>
-        
-        {error && (
-          <Box marginTop={2} borderStyle="round" borderColor={theme.danger} padding={1}>
-            <Text color={theme.danger}>⚠ Error: {error}</Text>
-          </Box>
-        )}
-        
-        <Box marginTop={2}>
-          <Divider dividerColor={theme.muted} />
-        </Box>
-      </Box>
-    );
-  }
 
   // Setup Progress Screen - Dedicated screen for environment setup
   if (currentStep === 'setup-progress-screen') {

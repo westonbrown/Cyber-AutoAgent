@@ -13,7 +13,7 @@ from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, editor, load_tool, stop, http_request, swarm, think, python_repl, handoff_to_user
+from strands_tools import shell, editor, load_tool, stop, http_request, swarm, python_repl, handoff_to_user
 
 from modules.prompts.system import get_system_prompt
 from modules.prompts.module_loader import get_module_loader
@@ -265,23 +265,68 @@ def create_agent(
         except Exception as e:
             agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
 
-    # Load module-specific tools information
+    # Load module-specific tools and prepare for injection
     module_tools_context = ""
+    loaded_module_tools = []
+    
     try:
         module_loader = get_module_loader()
         module_tool_paths = module_loader.discover_module_tools(module)
 
         if module_tool_paths:
-            tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
-            print_status(f"Discovered {len(module_tool_paths)} module-specific tools for '{module}'", "SUCCESS")
+            import importlib.util
+            import sys
+            
+            # Dynamically load each tool module
+            for tool_path in module_tool_paths:
+                try:
+                    # Load the module
+                    module_name = f"operation_plugin_tool_{Path(tool_path).stem}"
+                    spec = importlib.util.spec_from_file_location(module_name, tool_path)
+                    if spec and spec.loader:
+                        tool_module = importlib.util.module_from_spec(spec)
+                        sys.modules[module_name] = tool_module
+                        spec.loader.exec_module(tool_module)
+                        
+                        # Find all @tool decorated functions
+                        for attr_name in dir(tool_module):
+                            attr = getattr(tool_module, attr_name)
+                            if callable(attr) and hasattr(attr, '__wrapped__'):
+                                # Check if this is a @tool decorated function
+                                loaded_module_tools.append(attr)
+                                agent_logger.debug(f"Found module tool: {attr_name}")
+                        
+                except Exception as e:
+                    agent_logger.warning(f"Failed to load tool from {tool_path}: {e}")
+            
+            tool_names = [tool.__name__ for tool in loaded_module_tools] if loaded_module_tools else []
+            
+            if tool_names:
+                print_status(f"Loaded {len(tool_names)} module-specific tools for '{module}': {', '.join(tool_names)}", "SUCCESS")
+            else:
+                # Fallback to just showing discovered tools
+                tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
+                print_status(f"Discovered {len(module_tool_paths)} module-specific tools for '{module}' (will need load_tool)", "INFO")
 
+            # Create specific tool examples for system prompt
+            tool_examples = []
+            if loaded_module_tools:
+                # Tools are pre-loaded
+                for tool_name in tool_names:
+                    tool_examples.append(f'{tool_name}()  # Pre-loaded and ready to use')
+            else:
+                # Fallback to load_tool instructions
+                for tool_name in tool_names:
+                    tool_examples.append(f'load_tool(path="/app/src/modules/operation_plugins/{module}/tools/{tool_name}.py", name="{tool_name}")')
+            
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
 
-Available {module} module tools (use load_tool to activate):
+Available {module} module tools:
 {", ".join(tool_names)}
 
-Load these tools when needed: load_tool(tool_name="tool_name")
+{"Ready to use:" if loaded_module_tools else "Load these tools when needed:"}
+{chr(10).join(f"- {example}" for example in tool_examples)}
 """
         else:
             print_status(f"No module-specific tools found for '{module}'", "INFO")
@@ -369,10 +414,14 @@ Leverage these tools directly via shell.
         mem0_memory,
         stop,
         http_request,
-        think,
         python_repl,
         handoff_to_user,
     ]
+    
+    # Inject module-specific tools if available
+    if 'loaded_module_tools' in locals() and loaded_module_tools:
+        tools_list.extend(loaded_module_tools)
+        agent_logger.info(f"Injected {len(loaded_module_tools)} module tools into agent")
 
     agent_logger.debug("Creating autonomous agent")
 
@@ -425,7 +474,7 @@ Leverage these tools directly via shell.
             "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
             "gen_ai.request.model": model_id,
             # Tool configuration
-            "tools.available": 10,  # Number of core tools
+            "tools.available": 11,  # Number of core tools
             "tools.names": [
                 "swarm",
                 "shell",
@@ -434,8 +483,8 @@ Leverage these tools directly via shell.
                 "mem0_memory",
                 "stop",
                 "http_request",
-                "think",
                 "python_repl",
+                "handoff_to_user",
             ],
             "tools.parallel_limit": 8,
             # Memory configuration
