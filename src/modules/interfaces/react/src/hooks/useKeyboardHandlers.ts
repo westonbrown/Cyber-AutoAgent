@@ -12,44 +12,51 @@ import { Operation } from '../services/OperationManager.js';
 interface KeyboardHandlersProps {
   activeOperation: Operation | null;
   isTerminalInteractive: boolean;
-  isTerminalVisible: boolean;
   onAssessmentPause: () => void;
-  onAssessmentCancel: () => void;
+  onAssessmentCancel: () => void; // Kill switch handler with notification
   onScreenClear: () => void;
+  onEscapeExit?: () => void; // Optional ESC handler
+  allowGlobalEscape?: boolean; // Allow ESC even when terminal is not interactive
 }
 
 export function useKeyboardHandlers({
   activeOperation,
   isTerminalInteractive,
-  isTerminalVisible,
   onAssessmentPause,
   onAssessmentCancel,
-  onScreenClear
+  onScreenClear,
+  onEscapeExit,
+  allowGlobalEscape = false
 }: KeyboardHandlersProps) {
   const { exit } = useApp();
 
   const handleTerminalInput = useCallback((input: string, key: any) => {
-    // ESC: Kill switch - Match original working behavior exactly
+    if (!isTerminalInteractive) return;
+    
+    // ESC: Kill switch for running operations, exit otherwise
     if (key.escape) {
-      if (isTerminalVisible && activeOperation?.status === 'running') {
-        // Immediately cancel current operation and kill container
-        onAssessmentCancel();
+      if (activeOperation?.status === 'running') {
+        onAssessmentCancel(); // Use kill switch with notification
       } else {
-        // Exit application when not in modal or running operation
-        exit();
+        // Always call onEscapeExit if provided, otherwise default exit
+        if (onEscapeExit) {
+          onEscapeExit();
+        } else {
+          // Fallback behavior
+          console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
+          exit();
+        }
       }
       return;
     }
     
-    // For other shortcuts, respect isTerminalInteractive
-    if (!isTerminalInteractive) return;
-    
-    // Ctrl+C: Clear input or stop assessment (documented behavior)
+    // Ctrl+C: Clear input or pause assessment (documented behavior)
     if (key.ctrl && input === 'c') {
       if (activeOperation?.status === 'running') {
-        onAssessmentPause(); // This now properly stops the execution service
+        onAssessmentPause();
       } else {
         // If no operation running, exit gracefully
+        console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
         exit();
       }
       return;
@@ -60,9 +67,31 @@ export function useKeyboardHandlers({
       onScreenClear();
       return;
     }
-  }, [isTerminalInteractive, isTerminalVisible, activeOperation, onAssessmentPause, onAssessmentCancel, onScreenClear, exit]);
+  }, [isTerminalInteractive, activeOperation, onAssessmentPause, onAssessmentCancel, onScreenClear, onEscapeExit, exit]);
 
-  // Keep keyboard handler active based on TTY availability (matching working version)
-  const isKeyboardActive = process.stdin.isTTY;
-  useInput(handleTerminalInput, { isActive: isKeyboardActive });
+  // Use keyboard handler with higher priority for global shortcuts
+  useInput(handleTerminalInput, { isActive: isTerminalInteractive });
+  
+  // Global ESC handler that works even when terminal is not interactive
+  const handleGlobalEscape = useCallback((input: string, key: any) => {
+    if (!allowGlobalEscape) return;
+    
+    // Only handle ESC key for global exit
+    if (key.escape) {
+      if (activeOperation?.status === 'running') {
+        onAssessmentCancel(); // Use kill switch with notification
+      } else {
+        if (onEscapeExit) {
+          onEscapeExit();
+        } else {
+          console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
+          exit();
+        }
+      }
+      return;
+    }
+  }, [allowGlobalEscape, activeOperation, onAssessmentCancel, onEscapeExit, exit]);
+  
+  // Global escape handler - always active when allowGlobalEscape is true
+  useInput(handleGlobalEscape, { isActive: allowGlobalEscape && !isTerminalInteractive });
 }

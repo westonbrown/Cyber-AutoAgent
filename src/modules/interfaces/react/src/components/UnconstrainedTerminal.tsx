@@ -239,14 +239,16 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       //   timestamp: new Date().toISOString()
       // });
       
-      // Handle metrics updates separately
+      // Handle metrics updates - backend sends cumulative totals, not deltas
       if (event.type === 'metrics_update' && event.metrics) {
         const newMetrics = {
-          tokens: event.metrics.tokens || metrics.tokens,
-          cost: event.metrics.cost || metrics.cost,
+          // Backend sends cumulative totals, use them directly
+          tokens: event.metrics.tokens !== undefined ? event.metrics.tokens : metrics.tokens,
+          cost: event.metrics.cost !== undefined ? event.metrics.cost : metrics.cost,
+          // Duration and counts can be replaced
           duration: event.metrics.duration || metrics.duration,
-          memoryOps: event.metrics.memoryOps || metrics.memoryOps,
-          evidence: event.metrics.evidence || metrics.evidence
+          memoryOps: event.metrics.memoryOps !== undefined ? event.metrics.memoryOps : metrics.memoryOps,
+          evidence: event.metrics.evidence !== undefined ? event.metrics.evidence : metrics.evidence
         };
         setMetrics(newMetrics);
         if (onMetricsUpdate) {

@@ -35,12 +35,14 @@ interface UseOperationManagerProps {
   appState: ApplicationState;
   actions: any;
   applicationConfig: any;
+  activeModal?: any; // Optional modal state to prevent updates during modal display
 }
 
 export function useOperationManager({
   appState,
   actions,
-  applicationConfig
+  applicationConfig,
+  activeModal
 }: UseOperationManagerProps) {
   const { config } = useConfig();
   // Core service initialization (singleton pattern)
@@ -141,11 +143,15 @@ export function useOperationManager({
   const handleAssessmentCancel = useCallback(async () => {
     if (appState.activeOperation) {
       try {
-        addOperationHistoryEntry('info', '⚡ Stopping operation...');
+        addOperationHistoryEntry('error', '🛑 ESC Kill Switch activated - Stopping operation...');
         
-        // First, stop the execution service to kill the running Python process
-        if (appState.executionService) {
-          await (appState.executionService as any).stop();
+        // First, stop the execution using the executionHandle stored on the operation
+        const executionHandle = (appState.activeOperation as any).executionHandle;
+        if (executionHandle && executionHandle.stop) {
+          await executionHandle.stop();
+        } else if (appState.executionService) {
+          // Fallback: emit stop event to the service
+          appState.executionService.emit('stop');
         }
         
         // Then update the operation manager state
@@ -153,7 +159,14 @@ export function useOperationManager({
         actions.setActiveOperation(null);
         actions.setExecutionService(null); // Clear the execution service reference
         actions.setUserHandoff(false);
-        addOperationHistoryEntry('info', '✓ Operation cancelled.');
+        actions.setHasCompletedOperation(true); // Mark as completed to show the message
+        
+        // Add prominent termination message
+        addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        addOperationHistoryEntry('error', '⚠️  OPERATION TERMINATED BY USER (ESC Key)');
+        addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        addOperationHistoryEntry('info', 'Assessment was stopped before completion.');
+        addOperationHistoryEntry('info', 'You can start a new assessment or review partial results.');
       } catch (error) {
         addOperationHistoryEntry('error', `Failed to cancel assessment: ${error.message}`);
       }
@@ -191,13 +204,13 @@ export function useOperationManager({
       // Set as active operation
       actions.setActiveOperation(operation);
       
-      // Initialize metrics in app state
+      // Initialize metrics in app state (preserve existing if re-running)
       actions.updateMetrics({
-        tokens: 0,
-        cost: 0,
+        tokens: appState.operationMetrics?.tokens || 0,
+        cost: appState.operationMetrics?.cost || 0,
         duration: '0s',
-        memoryOps: 0,
-        evidence: 0
+        memoryOps: appState.operationMetrics?.memoryOps || 0,
+        evidence: appState.operationMetrics?.evidence || 0
       });
       
       // Add to operation history
@@ -360,10 +373,18 @@ export function useOperationManager({
       executionService.on('error', handleExecutionError);
       executionService.on('stopped', handleExecutionStopped);
       
-      // Set up periodic metrics update
+      // Set up periodic metrics update with additional safeguards
       const metricsInterval = setInterval(() => {
         const currentOp = operationManager.getOperation(operation.id);
-        if (currentOp && currentOp.status === 'running') {
+        // Only update metrics if operation is truly running, we're not in a modal,
+        // and the operation is still the active one in both manager and app state
+        const isModalActive = activeModal && activeModal !== 'none'; // Check if any modal is open
+        if (currentOp && 
+            currentOp.status === 'running' && 
+            appState.activeOperation?.id === operation.id &&
+            appState.activeOperation?.status === 'running' &&
+            !appState.userHandoffActive && // Don't update when user handoff is active
+            !isModalActive) { // Don't update when modals are open to prevent header re-renders
           actions.updateMetrics({
             tokens: currentOp.cost.tokensUsed,
             cost: currentOp.cost.estimatedCost,
@@ -380,8 +401,11 @@ export function useOperationManager({
       try {
         const executionHandle = await executionService.execute(assessmentParams, config);
         
-        // Store handle for potential cancellation (extend operation interface if needed)
+        // Store handle for potential cancellation
         (operation as any).executionHandle = executionHandle;
+        
+        // Also update the active operation in state with the execution handle
+        actions.updateOperation({ executionHandle });
         
         // Handle execution result in background
         executionHandle.result.catch(handleExecutionError);

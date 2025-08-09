@@ -695,6 +695,286 @@ const journeys = [
     }
   },
 
+  // TEST-VALIDATION-SPECIFICATION.md FOCUSED TESTS
+  
+  {
+    name: 'Tool Display Format Validation',
+    description: 'Test tool execution display format according to specification requirements',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface Ready');
+      
+      // Set up for tool execution
+      await j.input('target testphp.vulnweb.com', 'Set target');
+      await j.capture('Target Set');
+      await j.input('\r', 'Confirm target');
+      await j.wait(500);
+      
+      await j.input('objective "Test tool display format validation"', 'Set objective');
+      await j.capture('Objective Set');
+      await j.input('\r', 'Confirm objective');
+      await j.wait(500);
+      
+      // Start assessment to trigger tool execution
+      await j.input('/run', 'Start assessment');
+      await j.capture('Assessment Starting');
+      await j.input('\r', 'Confirm start');
+      await j.wait(1000);
+      
+      // Let it run to capture tool executions
+      await j.capture('Safety Authorization Screen');
+      await j.input(' ', 'Check authorization checkbox');
+      await j.wait(300);
+      await j.input('\r', 'Confirm authorization');
+      await j.wait(2000);
+      
+      await j.capture('First Tool Execution Started');
+      await j.wait(3000);
+      await j.capture('Tool Execution With Parameters');
+      await j.wait(3000);
+      await j.capture('Tool Execution Animation');
+      await j.wait(4000);
+      await j.capture('Tool Execution Complete');
+      
+      // Let multiple tools execute to test various formats
+      await j.wait(5000);
+      await j.capture('Second Tool Execution');
+      await j.wait(5000);
+      await j.capture('Multiple Tool Results');
+      
+      // Cancel to stop execution
+      await j.input('\x1B', 'ESC to cancel');
+      await j.wait(1000);
+      await j.capture('Assessment Cancelled');
+    }
+  },
+
+  {
+    name: 'Animation Behavior Testing',
+    description: 'Test ThinkingIndicator animation to ensure no static display',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface');
+      
+      // Quick setup for tool execution
+      await j.input('target testphp.vulnweb.com', 'Set target');
+      await j.input('\r', 'Confirm');
+      await j.wait(300);
+      
+      // Start assessment quickly
+      await j.input('/run', 'Quick run');
+      await j.input('\r', 'Confirm');
+      await j.wait(500);
+      
+      // Skip safety (for testing)
+      await j.input(' ', 'Check safety');
+      await j.input('\r', 'Confirm safety');
+      await j.wait(1000);
+      
+      // Capture multiple frames of animation quickly
+      await j.capture('Animation Frame 1');
+      await j.wait(200);
+      await j.capture('Animation Frame 2');
+      await j.wait(200);
+      await j.capture('Animation Frame 3');
+      await j.wait(200);
+      await j.capture('Animation Frame 4');
+      await j.wait(200);
+      await j.capture('Animation Frame 5');
+      
+      // Cancel
+      await j.input('\x1B', 'Cancel with ESC');
+      await j.wait(500);
+      await j.capture('Cancelled State');
+    }
+  },
+
+  {
+    name: 'Modal System Validation',
+    description: 'Test modal behavior and keyboard navigation',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface');
+      
+      // Test configuration modal
+      await j.input('/config', 'Open config');
+      await j.capture('Typing config command');
+      await j.input('\r', 'Execute config');
+      await j.wait(1000);
+      await j.capture('Configuration Modal Open');
+      
+      // Test keyboard navigation
+      await j.input('\t', 'Tab navigation');
+      await j.wait(200);
+      await j.capture('Tab Navigation 1');
+      
+      await j.input('\t', 'Tab again');
+      await j.wait(200);
+      await j.capture('Tab Navigation 2');
+      
+      await j.input('\x1B[B', 'Arrow down');
+      await j.wait(200);
+      await j.capture('Arrow Navigation');
+      
+      // Test modal sections
+      await j.input('\r', 'Expand section');
+      await j.wait(300);
+      await j.capture('Section Expanded');
+      
+      // Test ESC to close
+      await j.input('\x1B', 'ESC to close');
+      await j.wait(500);
+      await j.capture('Modal Closed');
+      
+      // Test memory search modal
+      await j.input('/memory', 'Open memory search');
+      await j.input('\r', 'Execute');
+      await j.wait(800);
+      await j.capture('Memory Search Modal');
+      
+      await j.input('test query', 'Type search query');
+      await j.wait(300);
+      await j.capture('Search Query Typed');
+      
+      await j.input('\x1B', 'ESC to close');
+      await j.wait(300);
+      await j.capture('Memory Modal Closed');
+    }
+  },
+
+  {
+    name: 'Safety Authorization Enforcement',
+    description: 'Test that safety authorization cannot be bypassed',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface');
+      
+      // Set up assessment
+      await j.input('target testphp.vulnweb.com', 'Set target');
+      await j.input('\r', 'Confirm target');
+      await j.wait(300);
+      
+      // Try to run without objective
+      await j.input('/run', 'Try to run');
+      await j.input('\r', 'Execute run');
+      await j.wait(1000);
+      await j.capture('Safety Modal Appears');
+      
+      // Test trying to proceed without checkbox
+      await j.input('\r', 'Try to proceed without checkbox');
+      await j.wait(300);
+      await j.capture('Cannot Proceed Without Checkbox');
+      
+      // Test ESC cancellation
+      await j.input('\x1B', 'ESC to cancel');
+      await j.wait(500);
+      await j.capture('Safety Cancelled');
+      
+      // Try again with proper flow
+      await j.input('/run', 'Run again');
+      await j.input('\r', 'Execute');
+      await j.wait(500);
+      await j.capture('Safety Modal Again');
+      
+      // Proper authorization flow
+      await j.input(' ', 'Check authorization checkbox');
+      await j.wait(200);
+      await j.capture('Checkbox Checked');
+      
+      await j.input('\r', 'Confirm authorization');
+      await j.wait(1000);
+      await j.capture('Authorization Accepted');
+      
+      // Stop before full execution
+      await j.wait(2000);
+      await j.input('\x1B', 'ESC to stop');
+      await j.wait(500);
+      await j.capture('Assessment Stopped');
+    }
+  },
+
+  {
+    name: 'Step Header Format Validation',
+    description: 'Test step header display format during assessment',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface');
+      
+      // Quick assessment setup
+      await j.input('target testphp.vulnweb.com', 'Set target');
+      await j.input('\r', 'Confirm');
+      await j.wait(200);
+      
+      await j.input('objective "Test step headers"', 'Set objective');
+      await j.input('\r', 'Confirm');
+      await j.wait(200);
+      
+      // Start assessment
+      await j.input('/run', 'Start');
+      await j.input('\r', 'Confirm');
+      await j.wait(500);
+      
+      // Safety authorization
+      await j.input(' ', 'Check safety');
+      await j.input('\r', 'Confirm');
+      await j.wait(1500);
+      
+      // Capture step headers
+      await j.capture('Step 1 Header');
+      await j.wait(4000);
+      await j.capture('Step 2 Header');
+      await j.wait(4000);
+      await j.capture('Step 3 Header');
+      await j.wait(4000);
+      await j.capture('Step 4 Header');
+      
+      // Cancel before completion
+      await j.input('\x1B', 'Cancel');
+      await j.wait(500);
+      await j.capture('Assessment Cancelled');
+    }
+  },
+
+  {
+    name: 'Footer Information Display',
+    description: 'Test footer metrics and information display format',
+    config: mockConfiguredState,
+    steps: async (j) => {
+      await j.capture('Main Interface With Footer');
+      
+      // Test with some activity to generate metrics
+      await j.input('/help', 'Generate some activity');
+      await j.input('\r', 'Execute');
+      await j.wait(500);
+      await j.capture('Footer After Command');
+      
+      // Close help and test config to see more footer updates
+      await j.input('\x1B', 'Close help');
+      await j.wait(300);
+      
+      await j.input('/config', 'Open config');
+      await j.input('\r', 'Execute');
+      await j.wait(800);
+      await j.capture('Footer With Config Modal');
+      
+      await j.input('\x1B', 'Close config');
+      await j.wait(300);
+      await j.capture('Footer After Config Close');
+      
+      // Test with target setting to show more footer info
+      await j.input('target testphp.vulnweb.com', 'Set target');
+      await j.input('\r', 'Confirm');
+      await j.wait(300);
+      await j.capture('Footer With Target Set');
+      
+      // Test clear command impact on footer
+      await j.input('/clear', 'Clear screen');
+      await j.input('\r', 'Execute');
+      await j.wait(300);
+      await j.capture('Footer After Clear');
+    }
+  },
+
   // NEW: HEALTH CHECK TESTING
   {
     name: 'Health Check Command',

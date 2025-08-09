@@ -237,18 +237,20 @@ function renderReactApp() {
     process.exit(1);
   }
   
-  // In headless mode, run without Ink rendering to avoid TTY issues
-  if (cli.flags.headless) {
+  // In headless mode without auto-run, still render the app for setup wizard
+  // The app can handle headless mode and run the setup wizard if needed
+  if (cli.flags.headless && !cli.flags.autoRun) {
     console.log('🔧 Running in headless mode');
-    // Exit gracefully - headless mode should use --auto-run for execution
-    if (!cli.flags.autoRun) {
-      console.log('💡 Use --auto-run with --headless to execute assessments');
-      process.exit(0);
-    }
-    return;
+    // Don't exit - let the app run to handle setup wizard if needed
   }
 
-  // Render the app with CLI arguments
+  // Log headless mode if applicable
+  if (cli.flags.headless) {
+    console.log('🔧 Running in headless mode');
+  }
+
+  // Always render the app to ensure keyboard handlers are active
+  // Even in headless mode, we need the React app running for proper event handling
   const app = render(<App 
     module={cli.flags.module}
     target={cli.flags.target}

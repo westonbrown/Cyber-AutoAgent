@@ -6,13 +6,14 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
-import { useStdout, useInput, useApp } from 'ink';
+import { useStdout, useApp } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 
 // State Management
 import { useApplicationState } from './hooks/useApplicationState.js';
-import { useModalManager } from './hooks/useModalManager.js';
+import { useModalManager, ModalType } from './hooks/useModalManager.js';
 import { useOperationManager } from './hooks/useOperationManager.js';
+import { useKeyboardHandlers } from './hooks/useKeyboardHandlers.js';
 
 // Core Services  
 import { InputParser } from './services/InputParser.js';
@@ -71,13 +72,6 @@ const AppContent: React.FC<AppProps> = ({
   // Command parser service
   const commandParser = React.useMemo(() => new InputParser(), []);
   
-  // Operation management
-  const operationManager = useOperationManager({
-    appState,
-    actions,
-    applicationConfig
-  });
-  
   // Modal management
   const modalManager = useModalManager();
   const { 
@@ -87,6 +81,14 @@ const AppContent: React.FC<AppProps> = ({
     openConfig,
     closeModal
   } = modalManager;
+  
+  // Operation management
+  const operationManager = useOperationManager({
+    appState,
+    actions,
+    applicationConfig,
+    activeModal
+  });
   
   // Terminal refresh function
   const refreshStatic = useCallback(() => {
@@ -106,54 +108,34 @@ const AppContent: React.FC<AppProps> = ({
     refreshStatic();
   }, [refreshStatic, actions, operationManager]);
 
-  // Handle global keyboard shortcuts with highest priority
-  const isTerminalInteractive = process.stdin.isTTY;
+  // Keyboard handlers
+  const isTerminalInteractive = activeModal === ModalType.NONE && !appState.userHandoffActive;
   
-  // Add raw stdin handler for Escape key as a fallback
-  useEffect(() => {
-    if (!process.stdin.isTTY) return;
-    
-    const handleRawInput = (data: Buffer) => {
-      const input = data.toString();
-      // Check for ESC character (ASCII 27 or \x1B)
-      if (input === '\x1B' || input.charCodeAt(0) === 27) {
-        if (appState.activeOperation && appState.executionService) {
-          operationManager.handleAssessmentCancel();
-        }
-      }
-    };
-    
-    process.stdin.on('data', handleRawInput);
-    return () => {
-      process.stdin.off('data', handleRawInput);
-    };
-  }, [appState.activeOperation, appState.executionService, operationManager.handleAssessmentCancel]);
+  // Only allow global ESC when no modals are open - modals should handle their own ESC behavior
+  const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive;
   
-  useInput((input, key) => {
-    if (!isTerminalInteractive) return;
+  const handleEscapeExit = useCallback(() => {
+    // Show exit notification in operation history
+    operationManager.addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    operationManager.addOperationHistoryEntry('info', '🔴 ESC Key Pressed - Exiting Cyber-AutoAgent...');
+    operationManager.addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    operationManager.addOperationHistoryEntry('info', 'Thank you for using Cyber-AutoAgent. Goodbye!');
     
-    if (key.ctrl && input === 'c') {
-      if (appState.activeOperation?.status === 'running') {
-        operationManager.handleAssessmentPause();
-      } else {
-        exit();
-      }
-    }
-    
-    if (key.ctrl && input === 'l') {
-      handleScreenClear();
-    }
-    
-    if (key.escape) {
-      if (activeModal !== 'none') {
-        modalManager.closeModal();
-      } else if (appState.activeOperation && appState.executionService) {
-        operationManager.handleAssessmentCancel();
-      } else {
-        exit();
-      }
-    }
-  }, { isActive: isTerminalInteractive });
+    // Delay exit slightly to show the message
+    setTimeout(() => {
+      exit();
+    }, 1000);
+  }, [operationManager, exit]);
+  
+  useKeyboardHandlers({
+    activeOperation: appState.activeOperation,
+    isTerminalInteractive: isTerminalInteractive,
+    onAssessmentPause: operationManager.handleAssessmentPause,
+    onAssessmentCancel: operationManager.handleAssessmentCancel, // Kill switch with notification
+    onScreenClear: handleScreenClear,
+    onEscapeExit: handleEscapeExit,
+    allowGlobalEscape: allowGlobalEscape // Only allow ESC to exit when no modals are open
+  });
   
   // Command handler
   const { handleUnifiedInput } = useCommandHandler({
@@ -183,7 +165,7 @@ const AppContent: React.FC<AppProps> = ({
     commandParser.setAvailableModules(Object.keys(availableModules));
   }, [availableModules, commandParser]);
   
-  // Configuration loading effect
+  // Configuration loading effect - mark as loaded
   useEffect(() => {
     const loadConfig = async () => {
       try {
@@ -200,9 +182,28 @@ const AppContent: React.FC<AppProps> = ({
     }
   }, [appState.isConfigLoaded, actions]);
   
+  // Separate effect to check if setup wizard is needed AFTER config is loaded
+  useEffect(() => {
+    // Only check after config is loaded and we haven't already dismissed init
+    if (appState.isConfigLoaded && !appState.hasUserDismissedInit && !appState.isInitializationFlowActive) {
+      // Check if this is truly a first-time setup
+      const needsSetup = !applicationConfig.isConfigured || 
+                        (!applicationConfig.hasSeenWelcome && !applicationConfig.deploymentMode);
+      
+      if (needsSetup) {
+        console.log('First-time setup detected - showing setup wizard');
+        actions.setInitializationFlow(true);
+      } else {
+        console.log('Configuration found - skipping setup wizard');
+      }
+    }
+  }, [appState.isConfigLoaded, appState.hasUserDismissedInit, appState.isInitializationFlowActive, 
+      applicationConfig.isConfigured, applicationConfig.hasSeenWelcome, applicationConfig.deploymentMode, actions]);
+  
   // Main app view props
   const mainAppViewProps = {
     appState,
+    actions,
     currentTheme,
     operationHistoryEntries: operationManager.operationHistoryEntries,
     assessmentFlowState: operationManager.assessmentFlowState,
@@ -213,7 +214,8 @@ const AppContent: React.FC<AppProps> = ({
     onInput: handleUnifiedInput,
     onModalClose: closeModal,
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
-    onSafetyConfirm: operationManager.startAssessmentExecution
+    onSafetyConfirm: operationManager.startAssessmentExecution,
+    applicationConfig
   };
   
   

@@ -104,7 +104,31 @@ class CaptureValidator {
       }
     });
     
-    // 6. Use frame analyzer for comprehensive check
+    // 6. Validate tool display format (TEST-VALIDATION-SPECIFICATION.md requirement)
+    const toolDisplayIssues = this.validateToolDisplayFormat(terminalContent);
+    issues.push(...toolDisplayIssues);
+    
+    // 7. Validate step header format
+    const stepHeaderIssues = this.validateStepHeaderFormat(terminalContent);
+    issues.push(...stepHeaderIssues);
+    
+    // 8. Validate output display format
+    const outputDisplayIssues = this.validateOutputDisplayFormat(terminalContent);
+    issues.push(...outputDisplayIssues);
+    
+    // 9. Validate ThinkingIndicator animation (no static text)
+    const animationIssues = this.validateAnimationBehavior(terminalContent);
+    issues.push(...animationIssues);
+    
+    // 10. Validate footer information format
+    const footerIssues = this.validateFooterFormat(terminalContent);
+    issues.push(...footerIssues);
+    
+    // 11. Validate modal system behavior
+    const modalIssues = this.validateModalSystem(terminalContent);
+    issues.push(...modalIssues);
+    
+    // 12. Use frame analyzer for comprehensive check
     const analysis = this.analyzer.analyzeFrame(terminalContent);
     if (!analysis.valid) {
       analysis.issues.forEach(issue => {
@@ -113,6 +137,255 @@ class CaptureValidator {
           severity: 'MEDIUM',
           description: issue
         });
+      });
+    }
+    
+    return issues;
+  }
+
+  /**
+   * Validate tool display format according to TEST-VALIDATION-SPECIFICATION.md
+   * Required format:
+   * tool: {tool_name}
+   * ├─ param1: value1
+   * ├─ param2: value2
+   * └─ param3: value3
+   *   ⠋ Executing [animation]
+   */
+  validateToolDisplayFormat(content) {
+    const issues = [];
+    
+    // Find tool executions
+    const toolLines = content.split('\n').filter(line => line.trim().startsWith('tool:'));
+    
+    toolLines.forEach((toolLine, index) => {
+      const lines = content.split('\n');
+      const toolLineIndex = lines.indexOf(toolLine);
+      
+      // Check tool name format
+      if (!toolLine.match(/tool:\s+\w+/)) {
+        issues.push({
+          type: 'TOOL_FORMAT_ERROR',
+          severity: 'HIGH',
+          description: `Tool line doesn't match required format "tool: {name}": "${toolLine.trim()}"`,
+          line: toolLineIndex
+        });
+      }
+      
+      // Check for tree-style parameters on following lines
+      let nextLineIndex = toolLineIndex + 1;
+      let foundParameters = false;
+      let foundEndMarker = false;
+      
+      while (nextLineIndex < lines.length && !foundEndMarker) {
+        const nextLine = lines[nextLineIndex].trim();
+        
+        // Check for parameter lines with tree characters
+        if (nextLine.match(/^[├└]─\s+\w+:/)) {
+          foundParameters = true;
+          if (nextLine.startsWith('└─')) {
+            foundEndMarker = true;
+          }
+        } else if (nextLine.includes('⠋') || nextLine.includes('Executing')) {
+          // Found animation/execution line - stop checking
+          break;
+        } else if (nextLine === '') {
+          // Empty line - continue
+        } else {
+          // Non-parameter line found - stop checking
+          break;
+        }
+        
+        nextLineIndex++;
+      }
+      
+      // Validate parameter format if parameters were found
+      if (foundParameters && !foundEndMarker) {
+        issues.push({
+          type: 'TOOL_PARAMS_FORMAT',
+          severity: 'MEDIUM',
+          description: `Tool parameters missing proper tree ending (└─) for tool: ${toolLine.trim()}`,
+          line: toolLineIndex
+        });
+      }
+    });
+    
+    // Check for old format violations
+    const oldFormatLines = content.split('\n').filter(line => 
+      line.includes('Commands:') || line.includes('[tool]') || line.includes('executing')
+    );
+    
+    if (oldFormatLines.length > 0) {
+      issues.push({
+        type: 'OLD_TOOL_FORMAT',
+        severity: 'HIGH',
+        description: `Found deprecated tool format. Should use "tool: name" format. Found: ${oldFormatLines.length} instances`
+      });
+    }
+    
+    return issues;
+  }
+
+  /**
+   * Validate step header format
+   * Required format: [STEP X/Y] • [AGENT_INFO] ─────────────────
+   */
+  validateStepHeaderFormat(content) {
+    const issues = [];
+    
+    const stepLines = content.split('\n').filter(line => 
+      line.includes('STEP') && (line.includes('/') || line.includes('FINAL'))
+    );
+    
+    stepLines.forEach(line => {
+      const trimmed = line.trim();
+      
+      // Check for proper step format
+      if (!trimmed.match(/\[(?:STEP \d+\/\d+|FINAL STEP \d+\/\d+|FINAL REPORT)\]/)) {
+        issues.push({
+          type: 'STEP_HEADER_FORMAT',
+          severity: 'HIGH',
+          description: `Step header doesn't match required format: "${trimmed}"`
+        });
+      }
+      
+      // Check for divider line presence
+      if (!trimmed.includes('─')) {
+        issues.push({
+          type: 'STEP_DIVIDER_MISSING',
+          severity: 'MEDIUM',
+          description: `Step header missing divider line: "${trimmed}"`
+        });
+      }
+    });
+    
+    return issues;
+  }
+
+  /**
+   * Validate output display format
+   * Required format: output (exit: 0, duration: 2.5s)
+   */
+  validateOutputDisplayFormat(content) {
+    const issues = [];
+    
+    const outputLines = content.split('\n').filter(line => 
+      line.includes('output') && (line.includes('exit:') || line.includes('duration:'))
+    );
+    
+    outputLines.forEach(line => {
+      const trimmed = line.trim();
+      
+      // Check for proper output header format
+      if (!trimmed.match(/output\s*\(exit:\s*\d+,\s*duration:\s*[\d.]+s\)/)) {
+        issues.push({
+          type: 'OUTPUT_HEADER_FORMAT',
+          severity: 'MEDIUM',
+          description: `Output header doesn't match required format: "${trimmed}"`
+        });
+      }
+    });
+    
+    return issues;
+  }
+
+  /**
+   * Validate ThinkingIndicator animation behavior
+   * Should NOT show static "⠋ Executing" text
+   */
+  validateAnimationBehavior(content) {
+    const issues = [];
+    
+    // Check for static animation text (bad)
+    if (content.includes('⠋ Executing') && !content.includes('⠙') && !content.includes('⠹')) {
+      issues.push({
+        type: 'STATIC_ANIMATION',
+        severity: 'HIGH',
+        description: 'Found static "⠋ Executing" text instead of animated spinner'
+      });
+    }
+    
+    // Check for inline animation with tool name (bad)
+    const lines = content.split('\n');
+    const inlineAnimationLines = lines.filter(line => 
+      line.includes('tool:') && line.includes('⠋')
+    );
+    
+    if (inlineAnimationLines.length > 0) {
+      issues.push({
+        type: 'INLINE_ANIMATION',
+        severity: 'HIGH',
+        description: `Found animation inline with tool name (should be separate): ${inlineAnimationLines.length} instances`
+      });
+    }
+    
+    return issues;
+  }
+
+  /**
+   * Validate footer information format
+   * Required format: [Status] | 1,500 tokens • $0.05 • 2m 30s • [ESC] Kill Switch | ● provider | model-id
+   */
+  validateFooterFormat(content) {
+    const issues = [];
+    
+    // Look for footer-like content
+    const footerLines = content.split('\n').filter(line => 
+      line.includes('tokens') || line.includes('Kill Switch') || line.includes('ESC')
+    );
+    
+    footerLines.forEach(line => {
+      const trimmed = line.trim();
+      
+      // Check for token formatting with commas
+      const tokenMatch = trimmed.match(/(\d+)\s+tokens/);
+      if (tokenMatch && parseInt(tokenMatch[1]) >= 1000 && !tokenMatch[1].includes(',')) {
+        issues.push({
+          type: 'TOKEN_FORMAT',
+          severity: 'LOW',
+          description: `Token count should use comma formatting: "${tokenMatch[1]}" should be formatted with commas`
+        });
+      }
+      
+      // Check for ESC key instruction
+      if (trimmed.includes('Kill Switch') && !trimmed.includes('[ESC]')) {
+        issues.push({
+          type: 'ESC_INSTRUCTION_FORMAT',
+          severity: 'MEDIUM',
+          description: 'Kill Switch should include [ESC] key instruction'
+        });
+      }
+    });
+    
+    return issues;
+  }
+
+  /**
+   * Validate modal system behavior
+   */
+  validateModalSystem(content) {
+    const issues = [];
+    
+    // Check for modal overlap issues
+    const hasConfigModal = content.includes('Configuration') && content.includes('section');
+    const hasSafetyModal = content.includes('Safety Warning') || content.includes('authorization');
+    const hasMainInterface = content.includes('Type target') || content.includes('general:');
+    
+    if ((hasConfigModal || hasSafetyModal) && hasMainInterface) {
+      // This might be normal during transitions, so lower severity
+      issues.push({
+        type: 'POTENTIAL_MODAL_OVERLAP',
+        severity: 'LOW',
+        description: 'Modal and main interface elements both visible (check if this is during transition)'
+      });
+    }
+    
+    // Check for modal keyboard navigation hints
+    if (hasConfigModal && !content.includes('Tab') && !content.includes('Arrow')) {
+      issues.push({
+        type: 'MODAL_NAVIGATION_MISSING',
+        severity: 'MEDIUM',
+        description: 'Configuration modal missing keyboard navigation hints (Tab, Arrow keys)'
       });
     }
     

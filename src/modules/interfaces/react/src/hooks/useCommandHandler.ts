@@ -269,15 +269,13 @@ For detailed instructions, use: /docs`;
         break;
       case 'setup':
       case 'set':  // Support /set as alias for /setup
-        // Clear all previous content for clean setup experience
-        handleScreenClear();
-        
-        // Activate initialization flow (this will reset dismissal state)
+        // Don't clear screen - show setup inline with main view
+        // This prevents duplicate headers
         actions.setInitializationFlow(true);
         
         process.env.CYBER_SHOW_SETUP = 'true';
         
-        // Don't add to operation history - let setup wizard handle its own display
+        addOperationHistoryEntry('info', 'Opening deployment setup wizard...');
         break;
       default:
         addOperationHistoryEntry('error', `Unknown command: /${command}. Type /help for available commands.`);
