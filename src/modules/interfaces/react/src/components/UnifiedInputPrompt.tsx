@@ -107,10 +107,10 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
           });
           break;
         case 'objective':
-          // Context-aware objectives - user can press Enter, type execute, or enter custom objective
+          // Objective stage: Enter sets objective only, 'execute' sets objective and starts
           suggestions.push(
-            { text: '', description: '⏎ Press Enter for default objective', type: 'command' },
-            { text: 'execute', description: 'Use default objective and start assessment', type: 'command' },
+            { text: '', description: '⏎ Press Enter to set default objective (then execute)', type: 'command' },
+            { text: 'execute', description: 'Start assessment with default objective', type: 'command' },
             { text: 'execute focus on OWASP Top 10', description: 'Start with OWASP Top 10 focus', type: 'command' },
             { text: 'execute test authentication', description: 'Start with auth testing focus', type: 'command' },
             { text: 'focus on SQL injection', description: 'Set SQL injection as objective', type: 'command' },
@@ -217,7 +217,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       case 'target':
         return 'target https://your-authorized-target.com';
       case 'objective':
-        return 'Press Enter for default, type "execute", or enter custom objective';
+        return 'Type "execute" (default) or "execute <your objective>" (custom) to start';
       case 'ready':
         return 'Press Enter or type "execute" to start assessment';
       default:
@@ -229,11 +229,9 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
   };
 
-  // Handle keyboard input - check if raw mode is supported
-  const isInteractive = process.stdin.isTTY;
-  
+  // Handle keyboard input
   useInput((input, key) => {
-    if (!isInteractive || disabled) return;
+    if (disabled) return;
 
     if (showSuggestions && filteredSuggestions.length > 0) {
       if (key.upArrow) {
@@ -268,7 +266,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
 
     // Note: Ctrl+L and Ctrl+C are handled at the App level
-  }, { isActive: isInteractive && !disabled }); // Don't capture keyboard when disabled (during assessment)
+  }, { isActive: !disabled }); // Don't capture keyboard when disabled (during assessment)
 
   const handleSubmit = (submittedValue: string) => {
     if (!disabled) {
@@ -302,7 +300,6 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Text>
         <Box marginLeft={1} flexGrow={1}>
           <TextInput
-            key={inputKey} // Force re-mount when key changes to ensure clean state
             value={value}
             onChange={handleChange}
             onSubmit={handleSubmit}
@@ -338,7 +335,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
               if (currentModule && flowState.step === 'target') {
                 return `Set your target: target https://your-authorized-target.com`;
               } else if (flowState.step === 'objective') {
-                return `Quick options: Press Enter for default, type "execute", or enter custom objective`;
+                return `Type 'execute' to start with default objective, or 'execute <your objective>' for custom`;
               } else if (flowState.step === 'ready') {
                 return `Press Enter or type "execute" to start assessment`;
               } else {

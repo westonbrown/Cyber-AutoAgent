@@ -23,6 +23,7 @@ import { ModalType } from '../hooks/useModalManager.js';
 
 interface MainAppViewProps {
   appState: ApplicationState;
+  actions: any;
   currentTheme: any;
   operationHistoryEntries: OperationHistoryEntry[];
   assessmentFlowState: any;
@@ -34,10 +35,14 @@ interface MainAppViewProps {
   onModalClose: () => void;
   addOperationHistoryEntry: (type: string, content: string) => void;
   onSafetyConfirm?: () => void;
+  hideFooter?: boolean;
+  hideInput?: boolean;
+  applicationConfig?: any; // Add config to get modelProvider
 }
 
 export const MainAppView: React.FC<MainAppViewProps> = ({
   appState,
+  actions,
   currentTheme,
   operationHistoryEntries,
   assessmentFlowState,
@@ -48,7 +53,10 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
   onInput,
   onModalClose,
   addOperationHistoryEntry,
-  onSafetyConfirm
+  onSafetyConfirm,
+  hideFooter = false,
+  hideInput = false,
+  applicationConfig
 }) => {
   // Filter operation history for display
   const filteredOperationHistory = operationHistoryEntries.filter(entry => 
@@ -78,7 +86,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
       <Static
         key={staticKey}
         items={[
-          ...(appState.hasCompletedOperation ? [] : ['header']), // Hide header if operation completed
+          ...(appState.hasCompletedOperation || activeModal === ModalType.DOCUMENTATION ? [] : ['header']), // Hide header if operation completed or docs modal is open
           ...(!showOperationStream ? filteredOperationHistory.map(item => `history_${item.id}`) : [])
         ]}
       >
@@ -138,7 +146,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
       
       {/* Operation Stream Display - Shows underneath the static content */}
       {showOperationStream && (
-        <Box flexDirection="column" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} marginBottom={2}>
           <UnconstrainedTerminal
             executionService={appState.executionService}
             sessionId={appState.activeOperation!.id}
@@ -148,34 +156,52 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               // Events are already being handled by useOperationManager
             }}
             onMetricsUpdate={(metrics) => {
-              // Metrics updates if needed
+              // Update the app state with real-time metrics from the stream
+              if (actions && actions.updateMetrics) {
+                actions.updateMetrics(metrics);
+              }
             }}
           />
         </Box>
       )}
 
       {/* Input Interface - hide during active operations unless user handoff is active */}
-      {(!appState.activeOperation || appState.userHandoffActive) && (
-        <UnifiedInputPrompt
-          flowState={assessmentFlowState}
-          onInput={onInput}
-          disabled={!isTerminalInteractive}
-          userHandoffActive={appState.userHandoffActive}
-        />
+      {/* Also hide during initialization flow (setup wizard) or when hideInput is true */}
+      {!hideInput && (!appState.activeOperation || appState.userHandoffActive) && 
+       !appState.isInitializationFlowActive && (
+        <Box marginTop={showOperationStream ? 2 : 1} marginBottom={1}>
+          <UnifiedInputPrompt
+            flowState={assessmentFlowState}
+            onInput={onInput}
+            disabled={!isTerminalInteractive}
+            userHandoffActive={appState.userHandoffActive}
+          />
+        </Box>
       )}
       
-      {/* Footer */}
-      <Footer 
-        model=""
-        contextRemaining={appState.contextUsage || 100}
-        directory={process.cwd()}
-        operationStatus={appState.activeOperation ? {
-          step: 1,
-          totalSteps: 1,
-          description: appState.activeOperation.description || 'Running assessment',
-          isRunning: appState.activeOperation.status === 'running'
-        } : undefined}
-      />
+      {/* Footer - hide when hideFooter is true or specific modals are open */}
+      {!hideFooter && 
+       activeModal !== ModalType.CONFIG && 
+       activeModal !== ModalType.MODULE_SELECTOR && 
+       activeModal !== ModalType.DOCUMENTATION &&
+       activeModal !== ModalType.SAFETY_WARNING && (
+        <Box marginTop={1}>
+          <Footer 
+            model={appState.activeOperation?.model || ""}
+            contextRemaining={appState.contextUsage || 100}
+            directory={process.cwd()}
+            operationStatus={appState.activeOperation ? {
+              step: 1,
+              totalSteps: 1,
+              description: appState.activeOperation.description || 'Running assessment',
+              isRunning: appState.activeOperation.status === 'running'
+            } : undefined}
+            operationMetrics={appState.operationMetrics}
+            connectionStatus={appState.activeOperation ? 'connected' : (appState.isDockerServiceAvailable ? 'connected' : 'offline')}
+            modelProvider={applicationConfig?.modelProvider || 'bedrock'}
+          />
+        </Box>
+      )}
       
       {/* Modal System */}
       <ModalRegistry

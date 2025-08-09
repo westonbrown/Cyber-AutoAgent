@@ -303,7 +303,7 @@ export class SetupService extends EventEmitter {
         };
       case 'full-stack':
         return {
-          name: 'Full Stack',
+          name: 'Enterprise Stack',
           description: 'Complete platform - All services with observability and evaluation',
           icon: '🏢',
           requirements: ['~5GB disk', '8GB RAM', 'Docker Compose', 'Full service stack']

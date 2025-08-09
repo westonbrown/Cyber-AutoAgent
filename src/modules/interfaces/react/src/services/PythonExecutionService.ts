@@ -579,13 +579,8 @@ export class PythonExecutionService extends EventEmitter {
                 timestamp: Date.now()
               });
               
-              // Start thinking animation while waiting for first reasoning
-              this.emit('event', {
-                type: 'delayed_thinking_start',
-                context: 'reasoning',
-                startTime: Date.now(),
-                delay: 200
-              });
+              // Note: Removed delayed_thinking_start to avoid duplicate animations during startup
+              // The startup thinking animation is already active and more appropriate
             }, 100);
           }, 1000);
         } else {

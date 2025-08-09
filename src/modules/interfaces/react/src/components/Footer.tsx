@@ -29,6 +29,7 @@ interface FooterProps {
     evidence: number;
   };
   connectionStatus?: 'connected' | 'connecting' | 'error' | 'offline';
+  modelProvider?: string; // Provider from config (bedrock, openai, ollama, etc.)
 }
 
 export const Footer: React.FC<FooterProps> = React.memo(({
@@ -40,7 +41,8 @@ export const Footer: React.FC<FooterProps> = React.memo(({
   errorCount = 0,
   debugMode = false,
   operationMetrics,
-  connectionStatus = 'connected'
+  connectionStatus = 'connected',
+  modelProvider = 'bedrock'
 }) => {
   const theme = themeManager.getCurrentTheme();
 
@@ -86,7 +88,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
         <Text color={theme.muted}>
           {operationMetrics ? (operationMetrics.tokens || 0).toLocaleString() : '0'} tokens
         </Text>
-        <Text color={theme.muted}> | </Text>
+        <Text color={theme.muted}> • </Text>
         <Text color={theme.muted}>
           {operationMetrics ? formatCost(operationMetrics.cost || 0) : '$0.00'}
         </Text>
@@ -94,7 +96,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
         {/* Duration when available */}
         {operationMetrics && operationMetrics.duration !== '0s' && (
           <>
-            <Text color={theme.muted}> | </Text>
+            <Text color={theme.muted}> • </Text>
             <Text color={theme.muted}>{operationMetrics.duration}</Text>
           </>
         )}
@@ -102,7 +104,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
         {/* Memory and evidence metrics when available */}
         {operationMetrics && (operationMetrics.memoryOps > 0 || operationMetrics.evidence > 0) && (
           <>
-            <Text color={theme.muted}> | </Text>
+            <Text color={theme.muted}> • </Text>
             {operationMetrics.memoryOps > 0 && (
               <>
                 <Text color={theme.muted}>{operationMetrics.memoryOps}</Text>
@@ -110,7 +112,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
               </>
             )}
             {operationMetrics.memoryOps > 0 && operationMetrics.evidence > 0 && (
-              <Text color={theme.muted}> | </Text>
+              <Text color={theme.muted}> • </Text>
             )}
             {operationMetrics.evidence > 0 && (
               <>
@@ -123,24 +125,24 @@ export const Footer: React.FC<FooterProps> = React.memo(({
         
         <Text color={theme.muted}>  |  </Text>
         
-        {/* Errors if any */}
-        {errorCount > 0 && (
-          <>
-            <Text color={theme.danger}>{errorCount} error{errorCount > 1 ? 's' : ''}</Text>
-            <Text color={theme.muted}>  |  </Text>
-          </>
-        )}
-        
         {/* Keyboard shortcuts */}
         <Text color={theme.muted}>[ESC] Kill Switch</Text>
         
+        {/* Errors if any */}
+        {errorCount > 0 && (
+          <>
+            <Text color={theme.muted}>  |  </Text>
+            <Text color={theme.danger}>{errorCount} error{errorCount > 1 ? 's' : ''}</Text>
+          </>
+        )}
+        
         <Text color={theme.muted}>  |  </Text>
         
-        {/* Provider and connection */}
+        {/* Model provider connection status - use provider from config */}
         <Text color={connIcon.color}>{connIcon.icon}</Text>
-        <Text color={theme.muted}> {connectionStatus === 'connected' ? 'bedrock' : connectionStatus}</Text>
+        <Text color={theme.muted}> {connectionStatus === 'connected' ? modelProvider : connectionStatus}</Text>
         
-        {/* Model - only show if provided */}
+        {/* Model ID - only show if provided */}
         {model && (
           <>
             <Text color={theme.muted}>  |  </Text>

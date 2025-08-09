@@ -13,11 +13,15 @@
     "moduleResolution": "node16",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "isolatedModules": true
   },
   "include": ["src/**/*"],
   "exclude": [
     "node_modules", 
-    "dist"
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "src/__tests__/**/*"
   ]
 }

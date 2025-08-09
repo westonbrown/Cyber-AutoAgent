@@ -180,14 +180,14 @@ export const DirectTerminal: React.FC<DirectTerminalProps> = React.memo(({
 
   return (
     <Box flexDirection="column" height="100%">
-      {/* Virtual scrolling container - use full height */}
-      <Box flexDirection="column" height="100%">
+      {/* Virtual scrolling container - use full height with improved spacing */}
+      <Box flexDirection="column" height="100%" marginBottom={1}>
         <StreamDisplay events={visibleEvents} />
       </Box>
       
-      {/* Simple scroll indicator */}
+      {/* Simple scroll indicator with enhanced spacing */}
       {isScrollable && (
-        <Box flexDirection="row" justifyContent="space-between" marginTop={1}>
+        <Box flexDirection="row" justifyContent="space-between" marginTop={2} marginBottom={1}>
           <Text color={theme.muted}>
             Showing last {visibleEvents.length} of {events.length} events
           </Text>

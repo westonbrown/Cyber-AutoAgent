@@ -50,50 +50,38 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
     return <Box />; // Empty box while loading config
   }
 
-  // Main application layout
-  // When initialization flow is active, render ONLY that - nothing else
+  // Main application layout with setup overlay
+  // When initialization flow is active, show main view with setup wizard overlay
   if (appState.isInitializationFlowActive && !appState.hasUserDismissedInit) {
-    // Only perform terminal clearing once when setup wizard is first activated
-    // This prevents flickering during React re-renders
-    if (!hasInitialClear.current) {
-      // Use clearScreen for full terminal reset including scrollback buffer
-      stdout.write(ansiEscapes.clearScreen);
-      hasInitialClear.current = true;
-    }
-    // No clearing on subsequent renders to prevent flicker
+    // Show main view with header but hide footer and input, then show setup wizard below
     
     return (
       <Box flexDirection="column" width="100%">
-        {/* Preserve the Header component to keep the logo and branding */}
-        <Header 
-          version="0.1.3" 
-          terminalWidth={appState.terminalDisplayWidth}
-          nightly={false}
+        {/* Render main app view but with setup mode flag to hide footer */}
+        <MainAppView 
+          {...mainAppViewProps}
+          hideFooter={true}
+          hideInput={true}
         />
         
-        {/* Setup Wizard - Full Screen */}
-        <SetupWizard 
-          terminalWidth={appState.terminalDisplayWidth}
-          onComplete={(completionMessage?: string) => {
-            // Don't add to operation history here - let the main completion handler do it
-            // This prevents duplicate messages
-            
-            // Refresh the static content to show main interface
-            refreshStatic();
-            
-            // Show config editor after initialization if not configured
-            if (!applicationConfig.isConfigured) {
-              // Clear terminal and open config for clean transition
-              setTimeout(() => {
-                stdout.write(ansiEscapes.clearTerminal);
-                onConfigOpen();
-              }, 500);
-            }
-            
-            // Call the completion handler (this will add the message to operation history)
-            onInitializationComplete(completionMessage);
-          }}
-        />
+        {/* Setup Wizard appears below the main view */}
+        <Box marginTop={1}>
+          <SetupWizard 
+            terminalWidth={appState.terminalDisplayWidth}
+            onComplete={(completionMessage?: string) => {
+              // Show config editor after initialization if not configured  
+              if (!applicationConfig.isConfigured) {
+                // Open config without clearing
+                setTimeout(() => {
+                  onConfigOpen();
+                }, 500);
+              }
+              
+              // Call the completion handler (this will add the message to operation history)
+              onInitializationComplete(completionMessage);
+            }}
+          />
+        </Box>
       </Box>
     );
   }

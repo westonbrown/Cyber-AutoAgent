@@ -52,7 +52,7 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = ({
       borderStyle="double" 
       borderColor={theme.danger} 
       padding={1}
-      width="80%"
+      width="100%"
     >
       {/* Header */}
       <Box marginBottom={1}>

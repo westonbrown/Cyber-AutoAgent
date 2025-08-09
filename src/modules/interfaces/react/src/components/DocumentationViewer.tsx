@@ -8,7 +8,6 @@ import { Box, Text, useInput } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Header } from './Header.js';
 
 interface DocumentInfo {
   name: string;
@@ -235,7 +234,7 @@ Use /help for available commands or refer to the project repository for complete
     }
   };
 
-  // Handle keyboard input
+  // Handle keyboard input with high priority to override other handlers
   useInput((input, key) => {
     if (key.escape || (key.ctrl && input === 'c')) {
       if (viewMode === 'view') {
@@ -264,17 +263,17 @@ Use /help for available commands or refer to the project repository for complete
         setScrollOffset(prev => Math.max(0, prev - 1));
       } else if (key.downArrow || input === 'j') {
         setScrollOffset(prev => Math.min(totalLines - linesPerPage, prev + 1));
-      } else if (key.pageUp) {
-        setScrollOffset(prev => Math.max(0, prev - linesPerPage));
       } else if (key.pageDown) {
         setScrollOffset(prev => Math.min(totalLines - linesPerPage, prev + linesPerPage));
+      } else if (key.pageUp) {
+        setScrollOffset(prev => Math.max(0, prev - linesPerPage));
       } else if (input === 'g') {
         setScrollOffset(0); // Go to top
       } else if (input === 'G') {
         setScrollOffset(Math.max(0, totalLines - linesPerPage)); // Go to bottom
       }
     }
-  });
+  }, { isActive: true });
 
   const renderDocumentList = () => (
     <Box flexDirection="column">

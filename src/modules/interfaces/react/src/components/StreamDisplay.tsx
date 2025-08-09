@@ -18,7 +18,7 @@ import {
 
 // Legacy simplified event types for backward compatibility
 export type LegacyStreamEvent = 
-  | { type: 'step_header'; step: number; maxSteps: number; operation: string; duration: string; [key: string]: any }
+  | { type: 'step_header'; step: number | string; maxSteps: number; operation: string; duration: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
   | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; [key: string]: any }
   | { type: 'thinking_end'; [key: string]: any }
@@ -208,18 +208,22 @@ const EventLine: React.FC<{
       }
       
       return (
-        <Box flexDirection="column">
-          <Text> </Text>
-          <Text bold color="blue">
-            [STEP {event.step}/{event.maxSteps}]{agentInfo} {DIVIDER.slice(0, Math.max(0, DIVIDER.length - 30))}
-          </Text>
-          <Text> </Text>
+        <Box flexDirection="column" marginTop={1} marginBottom={0}>
+          <Box flexDirection="row" alignItems="center">
+            <Text color="#89B4FA" bold>
+              {event.step === "FINAL REPORT" ? "[FINAL REPORT]" : `[STEP ${event.step}/${event.maxSteps}]`}
+            </Text>
+            {agentInfo && (
+              <Text color="#CBA6F7" bold>{agentInfo}</Text>
+            )}
+          </Box>
+          <Text color="#45475A">{DIVIDER.slice(0, Math.max(0, DIVIDER.length - 20))}</Text>
         </Box>
       );
       
     case 'thinking':
       return (
-        <Box marginY={0}>
+        <Box marginTop={1}>
           <ThinkingIndicator 
             context={event.context}
             startTime={event.startTime}
@@ -256,25 +260,23 @@ const EventLine: React.FC<{
       
       switch (event.tool_name) {
         case 'mem0_memory':
-          const action = event.tool_input.action || 'unknown';
-          if (action !== 'unknown') {
-            const content = event.tool_input.content || event.tool_input.query || '';
-            const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
-            
-            return (
-              <Box flexDirection="column">
-                <Text color="green" bold>tool: mem0_memory</Text>
-                <Box marginLeft={2}>
-                  <Text dimColor>├─ action: {action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
-                </Box>
-                {preview && (
-                  <Box marginLeft={2}>
-                    <Text dimColor>└─ {action === 'store' ? 'content' : 'query'}: {preview}</Text>
-                  </Box>
-                )}
+          const action = event.tool_input?.action || 'list';
+          const content = event.tool_input?.content || event.tool_input?.query || '';
+          const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
+          
+          return (
+            <Box flexDirection="column">
+              <Text color="green" bold>tool: mem0_memory</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ action: {action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
               </Box>
-            );
-          }
+              {preview && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ {action === 'store' ? 'content' : 'query'}: {preview}</Text>
+                </Box>
+              )}
+            </Box>
+          );
           break;
           
         case 'shell':
@@ -503,90 +505,31 @@ const EventLine: React.FC<{
           break;
           
         default:
-          // For unknown tools, show key parameters in tree format
-          if (event.tool_input && typeof event.tool_input === 'object') {
-            const keys = Object.keys(event.tool_input);
-            if (keys.length > 0) {
-              const maxKeys = 4;
-              const displayKeys = keys.slice(0, maxKeys);
-              const hasMore = keys.length > maxKeys;
-              
-              return (
-                <Box flexDirection="column">
-                  <Text color="green" bold>tool: {event.tool_name}</Text>
-                  {displayKeys.map((key, i) => {
-                    const value = event.tool_input[key];
-                    const displayValue = typeof value === 'string' && value.length > 50 
-                      ? value.substring(0, 50) + '...' 
-                      : String(value);
-                    const isLast = i === displayKeys.length - 1 && !hasMore;
-                    
-                    return (
-                      <Box key={key} marginLeft={2}>
-                        <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
-                      </Box>
-                    );
-                  })}
-                  {hasMore && (
-                    <Box marginLeft={2}>
-                      <Text dimColor>└─ ... (+{keys.length - maxKeys} more)</Text>
-                    </Box>
-                  )}
-                  <Box marginLeft={2}>
-                      </Box>
-                </Box>
-              );
-            }
-          }
-      }
-      
-      // Fallback: Always show tool with any parameters in tree format
-      if (event.tool_input && typeof event.tool_input === 'object') {
-        const keys = Object.keys(event.tool_input);
-        if (keys.length > 0) {
-          const maxKeys = 4;
-          const displayKeys = keys.slice(0, maxKeys);
-          const hasMore = keys.length > maxKeys;
-          
+          // For unknown tools, show just the tool name - parameters will come via metadata events
           return (
             <Box flexDirection="column">
               <Text color="green" bold>tool: {event.tool_name}</Text>
-              {displayKeys.map((key, i) => {
-                const value = event.tool_input[key];
-                const displayValue = typeof value === 'string' && value.length > 50 
-                  ? value.substring(0, 50) + '...' 
-                  : String(value);
-                const isLast = i === displayKeys.length - 1 && !hasMore;
-                
-                return (
-                  <Box key={key} marginLeft={2}>
-                    <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
-                  </Box>
-                );
-              })}
-              {hasMore && (
-                <Box marginLeft={2}>
-                  <Text dimColor>└─ ... (+{keys.length - maxKeys} more)</Text>
-                </Box>
-              )}
             </Box>
           );
+      }
+      
+    case 'command':
+      // Parse command if it's a JSON object
+      let commandText = event.content;
+      if (typeof event.content === 'string' && event.content.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(event.content);
+          if (parsed.command) {
+            commandText = parsed.command;
+          }
+        } catch (e) {
+          // If parsing fails, use original content
         }
       }
       
-      // Ultimate fallback: Just show tool name with animation
       return (
         <Box flexDirection="column">
-          <Text color="green" bold>tool: {event.tool_name}</Text>
-          <Box marginLeft={2}>
-          </Box>
-        </Box>
-      );
-      
-    case 'command':
-      return (
-        <Box flexDirection="column">
-          <Text><Text dimColor>⎿</Text> {event.content}</Text>
+          <Text><Text dimColor>⎿</Text> {commandText}</Text>
         </Box>
       );
       
@@ -605,7 +548,7 @@ const EventLine: React.FC<{
       if (event.exitCode !== undefined) metadata.push(`exit: ${event.exitCode}`);
       if (event.duration) metadata.push(`duration: ${event.duration}`);
       
-      // For startup/system messages, display cleanly without "output" prefix
+      // Enhanced startup/system messages with better theming and compact structure
       if (event.content && (
         event.content.includes('▶') || 
         event.content.includes('◆') || 
@@ -613,8 +556,42 @@ const EventLine: React.FC<{
         event.content.includes('○') ||
         event.content.startsWith('[Observability]')
       )) {
+        // Parse different message types for better styling with minimal spacing
+        if (event.content.startsWith('▶')) {
+          // Initializing messages - use primary color with emphasis
+          return (
+            <Text color="#89B4FA" bold>{event.content}</Text>
+          );
+        } else if (event.content.startsWith('◆')) {
+          // System status messages - use info color
+          const isComplete = event.content.includes('ready') || event.content.includes('complete');
+          return (
+            <Text color={isComplete ? "#A6E3A1" : "#89DCEB"}>{event.content}</Text>
+          );
+        } else if (event.content.includes('✓')) {
+          // Success indicators - use success color with minimal spacing
+          return (
+            <Box marginLeft={1}>
+              <Text color="#A6E3A1">{event.content}</Text>
+            </Box>
+          );
+        } else if (event.content.includes('○')) {
+          // Warning/unavailable indicators - use warning color
+          return (
+            <Box marginLeft={1}>
+              <Text color="#F9E2AF">{event.content}</Text>
+            </Box>
+          );
+        } else if (event.content.startsWith('[Observability]')) {
+          // Observability messages - use accent color with minimal spacing
+          return (
+            <Text color="#CBA6F7">{event.content}</Text>
+          );
+        }
+        
+        // Default system message styling
         return (
-          <Text color="blue">{event.content}</Text>
+          <Text color="#89DCEB">{event.content}</Text>
         );
       }
       
@@ -641,11 +618,13 @@ const EventLine: React.FC<{
     case 'error':
       return (
         <Box flexDirection="column" marginTop={1}>
-          <Box>
-            <Text color="red" bold>[ERROR]</Text>
-          </Box>
-          <Box marginLeft={2}>
-            <Text color="red">{event.content}</Text>
+          <Box paddingX={1} borderStyle="round" borderColor="#F38BA8">
+            <Box flexDirection="column">
+              <Text color="#F38BA8" bold>⚠️  ERROR</Text>
+              <Box marginLeft={1}>
+                <Text color="#F38BA8">{event.content}</Text>
+              </Box>
+            </Box>
           </Box>
         </Box>
       );
@@ -656,10 +635,18 @@ const EventLine: React.FC<{
         const metadataEntries = Object.entries(event.content);
         if (metadataEntries.length > 0) {
           return (
-            <Box flexDirection="column">
-              {metadataEntries.map(([key, value], index) => (
-                <Text key={index} dimColor>{key}: {String(value)}</Text>
-              ))}
+            <Box flexDirection="column" marginLeft={2}>
+              {metadataEntries.map(([key, value], index) => {
+                const isLast = index === metadataEntries.length - 1;
+                const displayValue = typeof value === 'string' && value.length > 50 
+                  ? value.substring(0, 50) + '...' 
+                  : String(value);
+                return (
+                  <Box key={index}>
+                    <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
+                  </Box>
+                );
+              })}
             </Box>
           );
         }
@@ -1074,14 +1061,11 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events 
             return '';
           }).join('');
           return (
-            <Box key={`reasoning-group-${group.startIdx}`} flexDirection="column">
-              <Text> </Text>
-              <Text> </Text>
+            <Box key={`reasoning-group-${group.startIdx}`} flexDirection="column" marginTop={1}>
               <Text color="cyan" bold>reasoning</Text>
               <Box paddingLeft={0}>
                 <Text color="cyan">{combinedContent}</Text>
               </Box>
-              <Text> </Text>
             </Box>
           );
         } else {

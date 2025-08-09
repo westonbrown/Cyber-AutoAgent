@@ -28,13 +28,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
     metrics tracking, and operation state management.
     """
 
-    def __init__(self, max_steps: int = 100, operation_id: str = None):
+    def __init__(self, max_steps: int = 100, operation_id: str = None, model_id: str = None):
         """
         Initialize the React bridge handler.
 
         Args:
             max_steps: Maximum allowed execution steps
             operation_id: Unique operation identifier
+            model_id: Model ID for accurate pricing calculations
         """
         super().__init__()
 
@@ -43,6 +44,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.max_steps = max_steps
         self.operation_id = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.start_time = time.time()
+        self.model_id = model_id
 
         # Metrics tracking
         self.memory_ops = 0
@@ -81,6 +83,73 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit initial metrics
         self._emit_initial_metrics()
+    
+    def _get_model_pricing(self) -> tuple[float, float]:
+        """
+        Get input and output pricing per million tokens for the current model.
+        
+        Returns:
+            tuple: (input_cost_per_million, output_cost_per_million)
+        """
+        # Default to Claude 3.5 Sonnet pricing if no model_id provided
+        if not self.model_id:
+            return (3.0, 15.0)
+        
+        # Model-specific pricing (per million tokens)
+        pricing_map = {
+            # Claude 3.5 Sonnet
+            "us.anthropic.claude-3-5-sonnet-20241022-v2:0": (3.0, 15.0),
+            "anthropic.claude-3-5-sonnet-20241022-v2:0": (3.0, 15.0),
+            "claude-3-5-sonnet-20241022": (3.0, 15.0),
+            
+            # Claude 3.5 Haiku  
+            "us.anthropic.claude-3-5-haiku-20241022-v1:0": (0.25, 1.25),
+            "anthropic.claude-3-5-haiku-20241022-v1:0": (0.25, 1.25),
+            "claude-3-5-haiku-20241022": (0.25, 1.25),
+            
+            # Claude 4 (Opus 4) - Much more expensive
+            "us.anthropic.claude-opus-4-20250514-v1:0": (15.0, 75.0),
+            "anthropic.claude-opus-4-20250514-v1:0": (15.0, 75.0),
+            "claude-opus-4-20250514": (15.0, 75.0),
+            
+            # GPT models
+            "gpt-4o": (2.5, 10.0),
+            "gpt-4o-mini": (0.15, 0.6),
+            "gpt-4-turbo": (10.0, 30.0),
+            
+            # Generic fallbacks
+            "claude-3-sonnet": (3.0, 15.0),
+            "claude-3-haiku": (0.25, 1.25),
+            "claude-3-opus": (15.0, 75.0),
+        }
+        
+        # Try exact match first
+        if self.model_id in pricing_map:
+            return pricing_map[self.model_id]
+        
+        # Try pattern matching for models with variations
+        model_lower = self.model_id.lower()
+        
+        if "opus-4" in model_lower or "claude-4" in model_lower:
+            return (15.0, 75.0)  # Claude 4/Opus 4 pricing
+        elif "sonnet" in model_lower and "3.5" in model_lower:
+            return (3.0, 15.0)   # Claude 3.5 Sonnet pricing
+        elif "haiku" in model_lower and "3.5" in model_lower:
+            return (0.25, 1.25)  # Claude 3.5 Haiku pricing
+        elif "sonnet" in model_lower:
+            return (3.0, 15.0)   # Generic Sonnet pricing
+        elif "haiku" in model_lower:
+            return (0.25, 1.25)  # Generic Haiku pricing
+        elif "opus" in model_lower:
+            return (15.0, 75.0)  # Generic Opus pricing
+        elif "gpt-4o-mini" in model_lower:
+            return (0.15, 0.6)
+        elif "gpt-4" in model_lower:
+            return (10.0, 30.0)
+        
+        # Default to Claude 3.5 Sonnet if no match
+        logger.warning(f"Unknown model pricing for {self.model_id}, using Claude 3.5 Sonnet defaults")
+        return (3.0, 15.0)
 
     def __call__(self, **kwargs):
         """
@@ -158,8 +227,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if event_loop_metrics:
             self._process_metrics(event_loop_metrics)
 
-        # 8. Periodic metrics emission
-        if time.time() - self.last_metrics_emit_time > 5:
+        # 8. Periodic metrics emission (every 2 seconds for more responsive updates)
+        if time.time() - self.last_metrics_emit_time > 2:
             self._emit_estimated_metrics()
             self.last_metrics_emit_time = time.time()
 
@@ -180,12 +249,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             else:
                 # Pure reasoning step without tools
                 self.current_step += 1
-                self._emit_step_header()
                 
-                # Check if step limit reached and raise exception
-                if self.current_step >= self.max_steps:
+                # Check if step limit exceeded BEFORE emitting confusing header
+                if self.current_step > self.max_steps:
                     from modules.handlers.base import StepLimitReached
-                    raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
+                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    
+                # Only emit header if within step limits
+                self._emit_step_header()
 
             # Count output tokens
             for item in content:
@@ -223,13 +294,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if self.pending_step_header or (self.current_step == 0 and tool_id):
                 if self.current_step == 0 or self.pending_step_header:
                     self.current_step += 1
+                    
+                # Check if step limit exceeded BEFORE emitting confusing header
+                if self.current_step > self.max_steps:
+                    from modules.handlers.base import StepLimitReached
+                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    
+                # Only emit header if within step limits
                 self._emit_step_header()
                 self.pending_step_header = False
-                
-                # Check if step limit reached and raise exception
-                if self.current_step >= self.max_steps:
-                    from modules.handlers.base import StepLimitReached
-                    raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
 
             # Track tool
             self.announced_tools.add(tool_id)
@@ -244,16 +317,20 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Emit tool-specific events
             if tool_input and self._is_valid_input(tool_input):
                 self.tool_emitter.emit_tool_specific_events(tool_name, tool_input)
+                
+            # Emit thinking animation for tool execution with start time for elapsed tracking
+            current_time_ms = int(time.time() * 1000)
+            self._emit_ui_event({"type": "thinking", "context": "tool_execution", "startTime": current_time_ms})
 
-                # Handle swarm tracking
-                if tool_name == "swarm":
-                    self._track_swarm_start(tool_input)
-                elif tool_name == "handoff_to_agent":
-                    self._track_agent_handoff(tool_input)
-                elif tool_name == "complete_swarm_task":
-                    self._track_swarm_complete()
-                elif tool_name == "stop":
-                    self._stop_tool_used = True
+            # Handle swarm tracking
+            if tool_name == "swarm":
+                self._track_swarm_start(tool_input)
+            elif tool_name == "handoff_to_agent":
+                self._track_agent_handoff(tool_input)
+            elif tool_name == "complete_swarm_task":
+                self._track_swarm_complete()
+            elif tool_name == "stop":
+                self._stop_tool_used = True
 
         # Handle streaming updates
         elif tool_id in self.announced_tools and tool_input:
@@ -409,9 +486,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _emit_estimated_metrics(self) -> None:
         """Emit estimated metrics based on token counting."""
-        # Claude 3.5 Sonnet pricing: $3/1M input, $15/1M output
-        input_cost = (self.total_input_tokens / 1_000_000) * 3.0
-        output_cost = (self.total_output_tokens / 1_000_000) * 15.0
+        # Get model-specific pricing
+        input_price, output_price = self._get_model_pricing()
+        input_cost = (self.total_input_tokens / 1_000_000) * input_price
+        output_cost = (self.total_output_tokens / 1_000_000) * output_price
         total_cost = input_cost + output_cost
 
         self._emit_ui_event(
@@ -435,9 +513,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         input_tokens = usage.get("inputTokens", 0)
         output_tokens = usage.get("outputTokens", 0)
 
-        # Calculate cost
-        input_cost = (input_tokens / 1_000_000) * 3.0
-        output_cost = (output_tokens / 1_000_000) * 15.0
+        # Calculate cost using model-specific pricing
+        input_price, output_price = self._get_model_pricing()
+        input_cost = (input_tokens / 1_000_000) * input_price
+        output_cost = (output_tokens / 1_000_000) * output_price
         total_cost = input_cost + output_cost
 
         self._emit_ui_event(
@@ -602,6 +681,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         try:
             self._report_generated = True
             from modules.tools.report_generator import generate_security_report
+
+            # Emit completion header before generating report
+            self._emit_ui_event({
+                "type": "step_header",
+                "step": "FINAL REPORT",
+                "maxSteps": self.max_steps,
+                "operation": self.operation_id,
+                "duration": self._format_duration(time.time() - self.start_time),
+            })
 
             # Determine provider from agent model
             provider = "bedrock"

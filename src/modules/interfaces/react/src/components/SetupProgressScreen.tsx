@@ -104,7 +104,7 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     switch (deploymentMode) {
       case 'local-cli': return 'Local CLI Only';
       case 'single-container': return 'Single Container';
-      case 'full-stack': return 'Enterprise (Full Stack)';
+      case 'full-stack': return 'Enterprise Stack';
       default: return deploymentMode;
     }
   };

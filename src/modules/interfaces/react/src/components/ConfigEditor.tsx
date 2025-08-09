@@ -190,10 +190,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   }, [sections, selectedSectionIndex, config.modelProvider, config.memoryBackend]);
   
   // Handle keyboard navigation
-  const isInteractive = process.stdin.isTTY;
-  
   useInput((input, key) => {
-    if (!isInteractive) return;
     
     if (editingField) {
       // In edit mode
@@ -264,7 +261,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     if (key.ctrl && input === 's') {
       handleSave();
     }
-  }, { isActive: isInteractive && !editingField });
+  }, { isActive: !editingField });
 
   // Separate input handler for when editing to handle Ctrl+S
   useInput((input, key) => {
@@ -294,7 +291,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       setEditingField(null);
       setTempValue('');
     }
-  }, { isActive: isInteractive && editingField !== null });
+  }, { isActive: editingField !== null });
 
   const handleSave = useCallback(async () => {
     try {

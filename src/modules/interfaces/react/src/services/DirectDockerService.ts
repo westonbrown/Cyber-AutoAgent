@@ -130,10 +130,13 @@ export class DirectDockerService extends EventEmitter {
       // Check for existing memory files
       
       if (fs.existsSync(faissPath) && fs.existsSync(pklPath)) {
-        // Memory exists - will be automatically loaded by Python agent
+        // Count memory entries for better context
+        const faissSize = fs.statSync(faissPath).size;
+        const memoryContext = faissSize > 1000 ? 'extensive knowledge base' : 'previous findings';
+        
         this.emit('event', {
           type: 'output',
-          content: `◆ Found existing memory for ${params.target} - loading knowledge from previous assessments`,
+          content: `◆ Found existing memory for ${params.target} - loading ${memoryContext}`,
           timestamp: Date.now()
         });
       }
@@ -477,7 +480,7 @@ export class DirectDockerService extends EventEmitter {
           ...eventData
         };
 
-        // Handle tool discovery events
+        // Handle tool discovery events with improved formatting
         if (event.type === 'tool_discovery_start') {
           this.emit('event', {
             type: 'output',
@@ -493,7 +496,7 @@ export class DirectDockerService extends EventEmitter {
         } else if (event.type === 'tool_unavailable') {
           this.emit('event', {
             type: 'output',
-            content: `  ○ ${eventData.tool_name} (${eventData.description} - not available)`,
+            content: `  ○ ${eventData.tool_name} (${eventData.description}) - unavailable`,
             timestamp: Date.now()
           });
         } else if (event.type === 'environment_ready') {
@@ -509,7 +512,7 @@ export class DirectDockerService extends EventEmitter {
               content: '◆ Configuring assessment parameters and evidence collection',
               timestamp: Date.now()
             });
-          }, 500);
+          }, 300);
           
           setTimeout(() => {
             this.emit('event', {
@@ -517,7 +520,7 @@ export class DirectDockerService extends EventEmitter {
               content: '◆ Security assessment environment ready - Beginning evaluation',
               timestamp: Date.now()
             });
-            // Add spacing and start thinking animation while waiting for reasoning
+            // Add improved spacing and start thinking animation
             setTimeout(() => {
               this.emit('event', {
                 type: 'output',
@@ -530,13 +533,8 @@ export class DirectDockerService extends EventEmitter {
                 timestamp: Date.now()
               });
               
-              // Start thinking animation while waiting for first reasoning
-              this.emit('event', {
-                type: 'delayed_thinking_start',
-                context: 'reasoning',
-                startTime: Date.now(),
-                delay: 200
-              });
+              // Note: Removed delayed_thinking_start to avoid duplicate animations during startup
+              // The startup thinking animation is already active and more appropriate
             }, 100);
           }, 1000);
         }

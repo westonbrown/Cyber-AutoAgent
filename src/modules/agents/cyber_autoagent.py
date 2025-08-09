@@ -379,6 +379,7 @@ Leverage these tools directly via shell.
     callback_handler = ReactBridgeHandler(
         max_steps=max_steps,
         operation_id=operation_id,
+        model_id=model_id,
     )
 
     # No hooks needed - the callback handler handles everything
