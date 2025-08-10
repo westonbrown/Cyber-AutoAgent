@@ -9,6 +9,7 @@ import { ThinkingIndicator } from './ThinkingIndicator.js';
 import { StreamEvent } from '../types/events.js';
 import { SwarmDisplay, SwarmState, SwarmAgent } from './SwarmDisplay.js';
 import { formatToolInput } from '../utils/toolFormatters.js';
+import { DISPLAY_LIMITS } from '../constants/config.js';
 import { 
   getToolCategory, 
   formatToolWithIcon, 
@@ -385,25 +386,38 @@ const EventLine: React.FC<{
         case 'python_repl':
           const code = event.tool_input.code || '';
           const codeLines = code.split('\n');
-          const previewLines = 5;
+          const previewLines = 8; // Increased from 5 to show more context
           
           let displayLines;
+          let isTruncated = false;
           if (codeLines.length <= previewLines) {
             displayLines = codeLines;
           } else {
-            displayLines = [...codeLines.slice(0, previewLines), `... (${codeLines.length - previewLines} more lines)`];
+            // Show first 6 lines and last 2 lines for better context
+            displayLines = [
+              ...codeLines.slice(0, 6),
+              '',
+              `... (${codeLines.length - 8} more lines)`,
+              '',
+              ...codeLines.slice(-2)
+            ];
+            isTruncated = true;
           }
           
           return (
             <Box flexDirection="column">
               <Text color="green" bold>tool: python_repl</Text>
               <Box marginLeft={2} flexDirection="column">
-                <Text dimColor>├─ code:</Text>
-                {displayLines.map((line, i) => (
-                  <Box key={i} marginLeft={2}>
-                    <Text dimColor>{i === displayLines.length - 1 && !line.startsWith('...') ? '└─' : '│ '} {line}</Text>
-                  </Box>
-                ))}
+                <Text dimColor>└─ code:</Text>
+                <Box marginLeft={5} flexDirection="column">
+                  {displayLines.map((line, i) => {
+                    // Don't show tree characters for code content
+                    if (line.startsWith('...')) {
+                      return <Text key={i} dimColor italic>    {line}</Text>;
+                    }
+                    return <Text key={i} dimColor>    {line || ' '}</Text>;
+                  })}
+                </Box>
               </Box>
             </Box>
           );
@@ -597,8 +611,48 @@ const EventLine: React.FC<{
       
       // For command output, show with consistent spacing
       const lines = event.content.split('\n');
-      const shouldCollapse = lines.length > 10;
-      const displayLines = shouldCollapse ? [...lines.slice(0, 5), '...', ...lines.slice(-3)] : lines;
+      
+      // Check if this is a security report or important system output
+      const isReport = event.content.includes('# SECURITY ASSESSMENT REPORT') || 
+                      event.content.includes('EXECUTIVE SUMMARY') ||
+                      event.content.includes('KEY FINDINGS') ||
+                      event.content.includes('REMEDIATION ROADMAP');
+      
+      // Check if this contains file paths or operation completion info
+      const isOperationSummary = event.content.includes('Outputs stored in:') ||
+                                 event.content.includes('Memory stored in:') ||
+                                 event.content.includes('Report saved to:') ||
+                                 event.content.includes('Operation ID:');
+      
+      // Use constants for display limits
+      const collapseThreshold = isReport ? DISPLAY_LIMITS.REPORT_MAX_LINES : 
+                               (isOperationSummary ? DISPLAY_LIMITS.OPERATION_SUMMARY_LINES : 
+                                DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES);
+      const shouldCollapse = lines.length > collapseThreshold;
+      
+      let displayLines;
+      if (shouldCollapse && !isReport && !isOperationSummary) {
+        // For normal output, show first 5 and last 3 lines
+        displayLines = [...lines.slice(0, 5), '...', ...lines.slice(-3)];
+      } else if (shouldCollapse && (isReport || isOperationSummary)) {
+        // For reports and summaries, show much more content
+        if (isReport) {
+          // For reports, show configured preview and tail lines
+          displayLines = [
+            ...lines.slice(0, DISPLAY_LIMITS.REPORT_PREVIEW_LINES), 
+            '', 
+            '... (content continues)', 
+            '', 
+            ...lines.slice(-DISPLAY_LIMITS.REPORT_TAIL_LINES)
+          ];
+        } else {
+          // For operation summaries, show all content up to limit
+          displayLines = lines.slice(0, DISPLAY_LIMITS.OPERATION_SUMMARY_LINES);
+        }
+      } else {
+        // Show all lines if under threshold
+        displayLines = lines;
+      }
       
       return (
         <Box flexDirection="column" marginTop={1}>

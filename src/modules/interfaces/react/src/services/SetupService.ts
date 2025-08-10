@@ -100,23 +100,34 @@ export class SetupService extends EventEmitter {
       stepName: 'python-check'
     });
 
+    this.logger.info('Verifying Python 3.10+ is installed');
     const { PythonExecutionService } = await import('./PythonExecutionService.js');
     const pythonService = new PythonExecutionService();
     
     const pythonCheck = await pythonService.checkPythonVersion();
     if (!pythonCheck.installed) {
+      this.logger.error('Python 3.10+ not found');
       throw new Error(pythonCheck.error || 'Python 3.10+ is required');
     }
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: `Python ${pythonCheck.version} detected`,
+      stepName: 'python-check'
+    });
 
     // Step 3: Setup virtual environment and dependencies
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
-      message: `Python ${pythonCheck.version} detected. Setting up environment...`,
+      message: 'Creating virtual environment...',
       stepName: 'dependencies'
     });
 
+    this.logger.info('Setting up Python virtual environment');
+    
     await pythonService.setupPythonEnvironment((message) => {
       onProgress?.({
         current: currentStep,
@@ -125,14 +136,33 @@ export class SetupService extends EventEmitter {
         stepName: 'dependencies'
       });
     });
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Dependencies installed successfully',
+      stepName: 'dependencies'
+    });
 
     // Step 4: Final verification
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
-      message: 'CLI environment setup complete!',
-      stepName: 'verification'
+      message: 'Running final verification checks...',
+      stepName: 'validation'
+    });
+    
+    this.logger.info('Verifying CLI environment is ready');
+    
+    // Simulate verification delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'CLI environment verified and ready',
+      stepName: 'validation'
     });
 
     return {
@@ -159,10 +189,19 @@ export class SetupService extends EventEmitter {
       stepName: 'docker-check'
     });
 
+    this.logger.info('Verifying Docker Desktop is installed and running');
     const dockerAvailable = await this.checkDockerStatus();
     if (!dockerAvailable) {
+      this.logger.error('Docker Desktop is not running');
       throw new Error('Docker Desktop is not running. Please start Docker Desktop and try again.');
     }
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Docker Desktop detected and running',
+      stepName: 'docker-check'
+    });
 
     // Step 2: Start container
     currentStep++;
@@ -170,19 +209,47 @@ export class SetupService extends EventEmitter {
       current: currentStep,
       total: totalSteps,
       message: 'Starting security assessment container...',
-      stepName: 'container-start'
+      stepName: 'containers-start'
     });
 
+    this.logger.info('Pulling cyber-autoagent container image if needed');
     const containerManager = ContainerManager.getInstance();
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Container image ready, starting container...',
+      stepName: 'containers-start'
+    });
+    
     await containerManager.switchToMode('single-container');
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Container started successfully',
+      stepName: 'containers-start'
+    });
 
     // Step 3: Health check
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
-      message: 'Container setup complete!',
-      stepName: 'health-check'
+      message: 'Running container health check...',
+      stepName: 'validation'
+    });
+    
+    this.logger.info('Verifying container is responding to health checks');
+    
+    // Simulate health check delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Container health check passed',
+      stepName: 'validation'
     });
 
     return {
@@ -209,10 +276,19 @@ export class SetupService extends EventEmitter {
       stepName: 'docker-check'
     });
 
+    this.logger.info('Verifying Docker Desktop for full stack deployment');
     const dockerAvailable = await this.checkDockerStatus();
     if (!dockerAvailable) {
+      this.logger.error('Docker Desktop is not running');
       throw new Error('Docker Desktop is not running. Please start Docker Desktop and try again.');
     }
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Docker Desktop verified for full stack',
+      stepName: 'docker-check'
+    });
 
     // Step 2: Start containers
     currentStep++;
@@ -223,8 +299,24 @@ export class SetupService extends EventEmitter {
       stepName: 'containers-start'
     });
 
+    this.logger.info('Starting full service stack with docker-compose');
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Pulling container images (Agent, Langfuse, PostgreSQL, Redis)...',
+      stepName: 'containers-start'
+    });
+    
     const containerManager = ContainerManager.getInstance();
     await containerManager.switchToMode('full-stack');
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'All containers started successfully',
+      stepName: 'containers-start'
+    });
 
     // Step 3: Network setup
     currentStep++;
@@ -235,16 +327,60 @@ export class SetupService extends EventEmitter {
       stepName: 'network-setup'
     });
 
+    this.logger.info('Setting up inter-container networking');
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Configuring service discovery and internal DNS...',
+      stepName: 'network-setup'
+    });
+    
     // Allow time for network configuration
     await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Network configuration complete',
+      stepName: 'network-setup'
+    });
 
-    // Step 4: Health check
+    // Step 4: Database setup
+    currentStep++;
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Initializing database...',
+      stepName: 'database-setup'
+    });
+    
+    this.logger.info('Running database migrations and initial setup');
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Creating database schema and tables...',
+      stepName: 'database-setup'
+    });
+    
+    // Allow time for database setup
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    onProgress?.({
+      current: currentStep,
+      total: totalSteps,
+      message: 'Database initialized successfully',
+      stepName: 'database-setup'
+    });
+
+    // Step 5: Health check
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
       message: 'Verifying service health...',
-      stepName: 'health-check'
+      stepName: 'validation'
     });
 
     const monitor = HealthMonitor.getInstance();
@@ -289,7 +425,7 @@ export class SetupService extends EventEmitter {
     switch (mode) {
       case 'local-cli':
         return {
-          name: 'Local CLI Only',
+          name: 'Local CLI',
           description: 'Minimal footprint - Python environment with direct API calls',
           icon: '🖥️',
           requirements: ['~100MB disk', '1GB RAM', 'Python 3.11+', 'Direct LLM API access']

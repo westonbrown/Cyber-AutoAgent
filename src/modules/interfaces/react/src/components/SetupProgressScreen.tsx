@@ -47,6 +47,8 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   const theme = themeManager.getCurrentTheme();
   const [currentStep, setCurrentStep] = useState(1);
   const [totalSteps, setTotalSteps] = useState(5);
+  const [startTime] = useState<Date>(new Date());
+  const [elapsed, setElapsed] = useState<string>('0:00');
   const [showCursor, setShowCursor] = useState(true);
 
   // Determine steps based on deployment mode
@@ -63,6 +65,18 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
         break;
     }
   }, [deploymentMode]);
+
+  // Elapsed timer (mm:ss)
+  useEffect(() => {
+    if (isComplete || hasFailed) return;
+    const interval = setInterval(() => {
+      const seconds = Math.max(0, Math.floor((Date.now() - startTime.getTime()) / 1000));
+      const mm = Math.floor(seconds / 60).toString();
+      const ss = (seconds % 60).toString().padStart(2, '0');
+      setElapsed(`${mm}:${ss}`);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime, isComplete, hasFailed]);
 
   // Update current step based on log content
   useEffect(() => {
@@ -102,7 +116,7 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
 
   const getModeDisplayName = () => {
     switch (deploymentMode) {
-      case 'local-cli': return 'Local CLI Only';
+      case 'local-cli': return 'Local CLI';
       case 'single-container': return 'Single Container';
       case 'full-stack': return 'Enterprise Stack';
       default: return deploymentMode;
@@ -112,16 +126,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   // Header is rendered by main App.tsx - no duplicate needed
 
   const renderProgressSection = () => (
-    <Box flexDirection="column" marginBottom={2}>
-      {/* Environment Setup Header */}
-      <Box justifyContent="center" marginBottom={1}>
-        <Text color={theme.accent} bold>Environment Configuration</Text>
-      </Box>
-
-      {/* Mode and Progress */}
+    <Box flexDirection="column" marginBottom={1}>
+      {/* Compact header line */}
       <Box justifyContent="center" marginBottom={1}>
         <Text color={theme.muted}>
-          Setting up: <Text color={theme.primary} bold>{getModeDisplayName()}</Text>
+          Setting up <Text color={theme.primary} bold>{getModeDisplayName()}</Text>
+          {'  '}•{'  '}Elapsed <Text color={theme.accent}>{elapsed}</Text>
+          {'  '}•{'  '}Step {currentStep}/{totalSteps}
         </Text>
       </Box>
 
@@ -130,13 +141,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
         <ProgressIndicator 
           current={currentStep} 
           total={totalSteps} 
-          width={30}
+          width={50}
           showPercentage={true}
         />
       </Box>
 
       {/* Status */}
-      <Box justifyContent="center">
+      <Box justifyContent="center" marginBottom={1}>
         {hasFailed ? (
           <Box>
             <StatusIcons.Error />
@@ -154,18 +165,47 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
           </Box>
         )}
       </Box>
+
+      {/* Step checklist */}
+      <Box flexDirection="column" alignItems="center">
+        {(() => {
+          const steps: string[] = (() => {
+            if (deploymentMode === 'local-cli') return ['Checking Python', 'Create virtual environment', 'Install dependencies', 'Verify environment'];
+            if (deploymentMode === 'single-container') return ['Checking Docker', 'Starting agent container', 'Health check'];
+            return ['Checking Docker', 'Starting containers', 'Network connectivity', 'Health checks', 'Enable observability'];
+          })();
+          return (
+            <Box flexDirection="column">
+              {steps.map((label, idx) => {
+                const index = idx + 1;
+                const isDone = index < currentStep || (isComplete && index <= totalSteps);
+                const isActive = index === currentStep && !isComplete && !hasFailed;
+                return (
+                  <Box key={label}>
+                    {isDone ? <StatusIcons.Success /> : isActive ? <StatusIcons.Loading /> : <Text color={theme.muted}>○</Text>}
+                    <Text> </Text>
+                    <Text color={isDone ? theme.success : isActive ? theme.accent : theme.muted}>{label}</Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          );
+        })()}
+      </Box>
     </Box>
   );
 
   const renderLogSection = () => (
-    <LogContainer
-      logs={setupLogs}
-      maxHeight={10}
-      title="Setup Progress"
-      showTimestamps={true}
-      autoScroll={true}
-      bordered={true}
-    />
+    <Box marginY={1}>
+      <LogContainer
+        logs={setupLogs}
+        maxHeight={10}
+        title="Setup Progress"
+        showTimestamps={true}
+        autoScroll={true}
+        bordered={true}
+      />
+    </Box>
   );
 
   const renderErrorSection = () => {
@@ -189,23 +229,18 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   };
 
   const renderActionSection = () => (
-    <Box flexDirection="column">
-      {/* Instructions */}
-      <Box justifyContent="center" marginBottom={1}>
+    <Box flexDirection="column" marginTop={1}>
+      <Box justifyContent="center">
         {hasFailed ? (
           <Text color={theme.muted}>
-            Press <Text color={theme.accent} bold>R</Text> to retry, {' '}
-            <Text color={theme.accent} bold>B</Text> to go back, or {' '}
-            <Text color={theme.accent} bold>Esc</Text> to exit
+            Press <Text color={theme.accent} bold>R</Text> to retry, <Text color={theme.accent} bold>B</Text> to go back, or <Text color={theme.accent} bold>Esc</Text> to exit
           </Text>
         ) : isComplete ? (
           <Text color={theme.muted}>
-            Press <Text color={theme.accent} bold>Enter</Text> to continue to main application
+            Press <Text color={theme.accent} bold>Enter</Text> to continue to configuration
           </Text>
         ) : (
-          <Text color={theme.muted}>
-            Please wait while environment is being configured...
-          </Text>
+          <Text color={theme.muted}>Press <Text color={theme.accent} bold>Esc</Text> to cancel</Text>
         )}
       </Box>
     </Box>

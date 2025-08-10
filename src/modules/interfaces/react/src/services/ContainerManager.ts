@@ -36,7 +36,7 @@ export interface DeploymentConfig {
 export class ContainerManager extends EventEmitter {
   private static instance: ContainerManager;
   private readonly logger = createLogger('ContainerManager');
-  private currentMode: DeploymentMode = 'full-stack';
+  private currentMode: DeploymentMode = 'local-cli'; // Default to most lightweight mode
   private initialized = false;
 
   // Configurable constants - can be overridden via environment variables

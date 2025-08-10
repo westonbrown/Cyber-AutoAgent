@@ -429,16 +429,17 @@ Leverage these tools directly via shell.
     # Update conversation window size from SDK config
     conversation_window = server_config.sdk.conversation_window_size
 
-    agent = Agent(
-        model=model,
-        name=f"Cyber-AutoAgent {op_id}",
-        tools=tools_list,
-        system_prompt=system_prompt,
-        callback_handler=callback_handler,
-        hooks=hooks if hooks else None,  # Add hooks if available
-        conversation_manager=SlidingWindowConversationManager(window_size=conversation_window),
-        load_tools_from_directory=True,
-        trace_attributes={
+    # Create agent with telemetry for token tracking
+    agent_kwargs = {
+        "model": model,
+        "name": f"Cyber-AutoAgent {op_id}",
+        "tools": tools_list,
+        "system_prompt": system_prompt,
+        "callback_handler": callback_handler,
+        "hooks": hooks if hooks else None,  # Add hooks if available
+        "conversation_manager": SlidingWindowConversationManager(window_size=conversation_window),
+        "load_tools_from_directory": True,
+        "trace_attributes": {
             # Core identification - session_id is the key for Langfuse trace naming
             "langfuse.session.id": operation_id,
             "langfuse.user.id": f"cyber-agent-{target}",
@@ -492,7 +493,10 @@ Leverage these tools directly via shell.
             "memory.enabled": True,
             "memory.path": memory_path if memory_path else "ephemeral",
         },
-    )
-
+    }
+    
+    # Create agent (telemetry is handled globally by Strands SDK)
+    agent = Agent(**agent_kwargs)
+    
     agent_logger.debug("Agent initialized successfully")
     return agent, callback_handler

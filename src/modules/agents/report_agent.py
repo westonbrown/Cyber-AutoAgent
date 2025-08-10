@@ -50,7 +50,14 @@ class ReportGenerator:
         if provider == "bedrock":
             model = BedrockModel(model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
         elif provider == "ollama":
-            model = OllamaModel(model_id=model_id or "llama3.2:3b")
+            # Get Ollama host from environment or use default
+            from modules.config.manager import get_config_manager
+            config_manager = get_config_manager()
+            host = config_manager.get_ollama_host()
+            model = OllamaModel(
+                host=host,
+                model_id=model_id or "llama3.2:3b"
+            )
         else:  # litellm
             model = LiteLLMModel(model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 

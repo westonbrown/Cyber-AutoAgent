@@ -213,9 +213,15 @@ export function useOperationManager({
         evidence: appState.operationMetrics?.evidence || 0
       });
       
-      // Add to operation history
+      // Add to operation history with deployment mode
+      const deploymentModeDisplay = 
+        config.deploymentMode === 'local-cli' ? 'Python CLI' :
+        config.deploymentMode === 'single-container' ? 'Docker Container' :
+        config.deploymentMode === 'full-stack' ? 'Enterprise Stack' : 'Auto';
+      
       addOperationHistoryEntry('info', `Starting ${assessmentParams.module} assessment on ${assessmentParams.target}`);
       addOperationHistoryEntry('info', `Operation ID: ${operation.id}`);
+      addOperationHistoryEntry('info', `Execution Mode: ${deploymentModeDisplay}`);
       
       // Select and validate execution service using the factory
       addOperationHistoryEntry('info', 'Selecting execution service...');

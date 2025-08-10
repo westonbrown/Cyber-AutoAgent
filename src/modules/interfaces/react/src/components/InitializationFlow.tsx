@@ -100,7 +100,7 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
   const deploymentModes = [
     {
       id: 'local-cli' as DeploymentMode,
-      name: 'Local CLI Only',
+      name: 'Local CLI',
       description: 'Minimal footprint - Python environment with direct API calls',
       icon: `
   ┌─────────┐

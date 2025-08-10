@@ -13,11 +13,13 @@ import { themeManager } from '../themes/theme-manager.js';
 interface StatusIndicatorProps {
   compact?: boolean;
   position?: 'header' | 'footer';
+  deploymentMode?: string; // Optional override for deployment mode display
 }
 
 export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ 
   compact = false,
-  position = 'header' 
+  position = 'header',
+  deploymentMode: overrideMode
 }) => {
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [deploymentMode, setDeploymentMode] = useState<string>('cli');
@@ -27,17 +29,24 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     const monitor = HealthMonitor.getInstance();
     const containerManager = ContainerManager.getInstance();
     
-    // Start monitoring more frequently during setup changes
-    monitor.startMonitoring(1000); // Check every 1 second for responsive updates
+    // Use slower polling to prevent memory issues - 5 seconds is sufficient for status monitoring
+    monitor.startMonitoring(5000); // Check every 5 seconds for better performance
     
     // Subscribe to updates
     const unsubscribe = monitor.subscribe((status) => {
       setHealthStatus(status);
     });
 
-    // Update deployment mode and handle changes
+    // Update deployment mode - use override if provided, otherwise auto-detect
     const updateDeploymentMode = async () => {
+      if (overrideMode) {
+        // Use provided deployment mode
+        setDeploymentMode(overrideMode);
+        return;
+      }
+      
       try {
+        // Auto-detect from container manager
         const currentMode = await containerManager.getCurrentMode();
         const modeDisplayName = currentMode === 'local-cli' ? 'cli' : 
                                currentMode === 'single-container' ? 'agent' : 
@@ -45,25 +54,28 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         setDeploymentMode(modeDisplayName);
       } catch (error) {
         console.error('Failed to get deployment mode:', error);
+        setDeploymentMode('cli'); // Safe fallback
       }
     };
 
     // Set initial deployment mode
     updateDeploymentMode();
 
-    // Poll for deployment mode changes more frequently during setup transitions
-    const deploymentModeInterval = setInterval(updateDeploymentMode, 500);
+    // Reduce polling frequency to prevent memory leaks - 10 seconds is sufficient for mode detection
+    const deploymentModeInterval = overrideMode ? null : setInterval(updateDeploymentMode, 10000);
 
     // Initial check
     monitor.checkHealth();
 
     return () => {
       unsubscribe();
-      clearInterval(deploymentModeInterval);
+      if (deploymentModeInterval) {
+        clearInterval(deploymentModeInterval);
+      }
       // Stop monitoring when component unmounts to prevent memory leaks
       monitor.stopMonitoring();
     };
-  }, []);
+  }, [overrideMode]); // Add overrideMode dependency to re-run when it changes
 
   if (!healthStatus) {
     return null;
@@ -109,15 +121,19 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         <Text color={theme.muted}> </Text>
         {deploymentMode === 'cli' ? (
           <Text color={theme.success}>● Python</Text>
-        ) : deploymentMode === 'agent' && totalCount === 0 ? (
+        ) : deploymentMode === 'agent' ? (
           // Single container mode - show Docker status
           <Text color={getStatusColor()}>
             {getStatusSymbol()} Docker
           </Text>
-        ) : (
+        ) : deploymentMode === 'enterprise' ? (
+          // Full stack mode - show container count
           <Text color={getStatusColor()}>
             {getStatusSymbol()} {runningCount}/{totalCount}
           </Text>
+        ) : (
+          // Fallback - show appropriate status
+          <Text color={theme.muted}>● Ready</Text>
         )}
         {!healthStatus.dockerRunning && deploymentMode !== 'cli' && (
           <Text color={theme.danger}> Docker Off</Text>

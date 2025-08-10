@@ -112,21 +112,25 @@ def setup_telemetry(logger):
         logger.info("To enable observability, set ENABLE_OBSERVABILITY=true and ensure Langfuse is running")
     
     # Always initialize Strands telemetry for local metrics (token counting, cost tracking)
+    # This sets up the global tracer provider that the Agent will use
     telemetry = StrandsTelemetry()
+    logger.info("Strands telemetry initialized - token counting enabled")
     
     # Check if remote observability (Langfuse export) is enabled
     observability_enabled = os.getenv("ENABLE_OBSERVABILITY", default_observability).lower() == "true"
     
     if observability_enabled:
-        logger.info("Remote observability enabled - traces will be exported to Langfuse")
-        # Setup OTLP export to Langfuse
-        telemetry.setup_otlp_exporter()
+        logger.info("Remote observability enabled - configuring Langfuse export")
         
-        # Configure Langfuse connection
+        # Configure Langfuse connection parameters first
         setup_langfuse_connection(logger, deployment_mode)
+        
+        # Then setup OTLP exporter which will use the environment variables
+        telemetry.setup_otlp_exporter()
+        logger.info("OTLP exporter configured - traces will be exported to Langfuse")
     else:
         logger.info("Remote observability disabled - metrics available locally only")
-        logger.debug("Local telemetry enabled for token counting and cost tracking")
+        logger.debug("Token counting and cost tracking enabled via local telemetry")
     
     return telemetry
 
@@ -499,6 +503,28 @@ def main():
                 try:
                     # Execute agent with current message
                     result = agent(current_message)
+                    
+                    # Pass the metrics from the result to the callback handler
+                    if callback_handler and hasattr(result, 'metrics') and result.metrics:
+                        logger.debug("Agent result has metrics: %s", type(result.metrics))
+                        if hasattr(result.metrics, 'accumulated_usage'):
+                            logger.debug("Accumulated usage found: %s", result.metrics.accumulated_usage)
+                            if result.metrics.accumulated_usage:
+                                # Create an object that matches what _process_metrics expects
+                                # It expects event_loop_metrics.accumulated_usage to be accessible
+                                class MetricsObject:
+                                    def __init__(self, accumulated_usage):
+                                        self.accumulated_usage = accumulated_usage
+                                
+                                metrics_obj = MetricsObject(result.metrics.accumulated_usage)
+                                logger.debug("Passing metrics object to callback handler with usage: %s", metrics_obj.accumulated_usage)
+                                callback_handler._process_metrics(metrics_obj)
+                            else:
+                                logger.debug("accumulated_usage is empty or None")
+                        else:
+                            logger.debug("No accumulated_usage attribute in metrics")
+                    else:
+                        logger.debug("No metrics found in agent result or callback_handler missing")
 
                     # Check if we should continue
                     if callback_handler and callback_handler.should_stop():

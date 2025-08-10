@@ -178,6 +178,8 @@ export interface Config {
 interface ConfigContextType {
   /** Current configuration state with all settings */
   config: Config;
+  /** Whether the config is still loading from disk */
+  isConfigLoading: boolean;
   /** Update configuration with partial changes (supports deep merge) */
   updateConfig: (updates: Partial<Config>) => void;
   /** Persist current configuration to user's home directory */
@@ -210,9 +212,9 @@ export const defaultConfig: Config = {
   modelPricing: {
     // Anthropic Claude Models (Verified AWS CLI pricing)
     'us.anthropic.claude-sonnet-4-20250514-v1:0': {
-      inputCostPer1k: 15.0,
-      outputCostPer1k: 75.0,
-      description: 'Claude Sonnet 4 - Latest model (5x output cost)'
+      inputCostPer1k: 0.006,
+      outputCostPer1k: 0.030,
+      description: 'Claude Sonnet 4 - Latest model (AWS verified pricing)'
     },
     'claude-3-5-sonnet-20241022-v2:0': {
       inputCostPer1k: 0.003,
@@ -368,7 +370,8 @@ export const defaultConfig: Config = {
   minContextPrecisionScore: 0.8,
   
   // Setup Status
-  isConfigured: false
+  isConfigured: false,
+  deploymentMode: 'local-cli' // Default to Local CLI for minimal setup
 };
 
 // Configuration Context - React Context for global state management
@@ -385,6 +388,7 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
   const [applicationConfiguration, setApplicationConfiguration] = useState<Config>(defaultConfig);
   const [deploymentInfo, setDeploymentInfo] = useState<{mode: string; description: string} | null>(null);
+  const [isConfigLoading, setIsConfigLoading] = useState<boolean>(true); // Start as loading
   
   // Use a ref to always have access to the latest configuration for saving
   const configRef = useRef<Config>(applicationConfiguration);
@@ -403,6 +407,7 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
    * Automatically creates configuration directory if it doesn't exist
    */
   const loadConfigurationFromDisk = useCallback(async () => {
+    setIsConfigLoading(true); // Start loading
     try {
       const configurationDirectory = path.dirname(configurationFilePath);
       await fs.mkdir(configurationDirectory, { recursive: true });
@@ -454,9 +459,11 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
         ...defaultConfig,
         ...parsedConfiguration
       });
+      setIsConfigLoading(false); // Finished loading successfully
     } catch (error) {
       // Configuration file doesn't exist or contains invalid JSON - use defaults
       console.log('Configuration file not found or invalid, using application defaults');
+      setIsConfigLoading(false); // Finished loading (with defaults)
     }
   }, [configurationFilePath]);
 
@@ -546,11 +553,12 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
   // Without this, the contextProviderValue object gets recreated on every render, causing infinite loops
   const contextProviderValue: ConfigContextType = useMemo(() => ({
     config: applicationConfiguration,
+    isConfigLoading,
     updateConfig: updateApplicationConfiguration,
     saveConfig: persistConfigurationToDisk,
     loadConfig: loadConfigurationFromDisk,
     resetToDefaults: resetConfigurationToDefaults
-  }), [applicationConfiguration, updateApplicationConfiguration, persistConfigurationToDisk, loadConfigurationFromDisk, resetConfigurationToDefaults]);
+  }), [applicationConfiguration, isConfigLoading, updateApplicationConfiguration, persistConfigurationToDisk, loadConfigurationFromDisk, resetConfigurationToDefaults]);
 
   return (
     <ConfigContext.Provider value={contextProviderValue}>

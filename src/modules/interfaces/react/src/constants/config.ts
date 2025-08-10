@@ -44,6 +44,12 @@ export const DISPLAY_LIMITS = {
   CODE_PREVIEW_LINES: 8,
   TOOL_INPUT_MAX_KEYS: 4,
   TOOL_INPUT_PREVIEW_KEYS: 3,
+  // Report display limits
+  REPORT_MAX_LINES: 500,  // Don't collapse reports under 500 lines
+  REPORT_PREVIEW_LINES: 100,  // Show first 100 lines when collapsed
+  REPORT_TAIL_LINES: 20,  // Show last 20 lines when collapsed
+  OPERATION_SUMMARY_LINES: 100,  // Show all operation summary info
+  DEFAULT_COLLAPSE_LINES: 10,  // Normal output collapse threshold
 } as const;
 
 // Token pricing (per million tokens)

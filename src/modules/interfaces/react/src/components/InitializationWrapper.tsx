@@ -50,39 +50,26 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
     return <Box />; // Empty box while loading config
   }
 
-  // Main application layout with setup overlay
-  // When initialization flow is active, show main view with setup wizard overlay
+  // When initialization flow is active, show setup wizard without duplicate header
   if (appState.isInitializationFlowActive && !appState.hasUserDismissedInit) {
-    // Show main view with header but hide footer and input, then show setup wizard below
-    
+    // Render just the setup wizard content - no duplicate header
     return (
-      <Box flexDirection="column" width="100%">
-        {/* Render main app view but with setup mode flag to hide footer */}
-        <MainAppView 
-          {...mainAppViewProps}
-          hideFooter={true}
-          hideInput={true}
-        />
-        
-        {/* Setup Wizard appears below the main view */}
-        <Box marginTop={1}>
-          <SetupWizard 
-            terminalWidth={appState.terminalDisplayWidth}
-            onComplete={(completionMessage?: string) => {
-              // Show config editor after initialization if not configured  
-              if (!applicationConfig.isConfigured) {
-                // Open config without clearing
-                setTimeout(() => {
-                  onConfigOpen();
-                }, 500);
-              }
-              
-              // Call the completion handler (this will add the message to operation history)
-              onInitializationComplete(completionMessage);
-            }}
-          />
-        </Box>
-      </Box>
+      <SetupWizard 
+        terminalWidth={appState.terminalDisplayWidth}
+        showHeader={true} // SetupWizard handles its own header
+        onComplete={(completionMessage?: string) => {
+          // Call the completion handler first to dismiss initialization
+          onInitializationComplete(completionMessage);
+          
+          // Only show config editor if model configuration is incomplete
+          if (!applicationConfig.modelId || !applicationConfig.modelProvider) {
+            setTimeout(() => {
+              console.log('Setup wizard completed, opening config editor for model configuration...');
+              onConfigOpen();
+            }, 100);
+          }
+        }}
+      />
     );
   }
 

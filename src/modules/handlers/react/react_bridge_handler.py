@@ -120,6 +120,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         tool_result = kwargs.get("toolResult")
         message = kwargs.get("message")
         event_loop_metrics = kwargs.get("event_loop_metrics")
+        
+        # Handle AgentResult from SDK - this contains the actual metrics
+        agent_result = kwargs.get("result")
+        if agent_result and hasattr(agent_result, 'metrics'):
+            event_loop_metrics = agent_result.metrics
 
         # Process each type of SDK event
 
@@ -147,10 +152,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if tool_result:
             self._process_tool_result_from_message(tool_result)
 
-        # Check alternative result keys
+        # Check alternative result keys (skip 'result' if it's an AgentResult with metrics)
         for alt_key in ["result", "tool_result", "execution_result", "response", "output"]:
             if alt_key in kwargs and kwargs[alt_key] is not None:
                 result_data = kwargs[alt_key]
+                
+                # Skip if this is an AgentResult (already processed for metrics above)
+                if alt_key == "result" and hasattr(result_data, 'metrics'):
+                    continue
+                    
                 if isinstance(result_data, str):
                     result_data = {"content": [{"text": result_data}], "status": "success"}
                 self._process_tool_result_from_message(result_data)
@@ -163,7 +173,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if event_loop_metrics:
             self._process_metrics(event_loop_metrics)
 
-        # 8. Periodic metrics emission (every 2 seconds for more responsive updates)
+        # 8. Try to get metrics from agent if available
+        agent = kwargs.get("agent")
+        if agent and hasattr(agent, "event_loop_metrics"):
+            # Get metrics directly from the agent during operation
+            usage = agent.event_loop_metrics.accumulated_usage
+            if usage:
+                self.sdk_input_tokens = usage.get("inputTokens", 0)
+                self.sdk_output_tokens = usage.get("outputTokens", 0)
+        
+        # 9. Periodic metrics emission (every 2 seconds for more responsive updates)
         if time.time() - self.last_metrics_emit_time > 2:
             self._emit_estimated_metrics()
             self.last_metrics_emit_time = time.time()
@@ -424,14 +443,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _emit_estimated_metrics(self) -> None:
         """Emit metrics based on SDK token counts."""
-        # Only report raw token counts - let application logic handle pricing
+        total_tokens = self.sdk_input_tokens + self.sdk_output_tokens
+        
+        # Report both individual and total token counts for compatibility
+        # Cost calculation is handled by the React app using config values
         self._emit_ui_event(
             {
                 "type": "metrics_update",
                 "metrics": {
+                    "tokens": total_tokens,  # For Footer compatibility
                     "inputTokens": self.sdk_input_tokens,
                     "outputTokens": self.sdk_output_tokens,
-                    "totalTokens": self.sdk_input_tokens + self.sdk_output_tokens,
+                    "totalTokens": total_tokens,
                     "duration": self._format_duration(time.time() - self.start_time),
                     "memoryOps": self.memory_ops,
                     "evidence": self.evidence_count,
@@ -447,15 +470,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Update SDK token counts as authoritative source
         self.sdk_input_tokens = usage.get("inputTokens", 0)
         self.sdk_output_tokens = usage.get("outputTokens", 0)
+        total_tokens = self.sdk_input_tokens + self.sdk_output_tokens
 
-        # Only report raw token counts - let application logic handle pricing
+        # Report both individual and total token counts for compatibility
+        # Cost calculation is handled by the React app using config values
         self._emit_ui_event(
             {
                 "type": "metrics_update",
                 "metrics": {
+                    "tokens": total_tokens,  # For Footer compatibility
                     "inputTokens": self.sdk_input_tokens,
                     "outputTokens": self.sdk_output_tokens,
-                    "totalTokens": self.sdk_input_tokens + self.sdk_output_tokens,
+                    "totalTokens": total_tokens,
                     "duration": self._format_duration(time.time() - self.start_time),
                     "memoryOps": self.memory_ops,
                     "evidence": self.evidence_count,
@@ -649,6 +675,65 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             if report_content and not report_content.startswith("Error:"):
                 self._emit_ui_event({"type": "output", "content": "\n" + report_content})
+                
+                # Save report to file
+                try:
+                    from modules.handlers.utils import sanitize_target_name, get_output_path
+                    from pathlib import Path
+                    
+                    target_name = sanitize_target_name(target)
+                    output_dir = get_output_path(target_name, self.operation_id, "", "./outputs")
+                    
+                    # Create output directory if it doesn't exist
+                    Path(output_dir).mkdir(parents=True, exist_ok=True)
+                    
+                    # Save report as markdown file
+                    report_path = os.path.join(output_dir, "security_assessment_report.md")
+                    with open(report_path, 'w', encoding='utf-8') as f:
+                        f.write(report_content)
+                    
+                    # Also save as HTML for better viewing
+                    try:
+                        import markdown
+                        html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Security Assessment Report - {target}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }}
+        pre {{ background: #f4f4f4; padding: 10px; overflow-x: auto; }}
+        code {{ background: #f4f4f4; padding: 2px 4px; }}
+        table {{ border-collapse: collapse; width: 100%; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background-color: #f2f2f2; }}
+    </style>
+</head>
+<body>
+{markdown.markdown(report_content, extensions=['tables', 'fenced_code'])}
+</body>
+</html>"""
+                        html_path = os.path.join(output_dir, "security_assessment_report.html")
+                        with open(html_path, 'w', encoding='utf-8') as f:
+                            f.write(html_content)
+                    except ImportError:
+                        # Markdown library not available, skip HTML generation
+                        pass
+                    
+                    # Emit file path information
+                    self._emit_ui_event({
+                        "type": "output", 
+                        "content": f"\n{'='*80}\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n{'='*80}"
+                    })
+                    
+                    logger.info("Report saved to %s", report_path)
+                    
+                except Exception as save_error:
+                    logger.warning("Could not save report to file: %s", save_error)
+                    self._emit_ui_event({
+                        "type": "output",
+                        "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"
+                    })
             else:
                 self._emit_ui_event({"type": "error", "content": f"Failed to generate report: {report_content}"})
 

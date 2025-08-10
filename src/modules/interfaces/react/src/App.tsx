@@ -63,7 +63,7 @@ const AppContent: React.FC<AppProps> = ({
   const { exit } = useApp();
   
   // Configuration and theme management
-  const { config: applicationConfig } = useConfig();
+  const { config: applicationConfig, isConfigLoading } = useConfig();
   const currentTheme = themeManager.getCurrentTheme();
   
   // Consolidated state management
@@ -111,8 +111,8 @@ const AppContent: React.FC<AppProps> = ({
   // Keyboard handlers
   const isTerminalInteractive = activeModal === ModalType.NONE && !appState.userHandoffActive;
   
-  // Only allow global ESC when no modals are open - modals should handle their own ESC behavior
-  const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive;
+  // Only allow global ESC when no modals are open and not in setup wizard - modals and setup should handle their own ESC behavior
+  const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive;
   
   const handleEscapeExit = useCallback(() => {
     // Show exit notification in operation history
@@ -172,7 +172,7 @@ const AppContent: React.FC<AppProps> = ({
         // Configuration loading logic here
         actions.setConfigLoaded(true);
       } catch (error) {
-        console.error('Config loading error:', error);
+        // Config loading failed - continue with defaults
         actions.setConfigLoaded(true);
       }
     };
@@ -182,23 +182,57 @@ const AppContent: React.FC<AppProps> = ({
     }
   }, [appState.isConfigLoaded, actions]);
   
-  // Separate effect to check if setup wizard is needed AFTER config is loaded
+  // Smart deployment detection to determine if setup wizard is needed
   useEffect(() => {
-    // Only check after config is loaded and we haven't already dismissed init
-    if (appState.isConfigLoaded && !appState.hasUserDismissedInit && !appState.isInitializationFlowActive) {
-      // Check if this is truly a first-time setup
-      const needsSetup = !applicationConfig.isConfigured || 
-                        (!applicationConfig.hasSeenWelcome && !applicationConfig.deploymentMode);
-      
-      if (needsSetup) {
-        console.log('First-time setup detected - showing setup wizard');
-        actions.setInitializationFlow(true);
-      } else {
-        console.log('Configuration found - skipping setup wizard');
+    if (isConfigLoading) return;
+    if (appState.isUserTriggeredSetup || appState.isInitializationFlowActive) return;
+
+    const run = async () => {
+      if (appState.isConfigLoaded && !appState.hasUserDismissedInit) {
+        try {
+          const { DeploymentDetector } = await import('./services/DeploymentDetector.js');
+          const detector = DeploymentDetector.getInstance();
+          const detection = await detector.detectDeployments(applicationConfig);
+          const healthy = detection.availableDeployments.filter(d => d.isHealthy);
+
+          if (healthy.length === 0) {
+            actions.setInitializationFlow(true);
+            return;
+          }
+
+          if (applicationConfig.deploymentMode) {
+            const configured = detection.availableDeployments.find(d => d.mode === applicationConfig.deploymentMode);
+            if (!configured || !configured.isHealthy) {
+              actions.setInitializationFlow(true);
+              return;
+            }
+            actions.dismissInit();
+            return;
+          }
+
+          const order: Array<'full-stack' | 'single-container' | 'local-cli'> = ['full-stack', 'single-container', 'local-cli'];
+          const best = order.map(m => healthy.find(d => d.mode === m)).find(Boolean);
+          if (best) {
+            actions.dismissInit();
+          }
+        } catch {
+          actions.setInitializationFlow(true);
+        }
+      } else if (
+        applicationConfig.isConfigured &&
+        appState.hasUserDismissedInit &&
+        !applicationConfig.modelId &&
+        activeModal === ModalType.NONE &&
+        !appState.isInitializationFlowActive
+      ) {
+        setTimeout(() => {
+          openConfig('Please configure your AI model and provider settings to continue.');
+        }, 1000);
       }
-    }
-  }, [appState.isConfigLoaded, appState.hasUserDismissedInit, appState.isInitializationFlowActive, 
-      applicationConfig.isConfigured, applicationConfig.hasSeenWelcome, applicationConfig.deploymentMode, actions]);
+    };
+
+    run();
+  }, [isConfigLoading, appState.isUserTriggeredSetup, appState.isInitializationFlowActive, appState.isConfigLoaded, appState.hasUserDismissedInit, applicationConfig, activeModal, actions, openConfig]);
   
   // Main app view props
   const mainAppViewProps = {
@@ -243,7 +277,7 @@ const AppContent: React.FC<AppProps> = ({
       // Update config with CLI overrides if any
       if (Object.keys(configUpdates).length > 0) {
         // Note: This would need a updateConfig function in ConfigContext to persist changes
-        console.log('CLI overrides applied:', configUpdates);
+        // CLI overrides applied
       }
       
       // Set assessment parameters using the flow manager's processUserInput method
@@ -267,10 +301,13 @@ const AppContent: React.FC<AppProps> = ({
       appState={appState}
       applicationConfig={applicationConfig}
       onInitializationComplete={(completionMessage) => {
+        // Dismiss initialization first, then clear the screen after state updates,
+        // so refreshStatic actually clears (it skips clearing during init flow)
         actions.dismissInit();
-        if (completionMessage) {
-          operationManager.addOperationHistoryEntry('info', completionMessage);
-        }
+        setTimeout(() => {
+          refreshStatic();
+        }, 0);
+        // Avoid adding setup completion messages to operation history
       }}
       onConfigOpen={() => openConfig()}
       refreshStatic={refreshStatic}

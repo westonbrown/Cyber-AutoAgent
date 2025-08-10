@@ -25,12 +25,6 @@ const longAsciiLogo = `
  ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝    ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
 `;
 
-const shortAsciiLogo = `
-  ╔═╗╦ ╦╔╗ ╔═╗╦═╗   ╔═╗╦ ╦╔╦╗╔═╗
-  ║  ╚╦╝╠╩╗║╣ ╠╦╝───╠═╣║ ║ ║ ║ ║
-  ╚═╝ ╩ ╚═╝╚═╝╩╚═   ╩ ╩╚═╝ ╩ ╚═╝
-`;
-
 const compactLogo = `🔐 Cyber-AutoAgent`;
 const ultraCompactLogo = `🔐 CAA`;
 
@@ -42,9 +36,8 @@ export const Header: React.FC<HeaderProps> = React.memo(({
   const theme = themeManager.getCurrentTheme();
   const useGradient = themeManager.shouldUseGradient();
   
-  // Choose logo based on terminal width
+  // Choose logo based on terminal width - standardized to use only full ASCII or compact text
   const logo = terminalWidth >= 90 ? longAsciiLogo : 
-               terminalWidth >= 60 ? shortAsciiLogo :
                terminalWidth >= 40 ? compactLogo : 
                ultraCompactLogo;
   
