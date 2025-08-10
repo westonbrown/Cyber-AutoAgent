@@ -7,6 +7,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
 import { StatusIndicator } from './StatusIndicator.js';
+import { useConfig } from '../contexts/ConfigContext.js';
 
 interface FooterProps {
   model: string;
@@ -23,6 +24,8 @@ interface FooterProps {
   debugMode?: boolean;
   operationMetrics?: {
     tokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
     cost?: number;
     duration: string;
     memoryOps: number;
@@ -45,9 +48,38 @@ export const Footer: React.FC<FooterProps> = React.memo(({
   modelProvider = 'bedrock'
 }) => {
   const theme = themeManager.getCurrentTheme();
+  const { config } = useConfig();
 
   const formatCost = (cost: number) => {
     return cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`;
+  };
+  
+  const calculateCost = () => {
+    if (!operationMetrics || !model) return 0;
+    
+    // Use input/output tokens if available, otherwise estimate from total
+    const inputTokens = operationMetrics.inputTokens || Math.floor((operationMetrics.tokens || 0) * 0.8);
+    const outputTokens = operationMetrics.outputTokens || Math.floor((operationMetrics.tokens || 0) * 0.2);
+    
+    // Get pricing from config or use provider-specific defaults
+    let pricing = config?.modelPricing?.[model];
+    
+    if (!pricing) {
+      // Provider-specific defaults when no custom pricing is set
+      if (config?.modelProvider === 'ollama') {
+        pricing = { inputCostPer1k: 0, outputCostPer1k: 0 }; // Ollama is free
+      } else if (config?.modelProvider === 'litellm') {
+        pricing = { inputCostPer1k: 0.001, outputCostPer1k: 0.002 }; // LiteLLM example defaults
+      } else {
+        pricing = { inputCostPer1k: 0.006, outputCostPer1k: 0.030 }; // Claude Sonnet 4 correct AWS pricing
+      }
+    }
+    
+    // Calculate cost (pricing is per 1K tokens)
+    const inputCost = (inputTokens / 1000) * pricing.inputCostPer1k;
+    const outputCost = (outputTokens / 1000) * pricing.outputCostPer1k;
+    
+    return inputCost + outputCost;
   };
 
   const shortenPath = (path: string, maxLength: number = 50) => {
@@ -76,7 +108,11 @@ export const Footer: React.FC<FooterProps> = React.memo(({
     <Box width="100%" flexDirection="row">
       {/* Left section - Status */}
       <Box flexGrow={0} flexShrink={0}>
-        <StatusIndicator compact={true} position="footer" />
+        <StatusIndicator 
+          compact={true} 
+          position="footer" 
+          deploymentMode={config?.deploymentMode}
+        />
       </Box>
 
       {/* Spacer */}
@@ -90,7 +126,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
         </Text>
         <Text color={theme.muted}> • </Text>
         <Text color={theme.muted}>
-          {operationMetrics ? formatCost(operationMetrics.cost || 0) : '$0.00'}
+          {operationMetrics ? formatCost(calculateCost()) : '$0.00'}
         </Text>
         
         {/* Duration when available */}

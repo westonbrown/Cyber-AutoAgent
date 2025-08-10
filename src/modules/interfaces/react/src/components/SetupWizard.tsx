@@ -6,34 +6,35 @@
  */
 
 import React, { useCallback, useEffect } from 'react';
-import { Box, useStdout } from 'ink';
-import ansiEscapes from 'ansi-escapes';
+import { Box } from 'ink';
 import { useSetupWizard } from '../hooks/useSetupWizard.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { WelcomeScreen } from './setup/WelcomeScreen.js';
 import { DeploymentSelectionScreen } from './setup/DeploymentSelectionScreen.js';
 import { ProgressScreen } from './setup/ProgressScreen.js';
 import { DeploymentMode } from '../services/SetupService.js';
+import { Header } from './Header.js';
 
 interface SetupWizardProps {
   onComplete: (completionMessage?: string) => void;
   terminalWidth?: number;
+  showHeader?: boolean;
 }
 
-export const SetupWizard: React.FC<SetupWizardProps> = ({
+export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
   onComplete,
   terminalWidth = 80,
+  showHeader = true,
 }) => {
-  const { stdout } = useStdout();
   const { state, actions } = useSetupWizard();
-  const { updateConfig, saveConfig } = useConfig();
+  const { config, updateConfig, saveConfig } = useConfig();
 
   // Handle setup completion
   const handleSetupComplete = useCallback(async () => {
     if (state.selectedMode) {
       try {
         // Update configuration with selected deployment mode
-        await updateConfig({ 
+        updateConfig({ 
           deploymentMode: state.selectedMode,
           hasSeenWelcome: true,
           isConfigured: true 
@@ -42,13 +43,20 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
         // Save configuration to disk
         await saveConfig();
         
+        // Clear the deployment detector cache after setup
+        const { DeploymentDetector } = await import('../services/DeploymentDetector.js');
+        DeploymentDetector.getInstance().clearCache();
+        
         // Provide completion message
         const modeDisplayName = 
           state.selectedMode === 'local-cli' ? 'Local CLI' :
           state.selectedMode === 'single-container' ? 'Agent Container' :
           'Enterprise Stack';
         
-        onComplete(`✓ ${modeDisplayName} setup completed successfully!`);
+        // Clear the setup flag
+        delete process.env.CYBER_SHOW_SETUP;
+        
+        onComplete(`${modeDisplayName} setup completed successfully`);
       } catch (error) {
         actions.setError('Failed to save configuration');
       }
@@ -59,15 +67,48 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   // Handle deployment mode selection and start setup
   const handleModeSelection = useCallback(async (mode: DeploymentMode) => {
-    actions.selectMode(mode);
-    actions.nextStep(); // Move to progress screen
+    // Check if this deployment is already active
+    const { DeploymentDetector } = await import('../services/DeploymentDetector.js');
+    const detector = DeploymentDetector.getInstance();
+    const detection = await detector.detectDeployments(config);
+    const isAlreadyActive = detection.availableDeployments.some(
+      d => d.mode === mode && d.isHealthy
+    );
     
-    // Clear terminal for clean transition to progress screen
-    stdout.write(ansiEscapes.clearScreen);
-    
-    // Pass the mode directly to avoid state timing issues
-    await actions.startSetup(mode);
-  }, [actions, stdout]);
+    if (isAlreadyActive) {
+      // Skip setup for already active deployments
+      actions.selectMode(mode);
+      
+      // Update configuration to use this deployment
+      updateConfig({ 
+        deploymentMode: mode,
+        hasSeenWelcome: true,
+        isConfigured: true 
+      });
+      await saveConfig();
+      
+      // Clear cache after config update
+      detector.clearCache();
+      
+      // Complete immediately without progress screen
+      const modeDisplayName = 
+        mode === 'local-cli' ? 'Local CLI' :
+        mode === 'single-container' ? 'Agent Container' :
+        'Enterprise Stack';
+      
+      // Clear the setup flag
+      delete process.env.CYBER_SHOW_SETUP;
+      
+      onComplete(`Switched to ${modeDisplayName} deployment`);
+    } else {
+      // Proceed with normal setup for non-active deployments
+      actions.selectMode(mode);
+      actions.nextStep(); // Move to progress screen
+      
+      // Pass the mode directly to avoid state timing issues
+      await actions.startSetup(mode);
+    }
+  }, [actions, config, updateConfig, saveConfig, onComplete]);
 
   // Handle setup retry
   const handleRetry = useCallback(async () => {
@@ -124,12 +165,25 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     }
   };
 
+  // Terminal clearing is handled by modalManager.refreshStatic() and parent components
+  // Removed problematic useEffect with require() that caused race conditions
+
   return (
     <Box flexDirection="column" width="100%">
-      {/* Header is rendered by InitializationWrapper, not here */}
+      {/* Render header only if showHeader is true */}
+      {showHeader && (
+        <Header 
+          key="setup-header"
+          version="0.1.3" 
+          terminalWidth={terminalWidth}
+          nightly={false}
+        />
+      )}
       
       {/* Current setup screen */}
-      {renderCurrentScreen()}
+      <Box key="setup-content">
+        {renderCurrentScreen()}
+      </Box>
     </Box>
   );
-};
+});

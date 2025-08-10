@@ -177,16 +177,9 @@ class ToolEventEmitter:
 
     def _emit_python_repl(self, tool_input: Any) -> None:
         """Emit Python REPL execution details."""
-        if isinstance(tool_input, dict):
-            code = tool_input.get("code", "")
-            # Show first few lines of code
-            code_lines = code.split("\n")
-            if len(code_lines) > 3:
-                preview = "\n".join(code_lines[:3]) + "\n..."
-            else:
-                preview = code
-
-            self.emit_ui_event({"type": "metadata", "content": {"code": preview}})
+        # Skip metadata emission for python_repl since StreamDisplay already handles code display
+        # This prevents duplicate "code:" entries in the output
+        pass
 
     def _emit_load_tool(self, tool_input: Any) -> None:
         """Emit dynamic tool loading details."""

@@ -37,6 +37,9 @@ interface MainAppViewProps {
   onSafetyConfirm?: () => void;
   hideFooter?: boolean;
   hideInput?: boolean;
+  hideHistory?: boolean;
+  hideHeader?: boolean; // Add this to hide header when showing setup
+  customContent?: React.ReactNode;
   applicationConfig?: any; // Add config to get modelProvider
 }
 
@@ -56,6 +59,9 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
   onSafetyConfirm,
   hideFooter = false,
   hideInput = false,
+  hideHistory = false,
+  hideHeader = false,
+  customContent,
   applicationConfig
 }) => {
   // Filter operation history for display
@@ -86,8 +92,10 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
       <Static
         key={staticKey}
         items={[
-          ...(appState.hasCompletedOperation || activeModal === ModalType.DOCUMENTATION ? [] : ['header']), // Hide header if operation completed or docs modal is open
-          ...(!showOperationStream ? filteredOperationHistory.map(item => `history_${item.id}`) : [])
+          // Hide header whenever any modal is open to avoid duplicate ASCII banner under modals (e.g., Safety Warning)
+          ...(hideHeader || appState.hasCompletedOperation || activeModal !== ModalType.NONE ? [] : ['header']),
+          // Suppress history when a modal is open to keep modal screens clean
+          ...(!showOperationStream && !hideHistory && activeModal === ModalType.NONE ? filteredOperationHistory.map(item => `history_${item.id}`) : [])
         ]}
       >
         {(item: string) => {
@@ -144,8 +152,15 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         }}
       </Static>
       
-      {/* Operation Stream Display - Shows underneath the static content */}
-      {showOperationStream && (
+      {/* Custom Content - renders instead of operation stream if provided */}
+      {customContent && (
+        <Box flexDirection="column" marginTop={1}>
+          {customContent}
+        </Box>
+      )}
+      
+      {/* Operation Stream Display - Shows underneath the static content (only if no custom content) */}
+      {!customContent && showOperationStream && (
         <Box flexDirection="column" flexGrow={1} marginBottom={2}>
           <UnconstrainedTerminal
             executionService={appState.executionService}

@@ -78,11 +78,18 @@ export const useModalManager = (): UseModalManagerResult => {
   const { stdout } = useStdout();
   
   
-  // Screen refresh function  
+  // Screen refresh function - only clear terminal when truly needed  
   const refreshStatic = useCallback(() => {
-    stdout.write(ansiEscapes.clearTerminal);
+    // Only clear terminal if we're not in a modal that should preserve content
+    const shouldClearTerminal = activeModal === ModalType.NONE || 
+                               activeModal === ModalType.INITIALIZATION || 
+                               activeModal === ModalType.DOCUMENTATION;
+    
+    if (shouldClearTerminal) {
+      stdout.write(ansiEscapes.clearTerminal);
+    }
     setStaticKey(prev => prev + 1);
-  }, [stdout]);
+  }, [stdout, activeModal]);
   
   // Static key refresh only
   const refreshStaticOnly = useCallback(() => {
@@ -96,17 +103,32 @@ export const useModalManager = (): UseModalManagerResult => {
     if (context) {
       setModalContext(prev => ({ ...prev, ...context }));
     }
-  }, []);
+    
+    // Only clear terminal for modals that need a fresh screen
+    // Config editor can overlay without clearing to prevent flicker
+    const needsFullClear = type === ModalType.INITIALIZATION || type === ModalType.DOCUMENTATION;
+    if (needsFullClear) {
+      stdout.write(ansiEscapes.clearTerminal);
+    }
+    
+    // Always increment static key to trigger re-render
+    setStaticKey(prev => prev + 1);
+  }, [stdout]);
   
   const closeModal = useCallback(() => {
+    const previousModal = activeModal;
+    
     // Clear modal state
     setActiveModal(ModalType.NONE);
     setModalContext({});
     
-    // Clear terminal to prevent modal/main content overlap
+    // Always clear terminal when closing modals to prevent overlay remnants
+    // The flicker issue should be resolved by reducing unnecessary opens/closes
     stdout.write(ansiEscapes.clearTerminal);
+    
+    // Always increment static key to trigger re-render
     setStaticKey(prev => prev + 1);
-  }, [stdout]);
+  }, [stdout, activeModal]);
   
   // Specific modal helpers for type safety and convenience
   const openConfig = useCallback((error?: string) => {

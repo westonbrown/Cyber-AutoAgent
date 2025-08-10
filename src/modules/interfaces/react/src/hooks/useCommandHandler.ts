@@ -109,37 +109,46 @@ export function useCommandHandler({
       // Get detailed health status
       const { status, recommendations } = await monitor.getDetailedHealth();
       
-      // Format health report
-      let healthReport = `\n🔍 SYSTEM HEALTH CHECK\n`;
-      healthReport += `═══════════════════════════════════════\n\n`;
+      // Get deployment mode info
+      const deploymentMode = applicationConfig?.deploymentMode || 'unknown';
+      const deploymentModeNames = {
+        'local-cli': 'Local CLI',
+        'single-container': 'Single Container', 
+        'full-stack': 'Full Stack'
+      };
+      const deploymentName = deploymentModeNames[deploymentMode] || deploymentMode;
       
-      // Overall status
-      const overallIcon = status.overall === 'healthy' ? '✅' : 
-                         status.overall === 'degraded' ? '⚠️' : '❌';
-      healthReport += `Overall Status: ${overallIcon} ${status.overall.toUpperCase()}\n`;
-      healthReport += `Docker Engine: ${status.dockerRunning ? '✅ Running' : '❌ Stopped'}\n`;
-      healthReport += `Last Check: ${status.lastCheck.toLocaleTimeString()}\n\n`;
+      // Format health report
+      let healthReport = `\nSYSTEM HEALTH REPORT\n`;
+      healthReport += `====================================\n\n`;
+      
+      // Deployment information  
+      healthReport += `Deployment Mode: ${deploymentName}\n`;
+      healthReport += `Last Check: ${status.lastCheck.toLocaleTimeString()}\n`;
+      healthReport += `Overall Status: ${status.overall.toUpperCase()}\n`;
+      healthReport += `Docker Engine: ${status.dockerRunning ? 'RUNNING' : 'STOPPED'}\n\n`;
       
       // Service status
-      healthReport += `📊 SERVICE STATUS\n`;
-      healthReport += `─────────────────────────────────────\n`;
+      healthReport += `SERVICE STATUS\n`;
+      healthReport += `------------------------------------\n`;
       
       if (status.services.length === 0) {
-        healthReport += `No services detected (Local CLI mode)\n`;
+        healthReport += `No containerized services detected\n`;
+        healthReport += `Running in local CLI mode with Python environment\n`;
       } else {
         status.services.forEach(service => {
-          const statusIcon = service.status === 'running' ? '✅' : 
-                           service.status === 'stopped' ? '❌' : '❓';
-          const healthIcon = service.health === 'healthy' ? '💚' : 
-                           service.health === 'unhealthy' ? '💔' : 
-                           service.health === 'starting' ? '🟡' : '';
+          const statusText = service.status === 'running' ? 'RUNNING' : 
+                           service.status === 'stopped' ? 'STOPPED' : 'UNKNOWN';
+          const healthText = service.health === 'healthy' ? 'HEALTHY' : 
+                           service.health === 'unhealthy' ? 'UNHEALTHY' : 
+                           service.health === 'starting' ? 'STARTING' : 'UNKNOWN';
           
-          healthReport += `${statusIcon} ${service.displayName}`;
+          healthReport += `${service.displayName}: ${statusText}`;
           if (service.status === 'running' && service.uptime) {
-            healthReport += ` (${service.uptime})`;
+            healthReport += ` (uptime: ${service.uptime})`;
           }
-          if (healthIcon) {
-            healthReport += ` ${healthIcon}`;
+          if (service.health) {
+            healthReport += ` - ${healthText}`;
           }
           if (service.message) {
             healthReport += ` - ${service.message}`;
@@ -150,18 +159,33 @@ export function useCommandHandler({
       
       // Recommendations
       if (recommendations.length > 0) {
-        healthReport += `\n💡 RECOMMENDATIONS\n`;
-        healthReport += `─────────────────────────────────────\n`;
+        healthReport += `\nRECOMMENDATIONS\n`;
+        healthReport += `------------------------------------\n`;
         recommendations.forEach(rec => {
-          healthReport += `• ${rec}\n`;
+          healthReport += `- ${rec}\n`;
         });
       }
       
-      // Quick stats
+      // Summary statistics
       const runningServices = status.services.filter(s => s.status === 'running').length;
       const totalServices = status.services.length;
       if (totalServices > 0) {
-        healthReport += `\n📈 SUMMARY: ${runningServices}/${totalServices} services running\n`;
+        healthReport += `\nSUMMARY\n`;
+        healthReport += `------------------------------------\n`;
+        healthReport += `Services: ${runningServices}/${totalServices} running\n`;
+        
+        if (runningServices === totalServices) {
+          healthReport += `All services operational\n`;
+        } else if (runningServices === 0) {
+          healthReport += `All services stopped - system unavailable\n`;
+        } else {
+          healthReport += `Partial service availability - check service status\n`;
+        }
+      } else {
+        healthReport += `\nSUMMARY\n`;
+        healthReport += `------------------------------------\n`;
+        healthReport += `Local deployment - no containerized services\n`;
+        healthReport += `System ready for security assessments\n`;
       }
       
       addOperationHistoryEntry('info', healthReport);
@@ -214,7 +238,7 @@ SLASH COMMANDS:
   /plugins              - Select security assessment module
   /config               - View current configuration
   /health               - Check system and container status
-  /setup                - Choose deployment mode
+  /setup                - Setup wizard (initial setup or switch deployments)
 
 KEYBORD SHORTCUTS:
   Ctrl+C                - Clear input / Pause assessment
@@ -268,14 +292,23 @@ For detailed instructions, use: /docs`;
         );
         break;
       case 'setup':
-      case 'set':  // Support /set as alias for /setup
-        // Don't clear screen - show setup inline with main view
-        // This prevents duplicate headers
-        actions.setInitializationFlow(true);
-        
+        // Clean transition to setup wizard
         process.env.CYBER_SHOW_SETUP = 'true';
         
-        addOperationHistoryEntry('info', 'Opening deployment setup wizard...');
+        // CRITICAL: Force refresh that bypasses initialization flow check
+        // Call refreshStatic directly to bypass the conditional clearing in refreshStatic
+        modalManager.refreshStatic();
+        
+        // Also clear operation history and reset state
+        handleScreenClear();
+        
+        // Small delay to ensure clear completes before state change
+        setTimeout(() => {
+          // Now set initialization flow after screen is cleared
+          actions.setInitializationFlow(true, true); // Pass userTriggered=true
+        }, 50);
+        
+        // Don't add history entry - it would just clutter the cleared screen
         break;
       default:
         addOperationHistoryEntry('error', `Unknown command: /${command}. Type /help for available commands.`);

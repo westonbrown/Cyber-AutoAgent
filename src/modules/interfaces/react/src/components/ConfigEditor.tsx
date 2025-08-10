@@ -97,9 +97,13 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'minEvidenceQualityScore', label: 'Min Evidence Quality', type: 'number', section: 'Evaluation' },
   { key: 'minAnswerRelevancyScore', label: 'Min Answer Relevancy', type: 'number', section: 'Evaluation' },
   
-  // Pricing - Read-only display of model pricing configuration
-  { key: 'modelPricingInfo', label: 'Model Pricing Status', type: 'text', section: 'Pricing', 
-    description: 'View current model pricing. Edit ~/.cyber-autoagent/config.json to customize.' },
+  // Dynamic Pricing - Current Model pricing (populated based on active modelId)
+  { key: 'currentModel.inputCostPer1k', 
+    label: 'Current Model - Input Cost (per 1K tokens)', type: 'number', section: 'Pricing',
+    description: 'Cost per 1000 input tokens for your selected model' },
+  { key: 'currentModel.outputCostPer1k', 
+    label: 'Current Model - Output Cost (per 1K tokens)', type: 'number', section: 'Pricing',
+    description: 'Cost per 1000 output tokens for your selected model' },
   
   // Output
   { key: 'outputDir', label: 'Output Directory', type: 'text', section: 'Output' },
@@ -324,9 +328,60 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   }, [saveConfig, updateConfig]);
 
   const updateConfigValue = useCallback((key: string, value: any) => {
-    updateConfig({ [key]: value });
+    // Special handling for currentModel pricing - update the actual model's pricing
+    if (key.startsWith('currentModel.')) {
+      const pricingKey = key.replace('currentModel.', '');
+      const currentModelId = config.modelId;
+      
+      if (!currentModelId) {
+        setMessage({ text: 'No model selected to configure pricing', type: 'error' });
+        return;
+      }
+      
+      // Update pricing for the current model
+      const newConfig = { ...config };
+      if (!newConfig.modelPricing) {
+        newConfig.modelPricing = {};
+      }
+      if (!newConfig.modelPricing[currentModelId]) {
+        newConfig.modelPricing[currentModelId] = {
+          inputCostPer1k: 0,
+          outputCostPer1k: 0
+        };
+      }
+      
+      // Update the specific pricing field
+      (newConfig.modelPricing[currentModelId] as any)[pricingKey] = value;
+      
+      updateConfig(newConfig);
+      setUnsavedChanges(true);
+      return;
+    }
+    
+    // Handle nested keys
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      const newConfig = { ...config };
+      let current: any = newConfig;
+      
+      // Navigate to the parent object
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+      
+      // Set the final value
+      current[parts[parts.length - 1]] = value;
+      
+      // Update the entire config
+      updateConfig(newConfig);
+    } else {
+      updateConfig({ [key]: value });
+    }
     setUnsavedChanges(true);
-  }, [updateConfig]);
+  }, [config, updateConfig]);
   
   const startEditing = useCallback((field: ConfigField) => {
     // Prevent editing of read-only fields
@@ -382,7 +437,44 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       return 'Using default AWS Bedrock pricing';
     }
     
-    const value = config[key as keyof typeof config];
+    // Special handling for currentModel pricing - use actual modelId from config
+    if (key.startsWith('currentModel.')) {
+      const pricingKey = key.replace('currentModel.', '');
+      const currentModelId = config.modelId;
+      
+      if (!currentModelId) {
+        return 'No model selected';
+      }
+      
+      // Check if pricing exists for current model
+      const modelPricing = config.modelPricing?.[currentModelId];
+      if (modelPricing && pricingKey in modelPricing) {
+        const value = modelPricing[pricingKey as keyof typeof modelPricing];
+        return String(value || 0);
+      }
+      
+      // Provider-specific defaults
+      if (config.modelProvider === 'ollama') {
+        return '0.000'; // Ollama is free
+      } else if (config.modelProvider === 'litellm') {
+        return pricingKey === 'inputCostPer1k' ? '0.001' : '0.002'; // LiteLLM example defaults
+      } else {
+        return pricingKey === 'inputCostPer1k' ? '0.003' : '0.015'; // Bedrock defaults
+      }
+    }
+    
+    // Handle nested keys (e.g., modelPricing.model.inputCostPer1k)
+    let value: any = config;
+    const parts = key.split('.');
+    for (const part of parts) {
+      if (value && typeof value === 'object') {
+        value = value[part as keyof typeof value];
+      } else {
+        value = undefined;
+        break;
+      }
+    }
+    
     const field = CONFIG_FIELDS.find(f => f.key === key);
     
     if (value === undefined || value === null || value === '') {

@@ -235,8 +235,35 @@ export class DirectDockerService extends EventEmitter {
 
       // Create container
       
+      // Resolve Docker runtime settings
+      const dockerImage = process.env.CYBER_DOCKER_IMAGE || 'cyber-autoagent:latest';
+      const dockerNetwork = process.env.CYBER_DOCKER_NETWORK || 'bridge';
+
+      // Resolve optional tools bind robustly
+      const binds: string[] = [];
+      binds.push(`${outputPath}:/app/outputs`);
+
+      try {
+        const candidateRoots: string[] = [];
+        if (process.env.CYBER_PROJECT_ROOT) {
+          candidateRoots.push(process.env.CYBER_PROJECT_ROOT);
+        }
+        // As a fallback, try cwd only if a tools dir actually exists
+        candidateRoots.push(process.cwd());
+
+        for (const root of candidateRoots) {
+          const toolsDir = path.join(root, 'tools');
+          if (fs.existsSync(toolsDir) && fs.statSync(toolsDir).isDirectory()) {
+            binds.push(`${toolsDir}:/app/tools`);
+            break;
+          }
+        }
+      } catch {
+        // If any error occurs during tools resolution, skip binding tools to avoid failure
+      }
+
       this.activeContainer = await this.dockerClient.createContainer({
-        Image: 'cyber-autoagent:latest',
+        Image: dockerImage,
         // Don't set Cmd - let the Entrypoint handle the execution
         // The Entrypoint is: ["python", "/app/src/cyberautoagent.py"]
         // We need to pass our args to the Python script, not override the Entrypoint
@@ -250,11 +277,8 @@ export class DirectDockerService extends EventEmitter {
         StdinOnce: false,
         HostConfig: {
           AutoRemove: true,
-          NetworkMode: 'docker_default',
-          Binds: [
-            `${outputPath}:/app/outputs`,
-            `${process.cwd()}/tools:/app/tools`,
-          ],
+          NetworkMode: dockerNetwork,
+          Binds: binds,
         },
         WorkingDir: '/app',
       });

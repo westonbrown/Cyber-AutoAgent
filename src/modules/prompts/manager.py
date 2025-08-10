@@ -26,7 +26,11 @@ class PromptManager:
 
     def __init__(self):
         """Initialize the prompt manager."""
-        self.langfuse_enabled = os.getenv("ENABLE_LANGFUSE_PROMPTS", "true").lower() == "true"
+        # Respect ENABLE_OBSERVABILITY setting for Langfuse prompts as well
+        # If observability is disabled, don't try to connect to Langfuse for prompts
+        observability_enabled = os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+        default_prompts_setting = "true" if observability_enabled else "false"
+        self.langfuse_enabled = os.getenv("ENABLE_LANGFUSE_PROMPTS", default_prompts_setting).lower() == "true"
         self.prompt_label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
         self.cache_ttl = int(os.getenv("LANGFUSE_PROMPT_CACHE_TTL", "300"))  # 5 minutes
         self.cache: Dict[str, Dict[str, Any]] = {}

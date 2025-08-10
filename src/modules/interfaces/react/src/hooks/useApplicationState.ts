@@ -24,6 +24,7 @@ export interface ApplicationState {
   isFirstRunExperience: boolean;
   isInitializationFlowActive: boolean;
   hasUserDismissedInit: boolean;
+  isUserTriggeredSetup: boolean; // Track if user explicitly ran /setup
   isDockerServiceAvailable: boolean;
   isTerminalVisible: boolean;
   staticKey: number;
@@ -88,7 +89,7 @@ export enum ActionType {
 type Action =
   | { type: ActionType.INITIALIZE_APP; payload: { sessionId: string } }
   | { type: ActionType.SET_CONFIG_LOADED; payload: boolean }
-  | { type: ActionType.SET_INITIALIZATION_FLOW; payload: boolean }
+  | { type: ActionType.SET_INITIALIZATION_FLOW; payload: { active: boolean; userTriggered?: boolean } }
   | { type: ActionType.DISMISS_INIT }
   | { type: ActionType.SET_TERMINAL_VISIBLE; payload: boolean }
   | { type: ActionType.REFRESH_STATIC }
@@ -123,9 +124,10 @@ function applicationReducer(state: ApplicationState, action: Action): Applicatio
     case ActionType.SET_INITIALIZATION_FLOW:
       return { 
         ...state, 
-        isInitializationFlowActive: action.payload,
+        isInitializationFlowActive: action.payload.active,
+        isUserTriggeredSetup: action.payload.userTriggered || false,
         // Reset dismissal state when activating initialization flow
-        hasUserDismissedInit: action.payload ? false : state.hasUserDismissedInit
+        hasUserDismissedInit: action.payload.active ? false : state.hasUserDismissedInit
       };
       
     case ActionType.DISMISS_INIT:
@@ -133,6 +135,7 @@ function applicationReducer(state: ApplicationState, action: Action): Applicatio
         ...state,
         hasUserDismissedInit: true,
         isInitializationFlowActive: false,
+        isUserTriggeredSetup: false, // Reset when dismissing
       };
       
     case ActionType.SET_TERMINAL_VISIBLE:
@@ -199,14 +202,18 @@ function applicationReducer(state: ApplicationState, action: Action): Applicatio
 
 // Initial state factory
 function getInitialState(): ApplicationState {
+  // Check for existing config synchronously to prevent wizard flash
+  const hasExistingConfig = !!(typeof window === 'undefined' && process.env.DEPLOYMENT_MODE);
+  
   return {
     isInitialized: false,
     isConfigLoaded: false,
     sessionId: `session-${Date.now()}`,
     sessionErrorCount: 0,
-    isFirstRunExperience: true,
+    isFirstRunExperience: !hasExistingConfig,
     isInitializationFlowActive: false,
-    hasUserDismissedInit: false,
+    hasUserDismissedInit: hasExistingConfig, // If configured, treat as dismissed
+    isUserTriggeredSetup: false,
     isDockerServiceAvailable: false,
     isTerminalVisible: false,
     staticKey: 0,
@@ -247,9 +254,13 @@ export function useApplicationState() {
     dispatch({ type: ActionType.SET_CONFIG_LOADED, payload: loaded });
   };
   
-  const setInitializationFlow = (active: boolean) => {
-    dispatch({ type: ActionType.SET_INITIALIZATION_FLOW, payload: active });
-  };
+  const setInitializationFlow = useCallback((active: boolean, userTriggered: boolean = false) => {
+    // Prevent rapid toggling
+    if (active === state.isInitializationFlowActive && !userTriggered) {
+      return; // Already in the desired state
+    }
+    dispatch({ type: ActionType.SET_INITIALIZATION_FLOW, payload: { active, userTriggered } });
+  }, [state.isInitializationFlowActive]);
   
   const dismissInit = () => {
     dispatch({ type: ActionType.DISMISS_INIT });
