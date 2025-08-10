@@ -27,7 +27,6 @@ import re
 import base64
 import threading
 from datetime import datetime
-import requests
 from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
 
@@ -50,18 +49,90 @@ from modules.handlers.output_interceptor import setup_output_interception
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
-def setup_observability(logger):
+def detect_deployment_mode():
     """
-    Setup Langfuse observability by configuring OpenTelemetry environment variables
-    and initializing the OTLP exporter.
+    Detect deployment mode for appropriate observability defaults.
+    
+    Returns:
+        str: 'cli' (Python CLI), 'container' (single container), or 'compose' (full stack)
     """
-    # Check if observability is enabled via environment (default: true)
-    if os.getenv("ENABLE_OBSERVABILITY", "true").lower() != "true":
-        logger.debug("Observability is disabled (set ENABLE_OBSERVABILITY=false)")
-        return None
+    def is_docker():
+        """Check if running inside a Docker container."""
+        return os.path.exists("/.dockerenv") or os.path.exists("/app")
+    
+    def is_langfuse_available():
+        """Check if Langfuse service is available."""
+        try:
+            if is_docker():
+                # In Docker, try to connect to langfuse-web service
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex(('langfuse-web', 3000))
+                sock.close()
+                return result == 0
+            else:
+                # Outside Docker, check localhost
+                import requests
+                response = requests.get('http://localhost:3000/api/public/health', timeout=2)
+                return response.status_code == 200
+        except Exception:
+            return False
+    
+    if is_docker():
+        if is_langfuse_available():
+            return 'compose'  # Full Docker Compose stack
+        else:
+            return 'container'  # Single container mode
+    else:
+        if is_langfuse_available():
+            return 'compose'  # Local development with Langfuse
+        else:
+            return 'cli'  # Pure Python CLI mode
 
-    # Get configuration from environment with defaults for self-hosted Langfuse
-    # Helper function to detect if running in Docker
+
+def setup_telemetry(logger):
+    """
+    Setup telemetry system with separated concerns:
+    1. Local telemetry (always enabled) - for token counting, cost tracking, metrics
+    2. Remote observability (deployment-aware) - for Langfuse trace export
+    
+    Local telemetry provides essential metrics for UI display regardless of deployment mode.
+    Remote observability is only enabled when Langfuse infrastructure is available.
+    """
+    deployment_mode = detect_deployment_mode()
+    
+    # Set smart defaults based on deployment mode
+    if deployment_mode == 'compose':
+        default_observability = "true"
+        logger.info("Detected full-stack deployment mode - observability enabled by default")
+    else:
+        default_observability = "false" 
+        logger.info(f"Detected {deployment_mode} deployment mode - observability disabled by default")
+        logger.info("To enable observability, set ENABLE_OBSERVABILITY=true and ensure Langfuse is running")
+    
+    # Always initialize Strands telemetry for local metrics (token counting, cost tracking)
+    telemetry = StrandsTelemetry()
+    
+    # Check if remote observability (Langfuse export) is enabled
+    observability_enabled = os.getenv("ENABLE_OBSERVABILITY", default_observability).lower() == "true"
+    
+    if observability_enabled:
+        logger.info("Remote observability enabled - traces will be exported to Langfuse")
+        # Setup OTLP export to Langfuse
+        telemetry.setup_otlp_exporter()
+        
+        # Configure Langfuse connection
+        setup_langfuse_connection(logger, deployment_mode)
+    else:
+        logger.info("Remote observability disabled - metrics available locally only")
+        logger.debug("Local telemetry enabled for token counting and cost tracking")
+    
+    return telemetry
+
+
+def setup_langfuse_connection(logger, deployment_mode):
+    """Setup Langfuse connection parameters for remote observability."""
     def is_docker():
         """Check if running inside a Docker container."""
         return os.path.exists("/.dockerenv") or os.path.exists("/app")
@@ -76,24 +147,13 @@ def setup_observability(logger):
     auth_token = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
 
     # Set OpenTelemetry environment variables that Strands SDK will use
-    # IMPORTANT: OTEL_EXPORTER_OTLP_ENDPOINT should be the base URL, not the traces endpoint
-    # The SDK will append /v1/traces automatically
     os.environ["OTEL_SERVICE_NAME"] = "cyber-autoagent"
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host}/api/public/otel"
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {auth_token}"
 
-    # Initialize Strands telemetry system with OTLP export
-    telemetry = StrandsTelemetry()
-    telemetry.setup_otlp_exporter()
-
-    logger.debug("OTEL environment configured for Strands SDK")
-    logger.debug("Strands telemetry initialized with OTLP exporter")
-
-    logger.info("Langfuse observability enabled at %s", host)
+    logger.info("Langfuse connection configured at %s", host)
     logger.info("OTLP endpoint: %s", os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"])
     logger.info("View traces at %s (login: admin@cyber-autoagent.com/changeme)", host)
-
-    return telemetry
 
 
 # Global flag for interrupt handling
@@ -304,8 +364,8 @@ def main():
 
     logger = setup_logging(log_file=log_file, verbose=args.verbose)
 
-    # Setup observability (enabled by default via ENABLE_OBSERVABILITY env var)
-    telemetry = setup_observability(logger)
+    # Setup telemetry (always enabled for token counting) and observability (deployment-aware)
+    telemetry = setup_telemetry(logger)
 
     # Register cleanup function to properly close log files
     def cleanup_logging():
@@ -615,8 +675,9 @@ def main():
                 logger.info("Triggering evaluation on completion")
                 callback_handler.trigger_evaluation_on_completion()
 
-                # Wait for evaluation to complete if running
-                if os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
+                # Wait for evaluation to complete if running (uses same defaults as observability)
+                default_evaluation = os.getenv("ENABLE_OBSERVABILITY", "false")
+                if os.getenv("ENABLE_AUTO_EVALUATION", default_evaluation).lower() == "true":
                     callback_handler.wait_for_evaluation_completion(timeout=300)
 
             except Exception as error:

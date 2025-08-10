@@ -42,6 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     unzip \
     tree \
+    # Sudo for privilege escalation
+    sudo \
+    # Go runtime for installing specialized tools
+    golang-go \
     # Clean up to reduce layer size
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
@@ -64,8 +68,10 @@ RUN wget -q -O - https://apt.metasploit.com/metasploit-framework.gpg.key | apt-k
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Create non-root user for security
-RUN useradd --create-home --shell /bin/bash cyberagent
+# Create non-root user for security and add to sudo group
+RUN useradd --create-home --shell /bin/bash cyberagent && \
+    usermod -aG sudo cyberagent && \
+    echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
 # Set working directory
 WORKDIR /app
@@ -78,15 +84,20 @@ COPY --chown=cyberagent:cyberagent src/ ./src/
 COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
 # Create directories for evidence storage and logs with proper permissions
+# Set up Go environment for cyberagent user
 RUN mkdir -p /app/evidence /app/logs && \
     chmod 755 /app/evidence /app/logs && \
-    chown -R cyberagent:cyberagent /app
+    chown -R cyberagent:cyberagent /app && \
+    mkdir -p /home/cyberagent/go && \
+    chown -R cyberagent:cyberagent /home/cyberagent/go
 
 # Switch to non-root user
 USER cyberagent
 
-# Add virtual environment to PATH
-ENV PATH="/app/.venv/bin:$PATH"
+# Add virtual environment and Go to PATH
+ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
+ENV GOPATH="/home/cyberagent/go"
+ENV GOCACHE="/home/cyberagent/go/.cache"
 
 # Set Python path
 ENV PYTHONPATH="/app/src"

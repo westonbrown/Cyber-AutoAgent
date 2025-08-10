@@ -83,14 +83,16 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'opensearchHost', label: 'OpenSearch Host', type: 'text', section: 'Memory' },
   
   // Observability
-  { key: 'observability', label: 'Enable Observability', type: 'boolean', section: 'Observability' },
+  { key: 'observability', label: 'Enable Remote Observability', type: 'boolean', section: 'Observability',
+    description: 'Export traces to Langfuse. Requires Langfuse infrastructure. Auto-detected based on deployment mode. Token counting always enabled.' },
   { key: 'langfuseHost', label: 'Langfuse Host', type: 'text', section: 'Observability' },
   { key: 'langfusePublicKey', label: 'Langfuse Public Key', type: 'password', section: 'Observability' },
   { key: 'langfuseSecretKey', label: 'Langfuse Secret Key', type: 'password', section: 'Observability' },
   { key: 'enableLangfusePrompts', label: 'Enable Prompt Management', type: 'boolean', section: 'Observability' },
   
   // Evaluation
-  { key: 'autoEvaluation', label: 'Auto-Evaluation', type: 'boolean', section: 'Evaluation' },
+  { key: 'autoEvaluation', label: 'Auto-Evaluation', type: 'boolean', section: 'Evaluation',
+    description: 'Requires Langfuse infrastructure for Ragas metrics. Auto-detected based on deployment mode.' },
   { key: 'minToolAccuracyScore', label: 'Min Tool Accuracy', type: 'number', section: 'Evaluation' },
   { key: 'minEvidenceQualityScore', label: 'Min Evidence Quality', type: 'number', section: 'Evaluation' },
   { key: 'minAnswerRelevancyScore', label: 'Min Answer Relevancy', type: 'number', section: 'Evaluation' },
@@ -115,8 +117,8 @@ const SECTIONS: ConfigSection[] = [
   { name: 'Models', label: 'Models & Credentials', description: 'AI provider and authentication', expanded: false },
   { name: 'Operations', label: 'Operations', description: 'Execution parameters', expanded: false },
   { name: 'Memory', label: 'Memory', description: 'Vector storage configuration', expanded: false },
-  { name: 'Observability', label: 'Observability', description: 'Monitoring and tracing', expanded: false },
-  { name: 'Evaluation', label: 'Evaluation', description: 'Quality assessment', expanded: false },
+  { name: 'Observability', label: 'Observability', description: 'Remote tracing (auto-detected, token counting always enabled)', expanded: false },
+  { name: 'Evaluation', label: 'Evaluation', description: 'Quality assessment with Ragas (auto-detected)', expanded: false },
   { name: 'Pricing', label: 'Model Pricing', description: 'Token cost configuration per 1K tokens', expanded: false },
   { name: 'Output', label: 'Output', description: 'Report and logging', expanded: false }
 ];
@@ -546,7 +548,31 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     return { status: 'success', message: 'Ready' };
   };
   
+  // Deployment mode status
+  const getDeploymentModeDisplay = () => {
+    const mode = config.deploymentMode || 'unknown';
+    const observabilityStatus = config.observability ? 'enabled' : 'disabled';
+    const evaluationStatus = config.autoEvaluation ? 'enabled' : 'disabled';
+    
+    return {
+      mode: mode.replace('-', ' ').toUpperCase(),
+      observability: observabilityStatus,
+      evaluation: evaluationStatus,
+      description: getDeploymentDescription(mode)
+    };
+  };
+  
+  const getDeploymentDescription = (mode: string) => {
+    switch (mode) {
+      case 'cli': return 'Python CLI mode (token counting enabled, remote traces disabled)';
+      case 'container': return 'Single container mode (token counting enabled, remote traces disabled)';
+      case 'compose': return 'Full stack mode (token counting + remote traces enabled)';
+      default: return 'Deployment mode detection in progress';
+    }
+  };
+  
   const status = getConfigStatus();
+  const deploymentStatus = getDeploymentModeDisplay();
 
 
 
@@ -568,13 +594,21 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         {renderHeader()}
       
       {/* Status bar */}
-      <Box marginBottom={1}>
+      <Box marginBottom={1} flexDirection="column">
         <Text color={
           status.status === 'success' ? theme.success :
           status.status === 'warning' ? theme.warning :
           theme.danger
         }>
           Status: {status.message}
+        </Text>
+        <Text color={theme.muted}>
+          Deployment: {deploymentStatus.mode} | 
+          Observability: {deploymentStatus.observability} | 
+          Evaluation: {deploymentStatus.evaluation}
+        </Text>
+        <Text color={theme.muted}>
+          {deploymentStatus.description}
         </Text>
       </Box>
       
