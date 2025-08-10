@@ -28,6 +28,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { detectDeploymentMode, getDeploymentDefaults } from '../config/deployment.js';
 
 /**
  * Main Configuration Interface - Complete Settings Schema
@@ -187,6 +188,9 @@ interface ConfigContextType {
   resetToDefaults: () => void;
 }
 
+// Get deployment-aware defaults for observability settings
+const deploymentDefaults = getDeploymentDefaults();
+
 export const defaultConfig: Config = {
   // Model Provider Settings
   modelProvider: 'bedrock',
@@ -206,8 +210,8 @@ export const defaultConfig: Config = {
   modelPricing: {
     // Anthropic Claude Models (Verified AWS CLI pricing)
     'us.anthropic.claude-sonnet-4-20250514-v1:0': {
-      inputCostPer1k: 0.015,
-      outputCostPer1k: 0.075,
+      inputCostPer1k: 15.0,
+      outputCostPer1k: 75.0,
       description: 'Claude Sonnet 4 - Latest model (5x output cost)'
     },
     'claude-3-5-sonnet-20241022-v2:0': {
@@ -343,20 +347,20 @@ export const defaultConfig: Config = {
     includeMemoryOps: true // Include memory operations in reports
   },
   
-  // Observability Settings
-  observability: true, // Enable by default (matches Python CLI)
-  langfuseHost: process.env.LANGFUSE_HOST || 'http://localhost:3000',
+  // Observability Settings - deployment-aware defaults
+  observability: deploymentDefaults.observabilityDefault || false, // Smart defaults based on deployment mode
+  langfuseHost: process.env.LANGFUSE_HOST || deploymentDefaults.langfuseHost || 'http://localhost:3000',
   langfuseHostOverride: false, // Let container auto-detect by default
   langfusePublicKey: process.env.LANGFUSE_PUBLIC_KEY || 'cyber-public',
   langfuseSecretKey: process.env.LANGFUSE_SECRET_KEY || 'cyber-secret',
   langfuseEncryptionKey: process.env.LANGFUSE_ENCRYPTION_KEY,
   langfuseSalt: process.env.LANGFUSE_SALT,
-  enableLangfusePrompts: true,
+  enableLangfusePrompts: deploymentDefaults.observabilityDefault || false,
   langfusePromptLabel: 'production',
   langfusePromptCacheTTL: 300,
   
-  // Evaluation Settings
-  autoEvaluation: true, // Enabled by default to track assessment quality
+  // Evaluation Settings - deployment-aware defaults  
+  autoEvaluation: deploymentDefaults.evaluationDefault || false, // Smart defaults based on deployment mode
   evaluationBatchSize: 5,
   minToolAccuracyScore: 0.8,
   minEvidenceQualityScore: 0.7,
@@ -380,6 +384,7 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
  */
 export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
   const [applicationConfiguration, setApplicationConfiguration] = useState<Config>(defaultConfig);
+  const [deploymentInfo, setDeploymentInfo] = useState<{mode: string; description: string} | null>(null);
   
   // Use a ref to always have access to the latest configuration for saving
   const configRef = useRef<Config>(applicationConfiguration);
@@ -458,6 +463,37 @@ export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}
   // Load configuration on component mount - FIXED: Remove function dependency to prevent infinite loops
   useEffect(() => {
     loadConfigurationFromDisk();
+    
+    // Detect deployment mode asynchronously and update observability settings if needed
+    detectDeploymentMode().then((info) => {
+      setDeploymentInfo({
+        mode: info.mode,
+        description: info.description
+      });
+      
+      // Update observability settings if they haven't been explicitly configured
+      setApplicationConfiguration(prevConfig => {
+        // Only update if user hasn't explicitly configured these settings
+        if (prevConfig.isConfigured) {
+          return prevConfig; // User has configured, don't override
+        }
+        
+        return {
+          ...prevConfig,
+          observability: info.observabilityDefault,
+          autoEvaluation: info.evaluationDefault,
+          enableLangfusePrompts: info.observabilityDefault,
+          langfuseHost: info.langfuseHost,
+          deploymentMode: info.mode as any
+        };
+      });
+    }).catch(error => {
+      console.warn('Failed to detect deployment mode:', error);
+      setDeploymentInfo({
+        mode: 'unknown',
+        description: 'Could not detect deployment mode'
+      });
+    });
   }, []); // CRITICAL FIX: Only run on mount, not when callback changes
 
   /**

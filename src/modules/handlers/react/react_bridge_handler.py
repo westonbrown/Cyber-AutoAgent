@@ -49,8 +49,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Metrics tracking
         self.memory_ops = 0
         self.evidence_count = 0
-        self.total_input_tokens = 0
-        self.total_output_tokens = 0
+        # Track SDK metrics as authoritative source
+        self.sdk_input_tokens = 0
+        self.sdk_output_tokens = 0
         self.last_metrics_emit_time = time.time()
         self.last_metrics = None
 
@@ -84,73 +85,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Emit initial metrics
         self._emit_initial_metrics()
     
-    def _get_model_pricing(self) -> tuple[float, float]:
-        """
-        Get input and output pricing per million tokens for the current model.
-        
-        Returns:
-            tuple: (input_cost_per_million, output_cost_per_million)
-        """
-        # Default to Claude 3.5 Sonnet pricing if no model_id provided
-        if not self.model_id:
-            return (3.0, 15.0)
-        
-        # Model-specific pricing (per million tokens)
-        pricing_map = {
-            # Claude 3.5 Sonnet
-            "us.anthropic.claude-3-5-sonnet-20241022-v2:0": (3.0, 15.0),
-            "anthropic.claude-3-5-sonnet-20241022-v2:0": (3.0, 15.0),
-            "claude-3-5-sonnet-20241022": (3.0, 15.0),
-            
-            # Claude 3.5 Haiku  
-            "us.anthropic.claude-3-5-haiku-20241022-v1:0": (0.25, 1.25),
-            "anthropic.claude-3-5-haiku-20241022-v1:0": (0.25, 1.25),
-            "claude-3-5-haiku-20241022": (0.25, 1.25),
-            
-            # Claude 4 (Opus 4) - Much more expensive
-            "us.anthropic.claude-opus-4-20250514-v1:0": (15.0, 75.0),
-            "anthropic.claude-opus-4-20250514-v1:0": (15.0, 75.0),
-            "claude-opus-4-20250514": (15.0, 75.0),
-            
-            # GPT models
-            "gpt-4o": (2.5, 10.0),
-            "gpt-4o-mini": (0.15, 0.6),
-            "gpt-4-turbo": (10.0, 30.0),
-            
-            # Generic fallbacks
-            "claude-3-sonnet": (3.0, 15.0),
-            "claude-3-haiku": (0.25, 1.25),
-            "claude-3-opus": (15.0, 75.0),
-        }
-        
-        # Try exact match first
-        if self.model_id in pricing_map:
-            return pricing_map[self.model_id]
-        
-        # Try pattern matching for models with variations
-        model_lower = self.model_id.lower()
-        
-        if "opus-4" in model_lower or "claude-4" in model_lower:
-            return (15.0, 75.0)  # Claude 4/Opus 4 pricing
-        elif "sonnet" in model_lower and "3.5" in model_lower:
-            return (3.0, 15.0)   # Claude 3.5 Sonnet pricing
-        elif "haiku" in model_lower and "3.5" in model_lower:
-            return (0.25, 1.25)  # Claude 3.5 Haiku pricing
-        elif "sonnet" in model_lower:
-            return (3.0, 15.0)   # Generic Sonnet pricing
-        elif "haiku" in model_lower:
-            return (0.25, 1.25)  # Generic Haiku pricing
-        elif "opus" in model_lower:
-            return (15.0, 75.0)  # Generic Opus pricing
-        elif "gpt-4o-mini" in model_lower:
-            return (0.15, 0.6)
-        elif "gpt-4" in model_lower:
-            return (10.0, 30.0)
-        
-        # Default to Claude 3.5 Sonnet if no match
-        logger.warning(f"Unknown model pricing for {self.model_id}, using Claude 3.5 Sonnet defaults")
-        return (3.0, 15.0)
-
     def __call__(self, **kwargs):
         """
         Process SDK callbacks and emit appropriate UI events.
@@ -197,11 +131,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if reasoning_text:
             self._accumulate_reasoning_text(reasoning_text)
             # Estimate tokens for metrics
-            self.total_output_tokens += len(reasoning_text) // 4
+            # Token counting handled by SDK metrics only
+            pass
 
         # 3. Streaming data events
         elif data and not complete:
-            self.total_output_tokens += len(data) // 4
+            # Token counting handled by SDK metrics only
+            pass
 
         # 4. Tool announcement events
         if current_tool_use:
@@ -261,13 +197,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Count output tokens
             for item in content:
                 if isinstance(item, dict) and "text" in item:
-                    self.total_output_tokens += len(str(item.get("text", ""))) // 4
+                    # Token counting handled by SDK metrics only
+                    pass
 
         elif message.get("role") == "user":
             # Count input tokens
             for item in content:
                 if isinstance(item, dict) and "text" in item:
-                    self.total_input_tokens += len(str(item.get("text", ""))) // 4
+                    # Token counting handled by SDK metrics only
+                    pass
 
         # Process tool results in message content
         for block in content:
@@ -485,19 +423,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         )
 
     def _emit_estimated_metrics(self) -> None:
-        """Emit estimated metrics based on token counting."""
-        # Get model-specific pricing
-        input_price, output_price = self._get_model_pricing()
-        input_cost = (self.total_input_tokens / 1_000_000) * input_price
-        output_cost = (self.total_output_tokens / 1_000_000) * output_price
-        total_cost = input_cost + output_cost
-
+        """Emit metrics based on SDK token counts."""
+        # Only report raw token counts - let application logic handle pricing
         self._emit_ui_event(
             {
                 "type": "metrics_update",
                 "metrics": {
-                    "tokens": self.total_input_tokens + self.total_output_tokens,
-                    "cost": total_cost,
+                    "inputTokens": self.sdk_input_tokens,
+                    "outputTokens": self.sdk_output_tokens,
+                    "totalTokens": self.sdk_input_tokens + self.sdk_output_tokens,
                     "duration": self._format_duration(time.time() - self.start_time),
                     "memoryOps": self.memory_ops,
                     "evidence": self.evidence_count,
@@ -510,21 +444,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.last_metrics = event_loop_metrics
         usage = event_loop_metrics.accumulated_usage
 
-        input_tokens = usage.get("inputTokens", 0)
-        output_tokens = usage.get("outputTokens", 0)
+        # Update SDK token counts as authoritative source
+        self.sdk_input_tokens = usage.get("inputTokens", 0)
+        self.sdk_output_tokens = usage.get("outputTokens", 0)
 
-        # Calculate cost using model-specific pricing
-        input_price, output_price = self._get_model_pricing()
-        input_cost = (input_tokens / 1_000_000) * input_price
-        output_cost = (output_tokens / 1_000_000) * output_price
-        total_cost = input_cost + output_cost
-
+        # Only report raw token counts - let application logic handle pricing
         self._emit_ui_event(
             {
                 "type": "metrics_update",
                 "metrics": {
-                    "tokens": input_tokens + output_tokens,
-                    "cost": total_cost,
+                    "inputTokens": self.sdk_input_tokens,
+                    "outputTokens": self.sdk_output_tokens,
+                    "totalTokens": self.sdk_input_tokens + self.sdk_output_tokens,
                     "duration": self._format_duration(time.time() - self.start_time),
                     "memoryOps": self.memory_ops,
                     "evidence": self.evidence_count,
@@ -735,7 +666,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if verbose_eval:
             logger.info("EVAL_DEBUG: trigger_evaluation_on_completion called for operation %s", self.operation_id)
 
-        if os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() != "true":
+        # Check if observability is enabled first - evaluation requires Langfuse infrastructure
+        if os.getenv("ENABLE_OBSERVABILITY", "false").lower() != "true":
+            logger.debug("Observability is disabled - skipping evaluation (requires Langfuse)")
+            if verbose_eval:
+                logger.info("EVAL_DEBUG: Skipping evaluation - observability disabled")
+            return
+
+        # Default evaluation to same setting as observability
+        default_evaluation = os.getenv("ENABLE_OBSERVABILITY", "false")
+        if os.getenv("ENABLE_AUTO_EVALUATION", default_evaluation).lower() != "true":
             logger.debug("Auto-evaluation is disabled, skipping")
             if verbose_eval:
                 logger.info("EVAL_DEBUG: Auto-evaluation disabled via ENABLE_AUTO_EVALUATION=false")

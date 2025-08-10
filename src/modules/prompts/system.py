@@ -234,7 +234,7 @@ You are Ghost, an autonomous cyber operations specialist operating with complete
 Target: {target}
 Objective: {objective}
 Operation: {operation_id}
-Budget: {max_steps} steps
+Step: {current_step}/{max_steps} (Remaining: {remaining_steps} steps)
 Tools: {full_tools_context}
 
 {output_guidance}
@@ -490,6 +490,6 @@ def get_continuation_prompt(
     """Generate intelligent continuation prompts."""
 
     current_step = total - remaining + 1
-    return f"""Continue the security assessment. You have {remaining} steps remaining out of {total} total steps.
+    return f"""Step {current_step}/{total} - {remaining} steps remaining.
 
-Analyze your progress so far and determine the next actions needed to achieve the objective. Execute tools to make concrete progress."""
+Continue the security assessment. Analyze your progress and execute tools to achieve the objective."""

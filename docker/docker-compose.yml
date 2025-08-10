@@ -27,7 +27,7 @@ services:
       - DEV=true
       - FORCE_COLOR=1
       
-      # Observability configuration (enabled by default)
+      # Observability configuration (auto-detected by default, forced true in compose mode)
       - ENABLE_OBSERVABILITY=${ENABLE_OBSERVABILITY:-true}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-cyber-public}

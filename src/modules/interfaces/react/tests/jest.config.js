@@ -2,42 +2,62 @@
 export default {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
-  setupFilesAfterEnv: ['<rootDir>/react/setup.ts'],
+  setupFilesAfterEnv: ['<rootDir>/unit/setup.ts'],
   testMatch: [
-    '<rootDir>/react/**/*.test.ts',
-    '<rootDir>/react/**/*.test.tsx'
+    '<rootDir>/unit/**/*.test.ts',
+    '<rootDir>/unit/**/*.test.tsx'
   ],
   collectCoverageFrom: [
-    '../src/modules/interfaces/react/src/**/*.{ts,tsx}',
-    '!../src/modules/interfaces/react/src/**/*.d.ts'
+    '../src/**/*.{ts,tsx}',
+    '!../src/**/*.d.ts',
+    '!../src/index.tsx',
+    '!../src/**/__mocks__/**',
+    '!../src/**/test-utils.tsx'
   ],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 80,
+      statements: 80
+    }
+  },
+  coverageReporters: ['text', 'lcov', 'html'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
-    '^ink-testing-library$': '<rootDir>/react/__mocks__/ink-testing-library.js',
-    '^ink$': '<rootDir>/react/__mocks__/ink.js',
-    '^ink-gradient$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-big-text$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-box$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-divider$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-link$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-progress-bar$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-select-input$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-spinner$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-table$': '<rootDir>/react/__mocks__/ink-components.js',
-    '^ink-text-input$': '<rootDir>/react/__mocks__/ink-components.js'
+    '^ink-testing-library$': '<rootDir>/unit/mocks/ink-testing-library.js',
+    '^ink$': '<rootDir>/unit/mocks/ink.js',
+    '^ink-gradient$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-big-text$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-box$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-divider$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-link$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-progress-bar$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-select-input$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-spinner$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-table$': '<rootDir>/unit/mocks/ink-components.js',
+    '^ink-text-input$': '<rootDir>/unit/mocks/ink-components.js'
   },
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
       tsconfig: {
         module: 'CommonJS',
-        target: 'ES2022'
+        target: 'ES2022',
+        jsx: 'react-jsx'
       }
     }],
     '^.+\\.(js|jsx|mjs)$': 'babel-jest'
   },
   transformIgnorePatterns: [
-    'node_modules/'
+    'node_modules/(?!(strip-ansi|ansi-regex)/)'
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
-  verbose: true
+  testTimeout: 10000,
+  verbose: true,
+  // Enhanced test environment
+  globals: {
+    'ts-jest': {
+      useESM: false
+    }
+  }
 };

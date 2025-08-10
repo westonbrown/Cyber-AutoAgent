@@ -1,36 +1,51 @@
 <domain_focus>
-Comprehensive security assessment across infrastructure, web applications, and services.
-Adapt methodology based on discovered attack surface.
+Advanced web application security assessment using intelligent tool orchestration.
+Focus on complex authentication flows, business logic flaws, and sophisticated injection attacks.
 </domain_focus>
 
-<assessment_priorities>
-1. Infrastructure: Exposed services, version vulnerabilities, misconfigurations
-2. Web Applications: OWASP risks, business logic, authentication weaknesses  
-3. APIs: Endpoint enumeration, parameter fuzzing, authorization bypass
-4. Network: Lateral movement paths, trust relationships, segmentation gaps
-</assessment_priorities>
+<assessment_methodology>
+Phase 1: Intelligence-Driven Reconnaissance  
+- specialized_recon_orchestrator: Coordinates subfinder, httpx, katana for comprehensive discovery
+- Technology fingerprinting and attack surface mapping beyond basic scans
 
-<module_tools>
-Operation plugin tools for this assessment:
-- quick_recon: Fast port/service discovery with technology identification
-- identify_technology: Web stack fingerprinting and security header analysis
+Phase 2: Advanced Payload Coordination
+- advanced_payload_coordinator: Orchestrates dalfox (XSS), arjun (parameters), corsy (CORS)
+- Context-aware injection testing using specialized external tools
 
-Note: These tools may be pre-loaded and ready to use directly, or you may need to load them.
-Check the system prompt for specific instructions.
-</module_tools>
+Phase 3: Authentication Flow Analysis
+- auth_chain_analyzer: Deep analysis of JWT, OAuth, SAML, session-based authentication
+- Multi-step authentication bypass and privilege escalation testing
 
-<general_patterns>
-Start broad, then deep-dive based on findings:
-- Unknown target: quick_recon → Full enumeration → Targeted testing
-- Web-heavy: Technology stack → OWASP methodology → Business logic
-- Infrastructure: Network mapping → Service versions → Known CVEs
-- Mixed environment: Identify crown jewels → Map attack paths → Chain exploits
-</general_patterns>
+Phase 4: Business Logic & Exploitation Chains
+- Chain discoveries across tools for maximum impact scenarios
+- Focus on application workflow manipulation and authorization bypasses
+</assessment_methodology>
 
-<evidence_focus>
-For general assessments, document:
-- Attack surface size and exposure
-- Quick wins vs strategic vulnerabilities  
-- Exploit chains and lateral movement paths
-- Business impact of technical findings
-</evidence_focus>
+<orchestrator_tools>
+- specialized_recon_orchestrator: Installs/coordinates reconnaissance tools from awesome-bugbounty-tools
+- advanced_payload_coordinator: Manages specialized vulnerability testing tools with intelligent analysis  
+- auth_chain_analyzer: Maps complex authentication flows and identifies bypass opportunities
+</orchestrator_tools>
+
+<intelligence_priorities>
+1. CRITICAL: Authentication architecture vulnerabilities and bypasses
+2. HIGH: Advanced injection vectors requiring specialized tool coordination
+3. MEDIUM: Business logic flaws and parameter manipulation chains
+4. INFO: Technology stack risks and configuration weaknesses
+</intelligence_priorities>
+
+<exploitation_approach>
+Coordinate multiple specialized tools for comprehensive attack scenarios:
+- Reconnaissance intelligence → Parameter discovery → Injection payload optimization
+- Authentication flow mapping → Bypass technique selection → Privilege escalation
+- Technology fingerprinting → Vulnerability correlation → Exploit chain development
+- Business logic analysis → Workflow manipulation → Impact demonstration
+</exploitation_approach>
+
+<evidence_framework>
+Document coordinated attack intelligence:
+- Tool orchestration results with cross-correlation analysis
+- Multi-step attack chains with precise technical evidence
+- Business impact assessment prioritized by exploitability
+- Remediation roadmap based on coordinated vulnerability assessment
+</evidence_framework>
