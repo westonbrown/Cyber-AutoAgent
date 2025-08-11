@@ -15,8 +15,7 @@ from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands_tools import shell, editor, load_tool, stop, http_request, swarm, python_repl, handoff_to_user
 
-from modules.prompts.system import get_system_prompt
-from modules.prompts.module_loader import get_module_loader
+from modules import prompts
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
 from modules.handlers.utils import Colors, sanitize_target_name, print_status
@@ -270,7 +269,7 @@ def create_agent(
     loaded_module_tools = []
     
     try:
-        module_loader = get_module_loader()
+        module_loader = prompts.get_module_loader()
         module_tool_paths = module_loader.discover_module_tools(module)
 
         if module_tool_paths:
@@ -350,7 +349,7 @@ Leverage these tools directly via shell.
     # Load module-specific execution prompt
     module_execution_prompt = None
     try:
-        module_loader = get_module_loader()
+        module_loader = prompts.get_module_loader()
         module_execution_prompt = module_loader.load_module_execution_prompt(module)
         if module_execution_prompt:
             print_status(f"Loaded module-specific execution prompt for '{module}'", "SUCCESS")
@@ -359,17 +358,10 @@ Leverage these tools directly via shell.
     except Exception as e:
         logger.warning(f"Error loading module execution prompt for '{module}': {e}")
 
-    system_prompt = get_system_prompt(
-        target,
-        objective,
-        max_steps,
-        operation_id,
-        full_tools_context,
-        provider,
-        has_memory_path=bool(memory_path),
-        has_existing_memories=has_existing_memories,
-        memory_overview=memory_overview,
-        module_context=module_execution_prompt,
+    system_prompt = prompts.get_system_prompt(
+        target=target,
+        objective=objective,
+        remaining_steps=max_steps,  # The new prompt uses remaining_steps
     )
 
     # Always use the React bridge handler as it has all the functionality we need

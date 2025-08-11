@@ -78,6 +78,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.swarm_agents = []
         self.current_swarm_agent = None
         self.swarm_handoff_count = 0
+        # Track last emitted swarm signature to prevent duplicates
+        self._last_swarm_signature = None
 
         # Initialize tool emitter
         self.tool_emitter = ToolEventEmitter(self._emit_ui_event)
@@ -241,7 +243,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         tool_name = tool_use.get("name", "")
         tool_id = tool_use.get("toolUseId", "")
         raw_input = tool_use.get("input", {})
-        tool_input = self._normalize_tool_input(raw_input)
+        tool_input = self._parse_tool_input_from_stream(raw_input)
 
         # Only process new tools
         if tool_id and tool_id not in self.announced_tools:
@@ -272,15 +274,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Emit tool start event
             self._emit_ui_event({"type": "tool_start", "tool_name": tool_name, "tool_input": tool_input})
 
-            # Emit tool-specific events
-            if tool_input and self._is_valid_input(tool_input):
+            # Emit tool-specific events (skip 'swarm' to avoid duplicate swarm_start emissions)
+            if tool_input and self._is_valid_input(tool_input) and tool_name != "swarm":
                 self.tool_emitter.emit_tool_specific_events(tool_name, tool_input)
                 
             # Emit thinking animation for tool execution with start time for elapsed tracking
             current_time_ms = int(time.time() * 1000)
             self._emit_ui_event({"type": "thinking", "context": "tool_execution", "startTime": current_time_ms})
 
-            # Handle swarm tracking
+            # Handle swarm tracking (only here; ToolEventEmitter is skipped for 'swarm')
             if tool_name == "swarm":
                 try:
                     self._track_swarm_start(tool_input)
@@ -296,12 +298,50 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             elif tool_name == "stop":
                 self._stop_tool_used = True
 
-        # Handle streaming updates - just buffer, don't emit events for each chunk
+        # Handle streaming updates - buffer and emit ONLY when complete
         elif tool_id in self.announced_tools and raw_input:
-            tool_input = self._normalize_tool_input(raw_input)
-            self.tool_input_buffer[tool_id] = tool_input
-            # Don't emit events for streaming updates - this causes duplicate/incremental emissions
-            # The initial tool announcement already emitted the events we need
+            old_input = self.tool_input_buffer.get(tool_id, {})
+            new_input = self._parse_tool_input_from_stream(raw_input)
+            
+            # Update buffer with latest input
+            self.tool_input_buffer[tool_id] = new_input
+            
+            # Check if we have complete, usable input (not partial JSON)
+            is_partial_json = (
+                isinstance(new_input, dict) and 
+                len(new_input) == 1 and 
+                "value" in new_input and 
+                isinstance(new_input.get("value"), str)
+            )
+            
+            # Don't emit anything if we have partial JSON
+            if is_partial_json:
+                return
+            
+            # Check if this is a meaningful update from empty/partial to complete
+            was_empty_or_partial = (
+                not old_input or 
+                old_input == {} or
+                (isinstance(old_input, dict) and len(old_input) == 1 and "value" in old_input)
+            )
+            
+            has_complete_content = new_input and new_input != {} and not is_partial_json
+            
+            # Only emit when we transition to complete content
+            if was_empty_or_partial and has_complete_content:
+                # Re-emit tool_start with the complete input
+                self._emit_ui_event({"type": "tool_start", "tool_name": self.last_tool_name, "tool_input": new_input})
+                
+                # Emit tool-specific events now that we have the real input (skip 'swarm')
+                if self._is_valid_input(new_input) and self.last_tool_name != "swarm":
+                    self.tool_emitter.emit_tool_specific_events(self.last_tool_name, new_input)
+                
+                # Handle swarm tracking with real input (single source of truth)
+                if self.last_tool_name == "swarm":
+                    try:
+                        self._track_swarm_start(new_input)
+                    except Exception as e:
+                        logger.warning("SWARM_START streaming update parsing failed: %s; input=%s", e, raw_input)
 
     def _process_tool_result_from_message(self, tool_result: Any) -> None:
         """Process tool execution results."""
@@ -499,12 +539,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self._emit_ui_event({"type": "output", "content": "Command completed successfully"})
 
     def _track_swarm_start(self, tool_input: Dict[str, Any]) -> None:
-        """Track swarm operation start."""
+        """Track swarm operation start. Emit a single, well-formed swarm_start."""
         if not isinstance(tool_input, dict):
             tool_input = {}
         agents = tool_input.get("agents", [])
-        agent_names = []
+        task = tool_input.get("task", "")
 
+        # Build agent names list
+        agent_names: List[str] = []
         if isinstance(agents, list):
             for agent in agents:
                 if isinstance(agent, dict):
@@ -512,19 +554,37 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     agent_names.append(name)
                 elif isinstance(agent, str):
                     agent_names.append(agent)
-                else:
-                    agent_names.append("agent")
 
+        # Skip emitting if we have no meaningful content yet (pre-stream empty input)
+        if not agent_names and not task:
+            return
+
+        # Compute signature to dedupe repeated emissions
+        signature = json.dumps({"agents": agent_names, "task": task}, sort_keys=True)
+        if self._last_swarm_signature == signature:
+            return
+
+        # Update state
         self.in_swarm_operation = True
         self.swarm_agents = agent_names
         self.current_swarm_agent = agent_names[0] if agent_names else None
         self.swarm_handoff_count = 0
+        self._last_swarm_signature = signature
 
-        # Emit a swarm_start UI event so the frontend can display the team
+        # Emit a single swarm_start UI event with full task (no truncation)
         try:
-            self._emit_ui_event({
+            event = {
                 "type": "swarm_start",
-                "agent_names": agent_names
+                "agent_names": agent_names,
+                "agent_count": len(agent_names),
+                "task": task,
+                "max_handoffs": tool_input.get("max_handoffs", 20),
+            }
+            self._emit_ui_event(event)
+            # Back-compat metadata summary for older UIs
+            self._emit_ui_event({
+                "type": "metadata",
+                "content": {"agents": f"{len(agent_names)} agents", "task": task}
             })
         except Exception:
             pass
@@ -533,7 +593,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         """Track agent handoffs in swarm."""
         if self.in_swarm_operation:
             if not isinstance(tool_input, dict):
-                tool_input = self._normalize_tool_input(tool_input)
+                tool_input = self._parse_tool_input_from_stream(tool_input)
                 if not isinstance(tool_input, dict):
                     tool_input = {}
             agent_name = tool_input.get("agent_name", "")
@@ -552,6 +612,19 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     "message": message_preview,
                 }
             )
+
+            # Mark subsequent steps clearly by emitting a new step header on handoff
+            try:
+                self.current_step += 1
+                # Guard against step limit overflow similar to initial header emission
+                if self.current_step <= self.max_steps:
+                    self._emit_step_header()
+                else:
+                    from modules.handlers.base import StepLimitReached
+                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+            except Exception as _:
+                # Do not break stream on header failure
+                pass
 
     def _track_swarm_complete(self) -> None:
         """Track swarm completion."""
@@ -590,37 +663,89 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             match = re.search(pattern, text)
             if match:
                 agent_name = match.group(1).strip()
-                # Skip section headers
+                # Only accept names that are part of the known swarm agents to avoid false positives like 'Endpoint'
                 if agent_name in ['Individual Agent Contributions', 'Final Team Result', 'Team Resource Usage']:
                     continue
-                # Check if this is a known agent or add it
-                if agent_name not in self.swarm_agents:
-                    self.swarm_agents.append(agent_name)
-                self.current_swarm_agent = agent_name
-                break
+                if self.swarm_agents and agent_name not in self.swarm_agents:
+                    # Ignore unknown labels (e.g., 'Endpoint')
+                    continue
+                if agent_name:
+                    if agent_name not in self.swarm_agents:
+                        self.swarm_agents.append(agent_name)
+                    self.current_swarm_agent = agent_name
+                    break
 
     def _is_valid_input(self, tool_input: Any) -> bool:
         """Check if tool input is valid."""
         # Allow empty dicts as valid - tools may have no required parameters
         return isinstance(tool_input, (dict, str))
 
-    def _normalize_tool_input(self, tool_input: Any) -> Any:
-        """Coerce tool_input to a dict when possible; tolerate strings."""
+    def _parse_tool_input_from_stream(self, tool_input: Any) -> Dict[str, Any]:
+        """Parse tool input from SDK streaming format into usable dictionary.
+        
+        The Strands SDK sends tool inputs through multiple streaming updates:
+        1. Initial: Empty dict {}
+        2. Streaming: Wrapped partial JSON {"value": "{\"task\": \"..."}
+        3. Complete: Full JSON that can be unwrapped and parsed
+        
+        This function handles all these cases elegantly:
+        - Unwraps nested JSON strings from streaming updates
+        - Preserves partial JSON for buffering
+        - Returns clean dict for tool consumption
+        
+        Args:
+            tool_input: Raw input from SDK (dict, str, or other)
+            
+        Returns:
+            Dict with parsed tool parameters or wrapped value
+        """
+        # Handle None or empty input
+        if not tool_input:
+            return {}
+            
+        # Handle dictionary input (most common case)
         if isinstance(tool_input, dict):
+            # Check for SDK streaming pattern: {"value": "json_string"}
+            if len(tool_input) == 1 and "value" in tool_input:
+                value = tool_input["value"]
+                
+                # If value is a JSON string, try to parse it
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    
+                    # Check if it looks like JSON
+                    if stripped and (stripped[0] in '{[' and stripped[-1] in '}]'):
+                        try:
+                            # Attempt to parse complete JSON
+                            parsed = json.loads(stripped)
+                            # Return parsed dict directly, or wrap non-dict values
+                            return parsed if isinstance(parsed, dict) else {"value": parsed}
+                        except json.JSONDecodeError:
+                            # Partial JSON - keep wrapped for buffering
+                            return tool_input
+                    
+                    # Non-JSON string value
+                    return tool_input
+                    
+            # Regular dict - return as-is
             return tool_input
+            
+        # Handle string input (less common)
         if isinstance(tool_input, str):
-            s = tool_input.strip()
-            if not s:
+            stripped = tool_input.strip()
+            if not stripped:
                 return {}
+                
+            # Try to parse as JSON
             try:
-                parsed = json.loads(s)
-                if isinstance(parsed, dict):
-                    return parsed
-                return {"value": parsed}
+                parsed = json.loads(stripped)
+                return parsed if isinstance(parsed, dict) else {"value": parsed}
             except json.JSONDecodeError:
-                # Not JSON; return as string wrapper
-                return {"value": s}
-        return {}
+                # Plain string - wrap in value key
+                return {"value": stripped}
+                
+        # Fallback for unexpected types
+        return {"value": str(tool_input)} if tool_input else {}
 
     def _extract_output_text(self, content_items: List[Any]) -> str:
         """Extract text from content items."""

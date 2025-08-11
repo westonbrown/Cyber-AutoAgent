@@ -32,7 +32,7 @@ from strands.telemetry.config import StrandsTelemetry
 
 # Local imports
 from modules.agents.cyber_autoagent import create_agent
-from modules.prompts.system import get_initial_prompt, get_continuation_prompt
+from modules.prompts.factory import get_system_prompt
 from modules.config.manager import get_config_manager
 from modules.handlers.utils import (
     Colors,
@@ -480,8 +480,19 @@ def main():
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 
+        # Construct the dynamic tools context for the prompt
+        # available_tools is a list of tool names (strings) from auto_setup
+        tools_context = "\n".join(
+            [f'- {tool}: Available for security assessment' for tool in available_tools]
+        )
+
         # Initial strategic prompt
-        initial_prompt = get_initial_prompt(args.target, args.objective, args.iterations, available_tools)
+        initial_prompt = get_system_prompt(
+            target=args.target, 
+            objective=args.objective, 
+            remaining_steps=args.iterations,
+            tools_context=tools_context
+        )
 
         print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
 
@@ -546,7 +557,8 @@ def main():
                     logger.warning("Remaining steps check: iterations=%d, current_step=%d, remaining=%d", 
                                  args.iterations, callback_handler.current_step if callback_handler else 0, remaining_steps)
                     if remaining_steps > 0:
-                        current_message = get_continuation_prompt(remaining_steps, args.iterations)
+                        # Simple continuation message
+                        current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
                     else:
                         break
 

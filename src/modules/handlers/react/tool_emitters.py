@@ -180,7 +180,8 @@ class ToolEventEmitter:
                 return
                 
             agent_count = len(agents) if isinstance(agents, list) else 0
-            task_preview = task[:100] + "..." if len(task) > 100 else task
+            # Use full task text without truncation for clarity
+            task_preview = task
 
             # Extract agent names for display
             agent_names = []

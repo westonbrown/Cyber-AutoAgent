@@ -21,7 +21,7 @@ from strands import tool
 
 from modules.handlers.utils import Colors
 from modules.agents.report_agent import ReportGenerator
-from modules.prompts.report import get_report_generation_prompt
+from modules.prompts.factory import get_report_generation_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +91,6 @@ def generate_security_report(
             finding_count = len([e for e in evidence if e.get("category") == "finding"])
             logger.info("Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count)
 
-        # Use centralized formatting functions from prompts module
-        from modules.prompts.report import format_evidence_for_report, format_tools_summary
-
-        evidence_text = format_evidence_for_report(evidence)
-        tools_text = format_tools_summary(tools_used)
-
         # Get module report prompt if available
         module_report_prompt = _get_module_report_prompt(module)
 
@@ -106,9 +100,9 @@ def generate_security_report(
             objective=objective,
             operation_id=operation_id,
             steps_executed=steps_executed,
-            tools_text=tools_text,
-            evidence_text=evidence_text,
-            module_report_prompt=module_report_prompt,
+            evidence=evidence,
+            tools_used=tools_used,
+            module_prompt=module_report_prompt,
         )
 
         # Create report agent using utility class with trace attributes

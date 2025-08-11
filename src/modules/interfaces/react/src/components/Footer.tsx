@@ -77,7 +77,6 @@ export const Footer: React.FC<FooterProps> = React.memo(({
   const totalTokens = (operationMetrics?.tokens || 0).toLocaleString();
   const hasDuration = !!operationMetrics?.duration && operationMetrics?.duration !== '0s';
   const hasMem = (operationMetrics?.memoryOps || 0) > 0;
-  const hasEv = (operationMetrics?.evidence || 0) > 0;
 
   return (
     <Box width="100%" flexDirection="row">
@@ -107,22 +106,11 @@ export const Footer: React.FC<FooterProps> = React.memo(({
             <Text color={theme.muted}>{operationMetrics?.duration}</Text>
           </>
         )}
-        {(hasMem || hasEv) && (
+        {hasMem && (
           <>
             <Text color={theme.muted}> | </Text>
-            {hasMem && (
-              <>
-                <Text color={theme.muted}>{operationMetrics?.memoryOps}</Text>
-                <Text color={theme.muted}> mem</Text>
-              </>
-            )}
-            {hasMem && hasEv && <Text color={theme.muted}> • </Text>}
-            {hasEv && (
-              <>
-                <Text color={theme.muted}>{operationMetrics?.evidence}</Text>
-                <Text color={theme.muted}> ev</Text>
-              </>
-            )}
+            <Text color={theme.muted}>{operationMetrics?.memoryOps}</Text>
+            <Text color={theme.muted}> mem</Text>
           </>
         )}
         {errorCount > 0 && (
