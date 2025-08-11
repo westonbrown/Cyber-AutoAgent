@@ -24,11 +24,12 @@
  * Configuration management for all application settings
  */
 
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, FC, ReactNode } from 'react';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { detectDeploymentMode, getDeploymentDefaults } from '../config/deployment.js';
+import { DeploymentDetector } from '../services/DeploymentDetector.js';
 
 /**
  * Main Configuration Interface - Complete Settings Schema
@@ -374,194 +375,120 @@ export const defaultConfig: Config = {
   deploymentMode: 'local-cli' // Default to Local CLI for minimal setup
 };
 
-// Configuration Context - React Context for global state management
 const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 /**
  * ConfigProvider - Enterprise Configuration Management Provider
  * 
  * Wraps the application with centralized configuration management including
- * persistent storage, environment variable integration, and validation.
+ * persistence, validation, and deployment-aware defaults.
+ * 
  * Automatically loads configuration on mount and provides methods for
  * real-time updates with immediate persistence.
  */
-export const ConfigProvider: React.FC<{children: React.ReactNode}> = ({children}) => {
-  const [applicationConfiguration, setApplicationConfiguration] = useState<Config>(defaultConfig);
-  const [deploymentInfo, setDeploymentInfo] = useState<{mode: string; description: string} | null>(null);
-  const [isConfigLoading, setIsConfigLoading] = useState<boolean>(true); // Start as loading
-  
-  // Use a ref to always have access to the latest configuration for saving
-  const configRef = useRef<Config>(applicationConfiguration);
-  
-  // Update ref immediately when state changes (not in effect)
-  configRef.current = applicationConfiguration;
-  
-  // Configuration file path in user's home directory - useMemo to ensure stable reference
-  const configurationFilePath = useMemo(
-    () => path.join(os.homedir(), '.cyber-autoagent', 'config.json'),
-    []
-  );
+export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
+  const [config, setConfig] = useState<Config>(defaultConfig);
+  const [isConfigLoading, setIsConfigLoading] = useState(true);
+  const configFilePath = useMemo(() => path.join(os.homedir(), '.cyber-autoagent', 'config.json'), []);
 
-  /**
-   * Load configuration from persistent storage with error handling
-   * Automatically creates configuration directory if it doesn't exist
-   */
-  const loadConfigurationFromDisk = useCallback(async () => {
-    setIsConfigLoading(true); // Start loading
-    try {
-      const configurationDirectory = path.dirname(configurationFilePath);
-      await fs.mkdir(configurationDirectory, { recursive: true });
-      
-      const configurationFileContent = await fs.readFile(configurationFilePath, 'utf-8');
-      const parsedConfiguration = JSON.parse(configurationFileContent);
-      
-      // Migration: If config exists but isConfigured is missing or false, validate configuration
-      if (parsedConfiguration.isConfigured === undefined || parsedConfiguration.isConfigured === false) {
-        // Auto-detect if configuration is complete based on essential fields
-        const hasEssentialConfig = !!(
-          parsedConfiguration.modelProvider && 
-          parsedConfiguration.modelId &&
-          (
-            (parsedConfiguration.modelProvider === 'bedrock' && 
-              (parsedConfiguration.awsBearerToken || parsedConfiguration.awsAccessKeyId)) ||
-            (parsedConfiguration.modelProvider === 'ollama') ||
-            (parsedConfiguration.modelProvider === 'litellm')
-          )
-        );
-        
-        // Only auto-set to true if configuration is actually complete
-        if (hasEssentialConfig) {
-          console.log('Auto-detecting configuration as complete based on essential fields');
-          parsedConfiguration.isConfigured = true;
-          
-          // Persist the updated configuration back to disk
-          const updatedConfig = {
-            ...defaultConfig,
-            ...parsedConfiguration
-          };
-          
-          // Write back the updated configuration
-          try {
-            await fs.writeFile(
-              configurationFilePath, 
-              JSON.stringify(updatedConfig, null, 2),
-              'utf-8'
-            );
-            console.log('Configuration file updated with isConfigured=true');
-          } catch (writeError) {
-            console.error('Failed to update configuration file:', writeError);
-          }
-        }
-      }
-      
-      // Merge with defaults to ensure all required fields exist and handle schema evolution
-      setApplicationConfiguration({
-        ...defaultConfig,
-        ...parsedConfiguration
-      });
-      setIsConfigLoading(false); // Finished loading successfully
-    } catch (error) {
-      // Configuration file doesn't exist or contains invalid JSON - use defaults
-      console.log('Configuration file not found or invalid, using application defaults');
-      setIsConfigLoading(false); // Finished loading (with defaults)
-    }
-  }, [configurationFilePath]);
-
-  // Load configuration on component mount - FIXED: Remove function dependency to prevent infinite loops
+  // Use a ref to get the latest config in callbacks without adding a dependency
+  const configRef = useRef(config);
   useEffect(() => {
-    loadConfigurationFromDisk();
-    
-    // Detect deployment mode asynchronously and update observability settings if needed
-    detectDeploymentMode().then((info) => {
-      setDeploymentInfo({
-        mode: info.mode,
-        description: info.description
-      });
-      
-      // Update observability settings if they haven't been explicitly configured
-      setApplicationConfiguration(prevConfig => {
-        // Only update if user hasn't explicitly configured these settings
-        if (prevConfig.isConfigured) {
-          return prevConfig; // User has configured, don't override
+    configRef.current = config;
+  }, [config]);
+
+  const deepMerge = (target: any, source: any) => {
+    const output = { ...target };
+    if (target && typeof target === 'object' && source && typeof source === 'object') {
+      Object.keys(source).forEach(key => {
+        if (source[key] && typeof source[key] === 'object' && key in target) {
+          output[key] = deepMerge(target[key], source[key]);
+        } else {
+          output[key] = source[key];
         }
-        
-        return {
-          ...prevConfig,
-          observability: info.observabilityDefault,
-          autoEvaluation: info.evaluationDefault,
-          enableLangfusePrompts: info.observabilityDefault,
-          langfuseHost: info.langfuseHost,
-          deploymentMode: info.mode as any
-        };
       });
-    }).catch(error => {
-      console.warn('Failed to detect deployment mode:', error);
-      setDeploymentInfo({
-        mode: 'unknown',
-        description: 'Could not detect deployment mode'
-      });
-    });
-  }, []); // CRITICAL FIX: Only run on mount, not when callback changes
-
-  /**
-   * Persist current configuration to disk with atomic write operations
-   * Ensures configuration directory exists and handles write errors gracefully
-   */
-  const persistConfigurationToDisk = useCallback(async () => {
-    try {
-      const configurationDirectory = path.dirname(configurationFilePath);
-      await fs.mkdir(configurationDirectory, { recursive: true });
-      
-      // Use the ref to get the latest configuration
-      const currentConfig = configRef.current;
-      
-      // Atomic write operation with pretty formatting for manual editing
-      const configContent = JSON.stringify(currentConfig, null, 2);
-      await fs.writeFile(configurationFilePath, configContent, 'utf-8');
-    } catch (error) {
-      console.error('Failed to persist configuration to disk:', error);
-      throw new Error(`Configuration save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [configurationFilePath]); // Use ref instead of state dependency
+    return output;
+  };
 
-  /**
-   * Update configuration with partial changes using deep merge
-   * Triggers immediate state update for real-time UI responsiveness
-   */
-  const updateApplicationConfiguration = useCallback((configurationUpdates: Partial<Config>) => {
-    setApplicationConfiguration(previousConfiguration => {
-      // PREVENT UNNECESSARY UPDATES: Check if config actually changed
-      const newConfig = { ...previousConfiguration, ...configurationUpdates };
-      const prevStr = JSON.stringify(previousConfiguration);
-      const newStr = JSON.stringify(newConfig);
-      if (prevStr === newStr) {
-        return previousConfiguration; // Return same reference to prevent re-renders
+  const updateConfig = useCallback((updates: Partial<Config>) => {
+    setConfig(prevConfig => deepMerge(prevConfig, updates));
+  }, []);
+
+  const saveConfig = useCallback(async () => {
+    try {
+      await fs.mkdir(path.dirname(configFilePath), { recursive: true });
+      await fs.writeFile(configFilePath, JSON.stringify(configRef.current, null, 2));
+    } catch (error) {
+      console.error('Failed to save config:', error);
+    }
+  }, [configFilePath]);
+
+  const loadConfig = useCallback(async () => {
+    setIsConfigLoading(true);
+    try {
+      const data = await fs.readFile(configFilePath, 'utf-8');
+      const loadedConfig = JSON.parse(data);
+      setConfig(prev => deepMerge(prev, loadedConfig));
+    } catch (error) {
+      // If the file doesn't exist or is invalid, we just use the default config
+    } finally {
+      setIsConfigLoading(false);
+    }
+  }, [configFilePath]);
+
+  const validateAndLoadConfig = useCallback(async () => {
+    setIsConfigLoading(true);
+    let loadedConfig: Partial<Config> = {};
+    try {
+      const data = await fs.readFile(configFilePath, 'utf-8');
+      loadedConfig = JSON.parse(data);
+    } catch (error) {
+      // File not found or invalid, proceed with defaults
+    }
+
+    const detector = DeploymentDetector.getInstance();
+    detector.clearCache(); // Always get fresh data on startup
+    const liveDeployments = await detector.detectDeployments(loadedConfig as Config);
+    const configuredMode = loadedConfig.deploymentMode;
+
+    if (configuredMode) {
+      const isModeHealthy = liveDeployments.availableDeployments.find(
+        d => d.mode === configuredMode && d.isHealthy
+      );
+
+      if (!isModeHealthy) {
+        // The configured deployment is not active. Invalidate it.
+        loadedConfig.deploymentMode = undefined;
+        loadedConfig.isConfigured = false; // Force setup
       }
-      return newConfig;
-    });
+    }
+
+    setConfig(prev => deepMerge(prev, loadedConfig));
+    setIsConfigLoading(false);
+  }, [configFilePath]);
+
+  const resetToDefaults = useCallback(() => {
+    setConfig(defaultConfig);
   }, []);
 
-  /**
-   * Reset all configuration settings to application defaults
-   * Useful for troubleshooting and first-time setup scenarios
-   */
-  const resetConfigurationToDefaults = useCallback(() => {
-    setApplicationConfiguration(defaultConfig);
-  }, []);
+  // Load and validate configuration on component mount
+  useEffect(() => {
+    validateAndLoadConfig();
+  }, [validateAndLoadConfig]);
 
-  // CRITICAL FIX: Use useMemo to prevent infinite re-renders 
-  // Without this, the contextProviderValue object gets recreated on every render, causing infinite loops
-  const contextProviderValue: ConfigContextType = useMemo(() => ({
-    config: applicationConfiguration,
+  const contextValue = useMemo(() => ({
+    config,
     isConfigLoading,
-    updateConfig: updateApplicationConfiguration,
-    saveConfig: persistConfigurationToDisk,
-    loadConfig: loadConfigurationFromDisk,
-    resetToDefaults: resetConfigurationToDefaults
-  }), [applicationConfiguration, isConfigLoading, updateApplicationConfiguration, persistConfigurationToDisk, loadConfigurationFromDisk, resetConfigurationToDefaults]);
+    updateConfig,
+    saveConfig,
+    loadConfig,
+    validateAndLoadConfig,
+    resetToDefaults,
+  }), [config, isConfigLoading, updateConfig, saveConfig, loadConfig, validateAndLoadConfig, resetToDefaults]);
 
   return (
-    <ConfigContext.Provider value={contextProviderValue}>
+    <ConfigContext.Provider value={contextValue}>
       {children}
     </ConfigContext.Provider>
   );

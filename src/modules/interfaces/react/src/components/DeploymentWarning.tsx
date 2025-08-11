@@ -56,10 +56,15 @@ export const DeploymentWarning: React.FC<DeploymentWarningProps> = ({
         ))}
       </Box>
       
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="column">
         <Text color={theme.muted} italic>
-          💡 Tip: Use /config to switch modes or stop unused services to save resources
+          💡 Tip: Use /config to switch modes. To stop unused services:
         </Text>
+        {unusedDeployments.map(dep => (
+          <Text key={`${dep.mode}-cmd`} color={theme.muted}>
+            • {dep.mode === 'local-cli' ? 'Deactivate venv or quit CLI' : dep.mode === 'single-container' ? 'docker stop cyber-autoagent' : 'docker compose down'}
+          </Text>
+        ))}
       </Box>
     </Box>
   );

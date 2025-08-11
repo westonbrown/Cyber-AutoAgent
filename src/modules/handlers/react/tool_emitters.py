@@ -97,8 +97,16 @@ class ToolEventEmitter:
 
     def _emit_http_request(self, tool_input: Any) -> None:
         """Emit HTTP request details."""
-        # Skip redundant metadata - tool formatter already shows this
-        pass
+        if isinstance(tool_input, dict):
+            method = tool_input.get("method", "GET")
+            url = tool_input.get("url", "")
+            # Emit structured event for request tracking (not for display)
+            if url:
+                self.emit_ui_event({
+                    "type": "http_request_start",
+                    "method": method,
+                    "url": url
+                })
 
     def _emit_file_write(self, tool_input: Any) -> None:
         """Emit file write operation details."""
@@ -110,7 +118,29 @@ class ToolEventEmitter:
         if isinstance(tool_input, dict):
             command = tool_input.get("command", "")
             path = tool_input.get("path", "")
-            self.emit_ui_event({"type": "metadata", "content": {"command": command, "path": path}})
+            
+            # Emit more detailed metadata based on command type
+            metadata = {"command": command, "path": path}
+            
+            # Add command-specific details
+            if command == "str_replace" or command == "str_replace_based_edit_tool":
+                old_str = tool_input.get("old_str", "")
+                new_str = tool_input.get("new_str", "")
+                if old_str:
+                    metadata["replacing"] = old_str[:50] + "..." if len(old_str) > 50 else old_str
+                if new_str:
+                    metadata["with"] = new_str[:50] + "..." if len(new_str) > 50 else new_str
+            elif command == "view":
+                view_range = tool_input.get("view_range", [])
+                if view_range:
+                    metadata["lines"] = f"{view_range[0]}-{view_range[1]}" if len(view_range) == 2 else str(view_range)
+            elif command == "create":
+                content = tool_input.get("file_text", "")
+                if content:
+                    lines = content.count('\n') + 1
+                    metadata["size"] = f"{lines} lines"
+            
+            self.emit_ui_event({"type": "metadata", "content": metadata})
 
     def _emit_user_handoff(self, tool_input: Any) -> None:
         """Emit user handoff event."""
@@ -144,6 +174,11 @@ class ToolEventEmitter:
         if isinstance(tool_input, dict):
             agents = tool_input.get("agents", [])
             task = tool_input.get("task", "")
+            
+            # Don't emit empty swarm events - these are invalid and cause UI spam
+            if not agents and not task:
+                return
+                
             agent_count = len(agents) if isinstance(agents, list) else 0
             task_preview = task[:100] + "..." if len(task) > 100 else task
 
@@ -159,27 +194,38 @@ class ToolEventEmitter:
                     else:
                         agent_names.append("agent")
 
-            # Emit swarm start event
-            self.emit_ui_event(
-                {
-                    "type": "swarm_start",
-                    "agent_names": agent_names,
-                    "agent_count": agent_count,
-                    "task": task_preview,
-                    "max_handoffs": tool_input.get("max_handoffs", 20),
-                }
-            )
+            # Only emit swarm start event if we have valid data
+            if agent_count > 0 or task:
+                # Emit swarm start event
+                self.emit_ui_event(
+                    {
+                        "type": "swarm_start",
+                        "agent_names": agent_names,
+                        "agent_count": agent_count,
+                        "task": task_preview,
+                        "max_handoffs": tool_input.get("max_handoffs", 20),
+                    }
+                )
 
-            # Also emit metadata for backward compatibility
-            self.emit_ui_event(
-                {"type": "metadata", "content": {"agents": f"{agent_count} agents", "task": task_preview}}
-            )
+                # Also emit metadata for backward compatibility
+                self.emit_ui_event(
+                    {"type": "metadata", "content": {"agents": f"{agent_count} agents", "task": task_preview}}
+                )
 
     def _emit_python_repl(self, tool_input: Any) -> None:
         """Emit Python REPL execution details."""
-        # Skip metadata emission for python_repl since StreamDisplay already handles code display
-        # This prevents duplicate "code:" entries in the output
-        pass
+        if isinstance(tool_input, dict):
+            code = tool_input.get("code", "")
+            if code:
+                # Emit code execution event for tracking/metrics (not for display)
+                # StreamDisplay already handles the visual display
+                lines = code.count('\n') + 1
+                self.emit_ui_event({
+                    "type": "code_execution",
+                    "language": "python",
+                    "lines": lines,
+                    "preview": code[:100] + "..." if len(code) > 100 else code
+                })
 
     def _emit_load_tool(self, tool_input: Any) -> None:
         """Emit dynamic tool loading details."""

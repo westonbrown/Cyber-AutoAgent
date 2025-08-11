@@ -5,7 +5,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 
-interface FooterProps {
+interface OperationFooterProps {
   tokens: number;
   duration: string;
   memoryOps: number;
@@ -14,11 +14,11 @@ interface FooterProps {
 
 const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 
-export const OperationFooter: React.FC<FooterProps> = ({
+export const OperationFooter: React.FC<OperationFooterProps> = ({
   tokens,
   duration,
   memoryOps,
-  evidence
+  evidence,
 }) => {
   return (
     <Box flexDirection="column">

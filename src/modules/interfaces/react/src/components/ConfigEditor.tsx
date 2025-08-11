@@ -139,6 +139,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [navigationMode, setNavigationMode] = useState<'sections' | 'fields'>('sections');
+  const [lastEscTime, setLastEscTime] = useState<number | null>(null);
   
   // Use ref to track timeout for cleanup
   const messageTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -216,11 +217,19 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         setSections(newSections);
         setNavigationMode('sections');
         setSelectedFieldIndex(0);
-      } else if (unsavedChanges) {
-        setMessage({ text: 'Unsaved changes. Press Ctrl+S to save or Esc again to exit.', type: 'info' });
       } else {
-        // Screen clearing on exit is handled by modal manager
-        onClose();
+        // Double-ESC to exit from sections list
+        const now = Date.now();
+        const withinWindow = lastEscTime && now - lastEscTime < 1200;
+        if (unsavedChanges) {
+          setMessage({ text: 'Unsaved changes. Press Ctrl+S to save or Esc twice to exit without saving.', type: 'info' });
+          setLastEscTime(now);
+        } else if (withinWindow) {
+          onClose();
+        } else {
+          setMessage({ text: 'Press Esc again to exit', type: 'info' });
+          setLastEscTime(now);
+        }
       }
     }
     
@@ -267,6 +276,26 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     if (key.ctrl && input === 's') {
       handleSave();
     }
+    
+    // Expand/collapse with arrows in sections mode
+    if (navigationMode === 'sections') {
+      if (key.leftArrow) {
+        const newSections = [...sections];
+        if (newSections[selectedSectionIndex].expanded) {
+          newSections[selectedSectionIndex].expanded = false;
+          setSections(newSections);
+        }
+      }
+      if (key.rightArrow) {
+        const newSections = [...sections];
+        if (!newSections[selectedSectionIndex].expanded) {
+          newSections[selectedSectionIndex].expanded = true;
+          setSections(newSections);
+          setNavigationMode('fields');
+          setSelectedFieldIndex(0);
+        }
+      }
+    }
   }, { isActive: !editingField });
 
   // Separate input handler for when editing to handle Ctrl+S
@@ -277,7 +306,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         const field = getCurrentSectionFields().find(f => f.key === editingField.field);
         if (field) {
           if (field.type === 'number') {
-            const numValue = parseInt(tempValue, 10);
+            const numValue = parseFloat(tempValue);
             if (!isNaN(numValue)) {
               updateConfigValue(field.key, numValue);
             }
@@ -301,6 +330,12 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   const handleSave = useCallback(async () => {
     try {
+      // Validate before saving
+      const validationError = validateBeforeSave();
+      if (validationError) {
+        setMessage({ text: validationError, type: 'error' });
+        return;
+      }
       // Mark configuration as complete when saving
       updateConfig({ isConfigured: true });
       
@@ -382,6 +417,29 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
     setUnsavedChanges(true);
   }, [config, updateConfig]);
+
+  // Basic pre-save validation for required fields and dependent settings
+  const validateBeforeSave = () => {
+    // Required fields
+    const requiredFields: Array<{ key: string; label: string }> = [
+      { key: 'modelProvider', label: 'Model Provider' },
+      { key: 'modelId', label: 'Primary Model' },
+    ];
+    const missing = requiredFields.filter(f => !(config as any)[f.key]);
+    if (missing.length > 0) {
+      return `Missing required: ${missing.map(m => m.label).join(', ')}`;
+    }
+    // Observability requirements when enabled
+    if (config.observability) {
+      if (!config.langfuseHost && !config.langfuseHostOverride) {
+        return 'Observability is enabled but Langfuse Host is not set.';
+      }
+      if (!config.langfusePublicKey || !config.langfuseSecretKey) {
+        return 'Observability requires Langfuse Public and Secret keys.';
+      }
+    }
+    return '';
+  };
   
   const startEditing = useCallback((field: ConfigField) => {
     // Prevent editing of read-only fields
@@ -609,7 +667,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         onChange={setTempValue}
         onSubmit={(value) => {
           if (field.type === 'number') {
-            const numValue = parseInt(value, 10);
+            const numValue = parseFloat(value);
             if (!isNaN(numValue)) {
               updateConfigValue(field.key, numValue);
             }

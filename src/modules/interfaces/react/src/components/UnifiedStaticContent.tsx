@@ -1,12 +1,13 @@
 /**
  * Unified Static Content Component
- * 
- * Single Static component that manages all persistent UI content.
- * Fixes the duplicate rendering issues by providing stable keys and
- * proper content management.
+ *
+ * @deprecated This component is not used by the current UI flow and renders a Header internally,
+ * which could reintroduce duplicate banner rendering if adopted unintentionally.
+ * Banner rendering is centralized in `components/MainAppView.tsx`. Prefer extending
+ * `MainAppView` instead of using this component.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { Box, Text, Static } from 'ink';
 import { Header } from './Header.js';
 import { OperationStatusDisplay } from './OperationStatusDisplay.js';
@@ -69,6 +70,13 @@ export const UnifiedStaticContent: React.FC<UnifiedStaticContentProps> = React.m
   isLoading = false,
   loadingText = 'Processing'
 }) => {
+  // Dev-time safeguard to prevent accidental usage
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn('[Deprecated] UnifiedStaticContent is deprecated. Use MainAppView for centralized banner rendering.');
+    }
+  }, []);
   
   // Convert history for virtualized output
   const virtualizedHistory = useVirtualizedHistory(operationHistory);

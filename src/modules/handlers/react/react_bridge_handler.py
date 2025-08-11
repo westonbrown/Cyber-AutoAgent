@@ -240,7 +240,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         """Process tool usage announcements."""
         tool_name = tool_use.get("name", "")
         tool_id = tool_use.get("toolUseId", "")
-        tool_input = tool_use.get("input", {})
+        raw_input = tool_use.get("input", {})
+        tool_input = self._normalize_tool_input(raw_input)
 
         # Only process new tools
         if tool_id and tool_id not in self.announced_tools:
@@ -281,26 +282,26 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Handle swarm tracking
             if tool_name == "swarm":
-                self._track_swarm_start(tool_input)
+                try:
+                    self._track_swarm_start(tool_input)
+                except Exception as e:
+                    logger.warning("SWARM_START parsing failed: %s; input=%s", e, raw_input)
             elif tool_name == "handoff_to_agent":
-                self._track_agent_handoff(tool_input)
+                try:
+                    self._track_agent_handoff(tool_input)
+                except Exception as e:
+                    logger.warning("AGENT_HANDOFF parsing failed: %s; input=%s", e, raw_input)
             elif tool_name == "complete_swarm_task":
                 self._track_swarm_complete()
             elif tool_name == "stop":
                 self._stop_tool_used = True
 
-        # Handle streaming updates
-        elif tool_id in self.announced_tools and tool_input:
+        # Handle streaming updates - just buffer, don't emit events for each chunk
+        elif tool_id in self.announced_tools and raw_input:
+            tool_input = self._normalize_tool_input(raw_input)
             self.tool_input_buffer[tool_id] = tool_input
-            if isinstance(tool_input, str):
-                try:
-                    parsed_input = json.loads(tool_input)
-                    if isinstance(parsed_input, dict):
-                        self.tool_emitter.emit_tool_specific_events(tool_name, parsed_input)
-                except json.JSONDecodeError:
-                    pass
-            elif isinstance(tool_input, dict):
-                self.tool_emitter.emit_tool_specific_events(tool_name, tool_input)
+            # Don't emit events for streaming updates - this causes duplicate/incremental emissions
+            # The initial tool announcement already emitted the events we need
 
     def _process_tool_result_from_message(self, tool_result: Any) -> None:
         """Process tool execution results."""
@@ -499,6 +500,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _track_swarm_start(self, tool_input: Dict[str, Any]) -> None:
         """Track swarm operation start."""
+        if not isinstance(tool_input, dict):
+            tool_input = {}
         agents = tool_input.get("agents", [])
         agent_names = []
 
@@ -517,9 +520,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.current_swarm_agent = agent_names[0] if agent_names else None
         self.swarm_handoff_count = 0
 
+        # Emit a swarm_start UI event so the frontend can display the team
+        try:
+            self._emit_ui_event({
+                "type": "swarm_start",
+                "agent_names": agent_names
+            })
+        except Exception:
+            pass
+
     def _track_agent_handoff(self, tool_input: Dict[str, Any]) -> None:
         """Track agent handoffs in swarm."""
         if self.in_swarm_operation:
+            if not isinstance(tool_input, dict):
+                tool_input = self._normalize_tool_input(tool_input)
+                if not isinstance(tool_input, dict):
+                    tool_input = {}
             agent_name = tool_input.get("agent_name", "")
             message = tool_input.get("message", "")
             message_preview = message[:100] + "..." if len(message) > 100 else message
@@ -587,6 +603,24 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         """Check if tool input is valid."""
         # Allow empty dicts as valid - tools may have no required parameters
         return isinstance(tool_input, (dict, str))
+
+    def _normalize_tool_input(self, tool_input: Any) -> Any:
+        """Coerce tool_input to a dict when possible; tolerate strings."""
+        if isinstance(tool_input, dict):
+            return tool_input
+        if isinstance(tool_input, str):
+            s = tool_input.strip()
+            if not s:
+                return {}
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {"value": parsed}
+            except json.JSONDecodeError:
+                # Not JSON; return as string wrapper
+                return {"value": s}
+        return {}
 
     def _extract_output_text(self, content_items: List[Any]) -> str:
         """Extract text from content items."""

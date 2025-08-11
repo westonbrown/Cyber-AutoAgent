@@ -1,5 +1,5 @@
 /** @type {import('jest').Config} */
-export default {
+module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
   setupFilesAfterEnv: ['<rootDir>/unit/setup.ts'],
@@ -40,11 +40,7 @@ export default {
   },
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
-      tsconfig: {
-        module: 'CommonJS',
-        target: 'ES2022',
-        jsx: 'react-jsx'
-      }
+      tsconfig: 'tsconfig.jest.json'
     }],
     '^.+\\.(js|jsx|mjs)$': 'babel-jest'
   },
@@ -53,11 +49,5 @@ export default {
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx'],
   testTimeout: 10000,
-  verbose: true,
-  // Enhanced test environment
-  globals: {
-    'ts-jest': {
-      useESM: false
-    }
-  }
+  verbose: true
 };
