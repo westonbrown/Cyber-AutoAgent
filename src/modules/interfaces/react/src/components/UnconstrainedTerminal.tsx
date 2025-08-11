@@ -537,12 +537,13 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* Render completed events as regular components to preserve header-first layout */}
-      {completedEvents.map((item, index) => (
-        <StreamDisplay key={`event-${index}`} events={[item]} />
-      ))}
+      {/* Completed events must use Ink's <Static> to preserve native terminal scrollback. */}
+      {/* Do NOT convert this to a normal map render; that would re-constrain scrollback. */}
+      <Static items={completedEvents}>
+        {(item, index) => <StreamDisplay key={`event-${index}`} events={[item]} />}
+      </Static>
 
-      {/* Render active, streaming events */}
+      {/* Active, streaming events remain dynamic (spinners/live output). */}
       {activeEvents.length > 0 && <StreamDisplay events={activeEvents} />}
 
       {/* Trailing spacer to avoid footer crowding */}

@@ -1,22 +1,28 @@
-"""Prompts module for Cyber-AutoAgent."""
+#!/usr/bin/env python3
+"""
+Prompts module for Cyber-AutoAgent.
 
-from modules.prompts.system import (
+This module provides a centralized factory for creating and managing
+all prompts used by the agent, including system prompts, report generation
+prompts, and dynamic prompts for different operational modules.
+"""
+
+from .factory import (
     get_system_prompt,
-    get_initial_prompt,
-    get_continuation_prompt,
-    _get_swarm_model_guidance,
-    _get_output_directory_guidance,
-    _get_memory_context_guidance,
+    get_report_generation_prompt,
+    get_report_agent_system_prompt,
+    format_evidence_for_report,
+    format_tools_summary,
+    get_module_loader,
+    ModulePromptLoader,
 )
-from modules.prompts.manager import PromptManager, get_prompt_manager
 
 __all__ = [
     "get_system_prompt",
-    "get_initial_prompt",
-    "get_continuation_prompt",
-    "_get_swarm_model_guidance",
-    "_get_output_directory_guidance",
-    "_get_memory_context_guidance",
-    "PromptManager",
-    "get_prompt_manager",
+    "get_report_generation_prompt",
+    "get_report_agent_system_prompt",
+    "format_evidence_for_report",
+    "format_tools_summary",
+    "get_module_loader",
+    "ModulePromptLoader",
 ]

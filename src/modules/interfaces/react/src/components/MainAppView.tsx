@@ -124,14 +124,18 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         />
       )}
 
-      {/* HEADER: Render normally to ensure re-render after terminal clears */}
+      {/* HEADER: Render via Static so it always stays above Static logs */}
       {!hideHeader && !appState.hasCompletedOperation && activeModal === ModalType.NONE && (
-        <Header 
-          key={`app-header-${staticKey}`}
-          version="0.1.3" 
-          terminalWidth={appState.terminalDisplayWidth}
-          nightly={false}
-        />
+        <Static items={[0]}>
+          {() => (
+            <Header 
+              key={`app-header-${staticKey}`}
+              version="0.1.3" 
+              terminalWidth={appState.terminalDisplayWidth}
+              nightly={false}
+            />
+          )}
+        </Static>
       )}
 
       {/* MAIN CONTENT AREA: This container grows to fill available space. Remove overflow clamp to allow natural scrollback. */}

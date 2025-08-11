@@ -98,50 +98,9 @@ const EventLine: React.FC<{
       return null;
       
     case 'tool_invocation_start':
-      const sdkToolName = 'toolName' in event ? event.toolName : 'unknown';
-      const sdkToolInput = 'toolInput' in event ? event.toolInput : null;
-      
-      if (sdkToolInput && typeof sdkToolInput === 'object') {
-        const inputKeys = Object.keys(sdkToolInput);
-        const maxKeys = 4;
-        const displayKeys = inputKeys.slice(0, maxKeys);
-        const hasMore = inputKeys.length > maxKeys;
-        
-        return (
-          <Box flexDirection="column" marginTop={1}>
-            <Text color="green" bold>tool: {sdkToolName}</Text>
-            {displayKeys.map((key, i) => {
-              const value = sdkToolInput[key];
-              const displayValue = typeof value === 'string' && value.length > 50 
-                ? value.substring(0, 50) + '...' 
-                : typeof value === 'object' ? JSON.stringify(value).substring(0, 50) + '...'
-                : String(value);
-              const isLast = i === displayKeys.length - 1 && !hasMore;
-              
-              return (
-                <Box key={key} marginLeft={2}>
-                  <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
-                </Box>
-              );
-            })}
-            {hasMore && (
-              <Box marginLeft={2}>
-                <Text dimColor>└─ ... (+{inputKeys.length - maxKeys} more)</Text>
-              </Box>
-            )}
-            <Box marginLeft={2}>
-              </Box>
-          </Box>
-        );
-      }
-      
-      return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="green" bold>tool: {sdkToolName}</Text>
-          <Box marginLeft={2}>
-          </Box>
-        </Box>
-      );
+      // Skip rendering here - we handle tool display in 'tool_start' event
+      // This prevents duplicate tool displays
+      return null;
       
     case 'tool_invocation_end':
       // Don't show "tool completed" - just let the output speak for itself
@@ -184,14 +143,14 @@ const EventLine: React.FC<{
       // Show specific swarm agent name if available
       if (event.swarm_agent) {
         // Capitalize agent name for better visibility
-        const agentName = event.swarm_agent.toUpperCase();
-        agentInfo = ` • [SUB-AGENT: ${agentName}]`;
+        const agentName = String(event.swarm_agent);
+        agentInfo = ` • SUB-AGENT ${agentName}`;
       } else if (event.swarm_context) {
         // If we have swarm context but no specific agent, show operation type
-        agentInfo = ` • [SUB-AGENT: ${event.swarm_context}]`;
+        agentInfo = ` • SUB-AGENT ${event.swarm_context}`;
       } else if (event.is_swarm_operation) { 
         // Show swarm operation indicator
-        agentInfo = ' • [SWARM OPERATION]';
+        agentInfo = ' • SWARM OPERATION';
       }
       
       return (
@@ -242,10 +201,18 @@ const EventLine: React.FC<{
       );
       
     case 'tool_start':
-      // Format tool input based on tool type - professional display without emojis
-      let inputDisplay = '';
+      // If the first event has empty input, skip rendering to avoid duplicate tool name lines.
+      const hasEmptyInput = !event.tool_input || Object.keys(event.tool_input).length === 0;
+      if (hasEmptyInput) {
+        return null;
+      }
       
+      // Otherwise handle specific tool formatting
       switch (event.tool_name) {
+        case 'swarm':
+          // Suppress detailed rendering here to avoid duplication with 'swarm_start'.
+          // Legacy backends without 'swarm_start' will still show rich output via SwarmDisplay when parsed from outputs.
+          return null;
         case 'mem0_memory':
           const action = event.tool_input?.action || 'list';
           const content = event.tool_input?.content || event.tool_input?.query || '';
@@ -267,8 +234,8 @@ const EventLine: React.FC<{
           break;
           
         case 'shell':
-          // For shell, don't show commands here - they come via 'command' events
-          // This matches the original working behavior from commit 96914be3
+          // Shell commands will be shown via separate 'command' events
+          // Just show the tool name here
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell</Text>
@@ -335,34 +302,7 @@ const EventLine: React.FC<{
           );
           break;
           
-        case 'swarm':
-          // Show expanded swarm details instead of truncated preview
-          const agents = event.tool_input.agents || event.tool_input.num_agents || 0;
-          const task = event.tool_input.task || event.tool_input.objective || '';
-          const taskDisplay = task.length > 200 ? task.substring(0, 200) + '...' : task;
-          
-          // For swarm with valid input, show details
-          if (agents || task) {
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="green" bold>tool: swarm</Text>
-                <Box marginLeft={2}>
-                  <Text dimColor>├─ agents: {agents}</Text>
-                </Box>
-                <Box marginLeft={2}>
-                  <Text dimColor>└─ task: {taskDisplay}</Text>
-                </Box>
-              </Box>
-            );
-          }
-          
-          // For swarm with empty input, just show tool name (it's being initialized)
-          return (
-            <Box flexDirection="column" marginTop={1}>
-              <Text color="green" bold>tool: swarm</Text>
-            </Box>
-          );
-          
+        
         case 'think':
           // think output goes to reasoning, but still show tool invocation
           const thought = event.tool_input.thought || event.tool_input.content || '';
@@ -739,16 +679,36 @@ const EventLine: React.FC<{
           <Box marginLeft={2}>
             <Text color="blue" bold>Agents ({swarmAgents.length}):</Text>
           </Box>
-          {swarmAgents.length > 0 && swarmAgents.map((agentName, i) => (
-            <Box key={i} marginLeft={4}>
-              <Text color="cyan">• {agentName}</Text>
-            </Box>
-          ))}
-          {swarmDetails.length > 0 && swarmDetails.map((detail, i) => (
-            <Box key={i} marginLeft={4}>
-              <Text color="cyan">• {detail}</Text>
-            </Box>
-          ))}
+          {swarmAgents.length > 0 && swarmAgents.map((agent, i) => {
+            // Handle agent as either string or object
+            let agentName = '';
+            if (typeof agent === 'string') {
+              agentName = agent;
+            } else if (agent && typeof agent === 'object') {
+              // Extract name from agent object
+              agentName = agent.name || agent.role || 'Agent ' + (i + 1);
+            }
+            return agentName ? (
+              <Box key={i} marginLeft={4}>
+                <Text color="cyan">• {agentName}</Text>
+              </Box>
+            ) : null;
+          })}
+          {swarmDetails.length > 0 && swarmDetails.map((detail, i) => {
+            // Handle detail as either string or object with agent info
+            let detailText = '';
+            if (typeof detail === 'string') {
+              detailText = detail;
+            } else if (detail && typeof detail === 'object') {
+              // Extract meaningful info from agent object
+              detailText = detail.name || detail.role || JSON.stringify(detail).substring(0, 50) + '...';
+            }
+            return detailText ? (
+              <Box key={i} marginLeft={4}>
+                <Text color="cyan">• {detailText}</Text>
+              </Box>
+            ) : null;
+          })}
           {swarmTask && (
             <Box marginLeft={2}>
               <Text color="yellow" bold>Task: </Text>
@@ -1016,6 +976,41 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events 
   
   // Group consecutive reasoning events to prevent multiple labels
   const displayGroups = React.useMemo(() => {
+    // First, normalize events to remove duplicate swarm_start emissions
+    const normalized: DisplayStreamEvent[] = [];
+    let lastSwarmSignature = '';
+    events.forEach((ev) => {
+      if (ev.type === 'swarm_start') {
+        const names = 'agent_names' in ev && Array.isArray(ev.agent_names) ? (ev.agent_names as any[]).map(a => typeof a === 'string' ? a : (a && (a.name || a.role)) || '').join(',') : '';
+        const task = 'task' in ev ? String(ev.task || '') : '';
+        const signature = `${names}|${task}`;
+        if (signature === lastSwarmSignature) {
+          // skip duplicate consecutive swarm_start
+          return;
+        }
+        lastSwarmSignature = signature;
+      } else if (ev.type !== 'metrics_update') {
+        // Reset signature on other meaningful events
+        lastSwarmSignature = '';
+      }
+      // Drop redundant metadata that immediately repeats swarm_start info
+      if (
+        ev.type === 'metadata' &&
+        normalized.length > 0 &&
+        normalized[normalized.length - 1].type === 'swarm_start'
+      ) {
+        const last = normalized[normalized.length - 1] as any;
+        const meta = (ev as any).content || {};
+        const agentsMatch = typeof meta.agents === 'string' && meta.agents.includes(String(last.agent_count || ''));
+        const taskMatch = typeof meta.task === 'string' && meta.task === (last.task || '');
+        if (agentsMatch || taskMatch) {
+          // Skip this metadata; it's a summary of the swarm_start already shown
+          return;
+        }
+      }
+      normalized.push(ev);
+    });
+
     const groups: Array<{
       type: 'reasoning_group' | 'single';
       events: DisplayStreamEvent[];
@@ -1027,7 +1022,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events 
     let activeThinking = false;
     let lastThinkingIdx = -1;
     
-    events.forEach((event, idx) => {
+    normalized.forEach((event, idx) => {
       if (event.type === 'reasoning') {
         if (currentReasoningGroup.length === 0) {
           groupStartIdx = idx;

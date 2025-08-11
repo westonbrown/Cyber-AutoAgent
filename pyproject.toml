@@ -38,6 +38,8 @@ dependencies = [
     "ollama>=0.1.0",
     "requests>=2.25.0",
     "opensearch-py",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
     "ragas>=0.2.0",
     "langfuse>=2.0.0",

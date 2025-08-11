@@ -194,8 +194,6 @@ export function useOperationManager({
   const handleAssessmentCancel = useCallback(async () => {
     if (appState.activeOperation) {
       try {
-        addOperationHistoryEntry('error', '🛑 ESC Kill Switch activated - Stopping operation...');
-        
         // First, stop the execution using the executionHandle stored on the operation
         const executionHandle = (appState.activeOperation as any).executionHandle;
         if (executionHandle && executionHandle.stop) {
@@ -212,12 +210,12 @@ export function useOperationManager({
         actions.setUserHandoff(false);
         actions.setHasCompletedOperation(true); // Mark as completed to show the message
         
-        // Add prominent termination message
-        addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        addOperationHistoryEntry('error', '⚠️  OPERATION TERMINATED BY USER (ESC Key)');
-        addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        addOperationHistoryEntry('info', 'Assessment was stopped before completion.');
-        addOperationHistoryEntry('info', 'You can start a new assessment or review partial results.');
+        // Reset the assessment flow for next operation (fixes issue with same target)
+        assessmentFlowManager.resetCompleteWorkflow();
+        
+        // Add simple termination message (avoid duplicate with handleExecutionStopped)
+        addOperationHistoryEntry('error', '🛑 ESC Kill Switch activated');
+        addOperationHistoryEntry('info', 'Operation terminated. Start a new assessment or review partial results.');
         // Ensure messages are visible immediately (bypass debounce)
         try { (flushHistoryEntries as any)?.(); } catch {}
       } catch (error) {
@@ -406,7 +404,8 @@ export function useOperationManager({
       };
       
       const handleExecutionStopped = () => {
-        addOperationHistoryEntry('info', 'Assessment stopped by user');
+        // Just update the operation status, don't add duplicate messages
+        // The ESC handler in handleAssessmentCancel already adds the user-facing messages
         operationManager.updateOperation(operation.id, {
           status: 'cancelled',
           description: 'Assessment stopped by user'
