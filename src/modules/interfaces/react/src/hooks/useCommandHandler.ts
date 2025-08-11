@@ -301,13 +301,10 @@ For detailed instructions, use: /docs`;
       case 'setup':
         // Clean transition to setup wizard
         process.env.CYBER_SHOW_SETUP = 'true';
-        // Clear operation history and reset state
-        handleScreenClear();
-        
-        // Minimal delay to ensure clear flushes before state change
-        setTimeout(() => {
-          actions.setInitializationFlow(true, true); // userTriggered=true
-        }, 10);
+        // Single, atomic clear via Ink-managed refresh
+        refreshStatic();
+        // Enter initialization flow immediately (userTriggered=true)
+        actions.setInitializationFlow(true, true);
         
         // Don't add history entry - it would just clutter the cleared screen
         break;

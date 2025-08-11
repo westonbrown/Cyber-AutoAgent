@@ -48,7 +48,6 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
           // Only show config editor if model configuration is incomplete
           if (!applicationConfig.modelId || !applicationConfig.modelProvider) {
             setTimeout(() => {
-              console.log('Setup wizard completed, opening config editor for model configuration...');
               onConfigOpen();
             }, 100);
           }

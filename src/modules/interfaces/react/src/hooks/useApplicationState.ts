@@ -288,6 +288,11 @@ export function useApplicationState() {
   const setStaticNeedsRefresh = (needsRefresh: boolean) => {
     dispatch({ type: ActionType.SET_STATIC_NEEDS_REFRESH, payload: needsRefresh });
   };
+
+  // Immediate (non-debounced) static refresh for critical transitions
+  const refreshStaticImmediate = useCallback(() => {
+    dispatch({ type: ActionType.REFRESH_STATIC });
+  }, []);
   
   const updateTerminalSize = (width: number, height: number) => {
     dispatch({ type: ActionType.UPDATE_TERMINAL_SIZE, payload: { width, height } });
@@ -366,6 +371,7 @@ export function useApplicationState() {
     dismissInit,
     setTerminalVisible,
     refreshStatic,
+    refreshStaticImmediate,
     setStaticNeedsRefresh,
     updateTerminalSize,
     setHasCompletedOperation,
@@ -383,7 +389,7 @@ export function useApplicationState() {
     registerCleanup
   }), [
     initializeApp, setConfigLoaded, setInitializationFlow, dismissInit,
-    setTerminalVisible, refreshStatic, setStaticNeedsRefresh, updateTerminalSize,
+    setTerminalVisible, refreshStatic, refreshStaticImmediate, setStaticNeedsRefresh, updateTerminalSize,
     setHasCompletedOperation, clearCompletedOperation,
     setActiveOperation, updateOperation, setUserHandoff, updateMetrics,
     addRecentTarget, incrementErrorCount, resetErrorCount, setDockerAvailable, 

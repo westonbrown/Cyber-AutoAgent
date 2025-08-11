@@ -277,12 +277,14 @@ const AppContent: React.FC<AppProps> = ({
       appState={appState}
       applicationConfig={applicationConfig}
       onInitializationComplete={(completionMessage) => {
-        // Dismiss initialization first, then clear the screen after state updates,
-        // so refreshStatic actually clears (it skips clearing during init flow)
+        // Clear once before dismissing initialization to prevent setup background remnants
+        modalManager.refreshStatic();
+        // Ensure header is eligible to render again
+        actions.clearCompletedOperation();
+        // Bump app static key to force MainAppView remount after clear
+        actions.refreshStatic();
+        // Dismiss initialization flow and return to main app
         actions.dismissInit();
-        setTimeout(() => {
-          refreshStatic();
-        }, 0);
         // Avoid adding setup completion messages to operation history
       }}
       onConfigOpen={() => openConfig()}

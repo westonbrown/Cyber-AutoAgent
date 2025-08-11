@@ -97,7 +97,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
       // Clear the setup flag
       delete process.env.CYBER_SHOW_SETUP;
       
-      onComplete(`Switched to ${modeDisplayName} deployment`);
+      // Use a longer delay to ensure smooth transition
+      // This gives React time to properly unmount the wizard before transitioning
+      setTimeout(() => {
+        onComplete(`Switched to ${modeDisplayName} deployment`);
+      }, 50);
       return;
     } else {
       // Proceed with normal setup for non-active deployments

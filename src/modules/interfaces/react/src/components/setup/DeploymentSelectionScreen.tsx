@@ -39,7 +39,8 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
         const result = await detector.detectDeployments(config);
         setActiveDeployments(result.availableDeployments.filter(d => d.isHealthy));
       } catch (error) {
-        console.error('Failed to detect deployments:', error);
+        // Silently handle detection failure to avoid leaking logs into setup UI
+        // Optional: could set a local flag to show a muted message in UI instead
       } finally {
         setIsDetecting(false);
       }
