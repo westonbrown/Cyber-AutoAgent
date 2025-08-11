@@ -71,6 +71,51 @@ export function useOperationManager({
   // Track if we've already added initial messages
   const hasAddedInitialMessage = useRef(false);
   const historyUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isMountedRef = useRef(true);
+  const metricsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const currentExecutionServiceRef = useRef<ExecutionService | null>(null);
+  const lastMetricsUpdateRef = useRef<number>(0);
+
+  // Throttled metrics updater to avoid excessive re-renders during streaming
+  const updateMetricsThrottled = useCallback((metrics: {
+    tokens: number;
+    cost: number;
+    duration: string;
+    memoryOps: number;
+    evidence: number;
+  }) => {
+    const now = Date.now();
+    if (now - (lastMetricsUpdateRef.current || 0) < 300) {
+      return;
+    }
+    lastMetricsUpdateRef.current = now;
+    actions.updateMetrics(metrics);
+  }, [actions]);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Clear debounced history timeout
+      if (historyUpdateTimeoutRef.current) {
+        clearTimeout(historyUpdateTimeoutRef.current);
+        historyUpdateTimeoutRef.current = null;
+      }
+      // Clear metrics interval if active
+      if (metricsIntervalRef.current) {
+        clearInterval(metricsIntervalRef.current);
+        metricsIntervalRef.current = null;
+      }
+      // Detach and cleanup any lingering execution service
+      if (currentExecutionServiceRef.current) {
+        try {
+          currentExecutionServiceRef.current.removeAllListeners();
+          currentExecutionServiceRef.current.cleanup();
+        } catch {}
+        currentExecutionServiceRef.current = null;
+      }
+    };
+  }, []);
 
   // Operation history management with debouncing for rapid updates
   const addOperationHistoryEntry = useCallback((
@@ -88,15 +133,19 @@ export function useOperationManager({
     
     // For critical messages (errors), update immediately
     if (type === 'error') {
+      if (!isMountedRef.current) return; // don't set state after unmount
       setOperationHistoryEntries(prev => {
         const newEntries = [...prev, entry];
-        setDebouncedHistoryEntries(newEntries); // Update debounced state immediately for errors
+        if (isMountedRef.current) {
+          setDebouncedHistoryEntries(newEntries); // Update debounced state immediately for errors
+        }
         return newEntries;
       });
       return;
     }
     
     // For other messages, debounce the updates to prevent UI flicker
+    if (!isMountedRef.current) return;
     setOperationHistoryEntries(prev => {
       const newEntries = [...prev, entry];
       
@@ -107,7 +156,9 @@ export function useOperationManager({
       
       // Set debounced update
       historyUpdateTimeoutRef.current = setTimeout(() => {
-        setDebouncedHistoryEntries(newEntries);
+        if (isMountedRef.current) {
+          setDebouncedHistoryEntries(newEntries);
+        }
         historyUpdateTimeoutRef.current = null;
       }, 100);
       
@@ -167,6 +218,8 @@ export function useOperationManager({
         addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         addOperationHistoryEntry('info', 'Assessment was stopped before completion.');
         addOperationHistoryEntry('info', 'You can start a new assessment or review partial results.');
+        // Ensure messages are visible immediately (bypass debounce)
+        try { (flushHistoryEntries as any)?.(); } catch {}
       } catch (error) {
         addOperationHistoryEntry('error', `Failed to cancel assessment: ${error.message}`);
       }
@@ -215,9 +268,9 @@ export function useOperationManager({
       
       // Add to operation history with deployment mode
       const deploymentModeDisplay = 
-        config.deploymentMode === 'local-cli' ? 'Python CLI' :
-        config.deploymentMode === 'single-container' ? 'Docker Container' :
-        config.deploymentMode === 'full-stack' ? 'Enterprise Stack' : 'Auto';
+        config.deploymentMode === 'local-cli' ? 'Local Python CLI' :
+        config.deploymentMode === 'single-container' ? 'Single Container' :
+        config.deploymentMode === 'full-stack' ? 'Full Stack' : 'Auto';
       
       addOperationHistoryEntry('info', `Starting ${assessmentParams.module} assessment on ${assessmentParams.target}`);
       addOperationHistoryEntry('info', `Operation ID: ${operation.id}`);
@@ -296,7 +349,7 @@ export function useOperationManager({
             
             const currentOp = operationManager.getOperation(operation.id);
             if (currentOp) {
-              actions.updateMetrics({
+              updateMetricsThrottled({
                 tokens: currentOp.cost.tokensUsed,
                 cost: currentOp.cost.estimatedCost,
                 duration: operationManager.getOperationDuration(operation.id),
@@ -364,11 +417,15 @@ export function useOperationManager({
       
       // Cleanup function for event listeners and intervals
       const cleanupExecution = () => {
-        executionService.removeAllListeners();
-        executionService.cleanup();
-        if (metricsInterval) {
-          clearInterval(metricsInterval);
+        try {
+          executionService.removeAllListeners();
+          executionService.cleanup();
+        } catch {}
+        if (metricsIntervalRef.current) {
+          clearInterval(metricsIntervalRef.current);
+          metricsIntervalRef.current = null;
         }
+        currentExecutionServiceRef.current = null;
         // Clear the execution service from state when done
         actions.setExecutionService(null);
       };
@@ -378,9 +435,10 @@ export function useOperationManager({
       executionService.on('complete', handleExecutionComplete);
       executionService.on('error', handleExecutionError);
       executionService.on('stopped', handleExecutionStopped);
+      currentExecutionServiceRef.current = executionService;
       
       // Set up periodic metrics update with additional safeguards
-      const metricsInterval = setInterval(() => {
+      metricsIntervalRef.current = setInterval(() => {
         const currentOp = operationManager.getOperation(operation.id);
         // Only update metrics if operation is truly running, we're not in a modal,
         // and the operation is still the active one in both manager and app state
@@ -399,7 +457,7 @@ export function useOperationManager({
             evidence: currentOp.findings
           });
         }
-      }, 5000);
+      }, 5000) as unknown as NodeJS.Timeout;
       
       // Execute assessment through the selected service
       addOperationHistoryEntry('info', `Launching ${serviceSelection.mode} assessment execution...`);

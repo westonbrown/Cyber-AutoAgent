@@ -5,12 +5,10 @@
  * Shows setup wizard when needed, otherwise renders main application.
  */
 
-import React, { useRef, useEffect } from 'react';
-import { Box, useStdout } from 'ink';
-import ansiEscapes from 'ansi-escapes';
+import React from 'react';
+import { Box } from 'ink';
 
 // Components
-import { Header } from './Header.js';
 import { SetupWizard } from './SetupWizard.js';
 import { MainAppView } from './MainAppView.js';
 
@@ -22,7 +20,6 @@ interface InitializationWrapperProps {
   applicationConfig: any;
   onInitializationComplete: (completionMessage?: string) => void;
   onConfigOpen: () => void;
-  refreshStatic: () => void;
   mainAppViewProps: any; // Props to pass through to MainAppView
 }
 
@@ -31,32 +28,19 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
   applicationConfig,
   onInitializationComplete,
   onConfigOpen,
-  refreshStatic,
   mainAppViewProps
 }) => {
-  const { stdout } = useStdout();
-  const hasInitialRefresh = useRef(false);
-  const hasInitialClear = useRef(false);
-
-  // Reset clear flag when initialization flow is deactivated
-  useEffect(() => {
-    if (!appState.isInitializationFlowActive || appState.hasUserDismissedInit) {
-      hasInitialClear.current = false;
-    }
-  }, [appState.isInitializationFlowActive, appState.hasUserDismissedInit]);
 
   // Config loading state
   if (!appState.isConfigLoaded) {
     return <Box />; // Empty box while loading config
   }
 
-  // When initialization flow is active, show setup wizard without duplicate header
+  // When initialization flow is active, show setup wizard.
   if (appState.isInitializationFlowActive && !appState.hasUserDismissedInit) {
-    // Render just the setup wizard content - no duplicate header
     return (
       <SetupWizard 
         terminalWidth={appState.terminalDisplayWidth}
-        showHeader={true} // SetupWizard handles its own header
         onComplete={(completionMessage?: string) => {
           // Call the completion handler first to dismiss initialization
           onInitializationComplete(completionMessage);
@@ -73,6 +57,6 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
     );
   }
 
-  // Render main application
-  return <MainAppView {...mainAppViewProps} />;
+  // Render main application (force remount on staticKey to avoid stale tree post-clear)
+  return <MainAppView key={`main-view-${appState.staticKey}`} {...mainAppViewProps} />;
 };

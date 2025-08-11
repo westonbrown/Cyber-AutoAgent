@@ -78,17 +78,23 @@ export const useModalManager = (): UseModalManagerResult => {
   const { stdout } = useStdout();
   
   
-  // Screen refresh function - only clear terminal when truly needed  
+  // Screen refresh function - fixed to prevent race condition
   const refreshStatic = useCallback(() => {
     // Only clear terminal if we're not in a modal that should preserve content
     const shouldClearTerminal = activeModal === ModalType.NONE || 
                                activeModal === ModalType.INITIALIZATION || 
                                activeModal === ModalType.DOCUMENTATION;
     
-    if (shouldClearTerminal) {
-      stdout.write(ansiEscapes.clearTerminal);
-    }
+    // First increment the static key to trigger re-render
     setStaticKey(prev => prev + 1);
+    
+    // Then clear terminal after a micro-task to let React reconcile
+    // This prevents the black screen race condition
+    if (shouldClearTerminal) {
+      Promise.resolve().then(() => {
+        stdout.write(ansiEscapes.clearTerminal);
+      });
+    }
   }, [stdout, activeModal]);
   
   // Static key refresh only

@@ -33,9 +33,13 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
   private containerManager: ContainerManager;
   private mode: ExecutionMode;
   private activeHandle?: ExecutionHandle;
+  private containerProgressHandler: ((message: string) => void) | null = null;
 
   constructor(mode: ExecutionMode) {
     super();
+    // Allow multiple UI subscribers (UnconstrainedTerminal, useOperationManager, etc.)
+    // without triggering noisy warnings. We still properly clean up listeners.
+    this.setMaxListeners(25);
     if (mode !== ExecutionMode.DOCKER_SINGLE && mode !== ExecutionMode.DOCKER_STACK) {
       throw new Error(`Invalid Docker mode: ${mode}`);
     }
@@ -51,8 +55,9 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
     this.dockerService.on('stopped', () => this.emit('stopped'));
     this.dockerService.on('error', (error) => this.emit('error', error));
     
-    // Forward container manager progress
-    this.containerManager.on('progress', (message) => this.emit('progress', message));
+    // Forward container manager progress with stable reference for cleanup
+    this.containerProgressHandler = (message: string) => this.emit('progress', message);
+    this.containerManager.on('progress', this.containerProgressHandler);
   }
 
   getMode(): ExecutionMode {
@@ -308,6 +313,12 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
       this.dockerService.cleanup();
     }
     // Note: ContainerManager is singleton, don't cleanup here
+    if (this.containerProgressHandler) {
+      try {
+        this.containerManager.removeListener('progress', this.containerProgressHandler);
+      } catch {}
+      this.containerProgressHandler = null;
+    }
     this.removeAllListeners();
   }
 

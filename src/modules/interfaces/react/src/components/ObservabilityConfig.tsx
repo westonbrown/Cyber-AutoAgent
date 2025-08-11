@@ -52,6 +52,9 @@ export const ObservabilityConfig: React.FC<ObservabilityConfigProps> = ({
             <p className="text-xs text-gray-500 mt-1">
               Default: Auto-detects Docker (langfuse-web:3000) vs Local (localhost:3000)
             </p>
+            {!config.langfuseHost && !config.langfuseHostOverride && (
+              <p className="text-xs text-red-600 mt-1">Required when observability is enabled (or enable host auto-detection).</p>
+            )}
           </div>
 
           {/* Host Override Option */}
@@ -117,6 +120,9 @@ export const ObservabilityConfig: React.FC<ObservabilityConfigProps> = ({
                 placeholder="cyber-public"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
+              {!config.langfusePublicKey && (
+                <p className="text-xs text-red-600 mt-1">Required for Langfuse authentication.</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -129,6 +135,9 @@ export const ObservabilityConfig: React.FC<ObservabilityConfigProps> = ({
                 placeholder="cyber-secret"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
+              {!config.langfuseSecretKey && (
+                <p className="text-xs text-red-600 mt-1">Required for Langfuse authentication.</p>
+              )}
             </div>
           </div>
 

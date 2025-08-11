@@ -4,7 +4,7 @@
  * Clean, informative setup progress display inspired by ink examples
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { themeManager } from '../../themes/theme-manager.js';
@@ -19,6 +19,7 @@ interface ProgressScreenProps {
   onComplete: () => void;
   onRetry: () => void;
   onBack: () => void;
+  terminalWidth?: number;
 }
 
 // Step details for each deployment mode
@@ -87,10 +88,13 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   onComplete,
   onRetry,
   onBack,
+  terminalWidth,
 }) => {
   const theme = themeManager.getCurrentTheme();
   const [elapsedTime, setElapsedTime] = useState(0);
   const startTime = React.useRef(Date.now());
+  const width = terminalWidth || process.stdout.columns || 100;
+  const divider = useMemo(() => '─'.repeat(Math.max(20, Math.min(width - 4, 120))), [width]);
 
   useEffect(() => {
     // Update timer less frequently to reduce re-renders during setup
@@ -123,43 +127,40 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   const installInfo = INSTALLATION_INFO[deploymentMode];
 
   return (
-    <Box flexDirection="column" paddingX={4} paddingY={2}>
-      {/* Header */}
-      <Box marginBottom={3}>
-        <Text bold color={theme.primary}>
-          Setting up {SetupService.getDeploymentModeInfo(deploymentMode).name}
-        </Text>
-      </Box>
-
-      {/* Time and progress info */}
-      <Box flexDirection="row" justifyContent="space-between" marginBottom={3}>
-        <Text color={theme.muted}>
-          Elapsed: {formatTime(elapsedTime)}
-        </Text>
-        {progress && (
-          <Text color={theme.muted}>
-            Step {currentStepIndex + 1}/{steps.length}
+    <Box width="100%" flexDirection="column" alignItems="center" paddingY={2}>
+      <Box width={width} flexDirection="column">
+        {/* Header */}
+        <Box marginBottom={1}>
+          <Text bold color={theme.primary}>
+            Setting up {SetupService.getDeploymentModeInfo(deploymentMode).name}
           </Text>
-        )}
-      </Box>
-
-      {/* Installation summary (clean, no emojis, no border) */}
-      <Box flexDirection="column" marginBottom={2}>
-        <Text color={theme.primary} bold>{installInfo.title}</Text>
-        <Box flexDirection="column" marginLeft={1}>
-          {installInfo.items.map((item, i) => (
-            <Text key={i} color={theme.muted}>
-              • {item.replace(/^[^A-Za-z0-9]+\s*/, '')}
-            </Text>
-          ))}
         </Box>
-      </Box>
+        <Text color={theme.muted}>This prepares your environment and validates connectivity.</Text>
+        <Text color={theme.muted}>{divider}</Text>
 
-      {/* Progress steps */}
-      <Box flexDirection="column" marginBottom={2}>
-        <Text color={theme.info} bold>Progress</Text>
-        <Box flexDirection="column" marginTop={1}>
-          {steps.map((step, index) => {
+        {/* Time and progress info */}
+        <Box flexDirection="row" justifyContent="space-between" marginBottom={2}>
+          <Text color={theme.muted}>Elapsed: {formatTime(elapsedTime)}</Text>
+          {progress && (
+            <Text color={theme.muted}>Step {currentStepIndex + 1}/{steps.length}</Text>
+          )}
+        </Box>
+
+        {/* Installation summary (clean, no emojis, no border) */}
+        <Box flexDirection="column" marginBottom={2}>
+          <Text color={theme.primary} bold>{installInfo.title}</Text>
+          <Box flexDirection="column" marginLeft={1}>
+            {installInfo.items.map((item, i) => (
+              <Text key={i} color={theme.muted}>• {item.replace(/^[^A-Za-z0-9]+\s*/, '')}</Text>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Progress steps */}
+        <Box flexDirection="column" marginBottom={2}>
+          <Text color={theme.info} bold>Progress</Text>
+          <Box flexDirection="column" marginTop={1}>
+            {steps.map((step, index) => {
             const isActive = index === currentStepIndex;
             const isCompleted = currentStepIndex > index || isComplete;
             const isPending = currentStepIndex < index && !isComplete;
@@ -193,19 +194,33 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
               </Box>
             );
           })}
-        </Box>
-      </Box>
-
-      {/* Progress bar */}
-      {progress && !error && (
-        <Box flexDirection="column" marginBottom={3}>
-          <Text color={theme.info}>{Math.round((progress.current / progress.total) * 100)}% complete</Text>
-          <Box width={70} borderStyle="single" borderColor={theme.muted} paddingX={1}>
-            <Text color={theme.primary}>
-              {'█'.repeat(Math.floor((progress.current / progress.total) * 68))}
-              {'░'.repeat(68 - Math.floor((progress.current / progress.total) * 68))}
-            </Text>
           </Box>
+        </Box>
+
+        {/* Progress bar */}
+        {progress && !error && (
+          <Box flexDirection="column" marginBottom={2}>
+            {(() => {
+            const maxBar = Math.max(20, Math.min(width - 10, 100));
+            const barWidth = maxBar;
+            const current = Number(progress.current);
+            const total = Number(progress.total);
+            const valid = Number.isFinite(current) && Number.isFinite(total) && total > 0;
+            const ratioRaw = valid ? current / total : 0;
+            const ratio = Math.max(0, Math.min(1, ratioRaw));
+            const percent = Math.min(100, Math.max(0, Math.round(ratio * 100)));
+            const filled = Math.max(0, Math.min(barWidth, Math.floor(ratio * barWidth)));
+            const empty = Math.max(0, barWidth - filled);
+            return (
+              <>
+                <Text color={theme.info}>{percent}% complete</Text>
+                <Text color={theme.primary}>
+                  {'█'.repeat(filled)}
+                  {'░'.repeat(empty)}
+                </Text>
+              </>
+            );
+          })()}
           {/* Current activity message (trimmed, no emojis) */}
           {progress.message && (
             <Box marginTop={1}>
@@ -214,39 +229,41 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
               </Text>
             </Box>
           )}
-        </Box>
-      )}
-
-      {/* Status messages */}
-      {error && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Text color={theme.danger} bold>Setup Failed</Text>
-          <Text color={theme.foreground}>{error}</Text>
-        </Box>
-      )}
-
-      {isComplete && !error && (
-        <Box marginBottom={2}>
-          <Text color={theme.success} bold>Setup Complete!</Text>
-        </Box>
-      )}
-
-      {/* Actions */}
-      <Box marginTop={1}>
-        {error ? (
-          <Text color={theme.info}>
-            Press <Text bold color={theme.primary}>R</Text> to retry • <Text bold>Esc</Text> to go back
-          </Text>
-        ) : isComplete ? (
-          <Text color={theme.info}>
-            Press <Text bold color={theme.primary}>Enter</Text> to continue
-          </Text>
-        ) : (
-          <Text color={theme.muted}>
-            Press <Text bold>Esc</Text> to cancel
-          </Text>
+          </Box>
         )}
+
+        {/* Status messages */}
+        {error && (
+          <Box flexDirection="column" marginBottom={2}>
+            <Text color={theme.danger} bold>Setup Failed</Text>
+            <Text color={theme.foreground}>{error}</Text>
+          </Box>
+        )}
+
+        {isComplete && !error && (
+          <Box marginBottom={2}>
+            <Text color={theme.success} bold>Setup Complete!</Text>
+          </Box>
+        )}
+
+        {/* Actions */}
+        <Box marginTop={1} flexDirection="column" alignItems="center">
+          {error ? (
+            <Text color={theme.info}>
+              Press <Text bold color={theme.primary}>R</Text> to retry • <Text bold>Esc</Text> to go back
+            </Text>
+          ) : isComplete ? (
+            <Text color={theme.info}>
+              Press <Text bold color={theme.primary}>Enter</Text> to continue
+            </Text>
+          ) : (
+            <Text color={theme.muted}>
+              Press <Text bold>Esc</Text> to cancel
+            </Text>
+          )}
+        </Box>
       </Box>
     </Box>
   );
-});
+})
+;

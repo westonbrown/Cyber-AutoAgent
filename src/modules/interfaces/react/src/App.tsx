@@ -24,6 +24,8 @@ import { ModuleProvider, useModule } from './contexts/ModuleContext.js';
 
 // Command Handler
 import { useCommandHandler } from './hooks/useCommandHandler.js';
+import { useDeploymentDetection } from './hooks/useDeploymentDetection.js';
+import { useAutoRun } from './hooks/useAutoRun.js';
 
 // Components
 import { InitializationWrapper } from './components/InitializationWrapper.js';
@@ -61,6 +63,13 @@ const AppContent: React.FC<AppProps> = ({
 }) => {
   const { stdout } = useStdout();
   const { exit } = useApp();
+  // Track timeouts to ensure proper cleanup on unmount
+  const timeoutsRef = React.useRef<NodeJS.Timeout[]>([]);
+  const registerTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(fn, ms) as unknown as NodeJS.Timeout;
+    timeoutsRef.current.push(id);
+    return id;
+  }, []);
   
   // Configuration and theme management
   const { config: applicationConfig, isConfigLoading } = useConfig();
@@ -77,7 +86,7 @@ const AppContent: React.FC<AppProps> = ({
   const { 
     activeModal, 
     modalContext,
-    staticKey,
+    staticKey: modalStaticKey,
     openConfig,
     closeModal
   } = modalManager;
@@ -90,28 +99,48 @@ const AppContent: React.FC<AppProps> = ({
     activeModal
   });
   
-  // Terminal refresh function
+  // Terminal refresh function - fixed to prevent duplicate updates
   const refreshStatic = useCallback(() => {
-    if (!appState.isInitializationFlowActive) {
-      stdout.write(ansiEscapes.clearTerminal);
-    }
+    // Only call modalManager.refreshStatic() to avoid duplicate static key updates
+    // modalManager handles both the terminal clear and static key increment
     modalManager.refreshStatic();
-  }, [stdout, modalManager, appState.isInitializationFlowActive]);
+  }, [modalManager]);
+
+  // Cleanup any pending timeouts on unmount
+  useEffect(() => {
+    return () => {
+      for (const t of timeoutsRef.current) {
+        try { clearTimeout(t); } catch {}
+      }
+      timeoutsRef.current = [];
+    };
+  }, []);
   
-  // Screen clear handler
+  // Screen clear handler - fixed to prevent race condition
   const handleScreenClear = useCallback(() => {
+    // Batch all state updates together to minimize re-renders
     operationManager.clearOperationHistory();
     actions.resetErrorCount();
     actions.setTerminalVisible(false);
     actions.setActiveOperation(null);
     actions.clearCompletedOperation(); // Clear the completed operation flag
-    refreshStatic();
-  }, [refreshStatic, actions, operationManager]);
+    
+    // Schedule on next tick to ensure state updates are processed
+    // before clearing the terminal, preventing the black screen issue
+    const schedule = typeof setImmediate === 'function'
+      ? setImmediate
+      : (fn: (...args: any[]) => void) => setTimeout(fn, 0);
+    schedule(() => {
+      // Only use modalManager's refresh to avoid double clear
+      modalManager.refreshStatic();
+    });
+  }, [actions, operationManager, modalManager]);
 
   // Keyboard handlers
-  const isTerminalInteractive = activeModal === ModalType.NONE && !appState.userHandoffActive;
+  // Disable terminal-level handlers during initialization flow so Setup Wizard owns ESC/back behavior
+  const isTerminalInteractive = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive;
   
-  // Only allow global ESC when no modals are open and not in setup wizard - modals and setup should handle their own ESC behavior
+  // Only allow global ESC when no modals are open and not in setup wizard - modals and setup handle their own ESC behavior
   const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive;
   
   const handleEscapeExit = useCallback(() => {
@@ -122,10 +151,10 @@ const AppContent: React.FC<AppProps> = ({
     operationManager.addOperationHistoryEntry('info', 'Thank you for using Cyber-AutoAgent. Goodbye!');
     
     // Delay exit slightly to show the message
-    setTimeout(() => {
+    registerTimeout(() => {
       exit();
     }, 1000);
-  }, [operationManager, exit]);
+  }, [operationManager, exit, registerTimeout]);
   
   useKeyboardHandlers({
     activeOperation: appState.activeOperation,
@@ -182,66 +211,24 @@ const AppContent: React.FC<AppProps> = ({
     }
   }, [appState.isConfigLoaded, actions]);
   
-  // Smart deployment detection to determine if setup wizard is needed
-  useEffect(() => {
-    if (isConfigLoading) return;
-    if (appState.isUserTriggeredSetup || appState.isInitializationFlowActive) return;
-
-    const run = async () => {
-      if (appState.isConfigLoaded && !appState.hasUserDismissedInit) {
-        try {
-          const { DeploymentDetector } = await import('./services/DeploymentDetector.js');
-          const detector = DeploymentDetector.getInstance();
-          const detection = await detector.detectDeployments(applicationConfig);
-          const healthy = detection.availableDeployments.filter(d => d.isHealthy);
-
-          if (healthy.length === 0) {
-            actions.setInitializationFlow(true);
-            return;
-          }
-
-          if (applicationConfig.deploymentMode) {
-            const configured = detection.availableDeployments.find(d => d.mode === applicationConfig.deploymentMode);
-            if (!configured || !configured.isHealthy) {
-              actions.setInitializationFlow(true);
-              return;
-            }
-            actions.dismissInit();
-            return;
-          }
-
-          const order: Array<'full-stack' | 'single-container' | 'local-cli'> = ['full-stack', 'single-container', 'local-cli'];
-          const best = order.map(m => healthy.find(d => d.mode === m)).find(Boolean);
-          if (best) {
-            actions.dismissInit();
-          }
-        } catch {
-          actions.setInitializationFlow(true);
-        }
-      } else if (
-        applicationConfig.isConfigured &&
-        appState.hasUserDismissedInit &&
-        !applicationConfig.modelId &&
-        activeModal === ModalType.NONE &&
-        !appState.isInitializationFlowActive
-      ) {
-        setTimeout(() => {
-          openConfig('Please configure your AI model and provider settings to continue.');
-        }, 1000);
-      }
-    };
-
-    run();
-  }, [isConfigLoading, appState.isUserTriggeredSetup, appState.isInitializationFlowActive, appState.isConfigLoaded, appState.hasUserDismissedInit, applicationConfig, activeModal, actions, openConfig]);
+  // Smart deployment detection (extracted to hook)
+  useDeploymentDetection({
+    isConfigLoading,
+    appState,
+    actions,
+    applicationConfig,
+    activeModal,
+    openConfig
+  });
   
   // Main app view props
-  const mainAppViewProps = {
+  const mainAppViewProps = React.useMemo(() => ({
     appState,
     actions,
     currentTheme,
     operationHistoryEntries: operationManager.operationHistoryEntries,
     assessmentFlowState: operationManager.assessmentFlowState,
-    staticKey,
+    staticKey: appState.staticKey,
     activeModal,
     modalContext,
     isTerminalInteractive,
@@ -250,51 +237,40 @@ const AppContent: React.FC<AppProps> = ({
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
     onSafetyConfirm: operationManager.startAssessmentExecution,
     applicationConfig
-  };
+  }), [
+    appState,
+    actions,
+    currentTheme,
+    operationManager.operationHistoryEntries,
+    operationManager.assessmentFlowState,
+    appState.staticKey,
+    activeModal,
+    modalContext,
+    isTerminalInteractive,
+    handleUnifiedInput,
+    closeModal,
+    operationManager.addOperationHistoryEntry,
+    operationManager.startAssessmentExecution,
+    applicationConfig
+  ]);
   
   
-  // Handle autoRun mode - bypass interactive flow and start assessment immediately
-  useEffect(() => {
-    if (autoRun && target && module && appState.isConfigLoaded) {
-      // Skip initialization flow
-      actions.dismissInit();
-      
-      // Apply CLI parameter overrides to config if provided
-      const configUpdates: Partial<typeof applicationConfig> = {};
-      if (iterations && iterations !== applicationConfig.iterations) {
-        configUpdates.iterations = iterations;
-      }
-      if (provider && provider !== applicationConfig.modelProvider) {
-        configUpdates.modelProvider = provider as 'bedrock' | 'ollama' | 'litellm';
-      }
-      if (model && model !== applicationConfig.modelId) {
-        configUpdates.modelId = model;
-      }
-      if (region && region !== applicationConfig.awsRegion) {
-        configUpdates.awsRegion = region;
-      }
-      
-      // Update config with CLI overrides if any
-      if (Object.keys(configUpdates).length > 0) {
-        // Note: This would need a updateConfig function in ConfigContext to persist changes
-        // CLI overrides applied
-      }
-      
-      // Set assessment parameters using the flow manager's processUserInput method
-      operationManager.assessmentFlowManager.processUserInput(`target ${target}`);
-      if (objective) {
-        operationManager.assessmentFlowManager.processUserInput(`objective ${objective}`);
-      } else {
-        // Use empty string to trigger default objective
-        operationManager.assessmentFlowManager.processUserInput('');
-      }
-      
-      // Start assessment execution automatically
-      setTimeout(() => {
-        operationManager.startAssessmentExecution();
-      }, 100); // Small delay to ensure state is set
-    }
-  }, [autoRun, target, module, objective, iterations, provider, model, region, appState.isConfigLoaded, actions, operationManager, applicationConfig]);
+  // Auto-run behavior (extracted to hook)
+  useAutoRun({
+    autoRun,
+    target,
+    module,
+    objective,
+    iterations,
+    provider,
+    model,
+    region,
+    appState,
+    actions,
+    applicationConfig,
+    operationManager,
+    registerTimeout
+  });
   
   return (
     <InitializationWrapper
@@ -310,7 +286,6 @@ const AppContent: React.FC<AppProps> = ({
         // Avoid adding setup completion messages to operation history
       }}
       onConfigOpen={() => openConfig()}
-      refreshStatic={refreshStatic}
       mainAppViewProps={mainAppViewProps}
     />
   );

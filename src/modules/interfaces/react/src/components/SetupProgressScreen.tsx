@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Text, Static, useInput } from 'ink';
+import { Box, Text, Static, useInput, useApp } from 'ink';
 import { createLogger } from '../utils/logger.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { LogContainer, LogEntry } from './LogContainer.js';
@@ -45,11 +45,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   onBackToSetup
 }) => {
   const theme = themeManager.getCurrentTheme();
+  const { exit } = useApp();
   const [currentStep, setCurrentStep] = useState(1);
   const [totalSteps, setTotalSteps] = useState(5);
   const [startTime] = useState<Date>(new Date());
   const [elapsed, setElapsed] = useState<string>('0:00');
   const [showCursor, setShowCursor] = useState(true);
+  const autoContinuedRef = React.useRef(false);
 
   // Determine steps based on deployment mode
   useEffect(() => {
@@ -114,6 +116,18 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     return () => clearInterval(interval);
   }, [isComplete, hasFailed]);
 
+  // Auto-continue to configuration after successful setup
+  useEffect(() => {
+    if (isComplete && !hasFailed && !autoContinuedRef.current) {
+      autoContinuedRef.current = true;
+      // Slight delay to let UI render the "Setup Complete" state before transitioning
+      const t = setTimeout(() => {
+        try { onContinue(); } catch {}
+      }, 300);
+      return () => clearTimeout(t);
+    }
+  }, [isComplete, hasFailed, onContinue]);
+
   const getModeDisplayName = () => {
     switch (deploymentMode) {
       case 'local-cli': return 'Local CLI';
@@ -129,6 +143,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     <Box flexDirection="column" marginBottom={1}>
       {/* Compact header line */}
       <Box justifyContent="center" marginBottom={1}>
+        {/* Loading animation belongs with the headline when in progress */}
+        {!isComplete && !hasFailed && (
+          <>
+            <StatusIcons.Loading />
+            <Text> </Text>
+          </>
+        )}
         <Text color={theme.muted}>
           Setting up <Text color={theme.primary} bold>{getModeDisplayName()}</Text>
           {'  '}•{'  '}Elapsed <Text color={theme.accent}>{elapsed}</Text>
@@ -160,8 +181,7 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
           </Box>
         ) : (
           <Box>
-            <StatusIcons.Loading />
-            <Text color="cyan"> Configuring environment{showCursor ? '...' : '   '}</Text>
+            <Text color="cyan">Configuring environment{showCursor ? '...' : '   '}</Text>
           </Box>
         )}
       </Box>
@@ -180,11 +200,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
                 const index = idx + 1;
                 const isDone = index < currentStep || (isComplete && index <= totalSteps);
                 const isActive = index === currentStep && !isComplete && !hasFailed;
+                const color = isDone ? theme.success : isActive ? theme.accent : theme.muted;
+                const icon = isDone ? <StatusIcons.Success /> : isActive ? <StatusIcons.Loading /> : <Text color={theme.muted}>○</Text>;
                 return (
-                  <Box key={label}>
-                    {isDone ? <StatusIcons.Success /> : isActive ? <StatusIcons.Loading /> : <Text color={theme.muted}>○</Text>}
+                  <Box key={label} flexDirection="row" alignItems="center">
+                    <Box width={3} justifyContent="flex-end">{icon}</Box>
                     <Text> </Text>
-                    <Text color={isDone ? theme.success : isActive ? theme.accent : theme.muted}>{label}</Text>
+                    <Text color={color}>{label}</Text>
                   </Box>
                 );
               })}
@@ -249,7 +271,9 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   // Handle keyboard input
   const handleInput = useCallback((input: string, key: any) => {
     if (key.escape) {
-      process.exit(0);
+      // Use Ink's exit to allow proper cleanup
+      exit();
+      return;
     }
 
     if (hasFailed) {
@@ -261,7 +285,7 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     } else if (isComplete && key.return) {
       onContinue();
     }
-  }, [hasFailed, isComplete, onRetry, onBackToSetup, onContinue]);
+  }, [hasFailed, isComplete, onRetry, onBackToSetup, onContinue, exit]);
 
   // Use React Ink's useInput hook instead of manually handling stdin
   // This prevents conflicts and memory leaks

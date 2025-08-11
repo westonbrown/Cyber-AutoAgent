@@ -13,18 +13,16 @@ import { WelcomeScreen } from './setup/WelcomeScreen.js';
 import { DeploymentSelectionScreen } from './setup/DeploymentSelectionScreen.js';
 import { ProgressScreen } from './setup/ProgressScreen.js';
 import { DeploymentMode } from '../services/SetupService.js';
-import { Header } from './Header.js';
+// Banner/Header is rendered centrally by parent; do not render here
 
 interface SetupWizardProps {
   onComplete: (completionMessage?: string) => void;
   terminalWidth?: number;
-  showHeader?: boolean;
 }
 
 export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
   onComplete,
   terminalWidth = 80,
-  showHeader = true,
 }) => {
   const { state, actions } = useSetupWizard();
   const { config, updateConfig, saveConfig } = useConfig();
@@ -77,7 +75,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
     
     if (isAlreadyActive) {
       // Skip setup for already active deployments
-      actions.selectMode(mode);
+      // Do NOT dispatch wizard state here to avoid intermediate renders during unmount
       
       // Update configuration to use this deployment
       updateConfig({ 
@@ -100,6 +98,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
       delete process.env.CYBER_SHOW_SETUP;
       
       onComplete(`Switched to ${modeDisplayName} deployment`);
+      return;
     } else {
       // Proceed with normal setup for non-active deployments
       actions.selectMode(mode);
@@ -135,6 +134,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
           <WelcomeScreen
             onContinue={actions.nextStep}
             onSkip={() => onComplete('Setup skipped')}
+            terminalWidth={terminalWidth}
           />
         );
 
@@ -143,6 +143,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
           <DeploymentSelectionScreen
             onSelect={handleModeSelection}
             onBack={actions.previousStep}
+            terminalWidth={terminalWidth}
           />
         );
 
@@ -157,11 +158,17 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
             onComplete={handleSetupComplete}
             onRetry={handleRetry}
             onBack={actions.previousStep}
+            terminalWidth={terminalWidth}
           />
         );
 
       default:
-        return null;
+        // Safe fallback to avoid any blank screen on unexpected state
+        return (
+          <Box>
+            <span />
+          </Box>
+        );
     }
   };
 
@@ -170,16 +177,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* Render header only if showHeader is true */}
-      {showHeader && (
-        <Header 
-          key="setup-header"
-          version="0.1.3" 
-          terminalWidth={terminalWidth}
-          nightly={false}
-        />
-      )}
-      
       {/* Current setup screen */}
       <Box key="setup-content">
         {renderCurrentScreen()}

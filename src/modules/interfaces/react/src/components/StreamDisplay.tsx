@@ -108,7 +108,7 @@ const EventLine: React.FC<{
         const hasMore = inputKeys.length > maxKeys;
         
         return (
-          <Box flexDirection="column">
+          <Box flexDirection="column" marginTop={1}>
             <Text color="green" bold>tool: {sdkToolName}</Text>
             {displayKeys.map((key, i) => {
               const value = sdkToolInput[key];
@@ -136,7 +136,7 @@ const EventLine: React.FC<{
       }
       
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginTop={1}>
           <Text color="green" bold>tool: {sdkToolName}</Text>
           <Box marginLeft={2}>
           </Box>
@@ -158,21 +158,7 @@ const EventLine: React.FC<{
       );
       
     case 'metrics_update':
-      if ('usage' in event && event.usage) {
-        const usage = event.usage as any;
-        const cost = ('cost' in event ? event.cost : null) as any;
-        return (
-          <>
-            <Text color="yellow" dimColor>
-              Tokens: {usage.inputTokens} in / {usage.outputTokens} out
-              {cost && (
-                ` | Cost: $${cost.totalCost?.toFixed(4) || '0.0000'}`
-              )}
-            </Text>
-            <Text> </Text>
-          </>
-        );
-      }
+      // Do not render metrics inline; Footer displays tokens/cost/duration.
       return null;
       
     case 'content_block_delta':
@@ -266,7 +252,7 @@ const EventLine: React.FC<{
           const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: mem0_memory</Text>
               <Box marginLeft={2}>
                 <Text dimColor>├─ action: {action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
@@ -284,7 +270,7 @@ const EventLine: React.FC<{
           // For shell, don't show commands here - they come via 'command' events
           // This matches the original working behavior from commit 96914be3
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell</Text>
             </Box>
           );
@@ -295,7 +281,7 @@ const EventLine: React.FC<{
           const url = event.tool_input.url || '';
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: http_request</Text>
               <Box marginLeft={2}>
                 <Text dimColor>├─ method: {method}</Text>
@@ -312,7 +298,7 @@ const EventLine: React.FC<{
           const fileContent = event.tool_input.content || '';
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: file_write</Text>
               <Box marginLeft={2}>
                 <Text dimColor>├─ path: {filePath}</Text>
@@ -332,7 +318,7 @@ const EventLine: React.FC<{
           const editorContent = event.tool_input.content || '';
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: editor</Text>
               <Box marginLeft={2}>
                 <Text dimColor>├─ command: {editorCmd}</Text>
@@ -355,15 +341,25 @@ const EventLine: React.FC<{
           const task = event.tool_input.task || event.tool_input.objective || '';
           const taskDisplay = task.length > 200 ? task.substring(0, 200) + '...' : task;
           
+          // For swarm with valid input, show details
+          if (agents || task) {
+            return (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="green" bold>tool: swarm</Text>
+                <Box marginLeft={2}>
+                  <Text dimColor>├─ agents: {agents}</Text>
+                </Box>
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ task: {taskDisplay}</Text>
+                </Box>
+              </Box>
+            );
+          }
+          
+          // For swarm with empty input, just show tool name (it's being initialized)
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: swarm</Text>
-              <Box marginLeft={2}>
-                <Text dimColor>├─ agents: {agents}</Text>
-              </Box>
-              <Box marginLeft={2}>
-                <Text dimColor>└─ task: {taskDisplay}</Text>
-              </Box>
             </Box>
           );
           
@@ -372,7 +368,7 @@ const EventLine: React.FC<{
           const thought = event.tool_input.thought || event.tool_input.content || '';
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: think</Text>
               {thought && (
                 <Box marginLeft={2}>
@@ -405,7 +401,7 @@ const EventLine: React.FC<{
           }
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: python_repl</Text>
               <Box marginLeft={2} flexDirection="column">
                 <Text dimColor>└─ code:</Text>
@@ -509,7 +505,7 @@ const EventLine: React.FC<{
           const stopReason = event.tool_input.reason || 'Manual stop requested';
           
           return (
-            <Box flexDirection="column">
+            <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: stop</Text>
               <Box marginLeft={2}>
                 <Text dimColor>└─ reason: {stopReason}</Text>
@@ -542,7 +538,7 @@ const EventLine: React.FC<{
       }
       
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginLeft={2}>
           <Text><Text dimColor>⎿</Text> {commandText}</Text>
         </Box>
       );
@@ -708,12 +704,7 @@ const EventLine: React.FC<{
       return null;
       
     case 'divider':
-      return (
-        <>
-          <Text dimColor>{DIVIDER}</Text>
-          <Text> </Text>
-        </>
-      );
+      return null;
       
     case 'user_handoff':
       return (
@@ -736,6 +727,11 @@ const EventLine: React.FC<{
       const swarmDetails = 'agent_details' in event ? (event.agent_details as any[] || []) : [];
       const swarmTask = 'task' in event ? String(event.task || '') : '';
       
+      // Don't display empty/invalid swarm events
+      if (swarmAgents.length === 0 && !swarmTask) {
+        return null;
+      }
+      
       return (
         <Box flexDirection="column">
           <Text> </Text>
@@ -743,15 +739,22 @@ const EventLine: React.FC<{
           <Box marginLeft={2}>
             <Text color="blue" bold>Agents ({swarmAgents.length}):</Text>
           </Box>
-          {swarmDetails.map((detail, i) => (
+          {swarmAgents.length > 0 && swarmAgents.map((agentName, i) => (
+            <Box key={i} marginLeft={4}>
+              <Text color="cyan">• {agentName}</Text>
+            </Box>
+          ))}
+          {swarmDetails.length > 0 && swarmDetails.map((detail, i) => (
             <Box key={i} marginLeft={4}>
               <Text color="cyan">• {detail}</Text>
             </Box>
           ))}
-          <Box marginLeft={2}>
-            <Text color="yellow" bold>Task: </Text>
-            <Text>{swarmTask}</Text>
-          </Box>
+          {swarmTask && (
+            <Box marginLeft={2}>
+              <Text color="yellow" bold>Task: </Text>
+              <Text>{swarmTask}</Text>
+            </Box>
+          )}
           <Text> </Text>
         </Box>
       );

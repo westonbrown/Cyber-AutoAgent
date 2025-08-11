@@ -5,13 +5,12 @@
  * Handles the primary interface when not in initialization flow.
  */
 
-import React, { useCallback, useEffect } from 'react';
-import { Box, Text, Static } from 'ink';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { Box, Text, useInput, Static } from 'ink';
 
 // Components
 import { Header } from './Header.js';
 import { Footer } from './Footer.js';
-import { OperationStatusDisplay } from './OperationStatusDisplay.js';
 import { UnifiedInputPrompt } from './UnifiedInputPrompt.js';
 import { UnconstrainedTerminal } from './UnconstrainedTerminal.js';
 import { ModalRegistry } from './ModalRegistry.js';
@@ -86,146 +85,116 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
     };
   }, []);
 
+  const [hasStreamBegun, setHasStreamBegun] = useState(false);
+
+  // Reset flag when operation changes
+  useEffect(() => {
+    setHasStreamBegun(false);
+  }, [appState.activeOperation?.id]);
+
+  const handleStreamEvent = useCallback((evt: any) => {
+    if (hasStreamBegun) return;
+    const t = evt?.type;
+    // Mark as begun on first meaningful content
+    if (t === 'reasoning' || t === 'model_stream_delta' || t === 'content_block_delta' || t === 'output' || t === 'command' || t === 'tool_start' || t === 'tool_invocation_start') {
+      setHasStreamBegun(true);
+    }
+  }, [hasStreamBegun]);
+
+  // Minimal cosmetic autoscroll toggle (UI only for now)
+  const [autoScroll, setAutoScroll] = useState(true);
+  useInput((input, key) => {
+    if (activeModal !== ModalType.NONE) return;
+    if ((input?.toLowerCase?.() === 'a') && !key.ctrl && !key.meta) {
+      setAutoScroll(prev => !prev);
+    }
+  });
+
   return (
-    <>
-      {/* Main Application Interface - Single unified view */}
-      <Static
-        key={staticKey}
-        items={[
-          // Hide header whenever any modal is open to avoid duplicate ASCII banner under modals (e.g., Safety Warning)
-          ...(hideHeader || appState.hasCompletedOperation || activeModal !== ModalType.NONE ? [] : ['header']),
-          // Suppress history when a modal is open to keep modal screens clean
-          ...(!showOperationStream && !hideHistory && activeModal === ModalType.NONE ? filteredOperationHistory.map(item => `history_${item.id}`) : [])
-        ]}
-      >
-        {(item: string) => {
-          if (item === 'header') {
-            return (
-              <Box key="header" flexDirection="column" width="100%">
-                <Header 
-                  version="0.1.3" 
-                  terminalWidth={appState.terminalDisplayWidth}
-                  nightly={false}
-                />
-                
-                {/* Operation Status Display */}
-                {assessmentFlowState.step !== 'idle' && (
-                  <OperationStatusDisplay 
-                    flowState={assessmentFlowState}
-                    currentOperation={appState.activeOperation ? {
-                      id: appState.activeOperation.id,
-                      currentStep: 1,
-                      totalSteps: 1,
-                      description: appState.activeOperation.description || 'Running assessment',
-                      startTime: new Date(),
-                      status: appState.activeOperation.status || 'running'
-                    } : undefined}
-                    showFlowProgress={false}  // Flow progress disabled
-                  />
-                )}
-              </Box>
-            );
-          }
-          
-          // Render operation history entries
-          if (item.startsWith('history_')) {
-            const entryId = item.replace('history_', '');
-            const entry = filteredOperationHistory.find(e => e.id === entryId);
-            
-            if (!entry) return <Box key={item} />;
-            
-            return (
-              <Box key={item} flexDirection="column">
-                <Box>
-                  <Text color={currentTheme.muted}>
-                    [{entry.timestamp.toLocaleTimeString()}]{' '}
-                  </Text>
-                  <Text color={entry.type === 'error' ? currentTheme.error : currentTheme.foreground}>
-                    {entry.content}
-                  </Text>
-                </Box>
-              </Box>
-            );
-          }
-          
-          return <Box key={item} />;
-        }}
-      </Static>
-      
-      {/* Custom Content - renders instead of operation stream if provided */}
-      {customContent && (
-        <Box flexDirection="column" marginTop={1}>
-          {customContent}
-        </Box>
-      )}
-      
-      {/* Operation Stream Display - Shows underneath the static content (only if no custom content) */}
-      {!customContent && showOperationStream && (
-        <Box flexDirection="column" flexGrow={1} marginBottom={2}>
-          <UnconstrainedTerminal
-            executionService={appState.executionService}
-            sessionId={appState.activeOperation!.id}
-            terminalWidth={appState.terminalDisplayWidth}
-            collapsed={false}
-            onEvent={(event) => {
-              // Events are already being handled by useOperationManager
-            }}
-            onMetricsUpdate={(metrics) => {
-              // Update the app state with real-time metrics from the stream
-              if (actions && actions.updateMetrics) {
-                actions.updateMetrics(metrics);
-              }
-            }}
-          />
-        </Box>
+    <Box flexDirection="column" width="100%">
+      {/* MODAL LAYER: Renders on top of everything else */}
+      {activeModal !== ModalType.NONE && (
+        <ModalRegistry
+          activeModal={activeModal}
+          modalContext={modalContext}
+          onClose={onModalClose}
+          onSafetyConfirm={onSafetyConfirm}
+          addOperationHistoryEntry={addOperationHistoryEntry}
+          terminalWidth={appState.terminalDisplayWidth}
+        />
       )}
 
-      {/* Input Interface - hide during active operations unless user handoff is active */}
-      {/* Also hide during initialization flow (setup wizard) or when hideInput is true */}
-      {!hideInput && (!appState.activeOperation || appState.userHandoffActive) && 
-       !appState.isInitializationFlowActive && (
-        <Box marginTop={showOperationStream ? 2 : 1} marginBottom={1}>
+      {/* HEADER: Render normally to ensure re-render after terminal clears */}
+      {!hideHeader && !appState.hasCompletedOperation && activeModal === ModalType.NONE && (
+        <Header 
+          key={`app-header-${staticKey}`}
+          version="0.1.3" 
+          terminalWidth={appState.terminalDisplayWidth}
+          nightly={false}
+        />
+      )}
+
+      {/* MAIN CONTENT AREA: This container grows to fill available space. Remove overflow clamp to allow natural scrollback. */}
+      <Box flexDirection="column" flexGrow={1}>
+        {/* Wrapper for history and terminal to ensure proper layout flow */}
+        <Box flexDirection="column" flexGrow={1}>
+          {!showOperationStream && !hideHistory && activeModal === ModalType.NONE && (
+            <Box key={staticKey} flexDirection="column">
+              {filteredOperationHistory.map((entry) => (
+                <Box key={entry.id}>
+                  <Text color={currentTheme.muted}>[{entry.timestamp.toLocaleTimeString()}] </Text>
+                  <Text color={entry.type === 'error' ? currentTheme.error : currentTheme.foreground}>{entry.content}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          {customContent ? (
+            <Box flexDirection="column" marginTop={1}>{customContent}</Box>
+          ) : showOperationStream && (
+            <UnconstrainedTerminal
+              executionService={appState.executionService}
+              sessionId={appState.activeOperation!.id}
+              terminalWidth={appState.terminalDisplayWidth}
+              collapsed={false}
+              onEvent={handleStreamEvent}
+              onMetricsUpdate={(metrics) => actions.updateMetrics?.(metrics)}
+            />
+          )}
+        </Box>
+      </Box>
+
+      {/* INPUT & FOOTER AREA: Static at the bottom */}
+      <Box flexDirection="column">
+        {!hideInput && activeModal === ModalType.NONE && !showOperationStream && (
           <UnifiedInputPrompt
             flowState={assessmentFlowState}
             onInput={onInput}
             disabled={!isTerminalInteractive}
             userHandoffActive={appState.userHandoffActive}
           />
-        </Box>
-      )}
-      
-      {/* Footer - hide when hideFooter is true or specific modals are open */}
-      {!hideFooter && 
-       activeModal !== ModalType.CONFIG && 
-       activeModal !== ModalType.MODULE_SELECTOR && 
-       activeModal !== ModalType.DOCUMENTATION &&
-       activeModal !== ModalType.SAFETY_WARNING && (
-        <Box marginTop={1}>
+        )}
+        
+        {/* Spacer above footer when streaming to preserve breathing room */}
+        {showOperationStream && (
+          <Box>
+            <Text> </Text>
+          </Box>
+        )}
+
+        {!hideFooter && activeModal === ModalType.NONE && (
           <Footer 
             model={appState.activeOperation?.model || ""}
-            contextRemaining={appState.contextUsage || 100}
-            directory={process.cwd()}
-            operationStatus={appState.activeOperation ? {
-              step: 1,
-              totalSteps: 1,
-              description: appState.activeOperation.description || 'Running assessment',
-              isRunning: appState.activeOperation.status === 'running'
-            } : undefined}
             operationMetrics={appState.operationMetrics}
-            connectionStatus={appState.activeOperation ? 'connected' : (appState.isDockerServiceAvailable ? 'connected' : 'offline')}
+            connectionStatus={appState.isDockerServiceAvailable ? 'connected' : 'offline'}
             modelProvider={applicationConfig?.modelProvider || 'bedrock'}
+            deploymentMode={applicationConfig?.deploymentMode}
+            isOperationRunning={appState.activeOperation ? appState.activeOperation.status === 'running' : false}
+            isInputPaused={appState.userHandoffActive}
+            operationName={!hasStreamBegun && appState.activeOperation ? (appState.activeOperation.description || 'Running assessment') : undefined}
           />
-        </Box>
-      )}
-      
-      {/* Modal System */}
-      <ModalRegistry
-        activeModal={activeModal}
-        modalContext={modalContext}
-        onClose={onModalClose}
-        terminalWidth={appState.terminalDisplayWidth}
-        onSafetyConfirm={onSafetyConfirm}
-      />
-    </>
+        )}
+      </Box>
+    </Box>
   );
 };

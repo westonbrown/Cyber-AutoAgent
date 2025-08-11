@@ -4,7 +4,7 @@
  * Production-quality radio button selection inspired by gemini-cli
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { themeManager } from '../../themes/theme-manager.js';
 
@@ -42,8 +42,46 @@ export function RadioSelect<T>({
     }
   }, [activeIndex, items, onHighlight]);
 
+  // Keep activeIndex valid when items or initialIndex prop change
+  const prevInitialRef = useRef(initialIndex);
+  useEffect(() => {
+    // If list is empty, normalize to 0
+    if (items.length === 0) {
+      if (activeIndex !== 0) setActiveIndex(0);
+      prevInitialRef.current = initialIndex;
+      return;
+    }
+
+    // If initialIndex prop changed, honor it (clamped)
+    if (prevInitialRef.current !== initialIndex) {
+      const next = Math.max(0, Math.min(initialIndex, items.length - 1));
+      setActiveIndex(next);
+      prevInitialRef.current = initialIndex;
+      return;
+    }
+
+    // Otherwise, only ensure current activeIndex remains valid
+    let nextIndex = Math.max(0, Math.min(activeIndex, items.length - 1));
+    // If current item is disabled, find the next enabled item (wrap once)
+    if (items[nextIndex]?.disabled) {
+      const len = items.length;
+      let found = -1;
+      for (let i = 0; i < len; i++) {
+        const idx = (nextIndex + i) % len;
+        if (!items[idx]?.disabled) { found = idx; break; }
+      }
+      if (found !== -1) nextIndex = found;
+    }
+    if (nextIndex !== activeIndex) setActiveIndex(nextIndex);
+  }, [items, initialIndex]);
+
   useInput(
     (input, key) => {
+      // Guard empty list or all-disabled list to avoid confusing UX
+      const allDisabled = items.length > 0 && items.every(i => i.disabled);
+      if (items.length === 0 || allDisabled) {
+        return;
+      }
       if (key.upArrow || input === 'k') {
         const newIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
         const item = items[newIndex];

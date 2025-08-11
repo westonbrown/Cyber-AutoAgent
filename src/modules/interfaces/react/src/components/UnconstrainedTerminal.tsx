@@ -42,6 +42,12 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
     evidence: 0
   });
   
+  // Throttle state for metrics emissions to parent
+  const lastEmitRef = useRef<number>(0);
+  const pendingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingMetricsRef = useRef<{ tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number } | null>(null);
+  const EMIT_INTERVAL_MS = 300;
+  
   // State for event processing - replacing EventAggregator with React patterns
   const [activeThinking, setActiveThinking] = useState(false);
   const [activeReasoning, setActiveReasoning] = useState(false);
@@ -49,6 +55,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
   const [lastOutputContent, setLastOutputContent] = useState('');
   const [lastOutputTime, setLastOutputTime] = useState(0);
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const seenThinkingThisPhaseRef = useRef<boolean>(false);
+  const suppressTerminationBannerRef = useRef<boolean>(false);
   
   // Constants for event processing
   const COMMAND_BUFFER_MS = 100;
@@ -63,6 +71,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       case 'step_header':
         // End any active reasoning session
         setActiveReasoning(false);
+        // New operation phase, allow normal outputs again
+        suppressTerminationBannerRef.current = false;
         
         results.push({
           type: 'step_header',
@@ -81,6 +91,12 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
             results.push({ type: 'thinking_end' } as DisplayStreamEvent);
             setActiveThinking(false);
           }
+          // Cancel any pending delayed thinking and mark seen
+          if (delayedThinkingTimerRef.current) {
+            clearTimeout(delayedThinkingTimerRef.current);
+            delayedThinkingTimerRef.current = null;
+          }
+          seenThinkingThisPhaseRef.current = true;
           
           // Start reasoning session
           setActiveReasoning(true);
@@ -96,6 +112,12 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       case 'thinking':
         // Handle thinking start without conflicting with reasoning
         if (!activeReasoning && !activeThinking) {
+          // Cancel any pending delayed thinking
+          if (delayedThinkingTimerRef.current) {
+            clearTimeout(delayedThinkingTimerRef.current);
+            delayedThinkingTimerRef.current = null;
+          }
+          seenThinkingThisPhaseRef.current = true;
           setActiveThinking(true);
           results.push({
             type: 'thinking',
@@ -129,6 +151,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           setActiveThinking(false);
         }
+        // Reset phase flags
+        seenThinkingThisPhaseRef.current = false;
         
         setCurrentToolId(event.toolId);
         
@@ -139,6 +163,36 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
           toolId: event.toolId,
           toolName: event.toolName
         } as DisplayStreamEvent);
+
+        // Ensure a waiting animation appears if no immediate output follows
+        if (!activeReasoning && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
+          results.push({
+            type: 'delayed_thinking_start',
+            context: 'tool_execution',
+            startTime: Date.now(),
+            delay: COMMAND_BUFFER_MS
+          } as unknown as DisplayStreamEvent);
+        }
+        break;
+
+      case 'tool_invocation_start':
+        // SDK variant of tool start
+        if (activeThinking) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+        // Reset phase flags
+        seenThinkingThisPhaseRef.current = false;
+        setCurrentToolId(event.toolId);
+        results.push(event as DisplayStreamEvent);
+        if (!activeReasoning && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
+          results.push({
+            type: 'delayed_thinking_start',
+            context: 'tool_execution',
+            startTime: Date.now(),
+            delay: COMMAND_BUFFER_MS
+          } as unknown as DisplayStreamEvent);
+        }
         break;
         
       case 'shell_command':
@@ -152,7 +206,9 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
         } as DisplayStreamEvent);
         
         // Start thinking animation after commands are shown (use delayed event)
-        if (!activeThinking && !activeReasoning) {
+        // Reset phase flags for command phase
+        seenThinkingThisPhaseRef.current = false;
+        if (!activeThinking && !activeReasoning && !delayedThinkingTimerRef.current) {
           results.push({
             type: 'delayed_thinking_start',
             context: 'tool_execution',
@@ -161,10 +217,41 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
           } as DisplayStreamEvent);
         }
         break;
+
+      case 'command':
+        // Generic command event; also trigger delayed thinking
+        results.push(event as DisplayStreamEvent);
+        // Reset phase flags for command phase
+        seenThinkingThisPhaseRef.current = false;
+        if (!activeThinking && !activeReasoning && !delayedThinkingTimerRef.current) {
+          results.push({
+            type: 'delayed_thinking_start',
+            context: 'tool_execution',
+            startTime: Date.now(),
+            delay: COMMAND_BUFFER_MS
+          } as unknown as DisplayStreamEvent);
+        }
+        break;
         
       case 'output':
         // Handle tool output or general output with deduplication
         if (event.content) {
+          // Suppress verbose termination block lines after ESC
+          if (suppressTerminationBannerRef.current) {
+            const line = String(event.content).trim();
+            const isDivider = /^([\u2500-\u257F\u2501\u2509\u250A\u250B\u250C\u250D\u250E\u250F\u2510\u2511\u2512\u2513\u2574\u2576\u2501\u2500\-\=\_\~\s]){10,}$/.test(line) || /\u2501|\u2500|\u2502|\u2503|\u2505|\u2507|\u2509/.test(line);
+            const terminationPhrases = [
+              'ESC Kill Switch activated',
+              'Assessment stopped by user',
+              'OPERATION TERMINATED BY USER',
+              'Assessment was stopped before completion',
+              'You can start a new assessment or review partial results'
+            ];
+            const isTerminationLine = terminationPhrases.some(p => line.includes(p));
+            if (!line || isDivider || isTerminationLine) {
+              break; // skip noisy termination lines
+            }
+          }
           // Basic deduplication
           const currentTime = Date.now();
           if (event.content === lastOutputContent && 
@@ -194,6 +281,12 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           setActiveThinking(false);
         }
+        // Reset flags and cancel pending delayed thinking
+        if (delayedThinkingTimerRef.current) {
+          clearTimeout(delayedThinkingTimerRef.current);
+          delayedThinkingTimerRef.current = null;
+        }
+        seenThinkingThisPhaseRef.current = false;
         
         results.push({
           type: 'tool_end',
@@ -203,6 +296,21 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
           timestamp: new Date().toISOString(),
           sessionId: 'current'
         } as DisplayStreamEvent);
+        setCurrentToolId(undefined);
+        break;
+
+      case 'tool_invocation_end':
+        // SDK variant of tool end
+        if (activeThinking) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+        if (delayedThinkingTimerRef.current) {
+          clearTimeout(delayedThinkingTimerRef.current);
+          delayedThinkingTimerRef.current = null;
+        }
+        seenThinkingThisPhaseRef.current = false;
+        results.push(event as DisplayStreamEvent);
         setCurrentToolId(undefined);
         break;
         
@@ -252,13 +360,44 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
         };
         setMetrics(newMetrics);
         if (onMetricsUpdate) {
-          onMetricsUpdate({
-            tokens: newMetrics.tokens,
-            cost: newMetrics.cost,
-            duration: newMetrics.duration,
-            memoryOps: newMetrics.memoryOps,
-            evidence: newMetrics.evidence
-          });
+          const now = Date.now();
+          const emitNow = now - lastEmitRef.current >= EMIT_INTERVAL_MS;
+          if (emitNow) {
+            lastEmitRef.current = now;
+            // Clear any pending timer since we're emitting now
+            if (pendingTimerRef.current) {
+              clearTimeout(pendingTimerRef.current);
+              pendingTimerRef.current = null;
+            }
+            onMetricsUpdate({
+              tokens: newMetrics.tokens,
+              cost: newMetrics.cost,
+              duration: newMetrics.duration,
+              memoryOps: newMetrics.memoryOps,
+              evidence: newMetrics.evidence
+            });
+          } else {
+            // Queue latest metrics and schedule trailing emit
+            pendingMetricsRef.current = {
+              tokens: newMetrics.tokens,
+              cost: newMetrics.cost,
+              duration: newMetrics.duration,
+              memoryOps: newMetrics.memoryOps,
+              evidence: newMetrics.evidence
+            };
+            if (!pendingTimerRef.current) {
+              const delay = EMIT_INTERVAL_MS - (now - lastEmitRef.current);
+              pendingTimerRef.current = setTimeout(() => {
+                lastEmitRef.current = Date.now();
+                const m = pendingMetricsRef.current;
+                pendingMetricsRef.current = null;
+                pendingTimerRef.current = null;
+                if (m) {
+                  onMetricsUpdate(m);
+                }
+              }, Math.max(0, delay));
+            }
+          }
         }
         if (onEvent) onEvent(event);
         return;
@@ -290,6 +429,9 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
                 context: (processedEvent as any).context || 'tool_execution',
                 startTime: (processedEvent as any).startTime || Date.now()
               };
+              // Mark spinner active so backend 'thinking' doesn't duplicate it
+              setActiveThinking(true);
+              seenThinkingThisPhaseRef.current = true;
               setActiveEvents(prev => [...prev, thinkingEvent]);
               delayedThinkingTimerRef.current = null;
             }, (processedEvent as any).delay || 100);
@@ -360,7 +502,18 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
     };
     
     executionService.on('complete', handleComplete);
-    executionService.on('stopped', handleComplete);
+    // Use a stable function reference so we can remove it in cleanup
+    const handleStopped = () => {
+      // Mark that we should suppress verbose termination block lines
+      suppressTerminationBannerRef.current = true;
+      // Emit a concise stop summary event
+      setCompletedEvents(prev => [
+        ...prev,
+        { type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent
+      ]);
+      handleComplete();
+    };
+    executionService.on('stopped', handleStopped);
 
     // Cleanup
     return () => {
@@ -368,9 +521,13 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       if (delayedThinkingTimerRef.current) {
         clearTimeout(delayedThinkingTimerRef.current);
       }
+      if (pendingTimerRef.current) {
+        clearTimeout(pendingTimerRef.current);
+        pendingTimerRef.current = null;
+      }
       executionService.off('event', handleEvent);
       executionService.off('complete', handleComplete);
-      executionService.off('stopped', handleComplete);
+      executionService.off('stopped', handleStopped);
     };
   }, [executionService, onEvent, metrics, onMetricsUpdate, sessionId]);
 
@@ -379,43 +536,19 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
   }
 
   return (
-    <Box flexDirection="column" width="100%" flexGrow={1}>
-      {/* Completed events - use Static for proper scrolling */}
-      {completedEvents.length > 0 && (
-        <Static key={`terminal-events-${sessionId}`} items={completedEvents}>
-          {(event, index) => (
-            <Box key={`event-${index}-${event.type}-${Date.now()}`}>
-              <StreamDisplay events={[event]} />
-            </Box>
-          )}
-        </Static>
-      )}
-      
-      {/* Add spacing after completed events before footer */}
-      {completedEvents.length > 0 && activeEvents.length === 0 && (
-        <Box>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-        </Box>
-      )}
-      
-      {/* Active events (like thinking animations) - rendered dynamically */}
-      {activeEvents.length > 0 && (
-        <Box width="100%">
-          <StreamDisplay events={activeEvents} />
-          
-          {/* Add proper spacing between animation and footer */}
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-          <Text> </Text>
-        </Box>
-      )}
+    <Box flexDirection="column" width="100%">
+      {/* Render completed events as regular components to preserve header-first layout */}
+      {completedEvents.map((item, index) => (
+        <StreamDisplay key={`event-${index}`} events={[item]} />
+      ))}
+
+      {/* Render active, streaming events */}
+      {activeEvents.length > 0 && <StreamDisplay events={activeEvents} />}
+
+      {/* Trailing spacer to avoid footer crowding */}
+      <Box>
+        <Text> </Text>
+      </Box>
     </Box>
   );
 });

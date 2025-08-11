@@ -23,6 +23,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
 }) => {
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [deploymentMode, setDeploymentMode] = useState<string>('cli');
+  const [lastCheckAt, setLastCheckAt] = useState<number | null>(null);
   const theme = themeManager.getCurrentTheme();
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
     // Subscribe to updates
     const unsubscribe = monitor.subscribe((status) => {
       setHealthStatus(status);
+      setLastCheckAt(Date.now());
     });
 
     // Update deployment mode - use override if provided, otherwise auto-detect
@@ -50,7 +52,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         const currentMode = await containerManager.getCurrentMode();
         const modeDisplayName = currentMode === 'local-cli' ? 'cli' : 
                                currentMode === 'single-container' ? 'agent' : 
-                               'enterprise';
+                               'full-stack';
         setDeploymentMode(modeDisplayName);
       } catch (error) {
         console.error('Failed to get deployment mode:', error);
@@ -126,7 +128,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           <Text color={getStatusColor()}>
             {getStatusSymbol()} Docker
           </Text>
-        ) : deploymentMode === 'enterprise' ? (
+        ) : deploymentMode === 'full-stack' ? (
           // Full stack mode - show container count
           <Text color={getStatusColor()}>
             {getStatusSymbol()} {runningCount}/{totalCount}
@@ -137,6 +139,12 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         )}
         {!healthStatus.dockerRunning && deploymentMode !== 'cli' && (
           <Text color={theme.danger}> Docker Off</Text>
+        )}
+        {lastCheckAt && (
+          <>
+            <Text color={theme.muted}> · </Text>
+            <Text color={theme.muted}>Last check {Math.max(0, Math.floor((Date.now() - lastCheckAt)/1000))}s ago</Text>
+          </>
         )}
       </Box>
     );
@@ -149,6 +157,12 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
         <Text bold color={theme.primary}>Container Status</Text>
         <Text color={theme.muted}> - </Text>
         <Text color={getStatusColor()}>{healthStatus.overall.toUpperCase()}</Text>
+        {lastCheckAt && (
+          <>
+            <Text color={theme.muted}> · </Text>
+            <Text color={theme.muted}>Last check {Math.max(0, Math.floor((Date.now() - lastCheckAt)/1000))}s ago</Text>
+          </>
+        )}
       </Box>
       
       {!healthStatus.dockerRunning && (
