@@ -9,6 +9,7 @@ import React, { Component, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
 import { Header } from './Header.js';
+import { loggingService } from '../services/LoggingService.js';
 
 interface Props {
   children: ReactNode;
@@ -39,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
     });
 
     // Log error for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    loggingService.error('ErrorBoundary caught an error:', error, errorInfo);
     
     // Call optional error handler
     if (this.props.onError) {

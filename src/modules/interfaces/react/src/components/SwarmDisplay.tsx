@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
+import { formatDuration } from '../utils/toolFormatters.js';
 
 export interface SwarmAgent {
   id: string;
@@ -60,14 +61,6 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
     }
   }, [swarmState.status, swarmState.startTime, swarmState.endTime]);
 
-  const formatDuration = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    }
-    return `${seconds}s`;
-  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -115,7 +108,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
           <Text color={theme.muted}> | </Text>
           <Text color={theme.success}>{completedAgents} completed</Text>
           <Text color={theme.muted}> | </Text>
-          <Text color={theme.info}>{formatDuration(elapsedTime)}</Text>
+          <Text color={theme.info}>{formatDuration(elapsedTime, true)}</Text>
         </Box>
         <Box marginLeft={2} marginTop={1}>
           <Text color={theme.muted}>Task: </Text>
@@ -159,7 +152,7 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
       {/* Timing and metrics */}
       <Box marginLeft={2} marginBottom={1}>
         <Text color={theme.muted}>Duration: </Text>
-        <Text color={theme.info}>{formatDuration(elapsedTime)}</Text>
+        <Text color={theme.info}>{formatDuration(elapsedTime, true)}</Text>
         {swarmState.totalTokens && (
           <>
             <Text color={theme.muted}> | Tokens: </Text>

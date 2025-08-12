@@ -8,6 +8,7 @@
 import { useCallback } from 'react';
 import { useInput, useApp } from 'ink';
 import { Operation } from '../services/OperationManager.js';
+import { loggingService } from '../services/LoggingService.js';
 
 interface KeyboardHandlersProps {
   activeOperation: Operation | null;
@@ -43,7 +44,7 @@ export function useKeyboardHandlers({
           onEscapeExit();
         } else {
           // Fallback behavior
-          console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
+          loggingService.info('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
           exit();
         }
       }
@@ -56,7 +57,7 @@ export function useKeyboardHandlers({
         onAssessmentPause();
       } else {
         // If no operation running, exit gracefully
-        console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
+        loggingService.info('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
         exit();
       }
       return;
@@ -84,7 +85,7 @@ export function useKeyboardHandlers({
         if (onEscapeExit) {
           onEscapeExit();
         } else {
-          console.log('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
+          loggingService.info('\n🔴 Exiting Cyber-AutoAgent... Goodbye!');
           exit();
         }
       }

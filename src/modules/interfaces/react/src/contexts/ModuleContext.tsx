@@ -7,6 +7,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { loggingService } from '../services/LoggingService.js';
 
 export interface ModuleTool {
   name: string;
@@ -51,7 +52,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Debug logging for module discovery
       if (process.env.DEBUG) {
-        console.log('[ModuleContext] Looking for modules in:', modulesDir);
+        loggingService.info('[ModuleContext] Looking for modules in:', modulesDir);
       }
       
       // Check if directory exists first
@@ -98,7 +99,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch (err) {
       // Only log in debug mode - don't show errors to users
       if (process.env.DEBUG) {
-        console.error('Failed to load modules:', err);
+        loggingService.error('Failed to load modules:', err);
       }
       // Silently handle the error - modules are optional
       setAvailableModules({});
@@ -164,7 +165,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch (err) {
       // Only log in debug mode
       if (process.env.DEBUG) {
-        console.error(`Failed to load module ${moduleName}:`, err);
+        loggingService.error(`Failed to load module ${moduleName}:`, err);
       }
       return null;
     }
@@ -184,7 +185,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setModuleInfo(availableModules[moduleName]);
     } catch (err) {
       setError(`Failed to switch to module ${moduleName}`);
-      console.error(err);
+      loggingService.error(err);
     } finally {
       setIsLoading(false);
     }

@@ -7,7 +7,6 @@
 
 import React, { useCallback, useEffect } from 'react';
 import { useStdout, useApp } from 'ink';
-import ansiEscapes from 'ansi-escapes';
 
 // State Management
 import { useApplicationState } from './hooks/useApplicationState.js';
@@ -121,7 +120,7 @@ const AppContent: React.FC<AppProps> = ({
     // Batch all state updates together to minimize re-renders
     operationManager.clearOperationHistory();
     actions.resetErrorCount();
-    actions.setTerminalVisible(false);
+    // Removed setTerminalVisible(false) - we want to clear content, not hide the terminal
     actions.setActiveOperation(null);
     actions.clearCompletedOperation(); // Clear the completed operation flag
     

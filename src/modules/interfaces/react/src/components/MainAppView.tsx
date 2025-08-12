@@ -22,13 +22,13 @@ import { ModalType } from '../hooks/useModalManager.js';
 
 interface MainAppViewProps {
   appState: ApplicationState;
-  actions: any;
-  currentTheme: any;
+  actions: any; // Application state actions
+  currentTheme: any; // Theme configuration object
   operationHistoryEntries: OperationHistoryEntry[];
-  assessmentFlowState: any;
+  assessmentFlowState: any; // Assessment flow state object
   staticKey: number;
   activeModal: ModalType;
-  modalContext: any;
+  modalContext: any; // Modal context data
   isTerminalInteractive: boolean;
   onInput: (input: string) => void;
   onModalClose: () => void;
@@ -37,9 +37,9 @@ interface MainAppViewProps {
   hideFooter?: boolean;
   hideInput?: boolean;
   hideHistory?: boolean;
-  hideHeader?: boolean; // Add this to hide header when showing setup
+  hideHeader?: boolean;
   customContent?: React.ReactNode;
-  applicationConfig?: any; // Add config to get modelProvider
+  applicationConfig?: any; // Application configuration
 }
 
 export const MainAppView: React.FC<MainAppViewProps> = ({
@@ -92,21 +92,21 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
     setHasStreamBegun(false);
   }, [appState.activeOperation?.id]);
 
-  const handleStreamEvent = useCallback((evt: any) => {
+  const handleStreamEvent = useCallback((event: any) => {
     if (hasStreamBegun) return;
-    const t = evt?.type;
+    const eventType = event?.type;
     // Mark as begun on first meaningful content
-    if (t === 'reasoning' || t === 'model_stream_delta' || t === 'content_block_delta' || t === 'output' || t === 'command' || t === 'tool_start' || t === 'tool_invocation_start') {
+    if (eventType === 'reasoning' || eventType === 'model_stream_delta' || eventType === 'content_block_delta' || eventType === 'output' || eventType === 'command' || eventType === 'tool_start' || eventType === 'tool_invocation_start') {
       setHasStreamBegun(true);
     }
   }, [hasStreamBegun]);
 
   // Minimal cosmetic autoscroll toggle (UI only for now)
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
   useInput((input, key) => {
     if (activeModal !== ModalType.NONE) return;
     if ((input?.toLowerCase?.() === 'a') && !key.ctrl && !key.meta) {
-      setAutoScroll(prev => !prev);
+      setIsAutoScrollEnabled(prev => !prev);
     }
   });
 
@@ -144,12 +144,29 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         <Box flexDirection="column" flexGrow={1}>
           {!showOperationStream && !hideHistory && activeModal === ModalType.NONE && (
             <Box key={staticKey} flexDirection="column">
-              {filteredOperationHistory.map((entry) => (
-                <Box key={entry.id}>
-                  <Text color={currentTheme.muted}>[{entry.timestamp.toLocaleTimeString()}] </Text>
-                  <Text color={entry.type === 'error' ? currentTheme.error : currentTheme.foreground}>{entry.content}</Text>
-                </Box>
-              ))}
+              {filteredOperationHistory.map((entry) => {
+                // Handle divider entries
+                if (entry.type === 'divider') {
+                  return (
+                    <Box key={entry.id}>
+                      <Text color={currentTheme.muted}>{'━'.repeat(80)}</Text>
+                    </Box>
+                  );
+                }
+                
+                // Handle other entry types
+                const entryColor = 
+                  entry.type === 'error' ? currentTheme.error :
+                  entry.type === 'success' ? currentTheme.success :
+                  currentTheme.foreground;
+                
+                return (
+                  <Box key={entry.id}>
+                    <Text color={currentTheme.muted}>[{entry.timestamp.toLocaleTimeString()}] </Text>
+                    <Text color={entryColor}>{entry.content}</Text>
+                  </Box>
+                );
+              })}
             </Box>
           )}
 
@@ -170,11 +187,11 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
 
       {/* INPUT & FOOTER AREA: Static at the bottom */}
       <Box flexDirection="column">
-        {!hideInput && activeModal === ModalType.NONE && !showOperationStream && (
+        {!hideInput && activeModal === ModalType.NONE && (!showOperationStream || appState.userHandoffActive) && (
           <UnifiedInputPrompt
             flowState={assessmentFlowState}
             onInput={onInput}
-            disabled={!isTerminalInteractive}
+            disabled={!isTerminalInteractive && !appState.userHandoffActive}
             userHandoffActive={appState.userHandoffActive}
           />
         )}

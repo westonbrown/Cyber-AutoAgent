@@ -21,7 +21,7 @@ export class EventAggregator {
   private outputDedupeTimeMs = 1000; // 1 second window for deduplication
   private lastOutputTime: number = 0;
   
-  // Legacy methods for backward compatibility
+  // Legacy methods for backward compatibility with DirectTerminal
   hasPendingEvents(): boolean {
     return false; // No longer buffering events
   }
@@ -49,7 +49,11 @@ export class EventAggregator {
           step: event.step,
           maxSteps: event.maxSteps,
           operation: event.operation,
-          duration: event.duration
+          duration: event.duration,
+          // Include swarm-related properties if present
+          is_swarm_operation: event.is_swarm_operation,
+          swarm_agent: event.swarm_agent,
+          swarm_context: event.swarm_context
         } as DisplayStreamEvent);
         
         // End reasoning session after step header
@@ -204,6 +208,16 @@ export class EventAggregator {
           metrics: event.metrics || {},
           duration: event.duration
         } as DisplayStreamEvent);
+        break;
+        
+      case 'swarm_start':
+        // Pass through swarm_start event
+        results.push(event as DisplayStreamEvent);
+        break;
+        
+      case 'swarm_end':
+        // Pass through swarm_end event
+        results.push(event as DisplayStreamEvent);
         break;
         
       default:

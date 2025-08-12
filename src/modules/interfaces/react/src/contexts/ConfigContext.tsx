@@ -28,6 +28,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo, useRe
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { loggingService } from '../services/LoggingService.js';
 import { detectDeploymentMode, getDeploymentDefaults } from '../config/deployment.js';
 import { DeploymentDetector } from '../services/DeploymentDetector.js';
 
@@ -420,7 +421,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
       await fs.mkdir(path.dirname(configFilePath), { recursive: true });
       await fs.writeFile(configFilePath, JSON.stringify(configRef.current, null, 2));
     } catch (error) {
-      console.error('Failed to save config:', error);
+      loggingService.error('Failed to save config:', error);
     }
   }, [configFilePath]);
 

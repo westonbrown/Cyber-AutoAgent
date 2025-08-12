@@ -235,6 +235,19 @@ function getInitialState(): ApplicationState {
 
 /**
  * Custom hook for managing application state
+ * 
+ * @description
+ * Consolidates all application state management into a single reducer-based hook.
+ * Provides a centralized state object with actions for state mutations.
+ * 
+ * @returns {{
+ *   state: ApplicationState,
+ *   actions: Object
+ * }} The current application state and action dispatchers
+ * 
+ * @example
+ * const { state, actions } = useApplicationState();
+ * actions.setActiveOperation(operation);
  */
 export function useApplicationState() {
   const [state, dispatch] = useReducer(applicationReducer, getInitialState());

@@ -208,11 +208,6 @@ class ToolEventEmitter:
                     }
                 )
 
-                # Also emit metadata for backward compatibility
-                self.emit_ui_event(
-                    {"type": "metadata", "content": {"agents": f"{agent_count} agents", "task": task_preview}}
-                )
-
     def _emit_python_repl(self, tool_input: Any) -> None:
         """Emit Python REPL execution details."""
         if isinstance(tool_input, dict):

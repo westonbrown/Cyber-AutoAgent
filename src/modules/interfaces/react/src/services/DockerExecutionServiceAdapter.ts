@@ -214,7 +214,7 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
 
       // Check network connectivity (basic check)
       if (config.modelProvider === 'bedrock') {
-        // TODO: Could add a basic AWS connectivity check
+        // AWS connectivity is verified during actual execution
         warnings.push('Ensure network access to AWS Bedrock endpoints');
       }
 
@@ -264,7 +264,7 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
         success: true,
         durationMs: Date.now() - startTime,
         stepsExecuted: config.iterations,
-        findingsCount: 0 // TODO: Extract from Docker service if available
+        findingsCount: 0 // Findings are tracked in the output reports
       })).catch((error) => ({
         success: false,
         error: error instanceof Error ? error.message : String(error),

@@ -86,11 +86,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 - event_loop_metrics: SDK metrics
         """
 
-        # Debug: Log all parameters we receive
-        # import sys
-        # print(f"[DEBUG] Handler called with keys: {list(kwargs.keys())}", file=sys.stderr, flush=True)
-        # if any(key in kwargs for key in ["current_tool_use", "toolResult", "complete", "result", "tool_result"]):
-        #     print(f"[DEBUG] Special keys found: current_tool_use={bool(kwargs.get('current_tool_use'))}, toolResult={bool(kwargs.get('toolResult'))}, complete={kwargs.get('complete')}, result={bool(kwargs.get('result'))}, tool_result={bool(kwargs.get('tool_result'))}", file=sys.stderr, flush=True)
 
         # SDK provides these key parameters (matching PrintingCallbackHandler)
         reasoning_text = kwargs.get("reasoningText")
@@ -104,15 +99,9 @@ class SDKNativeHandler(PrintingCallbackHandler):
         # Check if this is a reasoning delta (fragment)
         reasoning_delta = kwargs.get("reasoning", False) and reasoning_text
 
-        # Debug the order of events
-        # if message:
-        #     print(f"[DEBUG] CALLBACK ORDER: message received, role={message.get('role')}", file=sys.stderr, flush=True)
-        # if current_tool_use:
-        #     print(f"[DEBUG] CALLBACK ORDER: current_tool_use received, name={current_tool_use.get('name')}, pending_header={self.pending_step_header}", file=sys.stderr, flush=True)
 
         # Process messages for tool results and step progression
         if message and isinstance(message, dict):
-            # print(f"[DEBUG] Processing message with role: {message.get('role')}, content length: {len(message.get('content', []))}", file=sys.stderr, flush=True)
             content = message.get("content", [])
 
             # Check if this assistant message will contain tool usage (for proper step header timing)
@@ -128,27 +117,18 @@ class SDKNativeHandler(PrintingCallbackHandler):
             if message.get("role") == "assistant" and has_tool_use:
                 self.current_step += 1
                 self.pending_step_header = True
-                # print(f"[DEBUG] Marking step header as pending for step {self.current_step}, has_tool_use={has_tool_use}", file=sys.stderr, flush=True)
-                # print(f"[DEBUG] Content blocks that have tool_use:", file=sys.stderr, flush=True)
-                # for block in content:
-                #     if isinstance(block, dict) and (block.get("type") == "tool_use" or "toolUse" in block):
-                #         print(f"[DEBUG]   - Block type={block.get('type')}, keys={list(block.keys())}", file=sys.stderr, flush=True)
 
             # Process tool results from message content (SDK native pattern)
             for i, block in enumerate(content):
-                # print(f"[DEBUG] Content block {i}: keys={list(block.keys()) if isinstance(block, dict) else 'not_dict'}", file=sys.stderr, flush=True)
                 if isinstance(block, dict):
                     # Check for various tool result formats
                     if "toolResult" in block:
                         tool_result = block["toolResult"]
-                        # print(f"[DEBUG] Found toolResult in message: {tool_result}", file=sys.stderr, flush=True)
                         self._process_tool_result_from_message(tool_result)
                     elif "toolResponse" in block:
                         tool_result = block["toolResponse"]
-                        # print(f"[DEBUG] Found toolResponse in message: {tool_result}", file=sys.stderr, flush=True)
                         self._process_tool_result_from_message(tool_result)
                     elif block.get("type") == "tool_result":
-                        # print(f"[DEBUG] Found tool_result type block: {block}", file=sys.stderr, flush=True)
                         self._process_tool_result_from_message(block)
 
             # For assistant messages WITHOUT tool use, emit step header normally
@@ -161,7 +141,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
                         if "text" in item:
                             self.total_output_tokens += len(str(item.get("text", ""))) // 4
 
-                # print(f"[DEBUG] Message structure: {type(message)}, keys: {list(message.keys()) if isinstance(message, dict) else 'not_dict'}", file=sys.stderr, flush=True)
                 self._emit_ui_event(
                     {
                         "type": "step_header",
@@ -196,8 +175,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
             tool_input = current_tool_use.get("input", {})
 
             # Debug: Log full current_tool_use structure
-            # import sys
-            # print(f"[DEBUG] Full current_tool_use: {current_tool_use}", file=sys.stderr, flush=True)
+            # Full current_tool_use: {current_tool_use}", file=sys.stderr, flush=True)
 
             # Only emit events for new tools
             if tool_id and tool_id not in self.announced_tools:
@@ -209,9 +187,9 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 if self.pending_step_header or (self.current_step == 0 and tool_id):
                     if self.current_step == 0:
                         self.current_step = 1  # First tool is step 1
-                        # print(f"[DEBUG] First tool detected, emitting step header for step 1", file=sys.stderr, flush=True)
+                        # First tool detected, emitting step header for step 1", file=sys.stderr, flush=True)
                     else:
-                        # print(f"[DEBUG] Emitting step header AFTER reasoning flush for step {self.current_step}", file=sys.stderr, flush=True)
+                        # Emitting step header AFTER reasoning flush for step {self.current_step}", file=sys.stderr, flush=True)
                         pass  # Add pass statement to satisfy Python's syntax requirement
 
                     self._emit_ui_event(
@@ -269,21 +247,18 @@ class SDKNativeHandler(PrintingCallbackHandler):
         # Handle tool results from direct parameter
         if tool_result:
             # Debug: Log tool result processing
-            # import sys
-            # print(f"[DEBUG] Processing tool result from variable: {tool_result}", file=sys.stderr, flush=True)
+            # Processing tool result from variable: {tool_result}", file=sys.stderr, flush=True)
             self._process_tool_result_from_message(tool_result)
 
         # Handle tool results from kwargs (alternative parameter names)
         if kwargs.get("toolResult") is not None:
-            # import sys
-            # print(f"[DEBUG] Got toolResult in kwargs: {kwargs.get('toolResult')}", file=sys.stderr, flush=True)
+            # Got toolResult in kwargs: {kwargs.get('toolResult')}", file=sys.stderr, flush=True)
             self._process_tool_result_from_message(kwargs.get("toolResult"))
 
         # Check for other possible tool result parameter names
         for alt_key in ["result", "tool_result", "execution_result", "response", "output"]:
             if alt_key in kwargs and kwargs[alt_key] is not None:
-                # import sys
-                # print(f"[DEBUG] Found alternative tool result key '{alt_key}': {kwargs[alt_key]}", file=sys.stderr, flush=True)
+                    # Found alternative tool result key '{alt_key}': {kwargs[alt_key]}", file=sys.stderr, flush=True)
                 # Convert to standard format if needed
                 result_data = kwargs[alt_key]
                 if isinstance(result_data, str):
@@ -294,7 +269,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
         # Also check if we have a complete flag without results - might indicate tool completion
         if complete and not tool_result and not any(k in kwargs for k in ["toolResult", "result", "tool_result"]):
             if self.last_tool_name:
-                # print(f"[DEBUG] Complete flag set but no tool result for {self.last_tool_name}", file=sys.stderr, flush=True)
+                # Complete flag set but no tool result for {self.last_tool_name}", file=sys.stderr, flush=True)
                 pass  # Add pass statement to satisfy Python's syntax requirement
 
         # Track metrics from SDK (not custom!)
@@ -305,8 +280,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
             tokens_used = usage.get("totalTokens", 0)
 
             # Debug: log what we're getting
-            # import sys
-            # print(f"[DEBUG] Metrics: usage={usage}", file=sys.stderr, flush=True)
+            # Metrics: usage={usage}", file=sys.stderr, flush=True)
 
             # Calculate cost based on model
             # Default to Sonnet pricing if not specified
@@ -337,7 +311,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
 
             # Check if this is a tool completion without explicit result
             if self.last_tool_name and not tool_result and not kwargs.get("toolResult"):
-                # print(f"[DEBUG] Tool completion detected for {self.last_tool_name} without explicit result", file=sys.stderr, flush=True)
                 # Emit a completion status for tools that might not have explicit results
                 self._emit_ui_event({"type": "thinking_end"})
                 self._emit_ui_event({"type": "output", "content": f"Command completed successfully"})
@@ -393,9 +366,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
     def _emit_tool_specific_events(self, tool_name: str, tool_input: Any) -> None:
         """Emit tool-specific events for proper UI display"""
         if tool_name == "shell":
-            # Debug: Log the actual tool_input structure
-            # import sys
-            # print(f"[DEBUG] Shell tool_input: {tool_input}, type: {type(tool_input)}", file=sys.stderr, flush=True)
             self._emit_shell_commands(tool_input)
         elif tool_name == "mem0_memory":
             self._emit_memory_operation(tool_input)
@@ -691,15 +661,9 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 # Handle other types by converting to string
                 output_text += str(item)
 
-        # Debug logging for tool result content
-        # import sys
-        # print(f"[DEBUG OUTPUT] Tool: {self.last_tool_name}, content_items: {len(content_items)}, output_text length: {len(output_text)}", file=sys.stderr, flush=True)
-        # if content_items:
-        #     print(f"[DEBUG OUTPUT] Content structure: {[{k: type(v).__name__ for k, v in item.items()} if isinstance(item, dict) else type(item).__name__ for item in content_items]}", file=sys.stderr, flush=True)
 
         # Emit output if we have content
         if output_text.strip():
-            # print(f"[DEBUG OUTPUT] Emitting output: {output_text[:100]}...", file=sys.stderr, flush=True)
             self._emit_ui_event({"type": "output", "content": output_text.strip()})
         else:
             # For tools that might not have output, provide completion status
@@ -712,13 +676,11 @@ class SDKNativeHandler(PrintingCallbackHandler):
                     "mem0_memory": "Memory operation completed",
                     "shell": "Command completed successfully",
                 }
-                # print(f"[DEBUG OUTPUT] No output text, emitting completion status for {self.last_tool_name}", file=sys.stderr, flush=True)
                 self._emit_ui_event(
                     {"type": "output", "content": status_messages.get(self.last_tool_name, "Operation completed")}
                 )
             else:
-                # print(f"[DEBUG OUTPUT] No output and tool {self.last_tool_name} not in fallback list", file=sys.stderr, flush=True)
-                pass  # Add pass statement to satisfy Python's syntax requirement
+                pass  # Tool without output fallback
 
         # Update metrics for specific tools
         if self.last_tool_name == "mem0_memory":
@@ -917,8 +879,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
             "evidence_collected": self.evidence_count,
             "memory_operations": self.memory_ops,
             "capability_expansion": bool(self.tools_used),
-            # Legacy React UI keys for backward compatibility
-            "memory_ops": self.memory_ops,
             "evidence_count": self.evidence_count,
             "duration": self._format_duration(time.time() - self.start_time),
             "metrics": self.last_metrics,

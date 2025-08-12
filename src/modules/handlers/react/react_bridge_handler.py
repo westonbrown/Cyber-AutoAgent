@@ -80,6 +80,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.swarm_handoff_count = 0
         # Track last emitted swarm signature to prevent duplicates
         self._last_swarm_signature = None
+        # Track sub-agent steps separately
+        self.swarm_agent_steps = {}  # {agent_name: current_step}
+        self.swarm_agent_max_steps = 5  # Default max steps per sub-agent
 
         # Initialize tool emitter
         self.tool_emitter = ToolEventEmitter(self._emit_ui_event)
@@ -467,7 +470,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             event["is_swarm_operation"] = True
             if self.current_swarm_agent:
                 event["swarm_agent"] = self.current_swarm_agent
-                event["swarm_context"] = f"Agent: {self.current_swarm_agent}"
+                # Track and increment sub-agent steps
+                if self.current_swarm_agent not in self.swarm_agent_steps:
+                    self.swarm_agent_steps[self.current_swarm_agent] = 1
+                else:
+                    self.swarm_agent_steps[self.current_swarm_agent] += 1
+                event["swarm_sub_step"] = self.swarm_agent_steps[self.current_swarm_agent]
+                event["swarm_max_sub_steps"] = self.swarm_agent_max_steps
             else:
                 event["swarm_context"] = "Multi-Agent Operation"
         
@@ -570,6 +579,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.current_swarm_agent = agent_names[0] if agent_names else None
         self.swarm_handoff_count = 0
         self._last_swarm_signature = signature
+        # Reset sub-agent step tracking for new swarm
+        self.swarm_agent_steps = {}
 
         # Emit a single swarm_start UI event with full task (no truncation)
         try:
@@ -581,11 +592,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 "max_handoffs": tool_input.get("max_handoffs", 20),
             }
             self._emit_ui_event(event)
-            # Back-compat metadata summary for older UIs
-            self._emit_ui_event({
-                "type": "metadata",
-                "content": {"agents": f"{len(agent_names)} agents", "task": task}
-            })
         except Exception:
             pass
 
@@ -603,6 +609,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             from_agent = self.current_swarm_agent or "unknown"
             self.current_swarm_agent = agent_name
             self.swarm_handoff_count += 1
+            # Initialize step count for new agent if not exists
+            if agent_name not in self.swarm_agent_steps:
+                self.swarm_agent_steps[agent_name] = 0
 
             self._emit_ui_event(
                 {
@@ -879,10 +888,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         # Markdown library not available, skip HTML generation
                         pass
                     
-                    # Emit file path information
+                    # Emit file path information with polished formatting
                     self._emit_ui_event({
                         "type": "output", 
-                        "content": f"\n{'='*80}\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n{'='*80}"
+                        "content": f"\n{'━'*80}\n\n✅ ASSESSMENT COMPLETE\n\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n"
+                    })
+                    
+                    # Emit a completion event for clean UI transition
+                    self._emit_ui_event({
+                        "type": "assessment_complete",
+                        "operation_id": self.operation_id,
+                        "report_path": report_path
                     })
                     
                     logger.info("Report saved to %s", report_path)

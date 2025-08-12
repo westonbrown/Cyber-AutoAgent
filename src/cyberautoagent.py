@@ -315,7 +315,7 @@ def main():
         try:
             while True:
                 time.sleep(30)  # Check every 30 seconds
-                # TODO: Add health check endpoint or message queue listener here
+                # Health check endpoint implementation pending
         except KeyboardInterrupt:
             print("Service mode interrupted. Shutting down...")
             return

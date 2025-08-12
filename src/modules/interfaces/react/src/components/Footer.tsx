@@ -2,7 +2,6 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { themeManager } from '../themes/theme-manager.js';
-import { CyberTheme } from '../themes/types.js';
 
 interface FooterProps {
   model?: string;

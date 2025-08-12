@@ -136,31 +136,40 @@ const EventLine: React.FC<{
     // LEGACY EVENT HANDLERS - Backward compatibility
     // =======================================================================
     case 'step_header':
-      // Detect if this is a swarm step and extract agent info from context
-      let agentInfo = '';
-      const stepNumber = event.step;
+      // Detect if this is a swarm step and format appropriately
+      let stepDisplay = '';
+      let agentDisplay = '';
       
-      // Show specific swarm agent name if available
-      if (event.swarm_agent) {
-        // Capitalize agent name for better visibility
-        const agentName = String(event.swarm_agent);
-        agentInfo = ` • SUB-AGENT ${agentName}`;
-      } else if (event.swarm_context) {
-        // If we have swarm context but no specific agent, show operation type
-        agentInfo = ` • SUB-AGENT ${event.swarm_context}`;
-      } else if (event.is_swarm_operation) { 
-        // Show swarm operation indicator
-        agentInfo = ' • SWARM OPERATION';
+      // Access properties through bracket notation to bypass TypeScript checks
+      const swarmAgent = (event as any)['swarm_agent'];
+      const swarmSubStep = (event as any)['swarm_sub_step'];
+      const swarmMaxSubSteps = (event as any)['swarm_max_sub_steps'];
+      const isSwarmOperation = (event as any)['is_swarm_operation'];
+      
+      if (event.step === "FINAL REPORT") {
+        stepDisplay = "[FINAL REPORT]";
+      } else if (swarmAgent) {
+        // For swarm operations, show agent name and sub-step
+        const agentName = String(swarmAgent).toUpperCase();
+        const subStep = swarmSubStep || event.step;
+        const maxSubSteps = swarmMaxSubSteps || event.maxSteps;
+        stepDisplay = `[${agentName} • STEP ${subStep}/${maxSubSteps}]`;
+      } else if (isSwarmOperation) {
+        // Generic swarm operation without specific agent
+        stepDisplay = `[SWARM • STEP ${event.step}/${event.maxSteps}]`;
+      } else {
+        // Regular step header
+        stepDisplay = `[STEP ${event.step}/${event.maxSteps}]`;
       }
       
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={0}>
           <Box flexDirection="row" alignItems="center">
             <Text color="#89B4FA" bold>
-              {event.step === "FINAL REPORT" ? "[FINAL REPORT]" : `[STEP ${event.step}/${event.maxSteps}]`}
+              {stepDisplay}
             </Text>
-            {agentInfo && (
-              <Text color="#CBA6F7" bold>{agentInfo}</Text>
+            {agentDisplay && (
+              <Text color="#CBA6F7" bold>{agentDisplay}</Text>
             )}
           </Box>
           <Text color="#45475A">{DIVIDER.slice(0, Math.max(0, DIVIDER.length - 20))}</Text>
@@ -346,12 +355,12 @@ const EventLine: React.FC<{
               <Box marginLeft={2} flexDirection="column">
                 <Text dimColor>└─ code:</Text>
                 <Box marginLeft={5} flexDirection="column">
-                  {displayLines.map((line, i) => {
+                  {displayLines.map((line, index) => {
                     // Don't show tree characters for code content
                     if (line.startsWith('...')) {
-                      return <Text key={i} dimColor italic>    {line}</Text>;
+                      return <Text key={index} dimColor italic>    {line}</Text>;
                     }
-                    return <Text key={i} dimColor>    {line || ' '}</Text>;
+                    return <Text key={index} dimColor>    {line || ' '}</Text>;
                   })}
                 </Box>
               </Box>
@@ -598,8 +607,8 @@ const EventLine: React.FC<{
             {shouldCollapse && <Text dimColor> [{lines.length} lines]</Text>}
           </Box>
           <Box marginLeft={2} flexDirection="column">
-            {displayLines.map((line, i) => (
-              <Text key={i} dimColor>{line}</Text>
+            {displayLines.map((line, index) => (
+              <Text key={index} dimColor>{line}</Text>
             ))}
           </Box>
         </Box>
@@ -656,7 +665,9 @@ const EventLine: React.FC<{
           {event.breakout && (
             <Text color="red" bold>Agent execution will stop after this handoff</Text>
           )}
-          <Text color="yellow">Please provide your response in the input below:</Text>
+          <Box marginTop={1}>
+            <Text color="yellow" bold>➤ Type your response below and press Enter to send it to the agent</Text>
+          </Box>
           <Text> </Text>
         </>
       );

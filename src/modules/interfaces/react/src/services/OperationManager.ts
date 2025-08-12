@@ -5,6 +5,7 @@
  */
 
 import { Config } from '../contexts/ConfigContext.js';
+import { loggingService } from './LoggingService.js';
 
 export interface Operation {
   id: string;
@@ -378,7 +379,7 @@ export class OperationManager {
       // Session data initialized silently
     } catch (error) {
       // Only log errors to avoid interfering with React Ink UI
-      console.warn('Failed to load session data:', error);
+      loggingService.warn('Failed to load session data:', error);
     }
   }
 
@@ -389,7 +390,7 @@ export class OperationManager {
       // For now, just use in-memory storage
       // Session data saved to memory - silent operation
     } catch (error) {
-      console.warn('Failed to save session data:', error);
+      loggingService.warn('Failed to save session data:', error);
     }
   }
 

@@ -162,6 +162,13 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
 
   // Update suggestions when input changes - use stable dependencies
   useEffect(() => {
+    // Don't show suggestions during user handoff - they're not relevant
+    if (userHandoffActive) {
+      setShowSuggestions(false);
+      setFilteredSuggestions([]);
+      return;
+    }
+    
     const suggestions = generateSuggestions(value);
     
     // Prevent infinite loops by only updating if suggestions actually changed
@@ -175,7 +182,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     const shouldShow = suggestions.length > 0 && value.length > 0;
     setShowSuggestions(prev => prev !== shouldShow ? shouldShow : prev);
     setSelectedSuggestionIndex(prev => prev !== 0 ? 0 : prev);
-  }, [value, flowState.step]); // Only depend on stable values
+  }, [value, flowState.step, userHandoffActive]); // Only depend on stable values
 
   // Clear input when flow state changes to help with transitions
   useEffect(() => {
@@ -269,7 +276,8 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   }, { isActive: !disabled }); // Don't capture keyboard when disabled (during assessment)
 
   const handleSubmit = (submittedValue: string) => {
-    if (!disabled) {
+    // Allow submission during user handoff even if otherwise disabled
+    if (!disabled || userHandoffActive) {
       // Clear state and force re-mount of TextInput to ensure clean state
       setValue('');
       setShowSuggestions(false);
@@ -300,12 +308,13 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Text>
         <Box marginLeft={1} flexGrow={1}>
           <TextInput
+            key={inputKey}
             value={value}
             onChange={handleChange}
             onSubmit={handleSubmit}
-            placeholder={disabled ? 'Operation running...' : getPlaceholder()}
-            showCursor={!disabled}
-            focus={!disabled}
+            placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
+            showCursor={!disabled || userHandoffActive}
+            focus={!disabled || userHandoffActive}
           />
         </Box>
       </Box>

@@ -10,6 +10,7 @@ import { InputParser, ParsedCommand } from '../services/InputParser.js';
 import { AssessmentFlow } from '../services/AssessmentFlow.js';
 import { OperationManager } from '../services/OperationManager.js';
 import { ApplicationState } from './useApplicationState.js';
+import { loggingService } from '../services/LoggingService.js';
 
 interface UseCommandHandlerProps {
   commandParser: InputParser;
@@ -218,7 +219,7 @@ export function useCommandHandler({
         try {
           if (process.env.CYBER_TEST_MODE === 'true') {
             // slight delay to allow modal mount
-            setTimeout(() => console.log('Configuration Editor'), 100);
+            setTimeout(() => loggingService.info('Configuration Editor'), 100);
           }
         } catch {}
         break;

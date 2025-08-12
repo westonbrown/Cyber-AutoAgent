@@ -282,8 +282,6 @@ export class DirectDockerService extends EventEmitter {
         },
         WorkingDir: '/app',
       });
-      
-      // console.error(`[DEBUG] Container created with ID: ${this.activeContainer.id}`);
 
       // Attach to container streams
       const stream = await this.activeContainer.attach({
@@ -303,8 +301,6 @@ export class DirectDockerService extends EventEmitter {
           callback();
         },
       });
-      
-      // console.error(`[DEBUG] Container created with ID: ${this.activeContainer.id}`);
 
       // Handle stream
       this.activeContainer.modem.demuxStream(stream, eventParser, eventParser);
@@ -562,13 +558,6 @@ export class DirectDockerService extends EventEmitter {
             }, 100);
           }, 1000);
         }
-        
-        // Debug logging disabled for production use
-        // console.error(`[DEBUG] Parsed structured event:`, {
-        //   type: event.type,
-        //   content: event.content ? (typeof event.content === 'string' ? event.content.substring(0, 100) : event.content) : undefined,
-        //   timestamp: new Date(event.timestamp).toISOString()
-        // });
         
         this.emit('event', event);
       } catch (error) {

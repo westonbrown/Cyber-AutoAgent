@@ -6,6 +6,48 @@
 import { DISPLAY_LIMITS } from '../constants/config.js';
 import { isNonEmptyString, isObject, toSafeString, truncate } from './typeUtils.js';
 
+/**
+ * Format duration in milliseconds or seconds to human-readable string
+ * @param value - Duration in milliseconds (if > 1000) or seconds, or a Date object
+ * @param isMilliseconds - Whether the input is in milliseconds (default: auto-detect)
+ */
+export function formatDuration(value: number | Date, isMilliseconds?: boolean): string {
+  let seconds: number;
+  
+  if (value instanceof Date) {
+    // Calculate elapsed time from Date
+    seconds = Math.floor((Date.now() - value.getTime()) / 1000);
+  } else {
+    // Handle numeric input
+    if (isMilliseconds === undefined) {
+      // Auto-detect: if value > 1000, assume milliseconds
+      seconds = value > 1000 ? Math.floor(value / 1000) : value;
+    } else {
+      seconds = isMilliseconds ? Math.floor(value / 1000) : value;
+    }
+  }
+  
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  
+  if (minutes < 60) {
+    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+  }
+  
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  
+  if (remainingMinutes > 0) {
+    return `${hours}h ${remainingMinutes}m`;
+  }
+  
+  return `${hours}h`;
+}
+
 // Tool input formatter type
 type ToolFormatter = (toolInput: any) => string;
 

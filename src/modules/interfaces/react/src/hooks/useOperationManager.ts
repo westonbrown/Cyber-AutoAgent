@@ -19,7 +19,7 @@ import { useConfig } from '../contexts/ConfigContext.js';
 export interface OperationHistoryEntry {
   id: string;
   timestamp: Date;
-  type: 'operation' | 'command' | 'info' | 'error';
+  type: 'operation' | 'command' | 'info' | 'error' | 'success' | 'divider';
   content: string;
   operation?: Operation;
 }
@@ -362,10 +362,20 @@ export function useOperationManager({
         if (event.type === 'error' && event.content && event.content.includes('CRITICAL')) {
           addOperationHistoryEntry('error', event.content);
         }
+        
+        // Handle user handoff - activate input field for user response
+        if (event.type === 'user_handoff') {
+          actions.setUserHandoff(true);
+          // The message is already displayed by StreamDisplay
+        }
       };
       
       const handleExecutionComplete = (result: any) => {
-        addOperationHistoryEntry('info', `Assessment completed (${serviceSelection.mode})`);
+        // Add a clean divider before showing completion
+        addOperationHistoryEntry('divider', '');
+        addOperationHistoryEntry('success', `✅ Assessment completed successfully (${serviceSelection.mode})`);
+        addOperationHistoryEntry('divider', '');
+        
         operationManager.updateOperation(operation.id, {
           status: 'completed',
           description: 'Assessment completed successfully'

@@ -443,8 +443,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         Returns:
             List of evidence summary strings
         """
-        # This would typically return actual evidence from memory
-        # For now, return empty list as placeholder
+        # Evidence retrieval not yet implemented
         return []
 
     def trigger_evaluation(self, agent_trace_id: str) -> None:

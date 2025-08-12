@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
+import { formatDuration } from '../utils/toolFormatters.js';
 
 interface FlowState {
   step: 'idle' | 'module' | 'target' | 'objective' | 'ready';
@@ -30,7 +31,7 @@ interface OperationStatusDisplayProps {
   terminalWidth?: number; // optional width hint from parent to constrain layout
 }
 
-export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = ({
+export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = React.memo(({
   flowState,
   currentOperation,
   showFlowProgress = true,
@@ -60,12 +61,6 @@ export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = ({
     return status === '✓' ? theme.success : theme.muted;
   };
 
-  const formatDuration = (startTime: Date) => {
-    const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
 
   // Spinner for running status
   const spinnerFrames = ['-', '\\', '|', '/'];
@@ -203,5 +198,6 @@ export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = ({
       </Box>
     </Box>
   );
-}
-;
+});
+
+OperationStatusDisplay.displayName = 'OperationStatusDisplay';

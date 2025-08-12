@@ -8,11 +8,12 @@ import { PassThrough } from 'node:stream';
 import meow from 'meow';
 import {App} from './App.js';
 import { Config } from './contexts/ConfigContext.js';
+import { loggingService } from './services/LoggingService.js';
 
 // Earliest possible test hint to ensure PTY capture sees a welcome line
 try {
   if (process.env.CYBER_TEST_MODE === 'true') {
-    console.log('Welcome to Cyber-AutoAgent');
+    loggingService.info('Welcome to Cyber-AutoAgent');
   }
 } catch {}
 
@@ -111,7 +112,7 @@ try {
     const configPath = path.join(configDir, 'config.json');
     const firstLaunch = !fs.existsSync(configPath);
     if (firstLaunch) {
-      console.log('Welcome to Cyber-AutoAgent');
+      loggingService.info('Welcome to Cyber-AutoAgent');
     }
   }
 } catch {}
@@ -122,8 +123,8 @@ const isRawModeSupported = process.stdin.isTTY;
 // Handle autoRun mode by bypassing React UI and executing directly
 const runAutoAssessment = async () => {
   if (cli.flags.autoRun && cli.flags.target) {
-    console.log(`🔐 Starting assessment: ${cli.flags.module} → ${cli.flags.target}`);
-    console.log(`📌 Objective: ${cli.flags.objective || 'General security assessment'}`);
+    loggingService.info(`🔐 Starting assessment: ${cli.flags.module} → ${cli.flags.target}`);
+    loggingService.info(`📌 Objective: ${cli.flags.objective || 'General security assessment'}`);
     
     try {
       // Import config system to get proper defaults and merge with CLI overrides
@@ -195,20 +196,20 @@ const runAutoAssessment = async () => {
       // Merge defaults with CLI overrides
       const finalConfig = { ...defaultConfig, ...configOverrides } as Config;
       
-      console.log(`⚙️  Config: ${finalConfig.iterations} iterations, ${finalConfig.modelProvider}/${finalConfig.modelId}`);
-      console.log(`🔭 Observability: ${finalConfig.observability ? 'enabled' : 'disabled'}`);
-      console.log(`🏗️  Deployment Mode: ${finalConfig.deploymentMode || 'local-cli'}`);
+      loggingService.info(`⚙️  Config: ${finalConfig.iterations} iterations, ${finalConfig.modelProvider}/${finalConfig.modelId}`);
+      loggingService.info(`🔭 Observability: ${finalConfig.observability ? 'enabled' : 'disabled'}`);
+      loggingService.info(`🏗️  Deployment Mode: ${finalConfig.deploymentMode || 'local-cli'}`);
       
       // Import and use ExecutionServiceFactory to select proper service
       const { ExecutionServiceFactory } = await import('./services/ExecutionServiceFactory.js');
       const serviceResult = await ExecutionServiceFactory.selectService(finalConfig);
       const executionService = serviceResult.service;
       
-      console.log(`🔧 Using execution service: ${serviceResult.mode} (preferred: ${serviceResult.isPreferred})`);
+      loggingService.info(`🔧 Using execution service: ${serviceResult.mode} (preferred: ${serviceResult.isPreferred})`);
       
       // Setup the execution environment if needed
       await executionService.setup(finalConfig, (message) => {
-        console.log(`📦 Setup: ${message}`);
+        loggingService.info(`📦 Setup: ${message}`);
       });
       
       const assessmentParams = {
@@ -222,17 +223,17 @@ const runAutoAssessment = async () => {
       const result = await handle.result;
       
       if (result.success) {
-        console.log(` Assessment completed successfully in ${result.durationMs}ms`);
-        console.log(` Steps executed: ${result.stepsExecuted || 'unknown'}`);
-        console.log(` Findings: ${result.findingsCount || 'unknown'}`);
+        loggingService.info(` Assessment completed successfully in ${result.durationMs}ms`);
+        loggingService.info(` Steps executed: ${result.stepsExecuted || 'unknown'}`);
+        loggingService.info(` Findings: ${result.findingsCount || 'unknown'}`);
       } else {
-        console.error(` Assessment failed: ${result.error}`);
+        loggingService.error(` Assessment failed: ${result.error}`);
       }
       
       // Cleanup
       executionService.cleanup();
     } catch (error) {
-      console.error('Assessment failed:', error);
+      loggingService.error('Assessment failed:', error);
       process.exit(1);
     }
     
@@ -254,36 +255,36 @@ const runAutoAssessment = async () => {
 function renderReactApp() {
   // Check for non-interactive mode without autoRun or headless
   if (!isRawModeSupported && !cli.flags.headless && !cli.flags.autoRun) {
-    console.log('⚠️  Running in non-interactive mode. Use --headless flag for scripting.');
-    console.log('💡 For interactive mode, run directly in a terminal.');
-    console.log('\nUsage: cyber-react --target <target> --auto-run');
+    loggingService.info('⚠️  Running in non-interactive mode. Use --headless flag for scripting.');
+    loggingService.info('💡 For interactive mode, run directly in a terminal.');
+    loggingService.info('\nUsage: cyber-react --target <target> --auto-run');
     process.exit(1);
   }
   
   // In headless mode without auto-run, still render the app for setup wizard
   // The app can handle headless mode and run the setup wizard if needed
   if (cli.flags.headless && !cli.flags.autoRun) {
-    console.log('🔧 Running in headless mode');
+    loggingService.info('🔧 Running in headless mode');
     // Emit a fast welcome banner for first-launch so integration tests can capture it
     try {
       const configDir = path.join(os.homedir(), '.cyber-autoagent');
       const configPath = path.join(configDir, 'config.json');
       const firstLaunch = !fs.existsSync(configPath);
       if (firstLaunch) {
-        console.log('Welcome to Cyber-AutoAgent');
+        loggingService.info('Welcome to Cyber-AutoAgent');
         if (process.env.CYBER_TEST_MODE === 'true') {
           // Help the PTY-based journey test capture key screens as plain text markers
           setTimeout(() => {
-            console.log('Select Deployment Mode');
+            loggingService.info('Select Deployment Mode');
           }, 900);
           setTimeout(() => {
-            console.log('Setting up');
+            loggingService.info('Setting up');
           }, 1600);
           setTimeout(() => {
-            console.log('setup completed successfully');
+            loggingService.info('setup completed successfully');
           }, 3000);
           setTimeout(() => {
-            console.log('Configuration Editor');
+            loggingService.info('Configuration Editor');
           }, 3600);
         }
       }
@@ -295,7 +296,7 @@ function renderReactApp() {
 
   // Log headless mode if applicable
   if (cli.flags.headless) {
-    console.log('🔧 Running in headless mode');
+    loggingService.info('🔧 Running in headless mode');
   }
 
   // Always render the app to ensure keyboard handlers are active

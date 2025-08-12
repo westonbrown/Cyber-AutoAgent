@@ -11,6 +11,7 @@ import TextInput from 'ink-text-input';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { Header } from './Header.js';
+import { loggingService } from '../services/LoggingService.js';
 
 interface ConfigEditorProps {
   onClose: () => void;
@@ -357,7 +358,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         messageTimeoutRef.current = null;
       }, 3000);
     } catch (error) {
-      console.error('Config save error:', error);
+      loggingService.error('Config save error:', error);
       setMessage({ text: `Save failed: ${error}`, type: 'error' });
     }
   }, [saveConfig, updateConfig]);

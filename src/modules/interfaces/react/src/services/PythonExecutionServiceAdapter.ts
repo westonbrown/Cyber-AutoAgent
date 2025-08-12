@@ -198,7 +198,7 @@ export class PythonExecutionServiceAdapter extends EventEmitter implements Execu
         success: true,
         durationMs: Date.now() - startTime,
         stepsExecuted: config.iterations,
-        findingsCount: 0 // TODO: Extract from Python service if available
+        findingsCount: 0 // Findings are tracked in the output reports
       })).catch((error) => ({
         success: false,
         error: error instanceof Error ? error.message : String(error),
