@@ -643,6 +643,26 @@ export class PythonExecutionService extends EventEmitter {
   }
   
   /**
+   * Send user input to the Python process (for handoff_to_user tool)
+   */
+  async sendUserInput(input: string): Promise<void> {
+    if (!this.activeProcess || !this.isExecutionActive) {
+      throw new Error('No active Python process to send input to');
+    }
+
+    try {
+      // Send input to Python process stdin with newline
+      if (this.activeProcess.stdin) {
+        this.activeProcess.stdin.write(input + '\n');
+      } else {
+        throw new Error('Python process stdin is not available');
+      }
+    } catch (error) {
+      throw new Error(`Error sending input to Python process: ${error}`);
+    }
+  }
+
+  /**
    * Cleanup resources and remove all event listeners
    */
   cleanup(): void {

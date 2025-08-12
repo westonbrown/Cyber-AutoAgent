@@ -16,7 +16,7 @@ interface StatusIndicatorProps {
   deploymentMode?: string; // Optional override for deployment mode display
 }
 
-export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ 
+export const StatusIndicator: React.FC<StatusIndicatorProps> = React.memo(({ 
   compact = false,
   position = 'header',
   deploymentMode: overrideMode
@@ -192,4 +192,6 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+StatusIndicator.displayName = 'StatusIndicator';

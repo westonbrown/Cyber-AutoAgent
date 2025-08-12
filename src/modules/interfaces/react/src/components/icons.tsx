@@ -59,7 +59,7 @@ interface ToolStatusIndicatorProps {
   compact?: boolean;
 }
 
-export const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({ status, compact = false }) => {
+export const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = React.memo(({ status, compact = false }) => {
   const theme = themeManager.getCurrentTheme();
   
   const indicators = {
@@ -85,7 +85,9 @@ export const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({ status
       {indicators[status]}
     </Text>
   );
-};
+});
+
+ToolStatusIndicator.displayName = 'ToolStatusIndicator';
 
 /**
  * Progress indicator with percentage

@@ -16,7 +16,7 @@ interface SafetyWarningProps {
   onCancel: () => void;
 }
 
-export const SafetyWarning: React.FC<SafetyWarningProps> = ({ 
+export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({ 
   target, 
   module, 
   onConfirm, 
@@ -127,4 +127,6 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+SafetyWarning.displayName = 'SafetyWarning';

@@ -272,7 +272,7 @@ export class DirectDockerService extends EventEmitter {
         AttachStdout: true,
         AttachStderr: true,
         AttachStdin: true,
-        Tty: false,
+        Tty: true,  // Enable TTY for interactive tools like handoff_to_user
         OpenStdin: true,
         StdinOnce: false,
         HostConfig: {

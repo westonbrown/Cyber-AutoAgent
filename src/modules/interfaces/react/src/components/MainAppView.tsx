@@ -5,7 +5,7 @@
  * Handles the primary interface when not in initialization flow.
  */
 
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { Box, Text, useInput, Static } from 'ink';
 
 // Components
@@ -85,21 +85,24 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
     };
   }, []);
 
+  const hasStreamBegunRef = useRef(false);
   const [hasStreamBegun, setHasStreamBegun] = useState(false);
 
   // Reset flag when operation changes
   useEffect(() => {
+    hasStreamBegunRef.current = false;
     setHasStreamBegun(false);
   }, [appState.activeOperation?.id]);
 
   const handleStreamEvent = useCallback((event: any) => {
-    if (hasStreamBegun) return;
+    if (hasStreamBegunRef.current) return;
     const eventType = event?.type;
     // Mark as begun on first meaningful content
     if (eventType === 'reasoning' || eventType === 'model_stream_delta' || eventType === 'content_block_delta' || eventType === 'output' || eventType === 'command' || eventType === 'tool_start' || eventType === 'tool_invocation_start') {
+      hasStreamBegunRef.current = true;
       setHasStreamBegun(true);
     }
-  }, [hasStreamBegun]);
+  }, []);
 
   // Minimal cosmetic autoscroll toggle (UI only for now)
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);

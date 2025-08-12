@@ -226,6 +226,13 @@ export class PythonExecutionServiceAdapter extends EventEmitter implements Execu
     await this.pythonService.setupPythonEnvironment(onProgress);
   }
 
+  async sendUserInput(input: string): Promise<void> {
+    if (!this.pythonService) {
+      throw new Error('Python service not initialized');
+    }
+    return this.pythonService.sendUserInput(input);
+  }
+
   cleanup(): void {
     if (this.pythonService) {
       this.pythonService.cleanup();

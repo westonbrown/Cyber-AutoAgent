@@ -337,7 +337,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       )}
 
       {/* Helpful hints - more subtle */}
-      {!showSuggestions && value.length === 0 && (
+      {!showSuggestions && value.length === 0 && !userHandoffActive && (
         <Box marginTop={1} marginBottom={2}>
           <Text color={theme.muted}>
             {(() => {

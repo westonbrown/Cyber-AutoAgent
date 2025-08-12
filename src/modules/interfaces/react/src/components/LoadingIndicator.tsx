@@ -30,7 +30,7 @@ interface LoadingIndicatorProps {
   color?: string;
 }
 
-export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
+export const LoadingIndicator: React.FC<LoadingIndicatorProps> = React.memo(({
   text = 'Processing',
   showPhases = true,
   spinnerType = 'dots',
@@ -69,6 +69,8 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
       <Text> {displayText}{dots}</Text>
     </Box>
   );
-};
+});
+
+LoadingIndicator.displayName = 'LoadingIndicator';
 
 export default LoadingIndicator;

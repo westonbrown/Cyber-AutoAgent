@@ -20,7 +20,7 @@ interface DocumentationViewerProps {
   selectedDoc?: number;
 }
 
-export const DocumentationViewer: React.FC<DocumentationViewerProps> = ({ onClose, selectedDoc }) => {
+export const DocumentationViewer: React.FC<DocumentationViewerProps> = React.memo(({ onClose, selectedDoc }) => {
   const theme = themeManager.getCurrentTheme();
   const [selectedIndex, setSelectedIndex] = useState(selectedDoc ? selectedDoc - 1 : 0);
   const [viewMode, setViewMode] = useState<'list' | 'view'>(selectedDoc ? 'view' : 'list');
@@ -400,4 +400,6 @@ Use /help for available commands or refer to the project repository for complete
       </Box>
     </Box>
   );
-};
+});
+
+DocumentationViewer.displayName = 'DocumentationViewer';
