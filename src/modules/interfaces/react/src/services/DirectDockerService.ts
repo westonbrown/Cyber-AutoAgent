@@ -60,6 +60,7 @@ export class DirectDockerService extends EventEmitter {
   private isExecutionActive = false;
   private streamEventBuffer = '';
   private abortController?: AbortController;
+  private activeExec?: Dockerode.Exec;
 
   /**
    * Initialize the Docker service with connection to Docker daemon
@@ -233,11 +234,38 @@ export class DirectDockerService extends EventEmitter {
         env.push(`EVALUATION_BATCH_SIZE=${config.evaluationBatchSize || 5}`);
       }
 
-      // Create container
-      
+      // First, try to reuse the persistent service container via docker exec
+      const serviceContainerName = 'cyber-autoagent';
+      const serviceContainer = await this.findRunningContainerByName(serviceContainerName);
+
+      if (serviceContainer) {
+        this.emit('event', {
+          type: 'output',
+          content: '◆ Reusing existing service container (docker exec)',
+          timestamp: Date.now()
+        });
+
+        await this.execIntoContainer(serviceContainer, args, env, currentDeploymentMode);
+        return; // Execution path handles streaming and completion
+      }
+
+      // Fallback: create a new ad-hoc container
       // Resolve Docker runtime settings
       const dockerImage = process.env.CYBER_DOCKER_IMAGE || 'cyber-autoagent:latest';
-      const dockerNetwork = process.env.CYBER_DOCKER_NETWORK || 'bridge';
+      let dockerNetwork = process.env.CYBER_DOCKER_NETWORK || 'bridge';
+
+      // If running in full-stack mode, attempt to infer compose network from a stack container
+      if (!process.env.CYBER_DOCKER_NETWORK && currentDeploymentMode === 'full-stack') {
+        const inferred = await this.inferComposeNetworkFrom('cyber-langfuse');
+        if (inferred) {
+          dockerNetwork = inferred;
+          this.emit('event', {
+            type: 'output',
+            content: `◆ Using compose network for ad-hoc container: ${dockerNetwork}`,
+            timestamp: Date.now()
+          });
+        }
+      }
 
       // Resolve optional tools bind robustly
       const binds: string[] = [];
@@ -449,23 +477,13 @@ export class DirectDockerService extends EventEmitter {
           this.streamEventBuffer = '';
         }
       });
-
     } catch (error) {
       this.isExecutionActive = false;
       this.abortController = undefined;
+      this.streamEventBuffer = '';
+      this.emit('error', error);
       throw error;
     }
-  }
-  
-  /**
-   * Cancel the running assessment - immediately stops container and job
-   */
-  async cancel(): Promise<void> {
-    if (this.abortController && !this.abortController.signal.aborted) {
-      this.abortController.abort();
-    }
-    // Ensure immediate container termination
-    await this.stop();
   }
 
   /**
@@ -621,37 +639,42 @@ export class DirectDockerService extends EventEmitter {
    * Stop the running assessment - forcefully kills container and job
    */
   async stop(): Promise<void> {
-    if (!this.activeContainer || !this.isExecutionActive) {
+    if (!this.isExecutionActive) {
       return;
     }
 
     try {
-      // Force kill the container with SIGKILL to ensure immediate termination
-      await this.activeContainer.kill('SIGKILL');
-      
-      // Clean up container stream if exists
+      if (this.activeContainer) {
+        // Force kill the ad-hoc container to ensure immediate termination
+        await this.activeContainer.kill('SIGKILL');
+      } else if (this.activeExec && this.containerStream) {
+        // Exec session in persistent service container: try sending Ctrl-C to terminate the process
+        try {
+          this.containerStream.write('\x03'); // SIGINT
+        } catch {}
+      }
+
+      // Clean up container/exec stream if exists
       if (this.containerStream) {
         try {
           this.containerStream.destroy();
-        } catch (streamError) {
-          // Stream cleanup errors are not critical for user experience
-          // Just silently handle them
-        }
+        } catch {}
         this.containerStream = undefined;
       }
-      
+
+      this.activeExec = undefined;
       this.activeContainer = undefined;
       this.isExecutionActive = false;
       this.abortController = undefined;
       this.emit('stopped');
       // Don't log here - let the App component handle user-facing messages
-    } catch (error) {
-      // Force cleanup even if kill fails - don't show console errors to user
+    } catch {
+      // Force cleanup even if termination fails
+      this.activeExec = undefined;
       this.activeContainer = undefined;
       this.isExecutionActive = false;
       this.abortController = undefined;
       this.emit('stopped');
-      // Don't log here - let the App component handle user-facing messages
     }
   }
 
@@ -748,6 +771,107 @@ export class DirectDockerService extends EventEmitter {
       content: 'DirectDockerService cleaned up',
       timestamp: Date.now()
     });
+  }
+
+  /**
+   * Try to find a running container by exact name.
+   */
+  private async findRunningContainerByName(name: string): Promise<Dockerode.Container | null> {
+    try {
+      const containers = await this.dockerClient.listContainers({ all: false });
+      const match = containers.find(c => (c.Names || []).some(n => n.replace(/^\//, '') === name));
+      return match ? this.dockerClient.getContainer(match.Id) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Infer the compose network by inspecting a known stack container and returning its first network name.
+   */
+  private async inferComposeNetworkFrom(containerName: string): Promise<string | null> {
+    try {
+      const containers = await this.dockerClient.listContainers({ all: true });
+      const target = containers.find(c => (c.Names || []).some(n => n.replace(/^\//, '') === containerName));
+      if (!target) return null;
+      const info = await this.dockerClient.getContainer(target.Id).inspect();
+      const networks = info.NetworkSettings?.Networks || {} as Record<string, unknown>;
+      const names = Object.keys(networks);
+      return names.length > 0 ? names[0] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Exec into an existing container and stream events, mirroring createContainer path.
+   */
+  private async execIntoContainer(
+    container: Dockerode.Container,
+    args: string[],
+    env: string[],
+    deploymentMode: DeploymentMode
+  ): Promise<void> {
+    // Prepare command (python entrypoint + args) to align with container Entrypoint
+    const cmd = ['python', '/app/src/cyberautoagent.py', ...args];
+
+    const exec = await container.exec({
+      Cmd: cmd,
+      AttachStdout: true,
+      AttachStderr: true,
+      AttachStdin: true,
+      Tty: true,
+      Env: env,
+      WorkingDir: '/app'
+    });
+
+    this.activeExec = exec;
+
+    const stream: any = await new Promise((resolve, reject) => {
+      exec.start({ hijack: true, stdin: true }, (err, s) => {
+        if (err) return reject(err);
+        resolve(s);
+      });
+    });
+
+    this.containerStream = stream;
+
+    // Create event parser and pipe (TTY=true means single stream)
+    const eventParser = new Transform({
+      transform: (chunk, _enc, cb) => { this.parseEvents(chunk.toString()); cb(); }
+    });
+    stream.pipe(eventParser);
+
+    eventParser.on('error', (error) => {
+      this.emit('event', { type: 'output', content: `Event parser error: ${error}`, timestamp: Date.now() });
+    });
+    stream.on('error', (error: any) => {
+      this.emit('event', { type: 'output', content: `Stream error: ${error}`, timestamp: Date.now() });
+    });
+    stream.on('end', () => {
+      this.isExecutionActive = false;
+      this.abortController = undefined;
+      this.streamEventBuffer = '';
+      this.emit('complete');
+    });
+
+    // Startup user messages to mirror container path
+    this.emit('event', {
+      type: 'output',
+      content: deploymentMode === 'local-cli' ? '▶ Initializing Python assessment environment...' : '▶ Initializing security assessment (exec)...',
+      timestamp: Date.now()
+    });
+
+    setTimeout(() => {
+      this.emit('event', { type: 'output', content: '◆ Container ready (exec)', timestamp: Date.now() });
+    }, 500);
+
+    // Handle abort
+    this.abortController?.signal.addEventListener('abort', () => {
+      this.stop();
+    });
+
+    this.emit('started');
   }
   
   /**

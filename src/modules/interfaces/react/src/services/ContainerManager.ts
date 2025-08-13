@@ -476,13 +476,13 @@ export class ContainerManager extends EventEmitter {
         // Single container mode: skip dependencies but respect user configuration
         // Note: Observability settings will be handled by the DirectDockerService 
         // based on user config, not hardcoded here
-        // Add --force-recreate to handle existing containers
-        upCommand = `docker-compose -f "${composePath}" up -d --force-recreate --no-deps ${serviceList}`;
+        // Use --no-recreate to avoid rebuilding/recreating existing containers
+        upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --no-deps ${serviceList}`;
         buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
       } else {
         // Full stack mode: start all services with full dependency management
-        // Add --force-recreate and --remove-orphans to handle existing containers
-        upCommand = `docker-compose -f "${composePath}" up -d --force-recreate --remove-orphans ${serviceList}`;
+        // Use --no-recreate to prefer container reuse; still remove orphans to keep project clean
+        upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --remove-orphans ${serviceList}`;
         buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
       }
       
