@@ -127,7 +127,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   const installInfo = INSTALLATION_INFO[deploymentMode];
 
   return (
-    <Box width="100%" flexDirection="column" alignItems="center" paddingY={2}>
+    <Box width="100%" flexDirection="column" alignItems="center" paddingY={1}>
       <Box width={width} flexDirection="column">
         {/* Header */}
         <Box marginBottom={1}>
@@ -167,14 +167,14 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
             const hasError = error && index === currentStepIndex;
             
             return (
-              <Box key={step.name} flexDirection="column">
+              <Box key={step.name} flexDirection="row" alignItems="flex-start">
                 <Box width={3}>
                   {isCompleted && <Text color={theme.success}>✓</Text>}
                   {isActive && !hasError && <Spinner type="dots" />}
                   {isPending && <Text color={theme.muted}>○</Text>}
                   {hasError && <Text color={theme.danger}>✗</Text>}
                 </Box>
-                <Box flexGrow={1}>
+                <Box flexDirection="column" flexGrow={1}>
                   <Text color={
                     isCompleted ? theme.success :
                     isActive ? theme.foreground :
@@ -184,7 +184,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
                     {step.label}
                   </Text>
                   {isActive && step.detail && (
-                    <Box marginLeft={2}>
+                    <Box marginLeft={0}>
                       <Text color={theme.muted}>
                         {step.detail}
                       </Text>

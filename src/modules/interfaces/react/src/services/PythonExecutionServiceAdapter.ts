@@ -68,7 +68,8 @@ export class PythonExecutionServiceAdapter extends EventEmitter implements Execu
       // Quick check if Python is available
       const pythonCheck = await this.pythonService.checkPythonVersion();
       return pythonCheck.installed;
-    } catch {
+    } catch (error) {
+      logger.error('Python check failed:', error);
       return false;
     }
   }

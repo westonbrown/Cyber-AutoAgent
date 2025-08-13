@@ -430,6 +430,19 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     try {
       const data = await fs.readFile(configFilePath, 'utf-8');
       const loadedConfig = JSON.parse(data);
+      
+      // Apply deployment-aware defaults for observability and evaluation
+      const deploymentMode = loadedConfig.deploymentMode || 'local-cli';
+      if ((deploymentMode === 'local-cli' || deploymentMode === 'single-container')) {
+        // Default to disabled for local/single-container modes unless explicitly set
+        if (loadedConfig.observability === undefined) {
+          loadedConfig.observability = false;
+        }
+        if (loadedConfig.autoEvaluation === undefined) {
+          loadedConfig.autoEvaluation = false;
+        }
+      }
+      
       setConfig(prev => deepMerge(prev, loadedConfig));
     } catch (error) {
       // If the file doesn't exist or is invalid, we just use the default config
@@ -462,6 +475,18 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         // The configured deployment is not active. Invalidate it.
         loadedConfig.deploymentMode = undefined;
         loadedConfig.isConfigured = false; // Force setup
+      }
+    }
+    
+    // Apply deployment-aware defaults for observability and evaluation
+    const deploymentMode = loadedConfig.deploymentMode || 'local-cli';
+    if ((deploymentMode === 'local-cli' || deploymentMode === 'single-container')) {
+      // Default to disabled for local/single-container modes unless explicitly set
+      if (loadedConfig.observability === undefined) {
+        loadedConfig.observability = false;
+      }
+      if (loadedConfig.autoEvaluation === undefined) {
+        loadedConfig.autoEvaluation = false;
       }
     }
 

@@ -209,5 +209,5 @@ export const DEFAULT_EXECUTION_CONFIG: ExecutionConfig = {
   preferredMode: undefined, // Will be set based on user's deployment mode selection
   fallbackModes: [], // No fallbacks - enforce user's mode choice
   requireConfirmationForFallback: true,
-  validationTimeoutMs: 10000
+  validationTimeoutMs: 30000  // Increased to 30s to handle slower Python environment checks
 };

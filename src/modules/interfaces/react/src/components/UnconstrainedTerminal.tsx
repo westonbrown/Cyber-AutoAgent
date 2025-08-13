@@ -50,6 +50,9 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
   
   // State for event processing - replacing EventAggregator with React patterns
   const [activeThinking, setActiveThinking] = useState(false);
+  // Keep a ref in sync with activeThinking to avoid setState race conditions
+  const activeThinkingRef = useRef(false);
+  useEffect(() => { activeThinkingRef.current = activeThinking; }, [activeThinking]);
   const [activeReasoning, setActiveReasoning] = useState(false);
   const [currentToolId, setCurrentToolId] = useState<string | undefined>(undefined);
   const [lastOutputContent, setLastOutputContent] = useState('');
@@ -112,12 +115,19 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
       case 'thinking':
         // Handle thinking start without conflicting with reasoning
         if (!activeReasoning && !activeThinking) {
+          // If a delayed thinking timer is pending, cancel it to avoid duplicate spinner
+          if (delayedThinkingTimerRef.current) {
+            clearTimeout(delayedThinkingTimerRef.current);
+            delayedThinkingTimerRef.current = null;
+          }
           // Cancel any pending delayed thinking
           if (delayedThinkingTimerRef.current) {
             clearTimeout(delayedThinkingTimerRef.current);
             delayedThinkingTimerRef.current = null;
           }
           seenThinkingThisPhaseRef.current = true;
+          // Ensure no duplicate thinking events remain active
+          setActiveEvents(prev => prev.filter(e => e.type !== 'thinking'));
           setActiveThinking(true);
           results.push({
             type: 'thinking',
@@ -165,7 +175,7 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
         } as DisplayStreamEvent);
 
         // Ensure a waiting animation appears if no immediate output follows
-        if (!activeReasoning && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
+        if (!activeReasoning && !activeThinking && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
           results.push({
             type: 'delayed_thinking_start',
             context: 'tool_execution',
@@ -185,7 +195,7 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
         seenThinkingThisPhaseRef.current = false;
         setCurrentToolId(event.toolId);
         results.push(event as DisplayStreamEvent);
-        if (!activeReasoning && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
+        if (!activeReasoning && !activeThinking && !seenThinkingThisPhaseRef.current && !delayedThinkingTimerRef.current) {
           results.push({
             type: 'delayed_thinking_start',
             context: 'tool_execution',
@@ -418,6 +428,11 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
             
             // Set timer to start thinking animation after delay
             delayedThinkingTimerRef.current = setTimeout(() => {
+              // If a thinking spinner is already active, do not schedule another
+              if (activeThinkingRef.current) {
+                delayedThinkingTimerRef.current = null;
+                return;
+              }
               // Add spacing before thinking animation
               setCompletedEvents(prev => [...prev, 
                 { type: 'output', content: '' } as DisplayStreamEvent,
@@ -432,7 +447,8 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
               // Mark spinner active so backend 'thinking' doesn't duplicate it
               setActiveThinking(true);
               seenThinkingThisPhaseRef.current = true;
-              setActiveEvents(prev => [...prev, thinkingEvent]);
+              // Remove any existing thinking before adding a new one (belt-and-braces)
+              setActiveEvents(prev => [...prev.filter(e => e.type !== 'thinking'), thinkingEvent]);
               delayedThinkingTimerRef.current = null;
             }, (processedEvent as any).delay || 100);
           } else {
@@ -537,11 +553,10 @@ export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* Completed events must use Ink's <Static> to preserve native terminal scrollback. */}
-      {/* Do NOT convert this to a normal map render; that would re-constrain scrollback. */}
-      <Static items={completedEvents}>
-        {(item, index) => <StreamDisplay key={`event-${index}`} events={[item]} />}
-      </Static>
+      {/* Completed events: render within normal layout to respect parent ordering (header/logs above). */}
+      {completedEvents.map((item, index) => (
+        <StreamDisplay key={`event-${index}`} events={[item]} />
+      ))}
 
       {/* Active, streaming events remain dynamic (spinners/live output). */}
       {activeEvents.length > 0 && <StreamDisplay events={activeEvents} />}

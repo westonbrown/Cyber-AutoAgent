@@ -128,11 +128,14 @@ export const useModalManager = (): UseModalManagerResult => {
     setActiveModal(ModalType.NONE);
     setModalContext({});
     
-    // Always clear terminal when closing modals to prevent overlay remnants
-    // The flicker issue should be resolved by reducing unnecessary opens/closes
-    stdout.write(ansiEscapes.clearTerminal);
+    // Only clear terminal for heavy full-screen modals. Avoid clearing when closing CONFIG
+    // to prevent a blank buffer that may render before the main view repaints.
+    const needsClear = previousModal === ModalType.INITIALIZATION || previousModal === ModalType.DOCUMENTATION;
+    if (needsClear) {
+      stdout.write(ansiEscapes.clearTerminal);
+    }
     
-    // Always increment static key to trigger re-render
+    // Increment static key to trigger re-render
     setStaticKey(prev => prev + 1);
   }, [stdout, activeModal]);
   

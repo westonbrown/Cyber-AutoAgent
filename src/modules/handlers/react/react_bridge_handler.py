@@ -89,7 +89,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit initial metrics
         self._emit_initial_metrics()
-    
+
     def __call__(self, **kwargs):
         """
         Process SDK callbacks and emit appropriate UI events.
@@ -125,10 +125,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         tool_result = kwargs.get("toolResult")
         message = kwargs.get("message")
         event_loop_metrics = kwargs.get("event_loop_metrics")
-        
+
         # Handle AgentResult from SDK - this contains the actual metrics
         agent_result = kwargs.get("result")
-        if agent_result and hasattr(agent_result, 'metrics'):
+        if agent_result and hasattr(agent_result, "metrics"):
             event_loop_metrics = agent_result.metrics
 
         # Process each type of SDK event
@@ -161,11 +161,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         for alt_key in ["result", "tool_result", "execution_result", "response", "output"]:
             if alt_key in kwargs and kwargs[alt_key] is not None:
                 result_data = kwargs[alt_key]
-                
+
                 # Skip if this is an AgentResult (already processed for metrics above)
-                if alt_key == "result" and hasattr(result_data, 'metrics'):
+                if alt_key == "result" and hasattr(result_data, "metrics"):
                     continue
-                    
+
                 if isinstance(result_data, str):
                     result_data = {"content": [{"text": result_data}], "status": "success"}
                 self._process_tool_result_from_message(result_data)
@@ -186,7 +186,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if usage:
                 self.sdk_input_tokens = usage.get("inputTokens", 0)
                 self.sdk_output_tokens = usage.get("outputTokens", 0)
-        
+
         # 9. Periodic metrics emission (every 2 seconds for more responsive updates)
         if time.time() - self.last_metrics_emit_time > 2:
             self._emit_estimated_metrics()
@@ -209,12 +209,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             else:
                 # Pure reasoning step without tools
                 self.current_step += 1
-                
+
                 # Check if step limit exceeded BEFORE emitting confusing header
                 if self.current_step > self.max_steps:
                     from modules.handlers.base import StepLimitReached
+
                     raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
-                    
+
                 # Only emit header if within step limits
                 self._emit_step_header()
 
@@ -257,12 +258,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if self.pending_step_header or (self.current_step == 0 and tool_id):
                 if self.current_step == 0 or self.pending_step_header:
                     self.current_step += 1
-                    
+
                 # Check if step limit exceeded BEFORE emitting confusing header
                 if self.current_step > self.max_steps:
                     from modules.handlers.base import StepLimitReached
+
                     raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
-                    
+
                 # Only emit header if within step limits
                 self._emit_step_header()
                 self.pending_step_header = False
@@ -280,7 +282,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Emit tool-specific events (skip 'swarm' to avoid duplicate swarm_start emissions)
             if tool_input and self._is_valid_input(tool_input) and tool_name != "swarm":
                 self.tool_emitter.emit_tool_specific_events(tool_name, tool_input)
-                
+
             # Emit thinking animation for tool execution with start time for elapsed tracking
             current_time_ms = int(time.time() * 1000)
             self._emit_ui_event({"type": "thinking", "context": "tool_execution", "startTime": current_time_ms})
@@ -305,40 +307,40 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         elif tool_id in self.announced_tools and raw_input:
             old_input = self.tool_input_buffer.get(tool_id, {})
             new_input = self._parse_tool_input_from_stream(raw_input)
-            
+
             # Update buffer with latest input
             self.tool_input_buffer[tool_id] = new_input
-            
+
             # Check if we have complete, usable input (not partial JSON)
             is_partial_json = (
-                isinstance(new_input, dict) and 
-                len(new_input) == 1 and 
-                "value" in new_input and 
-                isinstance(new_input.get("value"), str)
+                isinstance(new_input, dict)
+                and len(new_input) == 1
+                and "value" in new_input
+                and isinstance(new_input.get("value"), str)
             )
-            
+
             # Don't emit anything if we have partial JSON
             if is_partial_json:
                 return
-            
+
             # Check if this is a meaningful update from empty/partial to complete
             was_empty_or_partial = (
-                not old_input or 
-                old_input == {} or
-                (isinstance(old_input, dict) and len(old_input) == 1 and "value" in old_input)
+                not old_input
+                or old_input == {}
+                or (isinstance(old_input, dict) and len(old_input) == 1 and "value" in old_input)
             )
-            
+
             has_complete_content = new_input and new_input != {} and not is_partial_json
-            
+
             # Only emit when we transition to complete content
             if was_empty_or_partial and has_complete_content:
                 # Re-emit tool_start with the complete input
                 self._emit_ui_event({"type": "tool_start", "tool_name": self.last_tool_name, "tool_input": new_input})
-                
+
                 # Emit tool-specific events now that we have the real input (skip 'swarm')
                 if self._is_valid_input(new_input) and self.last_tool_name != "swarm":
                     self.tool_emitter.emit_tool_specific_events(self.last_tool_name, new_input)
-                
+
                 # Handle swarm tracking with real input (single source of truth)
                 if self.last_tool_name == "swarm":
                     try:
@@ -369,11 +371,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit tool completion event
         success = status != "error"
-        self._emit_ui_event({
-            "type": "tool_invocation_end", 
-            "success": success,
-            "tool_name": self.last_tool_name
-        })
+        self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": self.last_tool_name})
 
         # Handle errors
         if status == "error":
@@ -393,7 +391,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Detect swarm agent changes in output
             if self.in_swarm_operation:
                 self._detect_current_swarm_agent(output_text)
-            
+
             self._emit_ui_event({"type": "output", "content": output_text.strip()})
         elif self.last_tool_name in ["handoff_to_user", "handoff_to_agent", "stop", "mem0_memory", "shell"]:
             status_messages = {
@@ -464,7 +462,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             "operation": self.operation_id,
             "duration": self._format_duration(time.time() - self.start_time),
         }
-        
+
         # Add swarm agent information if in swarm operation
         if self.in_swarm_operation:
             event["is_swarm_operation"] = True
@@ -479,7 +477,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 event["swarm_max_sub_steps"] = self.swarm_agent_max_steps
             else:
                 event["swarm_context"] = "Multi-Agent Operation"
-        
+
         self._emit_ui_event(event)
 
     def _emit_initial_metrics(self) -> None:
@@ -494,7 +492,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
     def _emit_estimated_metrics(self) -> None:
         """Emit metrics based on SDK token counts."""
         total_tokens = self.sdk_input_tokens + self.sdk_output_tokens
-        
+
         # Report both individual and total token counts for compatibility
         # Cost calculation is handled by the React app using config values
         self._emit_ui_event(
@@ -630,6 +628,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     self._emit_step_header()
                 else:
                     from modules.handlers.base import StepLimitReached
+
                     raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
             except Exception as _:
                 # Do not break stream on header failure
@@ -653,27 +652,28 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.swarm_agents = []
             self.current_swarm_agent = None
             self.swarm_handoff_count = 0
-    
+
     def _detect_current_swarm_agent(self, text: str) -> None:
         """Detect which agent is currently executing based on output text."""
         if not self.in_swarm_operation or not text:
             return
-        
+
         # Common patterns for agent identification in swarm output
         agent_patterns = [
             r"\*\*([^*]+):\*\*",  # **AGENT_NAME:**
-            r"Agent ([^:]+):",      # Agent NAME:
-            r"\[([^]]+)\]:",        # [AGENT_NAME]:
-            r"• ([^:]+):",          # • AGENT_NAME:
+            r"Agent ([^:]+):",  # Agent NAME:
+            r"\[([^]]+)\]:",  # [AGENT_NAME]:
+            r"• ([^:]+):",  # • AGENT_NAME:
         ]
-        
+
         import re
+
         for pattern in agent_patterns:
             match = re.search(pattern, text)
             if match:
                 agent_name = match.group(1).strip()
                 # Only accept names that are part of the known swarm agents to avoid false positives like 'Endpoint'
-                if agent_name in ['Individual Agent Contributions', 'Final Team Result', 'Team Resource Usage']:
+                if agent_name in ["Individual Agent Contributions", "Final Team Result", "Team Resource Usage"]:
                     continue
                 if self.swarm_agents and agent_name not in self.swarm_agents:
                     # Ignore unknown labels (e.g., 'Endpoint')
@@ -691,39 +691,39 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _parse_tool_input_from_stream(self, tool_input: Any) -> Dict[str, Any]:
         """Parse tool input from SDK streaming format into usable dictionary.
-        
+
         The Strands SDK sends tool inputs through multiple streaming updates:
         1. Initial: Empty dict {}
         2. Streaming: Wrapped partial JSON {"value": "{\"task\": \"..."}
         3. Complete: Full JSON that can be unwrapped and parsed
-        
+
         This function handles all these cases elegantly:
         - Unwraps nested JSON strings from streaming updates
         - Preserves partial JSON for buffering
         - Returns clean dict for tool consumption
-        
+
         Args:
             tool_input: Raw input from SDK (dict, str, or other)
-            
+
         Returns:
             Dict with parsed tool parameters or wrapped value
         """
         # Handle None or empty input
         if not tool_input:
             return {}
-            
+
         # Handle dictionary input (most common case)
         if isinstance(tool_input, dict):
             # Check for SDK streaming pattern: {"value": "json_string"}
             if len(tool_input) == 1 and "value" in tool_input:
                 value = tool_input["value"]
-                
+
                 # If value is a JSON string, try to parse it
                 if isinstance(value, str):
                     stripped = value.strip()
-                    
+
                     # Check if it looks like JSON
-                    if stripped and (stripped[0] in '{[' and stripped[-1] in '}]'):
+                    if stripped and (stripped[0] in "{[" and stripped[-1] in "}]"):
                         try:
                             # Attempt to parse complete JSON
                             parsed = json.loads(stripped)
@@ -732,19 +732,19 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         except json.JSONDecodeError:
                             # Partial JSON - keep wrapped for buffering
                             return tool_input
-                    
+
                     # Non-JSON string value
                     return tool_input
-                    
+
             # Regular dict - return as-is
             return tool_input
-            
+
         # Handle string input (less common)
         if isinstance(tool_input, str):
             stripped = tool_input.strip()
             if not stripped:
                 return {}
-                
+
             # Try to parse as JSON
             try:
                 parsed = json.loads(stripped)
@@ -752,7 +752,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             except json.JSONDecodeError:
                 # Plain string - wrap in value key
                 return {"value": stripped}
-                
+
         # Fallback for unexpected types
         return {"value": str(tool_input)} if tool_input else {}
 
@@ -808,13 +808,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             from modules.tools.report_generator import generate_security_report
 
             # Emit completion header before generating report
-            self._emit_ui_event({
-                "type": "step_header",
-                "step": "FINAL REPORT",
-                "maxSteps": self.max_steps,
-                "operation": self.operation_id,
-                "duration": self._format_duration(time.time() - self.start_time),
-            })
+            self._emit_ui_event(
+                {
+                    "type": "step_header",
+                    "step": "FINAL REPORT",
+                    "maxSteps": self.max_steps,
+                    "operation": self.operation_id,
+                    "duration": self._format_duration(time.time() - self.start_time),
+                }
+            )
 
             # Determine provider from agent model
             provider = "bedrock"
@@ -843,26 +845,27 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             if report_content and not report_content.startswith("Error:"):
                 self._emit_ui_event({"type": "output", "content": "\n" + report_content})
-                
+
                 # Save report to file
                 try:
                     from modules.handlers.utils import sanitize_target_name, get_output_path
                     from pathlib import Path
-                    
+
                     target_name = sanitize_target_name(target)
                     output_dir = get_output_path(target_name, self.operation_id, "", "./outputs")
-                    
+
                     # Create output directory if it doesn't exist
                     Path(output_dir).mkdir(parents=True, exist_ok=True)
-                    
+
                     # Save report as markdown file
                     report_path = os.path.join(output_dir, "security_assessment_report.md")
-                    with open(report_path, 'w', encoding='utf-8') as f:
+                    with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
-                    
+
                     # Also save as HTML for better viewing
                     try:
                         import markdown
+
                         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -882,33 +885,32 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 </body>
 </html>"""
                         html_path = os.path.join(output_dir, "security_assessment_report.html")
-                        with open(html_path, 'w', encoding='utf-8') as f:
+                        with open(html_path, "w", encoding="utf-8") as f:
                             f.write(html_content)
                     except ImportError:
                         # Markdown library not available, skip HTML generation
                         pass
-                    
+
                     # Emit file path information with polished formatting
-                    self._emit_ui_event({
-                        "type": "output", 
-                        "content": f"\n{'━'*80}\n\n✅ ASSESSMENT COMPLETE\n\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n"
-                    })
-                    
+                    self._emit_ui_event(
+                        {
+                            "type": "output",
+                            "content": f"\n{'━'*80}\n\n✅ ASSESSMENT COMPLETE\n\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n",
+                        }
+                    )
+
                     # Emit a completion event for clean UI transition
-                    self._emit_ui_event({
-                        "type": "assessment_complete",
-                        "operation_id": self.operation_id,
-                        "report_path": report_path
-                    })
-                    
+                    self._emit_ui_event(
+                        {"type": "assessment_complete", "operation_id": self.operation_id, "report_path": report_path}
+                    )
+
                     logger.info("Report saved to %s", report_path)
-                    
+
                 except Exception as save_error:
                     logger.warning("Could not save report to file: %s", save_error)
-                    self._emit_ui_event({
-                        "type": "output",
-                        "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"
-                    })
+                    self._emit_ui_event(
+                        {"type": "output", "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"}
+                    )
             else:
                 self._emit_ui_event({"type": "error", "content": f"Failed to generate report: {report_content}"})
 

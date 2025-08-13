@@ -107,14 +107,18 @@ export class PythonExecutionService extends EventEmitter {
           const minor = parseInt(versionMatch[2]);
           const version = `${major}.${minor}.${versionMatch[3]}`;
           
+          this.logger.debug(`Found Python via ${cmd}: version ${version}`);
+          
           if (major >= 3 && minor >= 10) {
             // Store the working Python command
             this.pythonCommand = cmd;
+            this.logger.info(`Using Python command: ${cmd} (version ${version})`);
             return { installed: true, version, pythonCommand: cmd };
           }
         }
-      } catch {
+      } catch (error) {
         // Try next command
+        this.logger.debug(`Command ${cmd} failed: ${error}`);
         continue;
       }
     }
@@ -154,8 +158,11 @@ export class PythonExecutionService extends EventEmitter {
     packageInstalled: boolean;
     requirementsFile: string | null;
   }> {
+    const start = Date.now();
+    
     // Check Python
     const pythonCheck = await this.checkPythonVersion();
+    this.logger.debug(`Python check took ${Date.now() - start}ms`);
     
     // Check venv
     const venvExists = fs.existsSync(this.venvPath);
@@ -164,6 +171,7 @@ export class PythonExecutionService extends EventEmitter {
       // Check if venv has Python executable
       venvValid = fs.existsSync(this.pythonPath);
     }
+    this.logger.debug(`Venv check took ${Date.now() - start}ms total`);
     
     // Check dependencies
     let dependenciesInstalled = false;
@@ -171,17 +179,23 @@ export class PythonExecutionService extends EventEmitter {
     
     if (venvValid) {
       try {
-        // Check if pip is available
-        await execAsync(`"${this.pipPath}" --version`);
+        // Check if pip is available - add timeout
+        const pipStart = Date.now();
+        await execAsync(`"${this.pipPath}" --version`, { timeout: 5000 });
         dependenciesInstalled = true;
+        this.logger.debug(`Pip check took ${Date.now() - pipStart}ms`);
         
-        // Check if our package is installed
+        // Check if our package is installed - add timeout
+        const pkgStart = Date.now();
         await execAsync(`"${this.pythonPath}" -c "import cyberautoagent"`, {
-          env: { ...process.env, PYTHONPATH: this.srcPath }
+          env: { ...process.env, PYTHONPATH: this.srcPath },
+          timeout: 5000
         });
         packageInstalled = true;
-      } catch {
+        this.logger.debug(`Package check took ${Date.now() - pkgStart}ms`);
+      } catch (error) {
         // Dependencies or package not properly installed
+        this.logger.debug(`Dependency check error: ${error}`);
       }
     }
     

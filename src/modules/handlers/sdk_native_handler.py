@@ -86,7 +86,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 - event_loop_metrics: SDK metrics
         """
 
-
         # SDK provides these key parameters (matching PrintingCallbackHandler)
         reasoning_text = kwargs.get("reasoningText")
         data = kwargs.get("data", "")
@@ -98,7 +97,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
 
         # Check if this is a reasoning delta (fragment)
         reasoning_delta = kwargs.get("reasoning", False) and reasoning_text
-
 
         # Process messages for tool results and step progression
         if message and isinstance(message, dict):
@@ -258,7 +256,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
         # Check for other possible tool result parameter names
         for alt_key in ["result", "tool_result", "execution_result", "response", "output"]:
             if alt_key in kwargs and kwargs[alt_key] is not None:
-                    # Found alternative tool result key '{alt_key}': {kwargs[alt_key]}", file=sys.stderr, flush=True)
+                # Found alternative tool result key '{alt_key}': {kwargs[alt_key]}", file=sys.stderr, flush=True)
                 # Convert to standard format if needed
                 result_data = kwargs[alt_key]
                 if isinstance(result_data, str):
@@ -555,7 +553,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
 
             self._emit_ui_event({"type": "metadata", "content": {"handoff_to": agent_name, "message": message_preview}})
 
-
     def _accumulate_reasoning_text(self, text):
         """Silently accumulate reasoning text without emitting anything"""
         if not text:
@@ -660,7 +657,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
             else:
                 # Handle other types by converting to string
                 output_text += str(item)
-
 
         # Emit output if we have content
         if output_text.strip():

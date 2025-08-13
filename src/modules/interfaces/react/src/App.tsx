@@ -5,8 +5,9 @@
  * Manages application state, services, and UI rendering.
  */
 
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useStdout, useApp } from 'ink';
+import ansiEscapes from 'ansi-escapes';
 
 // State Management
 import { useApplicationState } from './hooks/useApplicationState.js';
@@ -69,6 +70,9 @@ const AppContent: React.FC<AppProps> = ({
     timeoutsRef.current.push(id);
     return id;
   }, []);
+  
+  // Suppress global ESC briefly after modal close to avoid buffered ESC exiting the app
+  const escSuppressUntilRef = React.useRef<number>(0);
   
   // Configuration and theme management
   const { config: applicationConfig, isConfigLoading } = useConfig();
@@ -140,7 +144,8 @@ const AppContent: React.FC<AppProps> = ({
   const isTerminalInteractive = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive;
   
   // Only allow global ESC when no modals are open and not in setup wizard - modals and setup handle their own ESC behavior
-  const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive;
+  const escSuppressed = Date.now() < escSuppressUntilRef.current;
+  const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive && !escSuppressed;
   
   const handleEscapeExit = useCallback(() => {
     // Show exit notification in operation history
@@ -220,6 +225,21 @@ const AppContent: React.FC<AppProps> = ({
     openConfig
   });
   
+  // Ensure the main view (Static sections) repaints after closing modals
+  const [forceRemount, setForceRemount] = React.useState(false);
+  const handleModalClose = React.useCallback(() => {
+    // Close the modal (no clear for lightweight modals like CONFIG)
+    closeModal();
+    // Force a full remount of the main view to guarantee a clean screen
+    setForceRemount(true);
+    registerTimeout(() => {
+      try { stdout.write(ansiEscapes.clearTerminal); } catch {}
+      setForceRemount(false);
+    }, 50); // 50ms delay allows Ink to settle before remount
+    // Suppress any buffered ESC for a short window to prevent accidental app exit
+    escSuppressUntilRef.current = Date.now() + 200;
+  }, [closeModal, actions, stdout, registerTimeout]);
+  
   // Main app view props
   const mainAppViewProps = React.useMemo(() => ({
     appState,
@@ -232,7 +252,7 @@ const AppContent: React.FC<AppProps> = ({
     modalContext,
     isTerminalInteractive,
     onInput: handleUnifiedInput,
-    onModalClose: closeModal,
+    onModalClose: handleModalClose,
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
     onSafetyConfirm: operationManager.startAssessmentExecution,
     applicationConfig
@@ -247,7 +267,7 @@ const AppContent: React.FC<AppProps> = ({
     modalContext,
     isTerminalInteractive,
     handleUnifiedInput,
-    closeModal,
+    handleModalClose,
     operationManager.addOperationHistoryEntry,
     operationManager.startAssessmentExecution,
     applicationConfig
@@ -270,6 +290,11 @@ const AppContent: React.FC<AppProps> = ({
     operationManager,
     registerTimeout
   });
+  
+  // If forcing a remount, render nothing for one frame
+  if (forceRemount) {
+    return null;
+  }
   
   return (
     <InitializationWrapper

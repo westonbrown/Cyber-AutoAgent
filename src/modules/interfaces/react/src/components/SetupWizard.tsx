@@ -5,8 +5,9 @@
  * and progress screens. Replaces the complex InitializationFlow with a simplified architecture.
  */
 
-import React, { useCallback, useEffect } from 'react';
-import { Box } from 'ink';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Box, useStdout } from 'ink';
+import ansiEscapes from 'ansi-escapes';
 import { useSetupWizard } from '../hooks/useSetupWizard.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { WelcomeScreen } from './setup/WelcomeScreen.js';
@@ -26,6 +27,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
 }) => {
   const { state, actions } = useSetupWizard();
   const { config, updateConfig, saveConfig } = useConfig();
+  const { stdout } = useStdout();
+  const [stepRenderKey, setStepRenderKey] = useState(0);
 
   // Handle setup completion
   const handleSetupComplete = useCallback(async () => {
@@ -105,6 +108,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
       return;
     } else {
       // Proceed with normal setup for non-active deployments
+      // Clear terminal before switching to progress screen to avoid remnants
+      try { stdout.write(ansiEscapes.clearTerminal); } catch {}
+      setStepRenderKey(prev => prev + 1);
       actions.selectMode(mode);
       actions.nextStep(); // Move to progress screen
       
@@ -176,13 +182,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
     }
   };
 
-  // Terminal clearing is handled by modalManager.refreshStatic() and parent components
-  // Removed problematic useEffect with require() that caused race conditions
+  // Clear terminal and force remount when the wizard step changes to prevent previous screen bleed-through
+  useEffect(() => {
+    try { stdout.write(ansiEscapes.clearTerminal); } catch {}
+    setStepRenderKey(prev => prev + 1);
+  }, [state.currentStep, stdout]);
 
   return (
     <Box flexDirection="column" width="100%">
       {/* Current setup screen */}
-      <Box key="setup-content">
+      <Box key={`setup-content-${stepRenderKey}`}>
         {renderCurrentScreen()}
       </Box>
     </Box>

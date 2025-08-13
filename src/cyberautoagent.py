@@ -26,7 +26,15 @@ import atexit
 import re
 import base64
 import threading
+import socket
+import traceback
 from datetime import datetime
+
+# Third-party imports
+try:
+    import requests
+except ImportError:
+    requests = None  # Handle optional dependency
 from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
 
@@ -41,6 +49,7 @@ from modules.handlers.utils import (
     print_status,
     get_output_path,
     sanitize_target_name,
+    get_terminal_width,
 )
 from modules.handlers.base import StepLimitReached
 from modules.config.environment import auto_setup, setup_logging, clean_operation_memory
@@ -52,43 +61,44 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 def detect_deployment_mode():
     """
     Detect deployment mode for appropriate observability defaults.
-    
+
     Returns:
         str: 'cli' (Python CLI), 'container' (single container), or 'compose' (full stack)
     """
+
     def is_docker():
         """Check if running inside a Docker container."""
         return os.path.exists("/.dockerenv") or os.path.exists("/app")
-    
+
     def is_langfuse_available():
         """Check if Langfuse service is available."""
         try:
             if is_docker():
                 # In Docker, try to connect to langfuse-web service
-                import socket
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(2)
-                result = sock.connect_ex(('langfuse-web', 3000))
+                result = sock.connect_ex(("langfuse-web", 3000))
                 sock.close()
                 return result == 0
             else:
                 # Outside Docker, check localhost
-                import requests
-                response = requests.get('http://localhost:3000/api/public/health', timeout=2)
+                if requests is None:
+                    return False  # requests not installed
+                response = requests.get("http://localhost:3000/api/public/health", timeout=2)
                 return response.status_code == 200
         except Exception:
             return False
-    
+
     if is_docker():
         if is_langfuse_available():
-            return 'compose'  # Full Docker Compose stack
+            return "compose"  # Full Docker Compose stack
         else:
-            return 'container'  # Single container mode
+            return "container"  # Single container mode
     else:
         if is_langfuse_available():
-            return 'compose'  # Local development with Langfuse
+            return "compose"  # Local development with Langfuse
         else:
-            return 'cli'  # Pure Python CLI mode
+            return "cli"  # Pure Python CLI mode
 
 
 def setup_telemetry(logger):
@@ -96,47 +106,48 @@ def setup_telemetry(logger):
     Setup telemetry system with separated concerns:
     1. Local telemetry (always enabled) - for token counting, cost tracking, metrics
     2. Remote observability (deployment-aware) - for Langfuse trace export
-    
+
     Local telemetry provides essential metrics for UI display regardless of deployment mode.
     Remote observability is only enabled when Langfuse infrastructure is available.
     """
     deployment_mode = detect_deployment_mode()
-    
+
     # Set smart defaults based on deployment mode
-    if deployment_mode == 'compose':
+    if deployment_mode == "compose":
         default_observability = "true"
         logger.info("Detected full-stack deployment mode - observability enabled by default")
     else:
-        default_observability = "false" 
-        logger.info(f"Detected {deployment_mode} deployment mode - observability disabled by default")
+        default_observability = "false"
+        logger.info("Detected %s deployment mode - observability disabled by default", deployment_mode)
         logger.info("To enable observability, set ENABLE_OBSERVABILITY=true and ensure Langfuse is running")
-    
+
     # Always initialize Strands telemetry for local metrics (token counting, cost tracking)
     # This sets up the global tracer provider that the Agent will use
     telemetry = StrandsTelemetry()
     logger.info("Strands telemetry initialized - token counting enabled")
-    
+
     # Check if remote observability (Langfuse export) is enabled
     observability_enabled = os.getenv("ENABLE_OBSERVABILITY", default_observability).lower() == "true"
-    
+
     if observability_enabled:
         logger.info("Remote observability enabled - configuring Langfuse export")
-        
+
         # Configure Langfuse connection parameters first
         setup_langfuse_connection(logger, deployment_mode)
-        
+
         # Then setup OTLP exporter which will use the environment variables
         telemetry.setup_otlp_exporter()
         logger.info("OTLP exporter configured - traces will be exported to Langfuse")
     else:
         logger.info("Remote observability disabled - metrics available locally only")
         logger.debug("Token counting and cost tracking enabled via local telemetry")
-    
+
     return telemetry
 
 
 def setup_langfuse_connection(logger, deployment_mode):
     """Setup Langfuse connection parameters for remote observability."""
+
     def is_docker():
         """Check if running inside a Docker container."""
         return os.path.exists("/.dockerenv") or os.path.exists("/app")
@@ -181,8 +192,6 @@ def signal_handler(signum, frame):  # pylint: disable=unused-argument
 
     # For swarm operations, we need to be more forceful
     # Check if we're in a swarm operation by looking at the call stack
-    import traceback
-
     stack = traceback.extract_stack()
     in_swarm = any(
         "swarm" in str(frame_info.filename).lower() or "swarm" in str(frame_info.name).lower() for frame_info in stack
@@ -216,7 +225,7 @@ def main():
 
     # Check for service mode before normal argument parsing to avoid validation issues
     is_service_mode = "--service-mode" in sys.argv
-    
+
     # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
         description="Cyber-AutoAgent - Autonomous Cybersecurity Assessment Tool",
@@ -229,10 +238,10 @@ def main():
         help="Security module to use (e.g., general, web_security, api_security)",
     )
     parser.add_argument(
-        "--objective", 
-        type=str, 
+        "--objective",
+        type=str,
         required=not is_service_mode,
-        help="Security assessment objective (required unless in service mode)"
+        help="Security assessment objective (required unless in service mode)",
     )
     parser.add_argument(
         "--target",
@@ -310,7 +319,7 @@ def main():
         print("Starting Cyber-AutoAgent in service mode...")
         print("Container will stay alive and wait for external requests.")
         print("Use the React UI to submit assessment requests.")
-        
+
         # Keep the container alive
         try:
             while True:
@@ -376,7 +385,6 @@ def main():
         """Ensure log files are properly closed on exit"""
         try:
             # Write session end marker before closing
-            from modules.handlers.utils import get_terminal_width
 
             width = get_terminal_width()
             print("\n" + "=" * width)
@@ -482,16 +490,11 @@ def main():
 
         # Construct the dynamic tools context for the prompt
         # available_tools is a list of tool names (strings) from auto_setup
-        tools_context = "\n".join(
-            [f'- {tool}: Available for security assessment' for tool in available_tools]
-        )
+        tools_context = "\n".join([f"- {tool}: Available for security assessment" for tool in available_tools])
 
         # Initial strategic prompt
         initial_prompt = get_system_prompt(
-            target=args.target, 
-            objective=args.objective, 
-            remaining_steps=args.iterations,
-            tools_context=tools_context
+            target=args.target, objective=args.objective, remaining_steps=args.iterations, tools_context=tools_context
         )
 
         print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
@@ -514,11 +517,11 @@ def main():
                 try:
                     # Execute agent with current message
                     result = agent(current_message)
-                    
+
                     # Pass the metrics from the result to the callback handler
-                    if callback_handler and hasattr(result, 'metrics') and result.metrics:
+                    if callback_handler and hasattr(result, "metrics") and result.metrics:
                         logger.debug("Agent result has metrics: %s", type(result.metrics))
-                        if hasattr(result.metrics, 'accumulated_usage'):
+                        if hasattr(result.metrics, "accumulated_usage"):
                             logger.debug("Accumulated usage found: %s", result.metrics.accumulated_usage)
                             if result.metrics.accumulated_usage:
                                 # Create an object that matches what _process_metrics expects
@@ -526,9 +529,12 @@ def main():
                                 class MetricsObject:
                                     def __init__(self, accumulated_usage):
                                         self.accumulated_usage = accumulated_usage
-                                
+
                                 metrics_obj = MetricsObject(result.metrics.accumulated_usage)
-                                logger.debug("Passing metrics object to callback handler with usage: %s", metrics_obj.accumulated_usage)
+                                logger.debug(
+                                    "Passing metrics object to callback handler with usage: %s",
+                                    metrics_obj.accumulated_usage,
+                                )
                                 callback_handler._process_metrics(metrics_obj)
                             else:
                                 logger.debug("accumulated_usage is empty or None")
@@ -554,8 +560,12 @@ def main():
                     remaining_steps = (
                         args.iterations - callback_handler.current_step if callback_handler else args.iterations
                     )
-                    logger.warning("Remaining steps check: iterations=%d, current_step=%d, remaining=%d", 
-                                 args.iterations, callback_handler.current_step if callback_handler else 0, remaining_steps)
+                    logger.warning(
+                        "Remaining steps check: iterations=%d, current_step=%d, remaining=%d",
+                        args.iterations,
+                        callback_handler.current_step if callback_handler else 0,
+                        remaining_steps,
+                    )
                     if remaining_steps > 0:
                         # Simple continuation message
                         current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
@@ -569,7 +579,7 @@ def main():
 
                 except StopIteration as error:
                     # Strands agent completed normally - continue if we have steps left
-                    logger.debug(f"Agent iteration completed: {str(error)}")
+                    logger.debug("Agent iteration completed: %s", str(error))
                     if callback_handler and callback_handler.current_step >= callback_handler.max_steps:
                         print_status("Step limit reached", "SUCCESS")
                         break

@@ -213,9 +213,20 @@ export function useOperationManager({
         // Reset the assessment flow for next operation (fixes issue with same target)
         assessmentFlowManager.resetCompleteWorkflow();
         
-        // Add simple termination message (avoid duplicate with handleExecutionStopped)
+        // Clear existing operation logs first
+        clearOperationHistory();
+        
+        // Add a small delay to ensure clear is processed
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Now add termination messages with proper spacing
+        addOperationHistoryEntry('divider', '━'.repeat(80));
+        addOperationHistoryEntry('info', '');  // Blank line for spacing
         addOperationHistoryEntry('error', '🛑 ESC Kill Switch activated');
         addOperationHistoryEntry('info', 'Operation terminated. Start a new assessment or review partial results.');
+        addOperationHistoryEntry('info', '');  // Blank line for spacing
+        addOperationHistoryEntry('divider', '━'.repeat(80));
+        
         // Ensure messages are visible immediately (bypass debounce)
         try { (flushHistoryEntries as any)?.(); } catch {}
       } catch (error) {
@@ -242,6 +253,12 @@ export function useOperationManager({
       addOperationHistoryEntry('error', 'Assessment parameters not properly configured');
       return;
     }
+
+    // Clear old operation history when starting a new assessment
+    clearOperationHistory();
+    
+    // Add a small delay to ensure the clear is visible
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
       // Start the operation

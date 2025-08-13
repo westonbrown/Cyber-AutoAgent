@@ -436,7 +436,7 @@ class Mem0ServiceClient:
 
             # Trigger reflection for critical/high findings immediately, or after threshold
             if severity in ["critical", "high"] or self._finding_count >= self._reflection_threshold:
-                logger.info(f"Auto-capture: Triggering reflection after {self._finding_count} findings")
+                logger.info("Auto-capture: Triggering reflection after %d findings", self._finding_count)
                 self._should_reflect = True
                 self._finding_count = 0  # Reset counter
 
@@ -578,7 +578,7 @@ class Mem0ServiceClient:
                             metadata={**plan.get("metadata", {}), "active": False},
                         )
         except Exception as e:
-            logger.debug(f"Could not deactivate previous plans: {e}")
+            logger.debug("Could not deactivate previous plans: %s", e)
 
         return self.store_memory(content=f"[PLAN] {plan_content_str}", user_id=user_id, metadata=plan_metadata)
 
@@ -634,7 +634,7 @@ class Mem0ServiceClient:
 
             return None
         except Exception as e:
-            logger.error(f"Error retrieving active plan: {e}")
+            logger.error("Error retrieving active plan: %s", e)
             return None
 
     def reflect_on_findings(

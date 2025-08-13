@@ -102,11 +102,7 @@ class ToolEventEmitter:
             url = tool_input.get("url", "")
             # Emit structured event for request tracking (not for display)
             if url:
-                self.emit_ui_event({
-                    "type": "http_request_start",
-                    "method": method,
-                    "url": url
-                })
+                self.emit_ui_event({"type": "http_request_start", "method": method, "url": url})
 
     def _emit_file_write(self, tool_input: Any) -> None:
         """Emit file write operation details."""
@@ -118,10 +114,10 @@ class ToolEventEmitter:
         if isinstance(tool_input, dict):
             command = tool_input.get("command", "")
             path = tool_input.get("path", "")
-            
+
             # Emit more detailed metadata based on command type
             metadata = {"command": command, "path": path}
-            
+
             # Add command-specific details
             if command == "str_replace" or command == "str_replace_based_edit_tool":
                 old_str = tool_input.get("old_str", "")
@@ -137,9 +133,9 @@ class ToolEventEmitter:
             elif command == "create":
                 content = tool_input.get("file_text", "")
                 if content:
-                    lines = content.count('\n') + 1
+                    lines = content.count("\n") + 1
                     metadata["size"] = f"{lines} lines"
-            
+
             self.emit_ui_event({"type": "metadata", "content": metadata})
 
     def _emit_user_handoff(self, tool_input: Any) -> None:
@@ -174,11 +170,11 @@ class ToolEventEmitter:
         if isinstance(tool_input, dict):
             agents = tool_input.get("agents", [])
             task = tool_input.get("task", "")
-            
+
             # Don't emit empty swarm events - these are invalid and cause UI spam
             if not agents and not task:
                 return
-                
+
             agent_count = len(agents) if isinstance(agents, list) else 0
             # Use full task text without truncation for clarity
             task_preview = task
@@ -215,13 +211,15 @@ class ToolEventEmitter:
             if code:
                 # Emit code execution event for tracking/metrics (not for display)
                 # StreamDisplay already handles the visual display
-                lines = code.count('\n') + 1
-                self.emit_ui_event({
-                    "type": "code_execution",
-                    "language": "python",
-                    "lines": lines,
-                    "preview": code[:100] + "..." if len(code) > 100 else code
-                })
+                lines = code.count("\n") + 1
+                self.emit_ui_event(
+                    {
+                        "type": "code_execution",
+                        "language": "python",
+                        "lines": lines,
+                        "preview": code[:100] + "..." if len(code) > 100 else code,
+                    }
+                )
 
     def _emit_load_tool(self, tool_input: Any) -> None:
         """Emit dynamic tool loading details."""

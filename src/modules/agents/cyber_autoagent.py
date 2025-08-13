@@ -267,7 +267,7 @@ def create_agent(
     # Load module-specific tools and prepare for injection
     module_tools_context = ""
     loaded_module_tools = []
-    
+
     try:
         module_loader = prompts.get_module_loader()
         module_tool_paths = module_loader.discover_module_tools(module)
@@ -275,7 +275,7 @@ def create_agent(
         if module_tool_paths:
             import importlib.util
             import sys
-            
+
             # Dynamically load each tool module
             for tool_path in module_tool_paths:
                 try:
@@ -286,38 +286,45 @@ def create_agent(
                         tool_module = importlib.util.module_from_spec(spec)
                         sys.modules[module_name] = tool_module
                         spec.loader.exec_module(tool_module)
-                        
+
                         # Find all @tool decorated functions
                         for attr_name in dir(tool_module):
                             attr = getattr(tool_module, attr_name)
-                            if callable(attr) and hasattr(attr, '__wrapped__'):
+                            if callable(attr) and hasattr(attr, "__wrapped__"):
                                 # Check if this is a @tool decorated function
                                 loaded_module_tools.append(attr)
                                 agent_logger.debug(f"Found module tool: {attr_name}")
-                        
+
                 except Exception as e:
                     agent_logger.warning(f"Failed to load tool from {tool_path}: {e}")
-            
+
             tool_names = [tool.__name__ for tool in loaded_module_tools] if loaded_module_tools else []
-            
+
             if tool_names:
-                print_status(f"Loaded {len(tool_names)} module-specific tools for '{module}': {', '.join(tool_names)}", "SUCCESS")
+                print_status(
+                    f"Loaded {len(tool_names)} module-specific tools for '{module}': {', '.join(tool_names)}", "SUCCESS"
+                )
             else:
                 # Fallback to just showing discovered tools
                 tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
-                print_status(f"Discovered {len(module_tool_paths)} module-specific tools for '{module}' (will need load_tool)", "INFO")
+                print_status(
+                    f"Discovered {len(module_tool_paths)} module-specific tools for '{module}' (will need load_tool)",
+                    "INFO",
+                )
 
             # Create specific tool examples for system prompt
             tool_examples = []
             if loaded_module_tools:
                 # Tools are pre-loaded
                 for tool_name in tool_names:
-                    tool_examples.append(f'{tool_name}()  # Pre-loaded and ready to use')
+                    tool_examples.append(f"{tool_name}()  # Pre-loaded and ready to use")
             else:
                 # Fallback to load_tool instructions
                 for tool_name in tool_names:
-                    tool_examples.append(f'load_tool(path="/app/src/modules/operation_plugins/{module}/tools/{tool_name}.py", name="{tool_name}")')
-            
+                    tool_examples.append(
+                        f'load_tool(path="/app/src/modules/operation_plugins/{module}/tools/{tool_name}.py", name="{tool_name}")'
+                    )
+
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
 
@@ -410,9 +417,9 @@ Leverage these tools directly via shell.
         python_repl,
         handoff_to_user,
     ]
-    
+
     # Inject module-specific tools if available
-    if 'loaded_module_tools' in locals() and loaded_module_tools:
+    if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
         agent_logger.info(f"Injected {len(loaded_module_tools)} module tools into agent")
 
@@ -486,9 +493,9 @@ Leverage these tools directly via shell.
             "memory.path": memory_path if memory_path else "ephemeral",
         },
     }
-    
+
     # Create agent (telemetry is handled globally by Strands SDK)
     agent = Agent(**agent_kwargs)
-    
+
     agent_logger.debug("Agent initialized successfully")
     return agent, callback_handler

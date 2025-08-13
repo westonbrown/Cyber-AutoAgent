@@ -156,6 +156,25 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     };
   }, []);
   
+  // Auto-adjust observability and evaluation based on deployment mode
+  useEffect(() => {
+    const deploymentMode = config.deploymentMode;
+    
+    // For local-cli and single-container, default to disabled
+    if (deploymentMode === 'local-cli' || deploymentMode === 'single-container') {
+      // Only update if not explicitly set by user (check if still at default true values)
+      if (config.observability === true && !config.langfuseHostOverride) {
+        updateConfig({ observability: false });
+        setMessage({ text: 'Observability disabled for local/single-container mode', type: 'info' });
+      }
+      if (config.autoEvaluation === true) {
+        updateConfig({ autoEvaluation: false });
+        setMessage({ text: 'Auto-evaluation disabled for local/single-container mode', type: 'info' });
+      }
+    }
+    // For full-stack, these can remain enabled (user can still toggle)
+  }, [config.deploymentMode]);
+  
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
     const currentSection = sections[selectedSectionIndex];

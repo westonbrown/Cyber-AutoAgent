@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # --- Template and Utility Functions ---
 
+
 def _load_prompt_template(template_name: str) -> str:
     """Load a prompt template from the templates directory."""
     try:
@@ -28,6 +29,7 @@ def _load_prompt_template(template_name: str) -> str:
     except Exception as e:
         logger.exception(f"Failed to load prompt template '{template_name}': {e}")
         return f"ERROR: Failed to load prompt template '{template_name}'."
+
 
 def _extract_domain_lens(module_prompt: str) -> Dict[str, str]:
     """Extract domain-specific guidance from module prompt."""
@@ -59,11 +61,14 @@ def _extract_domain_lens(module_prompt: str) -> Dict[str, str]:
                             domain_lens[key] = value
     return domain_lens
 
+
 # --- Report Generation Functions ---
+
 
 def _get_current_date() -> str:
     """Get current date in report format."""
     return datetime.now().strftime("%Y-%m-%d")
+
 
 def _generate_findings_table(evidence_text: str) -> str:
     """Generate a markdown table summarizing findings by severity."""
@@ -95,6 +100,7 @@ def _generate_findings_table(evidence_text: str) -> str:
                 key_findings += f" (+{count-2} more)"
             table += f"| {severity} | {count} | {key_findings} |\n"
     return table
+
 
 def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 100) -> str:
     """Format evidence list into structured text for the report."""
@@ -134,6 +140,7 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
     evidence_text += "</evidence_collection>"
     return evidence_text
 
+
 def format_tools_summary(tools_used: List[str]) -> str:
     """Format tools list into a summary."""
     if not tools_used:
@@ -147,7 +154,16 @@ def format_tools_summary(tools_used: List[str]) -> str:
             tools_summary[tool_name] = 1
     return "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
 
-def get_report_generation_prompt(target: str, objective: str, operation_id: str, steps_executed: int, evidence: List[Dict[str, Any]], tools_used: List[str], module_prompt: Optional[str] = None) -> str:
+
+def get_report_generation_prompt(
+    target: str,
+    objective: str,
+    operation_id: str,
+    steps_executed: int,
+    evidence: List[Dict[str, Any]],
+    tools_used: List[str],
+    module_prompt: Optional[str] = None,
+) -> str:
     """Generate the full report generation prompt."""
     evidence_text = format_evidence_for_report(evidence)
     tools_summary = format_tools_summary(tools_used)
@@ -158,27 +174,36 @@ def get_report_generation_prompt(target: str, objective: str, operation_id: str,
     low_count = evidence_text.count("[LOW]") + evidence_text.count("| LOW")
     template = _load_prompt_template("report_template.md")
     report_body = template.format(
-        target=target, objective=objective, operation_id=operation_id, date=_get_current_date(),
-        steps_executed=steps_executed, critical_count=critical_count, high_count=high_count,
-        medium_count=medium_count, low_count=low_count,
-        overview='',
+        target=target,
+        objective=objective,
+        operation_id=operation_id,
+        date=_get_current_date(),
+        steps_executed=steps_executed,
+        critical_count=critical_count,
+        high_count=high_count,
+        medium_count=medium_count,
+        low_count=low_count,
+        overview="",
         findings_table=findings_table,
         analysis_details="",
         evidence_text=evidence_text,
-        immediate_recommendations='',
-        short_term_recommendations='',
-        long_term_recommendations='',
+        immediate_recommendations="",
+        short_term_recommendations="",
+        long_term_recommendations="",
         tools_summary=tools_summary,
-        analysis_framework='',
-        module_report=(module_prompt or "")
+        analysis_framework="",
+        module_report=(module_prompt or ""),
     )
     return report_body
+
 
 def get_report_agent_system_prompt() -> str:
     """Get the system prompt for the report generation agent."""
     return _load_prompt_template("report_agent_system_prompt.md")
 
+
 # --- Core System Prompt and Module Loading ---
+
 
 def get_system_prompt(
     target: Optional[str] = None,
@@ -217,15 +242,18 @@ def get_system_prompt(
                 out = out.replace(f"{{{{ {k} }}}}", str(v))
             return out
 
-        rendered = _subst(base, {
-            "target": target,
-            "objective": objective,
-            "operation_id": operation_id or "",
-            "current_step": current_step,
-            "max_steps": max_steps,
-            "remaining_steps": remaining_steps,
-            "tools_guide": tools_guide,
-        })
+        rendered = _subst(
+            base,
+            {
+                "target": target,
+                "objective": objective,
+                "operation_id": operation_id or "",
+                "current_step": current_step,
+                "max_steps": max_steps,
+                "remaining_steps": remaining_steps,
+                "tools_guide": tools_guide,
+            },
+        )
 
         # Append optional sections
         if tools_context:
@@ -251,8 +279,10 @@ def get_system_prompt(
     logger.warning("get_system_prompt called without sufficient parameters; returning empty system prompt")
     return ""
 
+
 class ModulePromptLoader:
     """Loads module-specific prompts, metadata, and tools."""
+
     def __init__(self, modules_base_path: Optional[str] = None):
         """Initialize with path to modules directory."""
         if modules_base_path:
@@ -263,7 +293,7 @@ class ModulePromptLoader:
                 current_file.parent.parent / "operation_plugins",
                 Path.cwd() / "src" / "modules" / "operation_plugins",
                 Path("/app/src/modules/operation_plugins"),
-                current_file.parent.parent.parent.parent / "src" / "modules" / "operation_plugins"
+                current_file.parent.parent.parent.parent / "src" / "modules" / "operation_plugins",
             ]
             for path in potential_paths:
                 if path.exists():
@@ -350,7 +380,9 @@ class ModulePromptLoader:
                 if tool_file.name != "__init__.py":
                     tools.append(str(tool_file))
             if tools:
-                logger.info(f"Discovered {len(tools)} tools for module '{module_name}': {[Path(t).name for t in tools]}")
+                logger.info(
+                    f"Discovered {len(tools)} tools for module '{module_name}': {[Path(t).name for t in tools]}"
+                )
             else:
                 logger.debug(f"No tool files found for module '{module_name}'")
             return tools
@@ -386,12 +418,17 @@ class ModulePromptLoader:
         has_exec_prompt = (module_path / "execution_prompt.txt").exists()
         has_report_prompt = (module_path / "report_prompt.txt").exists()
         if not (has_yaml or has_exec_prompt or has_report_prompt):
-            logger.warning(f"Module '{module_name}' missing key files (module.yaml, execution_prompt.txt, report_prompt.txt)")
+            logger.warning(
+                f"Module '{module_name}' missing key files (module.yaml, execution_prompt.txt, report_prompt.txt)"
+            )
             return False
         logger.debug(f"Module '{module_name}' validation passed")
         return True
 
+
 _module_loader = None
+
+
 def get_module_loader() -> ModulePromptLoader:
     """Get the global module prompt loader instance."""
     global _module_loader
