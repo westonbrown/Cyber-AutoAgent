@@ -88,12 +88,12 @@ export const useModalManager = (): UseModalManagerResult => {
     // First increment the static key to trigger re-render
     setStaticKey(prev => prev + 1);
     
-    // Then clear terminal after a micro-task to let React reconcile
+    // Clear terminal after a micro delay to let React reconcile
     // This prevents the black screen race condition
     if (shouldClearTerminal) {
-      Promise.resolve().then(() => {
+      setTimeout(() => {
         stdout.write(ansiEscapes.clearTerminal);
-      });
+      }, 0);
     }
   }, [stdout, activeModal]);
   

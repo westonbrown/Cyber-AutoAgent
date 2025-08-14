@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useStdout, useApp } from 'ink';
+import { useStdout, useApp, Text, Box } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 
 // State Management
@@ -128,15 +128,12 @@ const AppContent: React.FC<AppProps> = ({
     actions.setActiveOperation(null);
     actions.clearCompletedOperation(); // Clear the completed operation flag
     
-    // Schedule on next tick to ensure state updates are processed
-    // before clearing the terminal, preventing the black screen issue
-    const schedule = typeof setImmediate === 'function'
-      ? setImmediate
-      : (fn: (...args: any[]) => void) => setTimeout(fn, 0);
-    schedule(() => {
+    // Use setTimeout to ensure state updates are processed
+    // This prevents the black screen by giving React time to commit changes
+    registerTimeout(() => {
       // Only use modalManager's refresh to avoid double clear
       modalManager.refreshStatic();
-    });
+    }, 0); // Next tick
   }, [actions, operationManager, modalManager]);
 
   // Keyboard handlers
@@ -232,12 +229,16 @@ const AppContent: React.FC<AppProps> = ({
     closeModal();
     // Force a full remount of the main view to guarantee a clean screen
     setForceRemount(true);
+    
+    // Use setTimeout to ensure proper sequencing
+    // This prevents the black screen issue by giving React time to render
     registerTimeout(() => {
       try { stdout.write(ansiEscapes.clearTerminal); } catch {}
       setForceRemount(false);
-    }, 50); // 50ms delay allows Ink to settle before remount
+    }, 100); // 100ms for reliable transitions
+    
     // Suppress any buffered ESC for a short window to prevent accidental app exit
-    escSuppressUntilRef.current = Date.now() + 200;
+    escSuppressUntilRef.current = Date.now() + 300; // Increased from 200ms to 300ms
   }, [closeModal, actions, stdout, registerTimeout]);
   
   // Main app view props
@@ -291,9 +292,14 @@ const AppContent: React.FC<AppProps> = ({
     registerTimeout
   });
   
-  // If forcing a remount, render nothing for one frame
+  // If forcing a remount, render a minimal placeholder to prevent black screen
+  // This ensures there's always something in the render tree
   if (forceRemount) {
-    return null;
+    return (
+      <Box width="100%" height={1}>
+        <Text> </Text>
+      </Box>
+    );
   }
   
   return (

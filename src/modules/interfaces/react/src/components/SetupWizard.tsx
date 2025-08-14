@@ -102,9 +102,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
       
       // Use a longer delay to ensure smooth transition
       // This gives React time to properly unmount the wizard before transitioning
+      // Increased from 50ms to 150ms to prevent black screen race condition
       setTimeout(() => {
         onComplete(`Switched to ${modeDisplayName} deployment`);
-      }, 50);
+      }, 150);
       return;
     } else {
       // Proceed with normal setup for non-active deployments
@@ -184,6 +185,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
 
   // Clear terminal and force remount when the wizard step changes to prevent previous screen bleed-through
   useEffect(() => {
+    // Clear terminal immediately when step changes
     try { stdout.write(ansiEscapes.clearTerminal); } catch {}
     setStepRenderKey(prev => prev + 1);
   }, [state.currentStep, stdout]);

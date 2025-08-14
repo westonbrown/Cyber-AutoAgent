@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Box } from 'ink';
+import { Box, Text } from 'ink';
 
 // Components
 import { SetupWizard } from './SetupWizard.js';
@@ -31,9 +31,15 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
   mainAppViewProps
 }) => {
 
-  // Config loading state
+  // Config loading state - show a loading indicator to prevent black screen
   if (!appState.isConfigLoaded) {
-    return <Box />; // Empty box while loading config
+    return (
+      <Box flexDirection="column" width="100%" paddingY={1}>
+        <Box justifyContent="center">
+          <Text color="cyan">Loading configuration...</Text>
+        </Box>
+      </Box>
+    );
   }
 
   // When initialization flow is active, show setup wizard.
@@ -57,5 +63,10 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
   }
 
   // Render main application (force remount on staticKey to avoid stale tree post-clear)
-  return <MainAppView key={`main-view-${appState.staticKey}`} {...mainAppViewProps} />;
+  // Add a minimum height to prevent collapse during transitions
+  return (
+    <Box minHeight={10} width="100%">
+      <MainAppView key={`main-view-${appState.staticKey}`} {...mainAppViewProps} />
+    </Box>
+  );
 };
