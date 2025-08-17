@@ -95,6 +95,7 @@ export class DirectDockerService extends EventEmitter {
       // Pass module explicitly to enable module-specific prompts and tools
       const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
       const args = [
+        // Note: --service-mode will be added later ONLY for new containers, not for docker exec
         '--module', params.module,
         '--objective', objective,
         '--target', params.target,
