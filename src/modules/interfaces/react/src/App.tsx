@@ -307,14 +307,14 @@ const AppContent: React.FC<AppProps> = ({
       appState={appState}
       applicationConfig={applicationConfig}
       onInitializationComplete={(completionMessage) => {
-        // Clear once before dismissing initialization to prevent setup background remnants
-        modalManager.refreshStatic();
-        // Ensure header is eligible to render again
-        actions.clearCompletedOperation();
-        // Bump app static key to force MainAppView remount after clear
-        actions.refreshStatic();
-        // Dismiss initialization flow and return to main app
+        // 1) Dismiss initialization first so main view is allowed to render
         actions.dismissInit();
+        // 2) Ensure header is eligible to render again
+        actions.clearCompletedOperation();
+        // 3) Bump app static key to force MainAppView remount after clear
+        actions.refreshStatic();
+        // 4) Perform a single terminal refresh via modal manager
+        modalManager.refreshStatic();
         // Avoid adding setup completion messages to operation history
       }}
       onConfigOpen={() => openConfig()}

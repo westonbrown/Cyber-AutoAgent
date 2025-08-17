@@ -17,10 +17,8 @@ from typing import Dict, List, Any
 from strands.handlers import PrintingCallbackHandler
 
 from .base import HandlerState, StepLimitReached
-from .utils import Colors, emit_event, emit_status
+from .utils import emit_event
 
-# from .tools import show_tool_execution, show_tool_result, track_tool_effectiveness
-# from .reporting import generate_final_report
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -121,7 +119,6 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
                                 try:
-                                    # show_tool_execution(tool_use, self.state)
                                     self.state.last_was_tool = True
                                     self.state.last_was_reasoning = False
                                 except StepLimitReached:
@@ -137,10 +134,6 @@ class ReasoningHandler(PrintingCallbackHandler):
                         # Store result for later display
                         if tool_id in self.state.tool_use_map:
                             self.state.tool_results[tool_id] = tool_result
-                            # show_tool_result(tool_id, tool_result, self.state)
-
-                            # Track tool effectiveness
-                            # track_tool_effectiveness(tool_id, tool_result, self.state)
 
                             # Track memory operations
                             tool_name = self.state.tool_use_map[tool_id].get("name", "")
@@ -385,23 +378,16 @@ class ReasoningHandler(PrintingCallbackHandler):
             agent: The agent instance
             objective: The operation objective
         """
-        # generate_final_report(
-        #     handler_state=self,  # Pass the full handler instead of just state
-        #     agent=agent,
-        #     target=self.target,
-        #     objective=objective,
-        #     memory_config=self.memory_config,
-        # )
+        pass
 
     def generate_final_report(self, agent: Any, target: str, objective: str) -> None:
-        """Generate comprehensive final report using LLM analysis (legacy method name).
+        """Generate comprehensive final report using LLM analysis.
 
         Args:
             agent: The agent instance
             target: The target system
             objective: The operation objective
         """
-        # Use the stored target if not provided
         if not target and self.target:
             target = self.target
         self.generate_report(agent, objective)
@@ -485,7 +471,7 @@ class ReasoningHandler(PrintingCallbackHandler):
             self.state.evaluation_thread.start()
 
             # Wait a moment to ensure evaluation starts
-            import time
+            # time module already imported at module level
 
             time.sleep(1)
             logger.info("Evaluation thread started successfully (non-daemon mode)")

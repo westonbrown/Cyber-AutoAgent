@@ -9,8 +9,9 @@
   - Use `store_plan`/`get_plan` for active strategy; `store_reflection`/`reflect` for periodic reasoning checkpoints.
   - Use `store` with `metadata` (e.g., `category: finding|signal|decision|artifact|observation`, plus `severity`, `confidence`, etc.).
   - Use `retrieve` to surface prior context and guide next actions.
-- **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API).
+- **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API). Each agent should have a clear specialization
   - Define clear objectives and success criteria. Each agent writes outcomes to `mem0_memory`.
+  - Task Format (Max 100 words) with STATE: [Current access/findings], GOAL: [ONE specific objective], AVOID: [What not to repeat] and FOCUS: [Specific technique]
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
   - Only for Python tool files under `tools/`; do not use for reports or general notes.
 - **load_tool**: Dynamically register editor-created tools for immediate use.

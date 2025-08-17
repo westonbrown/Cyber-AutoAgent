@@ -219,7 +219,7 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return moduleNames.length > 0 ? moduleNames[0] : 'general';
   }, [availableModules]);
 
-  // CRITICAL FIX: Use useMemo to prevent infinite re-renders
+  // Use useMemo to prevent infinite re-renders
   // Without this, the value object gets recreated on every render, causing all consumers to re-render
   const value: ModuleContextType = useMemo(() => ({
     currentModule,

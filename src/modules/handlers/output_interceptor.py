@@ -7,15 +7,12 @@ stdout/stderr writes and converting them to structured events.
 
 import sys
 import io
-import json
 import os
 import threading
-from datetime import datetime
-from typing import TextIO, Optional, Callable, Any
-from dataclasses import dataclass, asdict
+from typing import TextIO
 from contextlib import contextmanager
 
-from .utils import emit_event, CyberEvent
+from .utils import CyberEvent
 
 
 class OutputInterceptor(io.TextIOBase):
@@ -157,7 +154,7 @@ def setup_output_interception():
         # Also redirect print function for extra safety
         import builtins
 
-        original_print = builtins.print
+        # original_print = builtins.print
 
         def intercepted_print(*args, **kwargs):
             """Intercepted print function."""

@@ -1,7 +1,7 @@
 /**
  * RadioSelect Component
  * 
- * Production-quality radio button selection inspired by gemini-cli
+ * Production-quality radio button selection component
  */
 
 import React, { useState, useEffect, useRef } from 'react';

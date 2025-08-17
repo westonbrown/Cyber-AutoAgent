@@ -28,34 +28,46 @@ export function useDeploymentDetection({
 }: UseDeploymentDetectionParams) {
   React.useEffect(() => {
     if (isConfigLoading) return;
-    if (appState.isUserTriggeredSetup || appState.isInitializationFlowActive) return;
+    if (appState.isInitializationFlowActive) return;
+
+    const forceSetup = appState.isUserTriggeredSetup || (typeof process !== 'undefined' && process.env.CYBER_SHOW_SETUP === 'true');
 
     const run = async () => {
-      // Only consider (re)activating setup if the user hasn't dismissed it this session
-      if (!appState.hasUserDismissedInit) {
-        // First, hard gate: if config not set or no deploymentMode, show setup
+      try {
+        const detector = DeploymentDetector.getInstance();
+        const detection = await detector.detectDeployments(applicationConfig);
+        const hasHealthy = detection.availableDeployments?.some(d => d.isHealthy);
+
         const configMissing = !applicationConfig?.isConfigured || !applicationConfig?.deploymentMode;
-        if (appState.isConfigLoaded && configMissing) {
+
+        // Respect explicit/forced setup
+        if (forceSetup) {
           actions.setInitializationFlow(true);
           return;
         }
 
-        // Secondary: consult live environment via DeploymentDetector
-        try {
-          const detector = DeploymentDetector.getInstance();
-          const detection = await detector.detectDeployments(applicationConfig);
-          if (detection.needsSetup) {
-            actions.setInitializationFlow(true);
-            return;
-          }
-        } catch {
-          // On detection failure, be safe and prompt setup
+        // If a healthy deployment is detected, do not show the setup wizard.
+        if (hasHealthy) {
+          // Do not auto-open the config editor here; allow the main app to load.
+          // The later block will handle prompting the config editor only after setup
+          // when the app is configured but model details are missing.
+          return;
+        }
+
+        // No healthy deployments; for first-time users or when detection indicates, show setup
+        if (!appState.hasUserDismissedInit && (configMissing || detection.needsSetup)) {
+          actions.setInitializationFlow(true);
+          return;
+        }
+      } catch {
+        // On detection failure, be safe and prompt setup for first-time users
+        if (!appState.hasUserDismissedInit) {
           actions.setInitializationFlow(true);
           return;
         }
       }
 
-      // If configured but missing model details, prompt config editor
+      // If configured but missing model details, prompt config editor as before
       if (
         applicationConfig.isConfigured &&
         appState.hasUserDismissedInit &&

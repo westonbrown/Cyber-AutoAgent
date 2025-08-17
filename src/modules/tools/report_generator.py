@@ -12,16 +12,30 @@ Key Features:
 - Integrates with memory system to retrieve evidence
 """
 
-import os
+import json
 import logging
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
-from datetime import datetime
-from pathlib import Path
 from strands import tool
 
-from modules.handlers.utils import Colors
 from modules.agents.report_agent import ReportGenerator
 from modules.prompts.factory import get_report_generation_prompt
+from modules.tools.memory import get_memory_client
+
+
+@dataclass
+class ReportConfig:
+    """Configuration object for security report generation to reduce parameter count."""
+    target: str
+    objective: str
+    operation_id: str
+    steps_executed: int
+    tools_used: List[str]
+    evidence: Optional[List[Dict[str, Any]]] = None
+    provider: str = "bedrock"
+    model_id: Optional[str] = None
+    module: Optional[str] = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +45,7 @@ def generate_security_report(
     target: str,
     objective: str,
     operation_id: str,
-    steps_executed: int,
-    tools_used: List[str],
-    evidence: Optional[List[Dict[str, Any]]] = None,
-    provider: str = "bedrock",
-    model_id: Optional[str] = None,
-    module: Optional[str] = None,
+    config_data: Optional[str] = None,
 ) -> str:
     """
     Generate a comprehensive security assessment report based on the operation results.
@@ -49,12 +58,8 @@ def generate_security_report(
         target: The target system that was assessed
         objective: The security assessment objective
         operation_id: The operation identifier
-        steps_executed: Number of steps executed during assessment
-        tools_used: List of tools used during the assessment
-        evidence: List of evidence/findings collected (optional - will retrieve from memory if not provided)
-        provider: Model provider (bedrock, ollama, litellm)
-        model_id: Specific model to use for generation (optional)
-        module: Security module used for assessment (optional - enables module-specific report prompts)
+        config_data: JSON string containing additional config (steps_executed, tools_used, 
+                    evidence, provider, model_id, module)
 
     Returns:
         The generated security assessment report as a string
@@ -64,14 +69,28 @@ def generate_security_report(
             target="example.com",
             objective="Identify web application vulnerabilities",
             operation_id="OP_20240115_143022",
-            steps_executed=15,
-            tools_used=["nmap", "nikto", "sqlmap", "curl"],
-            evidence=[{"category": "finding", "content": "SQL injection in login form", "severity": "high"}]
+            config_data='{"steps_executed": 15, "tools_used": ["nmap", "nikto"], "provider": "bedrock"}'
         )
     """
     try:
         # Log the report generation request
         logger.info("Generating security report for operation: %s", operation_id)
+
+        # Parse config data
+        config_params = {}
+        if config_data:
+            try:
+                config_params = json.loads(config_data)
+            except json.JSONDecodeError:
+                return "Error: Invalid JSON in config_data parameter"
+        
+        # Extract parameters with defaults
+        steps_executed = config_params.get('steps_executed', 0)
+        tools_used = config_params.get('tools_used', [])
+        evidence = config_params.get('evidence')
+        provider = config_params.get('provider', 'bedrock')
+        model_id = config_params.get('model_id')
+        module = config_params.get('module')
 
         # If evidence not provided, retrieve from memory
         if evidence is None:
@@ -154,7 +173,7 @@ def generate_security_report(
         return f"Error: {str(e)}"
 
 
-def _retrieve_evidence_from_memory(operation_id: str) -> List[Dict[str, Any]]:
+def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
     """
     Retrieve evidence from memory system for the operation.
 
@@ -167,8 +186,7 @@ def _retrieve_evidence_from_memory(operation_id: str) -> List[Dict[str, Any]]:
     evidence = []
 
     try:
-        # Import memory client
-        from modules.tools.memory import get_memory_client
+        # Use pre-imported memory client
 
         memory_client = get_memory_client()
         if not memory_client:
@@ -251,7 +269,7 @@ def _get_module_report_prompt(module_name: Optional[str]) -> Optional[str]:
         return None
 
     try:
-        from modules.prompts import get_module_loader
+        from modules.prompts import get_module_loader  # Dynamic import required
 
         module_loader = get_module_loader()
         module_report_prompt = module_loader.load_module_report_prompt(module_name)

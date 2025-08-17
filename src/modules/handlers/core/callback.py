@@ -17,7 +17,7 @@ from typing import Dict, List, Any
 from strands.handlers import PrintingCallbackHandler
 
 from .base import HandlerState, StepLimitReached
-from .utils import Colors, emit_event, emit_status
+from .utils import emit_event
 
 # from .tools import show_tool_execution, show_tool_result, track_tool_effectiveness
 # from .reporting import generate_final_report

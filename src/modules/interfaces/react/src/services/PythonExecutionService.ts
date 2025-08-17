@@ -37,6 +37,9 @@ export class PythonExecutionService extends EventEmitter {
   private streamEventBuffer = '';
   private abortController?: AbortController;
   private sessionId = `py-${Date.now()}`;
+  // Emit policy: only stream raw stdout during active tool execution
+  private inToolExecution = false;
+  private toolOutputBuffer = '';
   
   // Paths
   private readonly projectRoot: string;
@@ -46,106 +49,290 @@ export class PythonExecutionService extends EventEmitter {
   private readonly srcPath: string;
   private readonly requirementsPath: string;
   private pythonCommand: string = 'python3'; // Will be updated by checkPythonVersion
+  private stderrBuffer: string = '';
   
   constructor() {
     super();
     
-    // Get __dirname equivalent for ES modules
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
+    // Get current directory (where the React app is running)
+    const currentDir = process.cwd();
     
-    // Determine project root by searching for pyproject.toml
-    this.projectRoot = this.findProjectRoot();
+    // Resolve actual Python project root by searching upward for pyproject.toml/setup.py
+    this.projectRoot = this.resolveProjectRoot(currentDir);
     this.venvPath = path.join(this.projectRoot, '.venv');
-    this.pythonPath = path.join(this.venvPath, process.platform === 'win32' ? 'Scripts/python' : 'bin/python');
-    this.pipPath = path.join(this.venvPath, process.platform === 'win32' ? 'Scripts/pip' : 'bin/pip');
     this.srcPath = path.join(this.projectRoot, 'src');
-    this.requirementsPath = path.join(this.projectRoot, 'requirements.txt');
+    
+    // Platform-specific paths
+    const isWindows = process.platform === 'win32';
+    const venvBinDir = isWindows ? 'Scripts' : 'bin';
+    const pythonExecutable = isWindows ? 'python.exe' : 'python';
+    const pipExecutable = isWindows ? 'pip.exe' : 'pip';
+    
+    this.pythonPath = path.join(this.venvPath, venvBinDir, pythonExecutable);
+    this.pipPath = path.join(this.venvPath, venvBinDir, pipExecutable);
+    this.requirementsPath = path.join(this.projectRoot, 'pyproject.toml');
+    
+    this.logger.info('[OK] PythonExecutionService initialized', {
+      projectRoot: this.projectRoot,
+      venvPath: this.venvPath,
+      pythonPath: this.pythonPath,
+      srcPath: this.srcPath
+    });
   }
 
   /**
-   * Find the project root by searching upward for pyproject.toml
+   * Resolve the Python project root by searching upwards for project markers.
+   * Priority: 1) CYBER_PROJECT_ROOT env var (if valid), 2) nearest directory with pyproject.toml or setup.py,
+   * 3) a directory containing docker/docker-compose.yml, 4) fallback to currentDir.
    */
-  private findProjectRoot(): string {
-    // Get __dirname equivalent for ES modules
-    const __filename = fileURLToPath(import.meta.url);
-    let currentDir = path.dirname(__filename);
-    
-    // Search upward until we find pyproject.toml or reach filesystem root
-    while (currentDir !== path.dirname(currentDir)) {
-      const pyprojectPath = path.join(currentDir, 'pyproject.toml');
-      if (fs.existsSync(pyprojectPath)) {
-        return currentDir;
+  private resolveProjectRoot(currentDir: string): string {
+    // Priority 1: explicit override
+    const envRoot = process.env.CYBER_PROJECT_ROOT;
+    if (envRoot) {
+      const pyproject = path.join(envRoot, 'pyproject.toml');
+      const setupPy = path.join(envRoot, 'setup.py');
+      if (fs.existsSync(pyproject) || fs.existsSync(setupPy)) {
+        return path.resolve(envRoot);
       }
-      currentDir = path.dirname(currentDir);
     }
-    
-    // Fallback to environment variable or current working directory
-    if (process.env.CYBER_PROJECT_ROOT && fs.existsSync(process.env.CYBER_PROJECT_ROOT)) {
-      return process.env.CYBER_PROJECT_ROOT;
+
+    // Priority 2/3: search upwards for markers
+    let dir = path.resolve(currentDir);
+    const maxLevels = 10;
+    for (let i = 0; i < maxLevels; i++) {
+      const pyproject = path.join(dir, 'pyproject.toml');
+      const setupPy = path.join(dir, 'setup.py');
+      const dockerCompose = path.join(dir, 'docker', 'docker-compose.yml');
+      if (fs.existsSync(pyproject) || fs.existsSync(setupPy)) {
+        return dir;
+      }
+      if (fs.existsSync(dockerCompose)) {
+        // Likely the project root even if pyproject lives adjacent
+        // Keep scanning one more level for pyproject
+        const parent = path.dirname(dir);
+        const parentPy = path.join(parent, 'pyproject.toml');
+        if (fs.existsSync(parentPy)) return parent;
+        return dir;
+      }
+      const parentDir = path.dirname(dir);
+      if (parentDir === dir) break;
+      dir = parentDir;
     }
-    
-    // Last resort: assume we're in a subdirectory and go up a few levels
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    return path.resolve(__dirname, '..', '..', '..', '..', '..');
+
+    // Fallback: current working directory
+    this.logger.warn('Could not find pyproject.toml or setup.py; falling back to current directory', { currentDir });
+    return path.resolve(currentDir);
   }
   
   /**
-   * Check if Python 3.10+ is installed
+   * Check Python version and update pythonCommand
    */
-  async checkPythonVersion(): Promise<{ installed: boolean; version?: string; error?: string; pythonCommand?: string }> {
-    // Try multiple Python commands in order of preference
-    const pythonCommands = ['python3.11', 'python3.12', 'python3.13', 'python3.10', 'python3', 'python'];
-    
-    for (const cmd of pythonCommands) {
+  public async checkPythonVersion(): Promise<{ installed: boolean; version?: string; error?: string }> {
+    // Allow explicit override via environment (takes absolute precedence)
+    const override = process.env.CYBER_PYTHON;
+
+    // Build a broad candidate list in priority order
+    const isWindows = process.platform === 'win32';
+    const userHome = process.env.HOME || process.env.USERPROFILE || '';
+    const condaPy = process.env.CONDA_PREFIX ? `${process.env.CONDA_PREFIX}/bin/python` : undefined;
+
+    const versioned = ['3.12', '3.11', '3.10'];
+
+    const baseNames = [
+      ...versioned.map(v => `python3.${v.split('.')[1]}`), // python3.12, 3.11, 3.10
+      'python3',
+      'python',
+    ];
+
+    const homebrew = [
+      ...versioned.map(v => `/opt/homebrew/bin/python3.${v.split('.')[1]}`),
+      ...versioned.map(v => `/usr/local/bin/python3.${v.split('.')[1]}`),
+      '/opt/homebrew/bin/python3',
+      '/usr/local/bin/python3',
+    ];
+
+    const pyenvShims = userHome
+      ? [
+          ...versioned.map(v => `${userHome}/.pyenv/shims/python3.${v.split('.')[1]}`),
+          `${userHome}/.pyenv/shims/python3`,
+          `${userHome}/.pyenv/shims/python`,
+        ]
+      : [];
+
+    const asdfShims = userHome
+      ? [
+          ...versioned.map(v => `${userHome}/.asdf/shims/python3.${v.split('.')[1]}`),
+          `${userHome}/.asdf/shims/python3`,
+          `${userHome}/.asdf/shims/python`,
+        ]
+      : [];
+
+    const windowsPy = isWindows
+      ? ['py -3.12', 'py -3.11', 'py -3.10', 'py -3', 'py']
+      : [];
+
+    const candidates = [
+      ...(override ? [override] : []),
+      ...(condaPy ? [condaPy] : []),
+      ...windowsPy,
+      ...baseNames,
+      ...homebrew,
+      ...pyenvShims,
+      ...asdfShims,
+    ];
+
+    // De-dupe while preserving order
+    const seen = new Set<string>();
+    const commands = candidates.filter(c => {
+      const key = c.trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    type Detected = { cmd: string; versionStr?: string; major?: number; minor?: number; ok: boolean };
+    const detections: Detected[] = [];
+
+    for (const cmd of commands) {
       try {
-        const { stdout } = await execAsync(`${cmd} --version`);
-        const versionMatch = stdout.match(/Python (\d+)\.(\d+)\.(\d+)/);
-        
-        if (versionMatch) {
-          const major = parseInt(versionMatch[1]);
-          const minor = parseInt(versionMatch[2]);
-          const version = `${major}.${minor}.${versionMatch[3]}`;
-          
-          this.logger.debug(`Found Python via ${cmd}: version ${version}`);
-          
-          if (major >= 3 && minor >= 10) {
-            // Store the working Python command
-            this.pythonCommand = cmd;
-            this.logger.info(`Using Python command: ${cmd} (version ${version})`);
-            return { installed: true, version, pythonCommand: cmd };
-          }
+        const { stdout } = await execAsync(`${cmd} --version`, { timeout: 5000 });
+        const versionStr = stdout.trim();
+        const m = versionStr.match(/Python\s+(\d+)\.(\d+)/);
+        if (!m) {
+          detections.push({ cmd, versionStr, ok: false });
+          continue;
         }
-      } catch (error) {
-        // Try next command
-        this.logger.debug(`Command ${cmd} failed: ${error}`);
+        const major = parseInt(m[1]);
+        const minor = parseInt(m[2]);
+        const ok = major > 3 || (major === 3 && minor >= 10);
+        detections.push({ cmd, versionStr, major, minor, ok });
+      } catch {
+        // Ignore failures
         continue;
       }
     }
-    
-    // If we get here, no suitable Python was found
-    // Check what version is installed (if any) to provide helpful error
-    try {
-      const { stdout } = await execAsync('python3 --version').catch(() => execAsync('python --version'));
-      const versionMatch = stdout.match(/Python (\d+)\.(\d+)\.(\d+)/);
-      
-      if (versionMatch) {
-        const version = `${versionMatch[1]}.${versionMatch[2]}.${versionMatch[3]}`;
-        return { 
-          installed: false, 
-          error: `Python ${version} found, but 3.10+ is required. Please install Python 3.10 or higher from https://www.python.org/downloads/` 
-        };
+
+    // Choose the highest version that satisfies >= 3.10
+    let best: Detected | undefined = undefined;
+    for (const d of detections) {
+      if (!d.ok || d.major === undefined || d.minor === undefined) continue;
+      if (!best) {
+        best = d;
+        continue;
       }
-    } catch {
-      // No Python found at all
+      if (d.major > best.major! || (d.major === best.major && d.minor > best.minor!)) {
+        best = d;
+      }
+    }
+
+    // Log a concise detection table for transparency
+    if (detections.length > 0) {
+      try {
+        this.logger.info('Python interpreter detection', {
+          detections: detections.map(d => ({ cmd: d.cmd, version: d.versionStr || 'unknown', eligible: d.ok })),
+          chosen: best ? { cmd: best.cmd, version: best.versionStr } : null,
+          override: override || null,
+        });
+      } catch {}
+    }
+
+    if (best) {
+      this.pythonCommand = best.cmd;
+      return { installed: true, version: best.versionStr };
+    }
+
+    return { installed: false, error: 'Python 3.10+ is required but not found' };
+  }
+  
+  /**
+   * Get current Python command
+   */
+  getCurrentPythonCommand(): string {
+    return this.pythonCommand;
+  }
+  
+  /**
+   * Get active process PID if running
+   */
+  getActiveProcessPid(): number | undefined {
+    return this.activeProcess?.pid;
+  }
+  
+  /**
+   * Get session ID
+   */
+  getSessionId(): string {
+    return this.sessionId;
+  }
+  
+  /**
+   * Check if execution is currently active
+   */
+  isActive(): boolean {
+    return this.isExecutionActive;
+  }
+  
+  /**
+   * Stop current execution
+   */
+  async stop(): Promise<void> {
+    if (this.activeProcess) {
+      this.logger.info('Stopping Python process', { pid: this.activeProcess.pid });
+      
+      try {
+        // Try graceful termination first
+        this.activeProcess.kill('SIGTERM');
+        
+        // If still running after 3 seconds, force kill
+        setTimeout(() => {
+          if (this.activeProcess && !this.activeProcess.killed) {
+            this.logger.warn('Force killing Python process');
+            this.activeProcess.kill('SIGKILL');
+          }
+        }, 3000);
+        
+      } catch (error) {
+        this.logger.error('Error stopping Python process', error as Error);
+      }
     }
     
-    return { 
-      installed: false, 
-      error: 'Python not found. Please install Python 3.10 or higher from https://www.python.org/downloads/' 
-    };
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    
+    this.isExecutionActive = false;
   }
 
+  /**
+   * Send user input to the active Python process (newline-terminated)
+   */
+  public async sendUserInput(input: string): Promise<void> {
+    if (!this.activeProcess || !this.activeProcess.stdin) {
+      throw new Error('No active Python process to receive input');
+    }
+    return new Promise<void>((resolve, reject) => {
+      try {
+        this.activeProcess!.stdin!.write(input.endsWith('\n') ? input : input + '\n', (err?: Error) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      } catch (err) {
+        reject(err as Error);
+      }
+    });
+  }
+
+  /**
+   * Cleanup resources for the Python execution service
+   */
+  public cleanup(): void {
+    try {
+      // Best-effort stop
+      void this.stop();
+    } catch {}
+    this.removeAllListeners();
+  }
+  
   /**
    * Check current environment status
    */
@@ -199,15 +386,8 @@ export class PythonExecutionService extends EventEmitter {
       }
     }
     
-    // Find requirements file
-    let requirementsFile: string | null = null;
-    if (fs.existsSync(this.requirementsPath)) {
-      requirementsFile = 'requirements.txt';
-    } else if (fs.existsSync(path.join(this.projectRoot, 'pyproject.toml'))) {
-      requirementsFile = 'pyproject.toml';
-    } else if (fs.existsSync(path.join(this.projectRoot, 'setup.py'))) {
-      requirementsFile = 'setup.py';
-    }
+    // Check requirements file
+    const requirementsFile = fs.existsSync(this.requirementsPath) ? this.requirementsPath : null;
     
     return {
       pythonInstalled: pythonCheck.installed,
@@ -221,6 +401,59 @@ export class PythonExecutionService extends EventEmitter {
   }
   
   /**
+   * Preflight checks: emit bracketed status lines without mutating the environment.
+   * Returns true if everything looks good, false otherwise.
+   */
+  async preflightChecks(onProgress?: (message: string) => void): Promise<boolean> {
+    const say = (msg: string) => {
+      this.logger.info(msg);
+      onProgress?.(msg);
+      this.emit('progress', msg);
+    };
+
+    let ok = true;
+    const status = await this.checkEnvironmentStatus();
+
+    if (!status.pythonInstalled) {
+      say('[ERR] Python 3.10+ not found');
+      ok = false;
+    } else {
+      say(`[OK] Python detected: ${status.pythonVersion}`);
+    }
+
+    if (!status.venvExists) {
+      say(`[ERR] Virtual environment missing at ${this.venvPath}`);
+      ok = false;
+    } else if (!status.venvValid) {
+      say(`[ERR] Virtual environment invalid at ${this.venvPath}`);
+      ok = false;
+    } else {
+      say(`[OK] Virtual environment ready at ${this.venvPath}`);
+    }
+
+    if (!status.dependenciesInstalled) {
+      say('[WARN] pip not available in venv or dependencies not installed');
+    } else {
+      say('[OK] pip available in venv');
+    }
+
+    if (!status.packageInstalled) {
+      say('[ERR] Python package "cyberautoagent" not importable');
+      ok = false;
+    } else {
+      say('[OK] cyberautoagent import verified');
+    }
+
+    if (status.requirementsFile) {
+      say(`[OK] Project file detected: ${path.basename(status.requirementsFile)}`);
+    } else {
+      say('[WARN] No pyproject.toml or setup.py detected at resolved project root');
+    }
+
+    return ok;
+  }
+
+  /**
    * Setup Python environment for CLI mode with intelligent state detection
    */
   async setupPythonEnvironment(onProgress?: (message: string) => void): Promise<void> {
@@ -232,89 +465,90 @@ export class PythonExecutionService extends EventEmitter {
     
     try {
       // Step 1: Check current environment status
-      progress('Analyzing current environment...');
       const status = await this.checkEnvironmentStatus();
       
       if (!status.pythonInstalled) {
-        throw new Error(status.pythonVersion ? 
-          `Python ${status.pythonVersion} found, but 3.10+ is required` :
-          'Python 3.10+ is not installed. Please install from https://python.org');
+        throw new Error('Python 3.10+ is required but not found. Please install Python first.');
       }
       
-      progress(`✓ Python ${status.pythonVersion} detected (using ${this.pythonCommand})`);
+      progress(`[OK] Python ${status.pythonVersion} found`);
       
-      // Step 2: Handle virtual environment
+      // Step 2: Create or validate virtual environment
       if (!status.venvExists) {
-        progress('Creating virtual environment...');
+        progress('[INFO] Creating Python virtual environment...');
         await execAsync(`${this.pythonCommand} -m venv "${this.venvPath}"`);
-        progress('✓ Virtual environment created');
+        progress('[OK] Virtual environment created');
       } else if (!status.venvValid) {
-        progress('Repairing corrupted virtual environment...');
+        progress('[INFO] Recreating corrupted virtual environment...');
         // Remove and recreate
         await execAsync(`rm -rf "${this.venvPath}"`);
         await execAsync(`${this.pythonCommand} -m venv "${this.venvPath}"`);
-        progress('✓ Virtual environment repaired');
+        progress('[OK] Virtual environment recreated');
       } else {
-        progress('✓ Virtual environment already exists and is valid');
-      }
-      
-      // Step 3: Check requirements file
-      if (!status.requirementsFile) {
-        throw new Error('No requirements.txt, pyproject.toml, or setup.py found in project root');
-      }
-      progress(`✓ Found ${status.requirementsFile} for dependency management`);
-      
-      // Step 4: Handle pip upgrade (only if needed)
-      if (!status.dependenciesInstalled) {
-        progress('Upgrading pip...');
-        await execAsync(`"${this.pythonPath}" -m pip install --upgrade pip`);
-        progress('✓ Pip upgraded');
-      } else {
-        progress('✓ Pip already available');
-      }
-      
-      // Step 5: Handle dependencies
-      if (!status.dependenciesInstalled || !status.packageInstalled) {
-        progress('Installing/updating Python dependencies...');
-        
-        if (status.requirementsFile === 'requirements.txt') {
-          await execAsync(`"${this.pipPath}" install -r "${this.requirementsPath}"`, {
-            cwd: this.projectRoot
-          });
-        } else if (status.requirementsFile === 'pyproject.toml' || status.requirementsFile === 'setup.py') {
-          // For pyproject.toml, install in editable mode with all dependencies
-          progress('Installing from pyproject.toml...');
-          await execAsync(`"${this.pipPath}" install -e . --verbose`, {
-            cwd: this.projectRoot
-          });
+        // Validate venv Python version >= 3.10
+        try {
+          const { stdout: venvVerOut } = await execAsync(`"${this.pythonPath}" --version`);
+          const vMatch = venvVerOut.trim().match(/Python (\d+)\.(\d+)/);
+          if (vMatch) {
+            const vMaj = parseInt(vMatch[1]);
+            const vMin = parseInt(vMatch[2]);
+            if (!(vMaj > 3 || (vMaj === 3 && vMin >= 10))) {
+              progress('[INFO] Recreating virtual environment with Python 3.10+...');
+              await execAsync(`rm -rf "${this.venvPath}"`);
+              await execAsync(`${this.pythonCommand} -m venv "${this.venvPath}"`);
+              progress('[OK] Virtual environment recreated with compatible Python');
+            } else {
+              progress('[OK] Virtual environment found and valid');
+            }
+          } else {
+            // If version parse fails, keep going but note it
+            progress('[OK] Virtual environment found');
+          }
+        } catch {
+          // If check fails, proceed without blocking
+          progress('[OK] Virtual environment found');
         }
-        
-        progress('✓ Dependencies installed/updated');
-      } else {
-        progress('✓ Dependencies already installed');
       }
       
-      // Step 6: Final verification
-      progress('Verifying installation...');
+      // Step 3: Install dependencies if needed
+      if (!status.dependenciesInstalled || !status.packageInstalled) {
+        progress('[INFO] Installing Python dependencies...');
+        
+        // Upgrade pip first
+        await execAsync(`"${this.pipPath}" install --upgrade pip`, {
+          cwd: this.projectRoot
+        });
+        
+        // Install with editable mode for development
+        await execAsync(`"${this.pipPath}" install -e .`, {
+          cwd: this.projectRoot
+        });
+        
+        progress('[OK] Dependencies installed successfully');
+      } else {
+        progress('[OK] Dependencies already installed');
+      }
+      
+      // Step 4: Verify installation
       try {
         await execAsync(`"${this.pythonPath}" -c "import cyberautoagent; print('Cyber-AutoAgent version:', getattr(cyberautoagent, '__version__', 'dev'))"`, {
           env: { ...process.env, PYTHONPATH: this.srcPath }
         });
-        progress('✓ Cyber-AutoAgent package verified and ready');
+        progress('[OK] Cyber-AutoAgent package verified and ready');
       } catch (error) {
         // Last resort - try development install
-        progress('Installing Cyber-AutoAgent in development mode...');
+        progress('[INFO] Installing Cyber-AutoAgent in development mode...');
         await execAsync(`"${this.pipPath}" install -e .`, {
           cwd: this.projectRoot
         });
-        progress('✓ Cyber-AutoAgent installed in development mode');
+        progress('[OK] Cyber-AutoAgent installed in development mode');
       }
       
-      progress('✓ Python environment setup complete!');
+      progress('[OK] Python environment setup complete!');
       
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      progress(`✗ Setup failed: ${errorMsg}`);
+      progress(`[ERR] Setup failed: ${errorMsg}`);
       throw error;
     }
   }
@@ -335,6 +569,9 @@ export class PythonExecutionService extends EventEmitter {
     
     return new Promise<void>((resolve, reject) => {
       try {
+      // Preflight checks for clarity in OSS UX
+      void this.preflightChecks();
+
       // Ensure environment is set up
       const venvExists = fs.existsSync(this.pythonPath);
       if (!venvExists) {
@@ -342,7 +579,7 @@ export class PythonExecutionService extends EventEmitter {
       }
       
       // Build command arguments
-      const objective = params.objective || `Perform comprehensive ${params.module.replace('_', ' ')} assessment`;
+      const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
       const args = [
         path.join(this.srcPath, 'cyberautoagent.py'),
         '--module', params.module,
@@ -356,11 +593,6 @@ export class PythonExecutionService extends EventEmitter {
         args.push('--model', config.modelId);
       }
       
-      // For Ollama, the modelId is used as the ollama model
-      if (config.modelProvider === 'ollama' && config.modelId) {
-        args.push('--ollama-model', config.modelId);
-      }
-      
       // Set up environment variables
       const env = {
         ...process.env,
@@ -370,15 +602,22 @@ export class PythonExecutionService extends EventEmitter {
         // React UI integration - critical for event emission
         BYPASS_TOOL_CONSENT: config.confirmations ? 'false' : 'true',
         __REACT_INK__: 'true',
-        CYBERAGENT_NO_BANNER: 'true',  // Suppress banner in React mode
+        CYBERAGENT_NO_BANNER: 'false', // Show banner in React stream (OLD behavior)
         DEV: config.verbose ? 'true' : 'false',
-        // AWS Configuration
+        // AWS Configuration (original simple approach)
         AWS_ACCESS_KEY_ID: config.awsAccessKeyId || '',
         AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey || '',
         AWS_BEARER_TOKEN_BEDROCK: config.awsBearerToken || '',
         AWS_REGION: config.awsRegion || 'us-east-1',
         // Ollama Configuration
         OLLAMA_HOST: config.ollamaHost || '',
+        // LiteLLM Configuration
+        OPENAI_API_KEY: config.openaiApiKey || '',
+        ANTHROPIC_API_KEY: config.anthropicApiKey || '',
+        COHERE_API_KEY: config.cohereApiKey || '',
+        // Model Configuration - pass separate models from config
+        CYBER_AGENT_SWARM_MODEL: config.swarmModel || '',
+        CYBER_AGENT_EVALUATION_MODEL: config.evaluationModel || '',
         // Observability settings from config (matching Docker service behavior)
         ENABLE_OBSERVABILITY: config.observability ? 'true' : 'false',
         ENABLE_AUTO_EVALUATION: config.autoEvaluation ? 'true' : 'false',
@@ -405,12 +644,17 @@ export class PythonExecutionService extends EventEmitter {
           iterations: config.iterations,
           modelProvider: config.modelProvider,
           modelId: config.modelId,
+          swarmModel: config.swarmModel || 'NOT_SET',
+          evaluationModel: config.evaluationModel || 'NOT_SET',
           observability: config.observability,
-          autoEvaluation: config.autoEvaluation
+          autoEvaluation: config.autoEvaluation,
+          awsBearerToken: config.awsBearerToken ? 'CONFIGURED' : 'NOT_SET',
+          awsAccessKeyId: config.awsAccessKeyId ? `${config.awsAccessKeyId.substring(0, 10)}...` : 'NOT_SET'
         }
       });
       
-      // Emit startup events exactly like Docker mode for consistency
+      
+      // Emit startup lifecycle as output so it appears in the operation stream (OLD behavior)
       this.emit('event', {
         type: 'output',
         content: '▶ Initializing Python assessment environment...',
@@ -432,6 +676,59 @@ export class PythonExecutionService extends EventEmitter {
           timestamp: Date.now()
         });
       }, 1000);
+
+      // Emit objective/target and plugin details early in the run
+      setTimeout(() => {
+        const objective = params.objective || `Comprehensive ${params.module.replace('_', ' ')} security assessment`;
+        this.emit('event', {
+          type: 'output',
+          content: `◆ Objective: ${objective}`,
+          timestamp: Date.now()
+        });
+        this.emit('event', {
+          type: 'output',
+          content: `◆ Target: ${params.target}`,
+          timestamp: Date.now()
+        });
+      }, 1200);
+
+      // Provider is already emitted in preflight checks (✓ Provider: ... at ~900ms).
+      // Avoid emitting here to prevent interleaving with tool discovery output.
+      
+      // Emit expanded initial logs
+      const resolvedOutputDir = path.isAbsolute(config.outputDir || '')
+        ? (config.outputDir as string)
+        : path.resolve(this.projectRoot, config.outputDir || './outputs');
+      setTimeout(() => {
+        this.emit('event', { type: 'output', content: '▶ Preflight checks', timestamp: Date.now() });
+        // Python path and version
+        try {
+          const { execFileSync } = require('child_process');
+          const ver: string = execFileSync(this.pythonPath, ['--version']).toString().trim();
+          this.emit('event', { type: 'output', content: `✓ Python: ${this.pythonPath} (${ver})`, timestamp: Date.now() });
+        } catch (e) {
+          // Suppress unknown version line to avoid noisy preflight output
+        }
+        this.emit('event', { type: 'output', content: `✓ Project root: ${this.projectRoot}` , timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Output directory: ${resolvedOutputDir}` , timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: '✓ Execution mode: Local Python CLI', timestamp: Date.now() });
+        // Target and provider/model
+        this.emit('event', { type: 'output', content: `✓ Target: ${params.target}`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Provider: ${config.modelProvider || 'unknown'} (${config.modelId || 'default-model'})`, timestamp: Date.now() });
+        // Memory presence
+        const sanitizedTarget = params.target
+          .replace(/^https?:\/\//, '')  // Remove protocol
+          .replace(/^ftp:\/\//, '')     // Remove ftp protocol
+          .replace(/\/.*$/, '')         // Remove path components
+          .replace(/[^a-zA-Z0-9.-]/g, '_'); // Replace invalid chars
+        const memoryPath = path.join(resolvedOutputDir, sanitizedTarget, 'memory');
+        const faissPath = path.join(memoryPath, 'mem0.faiss');
+        if (fs.existsSync(faissPath)) {
+          this.emit('event', { type: 'output', content: `✓ Existing memory found: ${memoryPath}`, timestamp: Date.now() });
+        } else {
+          this.emit('event', { type: 'output', content: `○ No existing memory found for ${params.target}`, timestamp: Date.now() });
+        }
+      }, 900);
       
       setTimeout(() => {
         this.emit('event', {
@@ -467,11 +764,16 @@ export class PythonExecutionService extends EventEmitter {
         this.processOutputStream(output);
       });
       
-      // Handle stderr
+      // Handle stderr (buffer to aid diagnostics)
       this.activeProcess.stderr?.on('data', (data: Buffer) => {
         const output = data.toString();
         // Python may output regular messages to stderr
         this.processOutputStream(output);
+        // Keep a bounded buffer (~8KB) of stderr for error reporting
+        this.stderrBuffer += output;
+        if (this.stderrBuffer.length > 8192) {
+          this.stderrBuffer = this.stderrBuffer.slice(this.stderrBuffer.length - 8192);
+        }
       });
       
       // Handle process exit
@@ -485,14 +787,22 @@ export class PythonExecutionService extends EventEmitter {
           this.emit('complete');
           resolve(); // Process completed successfully
         } else {
-          // Provide more detailed error information
-          const errorMsg = `Python process exited with code ${code}. Check that all dependencies are installed and the cyberautoagent module can be imported.`;
+          // Provide more detailed error information with stderr tail
+          const tail = this.stderrBuffer
+            .split(/\r?\n/)
+            .filter(Boolean)
+            .slice(-12)
+            .join('\n');
+          const context = `cwd=${this.projectRoot} pythonPath=${this.pythonPath}`;
+          const extra = tail ? `\n--- stderr tail ---\n${tail}\n-------------------` : '';
+          const errorMsg = `Python process exited with code ${code}. Check that all dependencies are installed and the cyberautoagent module can be imported.\n${context}${extra}`;
           const error = new Error(errorMsg);
           this.emit('error', error);
           reject(error); // Process failed
         }
-        
+
         this.activeProcess = undefined;
+        this.stderrBuffer = '';
       });
       
       // Handle process error
@@ -519,53 +829,91 @@ export class PythonExecutionService extends EventEmitter {
   private processOutputStream(data: string): void {
     // Add to buffer
     this.streamEventBuffer += data;
-    
+
     // Look for structured event markers (UNIFIED with Docker service)
     const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
     let match;
-    
+    let anyMatch = false;
+    let cursor = 0;
+
     while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
+      anyMatch = true;
+
+      // Emit any raw text preceding this structured event
+      const preText = this.streamEventBuffer.slice(cursor, match.index);
+      if (preText && this.inToolExecution) {
+        // Buffer raw output; flush on tool end so it appears once per tool
+        this.toolOutputBuffer += preText;
+      }
+
       try {
         const eventData = JSON.parse(match[1]);
-        // Pass through the event with all properties
-        const event: any = {
-          type: eventData.type as EventType,
-          content: eventData.content,
-          data: eventData.data || {},
-          metadata: eventData.metadata || {},
-          timestamp: eventData.timestamp || Date.now(),
-          id: eventData.id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          sessionId: eventData.sessionId || this.sessionId,
-          // Include all original properties for compatibility
-          ...eventData
-        };
-        
-        // Handle special event types that Docker service also handles
-        if (event.type === 'tool_discovery_start') {
+
+        // Track tool execution state
+        if (eventData.type === 'tool_start' || eventData.type === 'tool_invocation_start') {
+          this.inToolExecution = true;
+          this.toolOutputBuffer = '';
+        } else if (
+          eventData.type === 'tool_invocation_end' ||
+          eventData.type === 'tool_result' ||
+          eventData.type === 'step_header'
+        ) {
+          // Flush once per tool when it ends
+          if (this.toolOutputBuffer.trim().length > 0) {
+            this.emit('event', { 
+              type: 'output', 
+              content: this.toolOutputBuffer, 
+              timestamp: Date.now(),
+              metadata: { fromToolBuffer: true }
+            });
+          }
+          this.toolOutputBuffer = '';
+          this.inToolExecution = false;
+        }
+
+        // If a structured 'output' arrives during tool execution, buffer it instead of emitting now
+        if (eventData.type === 'output' && this.inToolExecution) {
+          if (typeof eventData.content === 'string' && eventData.content.length > 0) {
+            this.toolOutputBuffer += eventData.content;
+            if (!this.toolOutputBuffer.endsWith('\n')) this.toolOutputBuffer += '\n';
+          }
+          // Advance cursor and continue without emitting this event
+          cursor = match.index + match[0].length;
+          continue;
+        }
+
+        // Emit system status event exactly like Docker mode
+        if (eventData.type === 'tools_loaded') {
+          this.emit('event', {
+            type: 'output',
+            content: eventData.content,
+            timestamp: Date.now()
+          });
+        } else if (eventData.type === 'tool_discovery_start') {
           this.emit('event', {
             type: 'output',
             content: '◆ Loading cybersecurity assessment tools:',
             timestamp: Date.now()
           });
-        } else if (event.type === 'tool_available') {
+        } else if (eventData.type === 'tool_available') {
           this.emit('event', {
             type: 'output',
             content: `  ✓ ${eventData.tool_name} (${eventData.description})`,
             timestamp: Date.now()
           });
-        } else if (event.type === 'tool_unavailable') {
+        } else if (eventData.type === 'tool_unavailable') {
           this.emit('event', {
             type: 'output',
-            content: `  ○ ${eventData.tool_name} (${eventData.description} - not available)`,
+            content: `  ○ ${eventData.tool_name} (${eventData.description}) - unavailable`,
             timestamp: Date.now()
           });
-        } else if (event.type === 'environment_ready') {
+        } else if (eventData.type === 'environment_ready') {
           this.emit('event', {
             type: 'output',
             content: `◆ Environment ready - ${eventData.tool_count} cybersecurity tools loaded`,
             timestamp: Date.now()
           });
-          
+
           setTimeout(() => {
             this.emit('event', {
               type: 'output',
@@ -573,136 +921,59 @@ export class PythonExecutionService extends EventEmitter {
               timestamp: Date.now()
             });
           }, 500);
-          
+
           setTimeout(() => {
             this.emit('event', {
               type: 'output',
               content: '◆ Security assessment environment ready - Beginning evaluation',
               timestamp: Date.now()
             });
-            // Add spacing and start thinking animation
-            setTimeout(() => {
-              this.emit('event', {
-                type: 'output',
-                content: '',
-                timestamp: Date.now()
-              });
-              this.emit('event', {
-                type: 'output',
-                content: '',
-                timestamp: Date.now()
-              });
-              
-              // Note: Removed delayed_thinking_start to avoid duplicate animations during startup
-              // The startup thinking animation is already active and more appropriate
-            }, 100);
           }, 1000);
-        } else {
-          // Emit all other events as-is
-          this.emit('event', event);
         }
+        // Forward standard events (step headers, tool calls, etc.)
+        else {
+          this.emit('event', eventData);
+        }
+
+        // Advance cursor to end of this match
+        cursor = match.index + match[0].length;
+
       } catch (error) {
-        // Silently skip parsing errors - don't pollute output
+        this.logger.warn('Failed to parse event', {
+          data: match[1].substring(0, 100) + '...',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        // Move past this match to avoid infinite loop
+        cursor = match.index + match[0].length;
       }
-    }
-    
-    // Clean processed events from buffer
-    this.streamEventBuffer = this.streamEventBuffer.replace(eventRegex, '');
-    
-    // Keep only last 10KB to prevent memory issues (same as Docker service)
-    if (this.streamEventBuffer.length > 10240) {
-      this.streamEventBuffer = this.streamEventBuffer.slice(-5120);
-    }
-    
-    // DO NOT process remaining lines - let structured events handle everything
-    // This ensures consistency across all execution modes
-  }
-  
-  /**
-   * Stop the running assessment
-   */
-  async stop(): Promise<void> {
-    if (this.activeProcess) {
-      this.logger.info('Stopping Python process');
-      
-      // Kill the process
-      if (process.platform === 'win32') {
-        exec(`taskkill /pid ${this.activeProcess.pid} /T /F`);
-      } else {
-        this.activeProcess.kill('SIGTERM');
-      }
-      
-      // Give it time to clean up with timeout cleanup
-      await new Promise<void>(resolve => {
-        const timeout = setTimeout(resolve, 1000);
-        // Ensure timeout is cleaned up
-        timeout.unref();
-      });
-      
-      // Force kill if still running
-      if (this.activeProcess) {
-        this.activeProcess.kill('SIGKILL');
-      }
-    }
-    
-    this.isExecutionActive = false;
-    this.abortController?.abort();
-  }
-  
-  /**
-   * Check if execution is currently active
-   */
-  isActive(): boolean {
-    return this.isExecutionActive;
-  }
-  
-  /**
-   * Send user input to the Python process (for handoff_to_user tool)
-   */
-  async sendUserInput(input: string): Promise<void> {
-    if (!this.activeProcess || !this.isExecutionActive) {
-      throw new Error('No active Python process to send input to');
     }
 
-    try {
-      // Send input to Python process stdin with newline
-      if (this.activeProcess.stdin) {
-        this.activeProcess.stdin.write(input + '\n');
-      } else {
-        throw new Error('Python process stdin is not available');
+    if (anyMatch) {
+      // Keep only the unprocessed tail in the buffer
+      this.streamEventBuffer = this.streamEventBuffer.slice(cursor);
+    } else {
+      // No structured events found in this chunk; emit raw output immediately
+      if (data) {
+        if (this.inToolExecution) {
+          this.toolOutputBuffer += data;
+        }
+        // Clear buffer regardless to avoid growth
+        this.streamEventBuffer = '';
       }
-    } catch (error) {
-      throw new Error(`Error sending input to Python process: ${error}`);
     }
-  }
-
-  /**
-   * Cleanup resources and remove all event listeners
-   */
-  cleanup(): void {
-    // Stop any active process
-    if (this.activeProcess) {
-      this.activeProcess.kill('SIGKILL');
-      this.activeProcess = undefined;
-    }
-    
-    // Abort any pending operations
-    this.abortController?.abort();
-    
-    // Remove all event listeners to prevent memory leaks
-    this.removeAllListeners();
-    
-    // Reset state
-    this.isExecutionActive = false;
-    this.streamEventBuffer = '';
-    
-    this.logger.info('PythonExecutionService cleaned up');
   }
   
   /**
-   * Dispose of the service (alias for cleanup)
+   * Get metrics for this execution session
    */
-  dispose(): void {
-    this.cleanup();
+  getMetrics(): { 
+    sessionId: string;
+    startTime?: number;
+    isActive: boolean;
+  } {
+    return {
+      sessionId: this.sessionId,
+      isActive: this.isExecutionActive
+    };
   }
 }

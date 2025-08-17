@@ -6,10 +6,12 @@ This module contains general utility functions for file operations,
 output formatting, and message analysis.
 """
 
+import json
 import os
 import re
 import shutil
-from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass, asdict, field
+from typing import List, Dict, Optional, Any, Union
 from datetime import datetime
 
 
@@ -247,12 +249,6 @@ def print_status(message, status="INFO"):
         )
     )
 
-
-# Event System for Structured Output
-import json
-from dataclasses import dataclass, asdict, field
-from typing import Optional, Dict, Any, List, Union
-from datetime import datetime
 
 
 @dataclass

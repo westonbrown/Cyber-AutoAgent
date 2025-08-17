@@ -29,7 +29,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
   debugMode = false,
   operationMetrics,
   connectionStatus = 'connected',
-  modelProvider = 'bedrock',
+  modelProvider,
   deploymentMode,
   isOperationRunning,
   isInputPaused,
@@ -82,7 +82,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
       {/* Left section: Connection Status */}
       <Box flexGrow={0} flexShrink={0}>
         <Text color={connIcon.color}>{connIcon.icon}</Text>
-        <Text color={theme.muted}> {deploymentMode || modelProvider}</Text>
+        <Text color={theme.muted}> {deploymentMode || ''}</Text>
       </Box>
 
       {/* Spacer */}

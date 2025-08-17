@@ -6,7 +6,7 @@ converting tool inputs and outputs into structured events for the React UI.
 """
 
 import json
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, Callable
 
 
 class ToolEventEmitter:
@@ -55,7 +55,7 @@ class ToolEventEmitter:
             self._emit_generic_tool_params(tool_name, tool_input)
 
     def _emit_shell_commands(self, tool_input: Any) -> None:
-        """Extract and emit shell commands for display."""
+        """Emit shell commands for display."""
         commands = []
 
         if isinstance(tool_input, str):
@@ -93,7 +93,6 @@ class ToolEventEmitter:
     def _emit_memory_operation(self, tool_input: Any) -> None:
         """Emit memory operation details."""
         # Skip redundant metadata - tool formatter already shows this
-        pass
 
     def _emit_http_request(self, tool_input: Any) -> None:
         """Emit HTTP request details."""
@@ -107,7 +106,6 @@ class ToolEventEmitter:
     def _emit_file_write(self, tool_input: Any) -> None:
         """Emit file write operation details."""
         # Skip redundant metadata - tool formatter already shows this
-        pass
 
     def _emit_editor_operation(self, tool_input: Any) -> None:
         """Emit editor operation details."""
@@ -119,7 +117,7 @@ class ToolEventEmitter:
             metadata = {"command": command, "path": path}
 
             # Add command-specific details
-            if command == "str_replace" or command == "str_replace_based_edit_tool":
+            if command in ("str_replace", "str_replace_based_edit_tool"):
                 old_str = tool_input.get("old_str", "")
                 new_str = tool_input.get("new_str", "")
                 if old_str:
@@ -175,32 +173,63 @@ class ToolEventEmitter:
             if not agents and not task:
                 return
 
-            agent_count = len(agents) if isinstance(agents, list) else 0
-            # Use full task text without truncation for clarity
-            task_preview = task
 
-            # Extract agent names for display
-            agent_names = []
-            if isinstance(agents, list):
-                for agent in agents:
-                    if isinstance(agent, dict):
-                        name = agent.get("name") or agent.get("role") or "agent"
-                        agent_names.append(name)
-                    elif isinstance(agent, str):
-                        agent_names.append(agent)
+            # Get agent specifications
+            agent_details = []
+            for i, agent in enumerate(agents):
+                if isinstance(agent, dict):
+                    # Get name or generate default
+                    name = agent.get("name", f"agent_{i + 1}")
+                    
+                    # Get full system prompt without parsing
+                    system_prompt = agent.get("system_prompt", "")
+                    
+                    # Get tools list
+                    tools = agent.get("tools", [])
+                    if not isinstance(tools, list):
+                        tools = []
+                    
+                    # Get model info with defaults
+                    model_provider = agent.get("model_provider", "default")
+                    model_settings = agent.get("model_settings", {})
+                    if isinstance(model_settings, dict):
+                        model_id = model_settings.get("model_id", "default")
                     else:
-                        agent_names.append("agent")
+                        model_id = "default"
+                    
+                    detail = {
+                        "name": str(name),
+                        "system_prompt": str(system_prompt),
+                        "tools": [str(t) for t in tools],
+                        "model_provider": str(model_provider),
+                        "model_id": str(model_id)
+                    }
+                    agent_details.append(detail)
+                elif isinstance(agent, str):
+                    # Handle simple string agent definitions
+                    agent_details.append({
+                        "name": agent,
+                        "system_prompt": "",
+                        "tools": [],
+                        "model_provider": "default",
+                        "model_id": "default"
+                    })
 
             # Only emit swarm start event if we have valid data
-            if agent_count > 0 or task:
-                # Emit swarm start event
+            if len(agent_details) > 0 or task:
+                # Extract agent names for backward compatibility
+                agent_names = [agent.get("name", f"agent_{i}") for i, agent in enumerate(agent_details)]
+                
+                # Emit rich swarm_start event with both names and full details
                 self.emit_ui_event(
                     {
                         "type": "swarm_start",
+                        "task": str(task),
+                        "agent_count": len(agent_details),
                         "agent_names": agent_names,
-                        "agent_count": agent_count,
-                        "task": task_preview,
+                        "agent_details": agent_details,
                         "max_handoffs": tool_input.get("max_handoffs", 20),
+                        "timeout": tool_input.get("execution_timeout", 900),
                     }
                 )
 

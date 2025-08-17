@@ -6,7 +6,7 @@
  * - Docker single-container mode  
  * - Docker full-stack mode
  * 
- * Based on production patterns from gemini-cli, this hook:
+ * This hook:
  * - Uses readline interface directly (bypassing React Ink limitations)
  * - Handles raw stdin data properly
  * - Works with both TTY and non-TTY modes

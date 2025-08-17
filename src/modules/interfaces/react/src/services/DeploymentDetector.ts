@@ -35,7 +35,7 @@ export interface DetectionResult {
 export class DeploymentDetector {
   private static instance: DeploymentDetector;
   private lastDetection?: { result: DetectionResult; ts: number };
-  private readonly defaultTtlMs = 3000;
+  private readonly defaultTtlMs = 1500;
 
   static getInstance(): DeploymentDetector {
     if (!this.instance) {
@@ -50,11 +50,13 @@ export class DeploymentDetector {
 
   /**
    * Detect available deployments
+   * @param config App configuration
+   * @param opts   Optional options: { noCache?: boolean }
    */
-  async detectDeployments(config: Config): Promise<DetectionResult> {
+  async detectDeployments(config: Config, opts?: { noCache?: boolean }): Promise<DetectionResult> {
     // Serve from short-lived cache to prevent redundant docker/python calls on re-renders
     const now = Date.now();
-    if (this.lastDetection && (now - this.lastDetection.ts) < this.defaultTtlMs) {
+    if (!opts?.noCache && this.lastDetection && (now - this.lastDetection.ts) < this.defaultTtlMs) {
       return this.lastDetection.result;
     }
 
@@ -104,14 +106,15 @@ export class DeploymentDetector {
     if (dockerRunning) {
       const containers = await this.getRunningContainers();
       
-      // Single container
-      if (containers.includes('cyber-autoagent')) {
+      // Single container (tolerate docker-compose project prefixes)
+      const hasAgent = containers.some(name => name.includes('cyber-autoagent'));
+      if (hasAgent) {
         deployments.push({
           mode: 'single-container',
           isHealthy: true,
           details: { 
             dockerRunning: true,
-            containersRunning: ['cyber-autoagent']
+            containersRunning: containers.filter(n => n.includes('cyber-autoagent'))
           }
         });
       } else {
@@ -123,16 +126,16 @@ export class DeploymentDetector {
       }
       
       // Full stack - requires at least langfuse to be considered full-stack
-      // Use actual container names from docker-compose.yml
-      const fullStackContainers = ['cyber-langfuse', 'cyber-langfuse-postgres', 'cyber-langfuse-redis'];
-      const hasFullStack = fullStackContainers.some(c => containers.includes(c));
+      // Tolerate docker-compose prefixes (e.g., <project>_cyber-langfuse_1)
+      const fullStackIndicators = ['cyber-langfuse', 'langfuse', 'cyber-langfuse-postgres', 'cyber-langfuse-redis'];
+      const hasFullStack = containers.some(name => fullStackIndicators.some(ind => name.includes(ind)));
       
       deployments.push({
         mode: 'full-stack',
         isHealthy: hasFullStack,
         details: { 
           dockerRunning: true,
-          containersRunning: containers.filter(c => [...fullStackContainers, 'cyber-autoagent'].includes(c))
+          containersRunning: containers.filter(name => fullStackIndicators.some(ind => name.includes(ind)) || name.includes('cyber-autoagent'))
         }
       });
     } else {
@@ -209,7 +212,7 @@ export class DeploymentDetector {
    */
   private async checkDocker(): Promise<boolean> {
     try {
-      await execAsync('docker info', { timeout: 3000 });
+      await execAsync('docker info', { timeout: 8000 });
       return true;
     } catch {
       return false;
@@ -221,7 +224,7 @@ export class DeploymentDetector {
    */
   private async getRunningContainers(): Promise<string[]> {
     try {
-      const { stdout } = await execAsync('docker ps --format "{{.Names}}"', { timeout: 3000 });
+      const { stdout } = await execAsync('docker ps --format "{{.Names}}"', { timeout: 8000 });
       return stdout.trim().split('\n').filter(Boolean);
     } catch {
       return [];

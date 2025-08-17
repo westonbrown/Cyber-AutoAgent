@@ -39,7 +39,7 @@ from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
 
 # Local imports
-from modules.agents.cyber_autoagent import create_agent
+from modules.agents.cyber_autoagent import create_agent, AgentConfig
 from modules.prompts.factory import get_system_prompt
 from modules.config.manager import get_config_manager
 from modules.handlers.utils import (
@@ -473,7 +473,7 @@ def main():
     try:
         # Create agent
         logger.warning("Creating agent with iterations=%d", args.iterations)
-        agent, callback_handler = create_agent(
+        config = AgentConfig(
             target=args.target,
             objective=args.objective,
             max_steps=args.iterations,
@@ -485,6 +485,11 @@ def main():
             memory_path=args.memory_path,
             memory_mode=args.memory_mode,
             module=args.module,
+        )
+        agent, callback_handler = create_agent(
+            target=args.target,
+            objective=args.objective,
+            config=config,
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 

@@ -5,8 +5,8 @@
  * and progress screens. Replaces the complex InitializationFlow with a simplified architecture.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { Box, useStdout } from 'ink';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { Box, Text, useStdout } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 import { useSetupWizard } from '../hooks/useSetupWizard.js';
 import { useConfig } from '../contexts/ConfigContext.js';
@@ -29,6 +29,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
   const { config, updateConfig, saveConfig } = useConfig();
   const { stdout } = useStdout();
   const [stepRenderKey, setStepRenderKey] = useState(0);
+  const [isExiting, setIsExiting] = useState(false);
+  const prevStepRef = useRef(state.currentStep);
 
   // Handle setup completion
   const handleSetupComplete = useCallback(async () => {
@@ -68,56 +70,62 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
 
   // Handle deployment mode selection and start setup
   const handleModeSelection = useCallback(async (mode: DeploymentMode) => {
-    // Check if this deployment is already active
-    const { DeploymentDetector } = await import('../services/DeploymentDetector.js');
-    const detector = DeploymentDetector.getInstance();
-    const detection = await detector.detectDeployments(config);
-    const isAlreadyActive = detection.availableDeployments.some(
-      d => d.mode === mode && d.isHealthy
-    );
-    
-    if (isAlreadyActive) {
-      // Skip setup for already active deployments
-      // Do NOT dispatch wizard state here to avoid intermediate renders during unmount
-      
-      // Update configuration to use this deployment
-      updateConfig({ 
-        deploymentMode: mode,
-        hasSeenWelcome: true,
-        isConfigured: true 
-      });
-      await saveConfig();
-      
-      // Clear cache after config update
-      detector.clearCache();
-      
-      // Complete immediately without progress screen
-      const modeDisplayName = 
-        mode === 'local-cli' ? 'Local CLI' :
-        mode === 'single-container' ? 'Agent Container' :
-        'Enterprise Stack';
-      
-      // Clear the setup flag
-      delete process.env.CYBER_SHOW_SETUP;
-      
-      // Use a longer delay to ensure smooth transition
-      // This gives React time to properly unmount the wizard before transitioning
-      // Increased from 50ms to 150ms to prevent black screen race condition
-      setTimeout(() => {
-        onComplete(`Switched to ${modeDisplayName} deployment`);
-      }, 150);
-      return;
-    } else {
-      // Proceed with normal setup for non-active deployments
-      // Clear terminal before switching to progress screen to avoid remnants
-      try { stdout.write(ansiEscapes.clearTerminal); } catch {}
-      setStepRenderKey(prev => prev + 1);
-      actions.selectMode(mode);
-      actions.nextStep(); // Move to progress screen
-      
-      // Pass the mode directly to avoid state timing issues
-      await actions.startSetup(mode);
-    }
+    // Immediately show progress screen so UI updates without delay
+    actions.selectMode(mode);
+    actions.nextStep();
+    setStepRenderKey(prev => prev + 1);
+
+    // Avoid clearing here; modal manager owns terminal clears during transitions
+
+    // Strategy: give detection a short window to confirm an already-healthy deployment.
+    // If confirmed quickly, fast-switch config and exit. Otherwise, start setup.
+    setTimeout(async () => {
+      const DETECTION_BUDGET_MS = 350; // small budget to avoid visible delay
+      let didFastSwitch = false;
+
+      try {
+        const { DeploymentDetector } = await import('../services/DeploymentDetector.js');
+        const detector = DeploymentDetector.getInstance();
+        const detectionPromise = detector.detectDeployments(config, { noCache: true });
+        const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), DETECTION_BUDGET_MS));
+
+        const result = await Promise.race([detectionPromise, timeoutPromise]);
+
+        if (result && (result as any).availableDeployments) {
+          const detection = result as Awaited<typeof detectionPromise>;
+          const isAlreadyActive = detection.availableDeployments.some(d => d.mode === mode && d.isHealthy);
+          if (isAlreadyActive) {
+            // Fast path: switch config and exit the wizard
+            const modeDisplayName = 
+              mode === 'local-cli' ? 'Local CLI' :
+              mode === 'single-container' ? 'Agent Container' :
+              'Enterprise Stack';
+
+            updateConfig({ 
+              deploymentMode: mode,
+              hasSeenWelcome: true,
+              isConfigured: true 
+            });
+            await saveConfig();
+            detector.clearCache();
+
+            delete process.env.CYBER_SHOW_SETUP;
+            setIsExiting(true);
+            setTimeout(() => onComplete(`Switched to ${modeDisplayName} deployment`), 0);
+            didFastSwitch = true;
+            // eslint-disable-next-line no-console
+            console.log('[OK] setup: fast-switched to healthy deployment');
+          }
+        }
+      } catch (e) {
+        // Detection failed; proceed to setup
+      }
+
+      if (!didFastSwitch) {
+        // Start setup after budget window; ProgressScreen is already mounted
+        void actions.startSetup(mode);
+      }
+    }, 0);
   }, [actions, config, updateConfig, saveConfig, onComplete]);
 
   // Handle setup retry
@@ -183,18 +191,41 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
     }
   };
 
-  // Clear terminal and force remount when the wizard step changes to prevent previous screen bleed-through
+  // Clear terminal only on welcome -> deployment, and defer clear to after paint to avoid black screen
   useEffect(() => {
-    // Clear terminal immediately when step changes
-    try { stdout.write(ansiEscapes.clearTerminal); } catch {}
-    setStepRenderKey(prev => prev + 1);
+    const prev = prevStepRef.current;
+    const curr = state.currentStep;
+
+    // Decide whether to clear based on transition
+    const shouldClear = prev === 'welcome' && curr === 'deployment';
+
+    if (shouldClear) {
+      // Defer clear to next tick so the next screen mounts before the clear
+      setTimeout(() => {
+        try { stdout.write(ansiEscapes.clearTerminal); } catch {}
+      }, 0);
+    }
+
+    // Always bump key to force a fresh render of the new step
+    setStepRenderKey(prevKey => prevKey + 1);
+
+    // Update prev step
+    prevStepRef.current = curr;
   }, [state.currentStep, stdout]);
 
   return (
     <Box flexDirection="column" width="100%">
       {/* Current setup screen */}
       <Box key={`setup-content-${stepRenderKey}`}>
-        {renderCurrentScreen()}
+        {isExiting ? (
+          <Box width="100%" paddingY={1} justifyContent="center">
+            <Text>
+              [WAIT] Switching deployment…
+            </Text>
+          </Box>
+        ) : (
+          renderCurrentScreen()
+        )}
       </Box>
     </Box>
   );

@@ -45,10 +45,10 @@ export const DISPLAY_LIMITS = {
   TOOL_INPUT_MAX_KEYS: 4,
   TOOL_INPUT_PREVIEW_KEYS: 3,
   // Report display limits
-  REPORT_MAX_LINES: 500,  // Don't collapse reports under 500 lines
-  REPORT_PREVIEW_LINES: 100,  // Show first 100 lines when collapsed
-  REPORT_TAIL_LINES: 20,  // Show last 20 lines when collapsed
-  OPERATION_SUMMARY_LINES: 100,  // Show all operation summary info
+  REPORT_MAX_LINES: Infinity,  // Never collapse final reports
+  REPORT_PREVIEW_LINES: 100,  // Show first 100 lines when collapsed (unused for final reports)
+  REPORT_TAIL_LINES: 20,  // Show last 20 lines when collapsed (unused for final reports)
+  OPERATION_SUMMARY_LINES: 200,  // Show all operation summary info including paths
   DEFAULT_COLLAPSE_LINES: 10,  // Normal output collapse threshold
   // Stream display limits
   REASONING_MAX_LINES: 30,  // Maximum lines to show for reasoning

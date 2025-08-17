@@ -276,7 +276,7 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 ### Ollama Provider (Local)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
-- **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
+- **Default Models**: `qwen3-coder:30b-a3b-q4_K_M` (LLM), `mxbai-embed-large` (embeddings)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### LiteLLM Provider (Universal)
@@ -442,7 +442,7 @@ curl -fsSL https://ollama.ai/install.sh | sh
 
 # Start service and pull models
 ollama serve
-ollama pull llama3.2:3b
+ollama pull qwen3-coder:30b-a3b-q4_K_M
 ollama pull mxbai-embed-large
 ```
 
@@ -526,7 +526,7 @@ The unified structure organizes all artifacts under operation-specific directori
 **Optional Arguments**: 
 - `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
 - `--iterations`: Maximum tool executions before stopping, default: 100
-- `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
+- `--model`: Model ID to use (default: remote=claude-sonnet, local=qwen3-coder:30b-a3b-q4_K_M)
 - `--region`: AWS region for Bedrock, default: us-east-1
 - `--verbose`: Enable verbose output with detailed debug logging
 - `--confirmations`: Enable tool confirmation prompts (default: disabled)
@@ -798,7 +798,7 @@ curl http://localhost:11434/api/version
 **Required Models Missing**
 ```bash
 # Pull required models
-ollama pull llama3.2:3b
+ollama pull qwen3-coder:30b-a3b-q4_K_M
 ollama pull mxbai-embed-large
 
 # List available models
@@ -810,7 +810,7 @@ ollama list
 # Check Ollama is accessible
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"model": "llama3.2:3b", "prompt": "test", "stream": false}'
+  -d '{"model": "qwen3-coder:30b-a3b-q4_K_M", "prompt": "test", "stream": false}'
 ```
 
 **Docker Networking (Local Mode)**

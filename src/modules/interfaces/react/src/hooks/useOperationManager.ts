@@ -219,13 +219,8 @@ export function useOperationManager({
         // Add a small delay to ensure clear is processed
         await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Now add termination messages with proper spacing
-        addOperationHistoryEntry('divider', '━'.repeat(80));
-        addOperationHistoryEntry('info', '');  // Blank line for spacing
-        addOperationHistoryEntry('error', '🛑 ESC Kill Switch activated');
+        addOperationHistoryEntry('error', 'ESC Kill Switch activated');
         addOperationHistoryEntry('info', 'Operation terminated. Start a new assessment or review partial results.');
-        addOperationHistoryEntry('info', '');  // Blank line for spacing
-        addOperationHistoryEntry('divider', '━'.repeat(80));
         
         // Ensure messages are visible immediately (bypass debounce)
         try { (flushHistoryEntries as any)?.(); } catch {}
@@ -388,10 +383,7 @@ export function useOperationManager({
       };
       
       const handleExecutionComplete = (result: any) => {
-        // Add a clean divider before showing completion
-        addOperationHistoryEntry('divider', '');
-        addOperationHistoryEntry('success', `✅ Assessment completed successfully (${serviceSelection.mode})`);
-        addOperationHistoryEntry('divider', '');
+        addOperationHistoryEntry('success', `Assessment completed successfully (${serviceSelection.mode})`);
         
         operationManager.updateOperation(operation.id, {
           status: 'completed',
@@ -415,6 +407,11 @@ export function useOperationManager({
         
         // Reset the assessment flow for next operation
         assessmentFlowManager.resetCompleteWorkflow();
+        
+        // Add a small delay before clearing completion flag to ensure UI renders properly
+        setTimeout(() => {
+          actions.clearCompletedOperation();
+        }, 2000);
         
         cleanupExecution();
       };
@@ -485,8 +482,7 @@ export function useOperationManager({
         }
       }, 5000) as unknown as NodeJS.Timeout;
       
-      // Execute assessment through the selected service
-      addOperationHistoryEntry('info', `Launching ${serviceSelection.mode} assessment execution...`);
+      addOperationHistoryEntry('info', `Launching ${serviceSelection.mode} assessment execution`);
       
       try {
         const executionHandle = await executionService.execute(assessmentParams, config);

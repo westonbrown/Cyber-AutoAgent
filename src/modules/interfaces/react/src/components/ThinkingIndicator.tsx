@@ -13,6 +13,9 @@ interface ThinkingIndicatorProps {
   context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup';
   startTime?: number;
   message?: string;
+  toolName?: string;
+  toolCategory?: string;
+  enabled?: boolean;
 }
 
 // Context-aware messages
@@ -23,11 +26,11 @@ const getContextMessage = (context?: string): string => {
     case 'reasoning':
       return 'Analyzing';
     case 'tool_preparation':
-      return 'Preparing tools';
+      return 'Preparing';
     case 'tool_execution':
       return 'Executing';
     case 'waiting':
-      return 'Waiting for response';
+      return 'Waiting';
     default:
       return 'Thinking';
   }
@@ -36,14 +39,15 @@ const getContextMessage = (context?: string): string => {
 export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   context,
   startTime,
-  message
+  message,
+  enabled = true
 }) => {
   const theme = themeManager.getCurrentTheme();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Elapsed time tracking (single interval)
   useEffect(() => {
-    if (!startTime) return;
+    if (!startTime || !enabled) return;
 
     const updateElapsed = () => {
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
@@ -53,7 +57,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
     const interval = setInterval(updateElapsed, 1000);
 
     return () => clearInterval(interval);
-  }, [startTime]);
+  }, [startTime, enabled]);
 
   // Format elapsed time
   const formatElapsed = (seconds: number): string => {
@@ -69,9 +73,13 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
 
   return (
     <Box>
-      <Text color={theme.primary}>
-        <Spinner type="dots" />
-      </Text>
+      {enabled ? (
+        <Text color={theme.primary}>
+          <Spinner type="dots" />
+        </Text>
+      ) : (
+        <Text color={theme.muted}>[BUSY]</Text>
+      )}
       <Text color={theme.muted}> </Text>
       <Text color={theme.foreground}>
         {displayMessage}
@@ -79,7 +87,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
       {startTime && (
         <>
           <Text color={theme.muted}> </Text>
-          <Text color={theme.muted}>[{formatElapsed(elapsedSeconds)}]</Text>
+          <Text color={theme.muted}>[{formatElapsed(enabled ? elapsedSeconds : Math.floor(((startTime && Date.now()) ? (Date.now() - startTime) : 0) / 1000))}]</Text>
         </>
       )}
     </Box>

@@ -5,9 +5,7 @@ from strands import tool
 import subprocess
 import json
 import re
-import time
-import base64
-from urllib.parse import urlparse, parse_qs, urljoin
+from urllib.parse import urlparse
 from typing import Dict, List, Any
 
 
@@ -869,7 +867,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                             "technique": "Forced Browsing",
                             "endpoint": endpoint["path"],
                             "successful": True,
-                            "description": f"Administrative endpoint accessible without authentication",
+                            "description": "Administrative endpoint accessible without authentication",
                             "status_code": status_code,
                         }
                     )
@@ -879,7 +877,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                             "technique": "Forced Browsing",
                             "endpoint": endpoint["path"],
                             "successful": False,
-                            "description": f"Endpoint properly protected",
+                            "description": "Endpoint properly protected",
                             "status_code": status_code,
                         }
                     )
@@ -966,7 +964,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                                 "technique": "Header Manipulation",
                                 "header": f"{header_name}: {header_value}",
                                 "successful": True,
-                                "description": f"Endpoint accessible with header bypass",
+                                "description": "Endpoint accessible with header bypass",
                                 "status_code": status_code,
                             }
                         )
@@ -983,7 +981,7 @@ def _generate_auth_recommendations(results: Dict) -> List[str]:
 
     # Analyze results for specific recommendations
     vulnerabilities = results.get("vulnerabilities", [])
-    bypass_opportunities = results.get("flow_analysis", {}).get("bypass_opportunities", [])
+    # bypass_opportunities = results.get("flow_analysis", {}).get("bypass_opportunities", [])
     session_info = results.get("flow_analysis", {}).get("session_management", {})
 
     # Critical vulnerabilities

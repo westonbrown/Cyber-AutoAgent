@@ -7,15 +7,12 @@ stdout/stderr writes and converting them to structured events.
 
 import sys
 import io
-import json
 import os
 import threading
-from datetime import datetime
-from typing import TextIO, Optional, Callable, Any
-from dataclasses import dataclass, asdict
+from typing import TextIO
 from contextlib import contextmanager
 
-from modules.handlers.core.utils import emit_event, CyberEvent
+from modules.handlers.core.utils import CyberEvent
 
 
 class OutputInterceptor(io.TextIOBase):
@@ -68,12 +65,20 @@ class OutputInterceptor(io.TextIOBase):
             self._in_event_emission = True
 
             # Detect special output types
-            if "MISSION PARAMETERS" in content:
+            if "Starting Nmap" in content or "Nmap scan report" in content or "Host is up" in content:
+                event_type = "output"
+            elif "DiG" in content and "ANSWER SECTION" in content:
+                event_type = "output"  # DNS query results
+            elif "IANA WHOIS server" in content or "whois.verisign-grs.com" in content:
+                event_type = "output"  # WHOIS results
+            elif "MISSION PARAMETERS" in content:
                 event_type = "initialization"
             elif "─" * 20 in content:
                 event_type = "separator"
             elif any(marker in content for marker in ["✅", "❌", "⚠️", "ℹ️"]):
                 event_type = "status"
+            elif "QUITTING!" in content or "requires root privileges" in content:
+                event_type = "error"
             else:
                 event_type = self.event_type
 

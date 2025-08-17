@@ -1,7 +1,7 @@
 /**
  * DeploymentSelectionScreen Component
  * 
- * Clean deployment mode selection using production patterns from gemini-cli
+ * Clean deployment mode selection screen
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -131,7 +131,7 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
             items={deploymentItems}
             initialIndex={2} // Default to full-stack (recommended)
             onSelect={handleSelect}
-            isFocused={!isDetecting}
+            isFocused={true}
             showNumbers={true}
           />
         </Box>

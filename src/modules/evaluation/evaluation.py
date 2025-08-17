@@ -28,7 +28,7 @@ from ragas.metrics import (
 )
 from ragas.run_config import RunConfig
 from modules.config.manager import get_config_manager
-from .trace_parser import TraceParser, ParsedTrace
+from .trace_parser import TraceParser
 
 logger = logging.getLogger(__name__)
 
@@ -189,24 +189,10 @@ class CyberAgentEvaluator:
         ]
 
         logger.info("Setup complete - %d metrics configured", len(self.all_metrics))
-        logger.debug("Metrics: " + ", ".join([m.name for m in self.all_metrics]))
+        logger.debug("Metrics: %s", ", ".join([m.name for m in self.all_metrics]))
 
         # Log metric capabilities for debugging
-        self._log_metric_capabilities()
-
-    def _log_metric_capabilities(self):
-        """Log the capabilities of each metric for debugging."""
-        metric_info = []
-        for metric in self.all_metrics:
-            capabilities = []
-            if hasattr(metric, "single_turn_ascore"):
-                capabilities.append("SingleTurn")
-            if hasattr(metric, "multi_turn_ascore"):
-                capabilities.append("MultiTurn")
-
-            metric_info.append(f"{metric.name}: {', '.join(capabilities) or 'No capabilities'}")
-
-        logger.debug("Metric capabilities:\n" + "\n".join(metric_info))
+        logger.debug("Initialized %d evaluation metrics", len(self.all_metrics))
 
     async def evaluate_operation_traces(self, operation_id: str) -> Dict[str, Dict[str, float]]:
         """
@@ -374,7 +360,7 @@ class CyberAgentEvaluator:
 
         return scores
 
-    async def evaluate_trace(self, trace_id: str, max_retries: int = 5) -> Dict[str, float]:
+    async def evaluate_trace(self, trace_id: str, _max_retries: int = 5) -> Dict[str, float]:
         """
         Evaluate agent trace with configured metrics.
 

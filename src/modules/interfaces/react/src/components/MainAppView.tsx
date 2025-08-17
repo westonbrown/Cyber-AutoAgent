@@ -82,10 +82,10 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
     const prev = prevShowStreamRef.current;
     if (!prev && showOperationStream) {
       // Rising edge: operation stream just started
-      try { stdout.write(ansiEscapes.clearTerminal); } catch {}
-      // Defer stream mount to next tick so header paints first
+      // Do not clear the terminal here; it resets scrollback and scroll position,
+      // causing the viewport to jump to the top and the footer to disappear briefly.
+      // Instead, only defer the stream mount so the header paints first on this tick.
       setDeferStreamMount(true);
-      // Allow React to render header this tick, then enable stream
       setTimeout(() => setDeferStreamMount(false), 0);
       // A new stream is starting; allow header for this run
       setHasAnyOperationEnded(false);
@@ -122,6 +122,19 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
   useEffect(() => {
     if (appState.activeOperation && appState.activeOperation.status === 'running') {
       setHasAnyOperationEnded(false);
+      
+      // Pause health monitoring to prevent scroll jumps during operations
+      import('../services/HealthMonitor.js').then(({ HealthMonitor }) => {
+        HealthMonitor.getInstance().pauseMonitoring();
+      });
+    } else {
+      // Resume health monitoring when operations end with immediate check
+      import('../services/HealthMonitor.js').then(({ HealthMonitor }) => {
+        const monitor = HealthMonitor.getInstance();
+        monitor.resumeMonitoring();
+        // Trigger immediate check to reduce delay
+        monitor.checkHealth();
+      });
     }
   }, [appState.activeOperation?.id, appState.activeOperation?.status]);
 
@@ -148,31 +161,41 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         />
       )}
 
-      {/* HEADER: Render normally. Duplication is prevented by state logic, Static causes layout issues. */}
+      {/* HEADER: When a stream is running, render inside Static so it always stays above Static output */}
       {!hideHeader && activeModal === ModalType.NONE && !hasAnyOperationEnded && (
-        <Box>
-          <Header 
-            key={`app-header-${staticKey}`}
-            version="0.1.3" 
-            terminalWidth={appState.terminalDisplayWidth}
-            nightly={false}
-          />
-        </Box>
+        showOperationStream ? (
+          <Static items={[`app-header-${staticKey}`]}>
+            {(item) => (
+              <Box key={item}>
+                <Header 
+                  key={`app-header-${staticKey}`}
+                  version="0.1.3" 
+                  terminalWidth={appState.terminalDisplayWidth}
+                  nightly={false}
+                />
+              </Box>
+            )}
+          </Static>
+        ) : (
+          <Box>
+            <Header 
+              key={`app-header-${staticKey}`}
+              version="0.1.3" 
+              terminalWidth={appState.terminalDisplayWidth}
+              nightly={false}
+            />
+          </Box>
+        )
       )}
 
       {/* MAIN CONTENT AREA: A single container for history and stream to enforce render order */}
       <Box flexDirection="column" flexGrow={1}>
-        {/* HISTORY LOGS: Render before the stream */}
-        {!hideHistory && activeModal === ModalType.NONE && (
+        {/* HISTORY LOGS: Render before the stream. Suppress during active stream */}
+        {!hideHistory && activeModal === ModalType.NONE && !showOperationStream && (
           <Box key={staticKey} flexDirection="column">
             {filteredOperationHistory.map((entry) => {
-              // Handle divider entries
               if (entry.type === 'divider') {
-                return (
-                  <Box key={entry.id} marginY={0.5}>
-                    <Text color={currentTheme.muted}>{entry.content || '━'.repeat(80)}</Text>
-                  </Box>
-                );
+                return null;
               }
               
               // Handle other entry types
@@ -203,6 +226,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               collapsed={false}
               onEvent={(e:any) => { handleStreamEvent(e); handleLifecycleEvent(e); }}
               onMetricsUpdate={(metrics) => actions.updateMetrics?.(metrics)}
+              animationsEnabled={isAutoScrollEnabled}
             />
           )
         )}
@@ -231,7 +255,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
             model={appState.activeOperation?.model || ""}
             operationMetrics={appState.operationMetrics}
             connectionStatus={appState.isDockerServiceAvailable ? 'connected' : 'offline'}
-            modelProvider={applicationConfig?.modelProvider || 'bedrock'}
+            modelProvider={applicationConfig?.modelProvider}
             deploymentMode={applicationConfig?.deploymentMode}
             isOperationRunning={appState.activeOperation ? appState.activeOperation.status === 'running' : false}
             isInputPaused={appState.userHandoffActive}

@@ -163,6 +163,26 @@ export class HealthMonitor {
       this.checkInterval = null;
     }
   }
+  
+  // Pause monitoring during operations to prevent scroll jumps
+  pauseMonitoring(): void {
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
+      this.logger.debug('Health monitoring paused during operation');
+    }
+  }
+  
+  // Resume monitoring after operations complete
+  resumeMonitoring(): void {
+    if (!this.checkInterval) {
+      const interval = this.envConfig.docker.healthCheckInterval;
+      this.logger.debug('Resuming health monitoring', { intervalMs: interval });
+      this.checkInterval = setInterval(() => {
+        this.checkHealth();
+      }, interval);
+    }
+  }
 
   // Subscribe to health status updates
   subscribe(callback: (status: HealthStatus) => void): () => void {

@@ -1,5 +1,5 @@
 /**
- * SwarmDisplay - Comprehensive display for multi-agent swarm operations
+ * SwarmDisplay - Display for multi-agent swarm operations
  * Shows detailed information about sub-agents, their tasks, tools, and collaboration
  */
 
@@ -15,6 +15,9 @@ export interface SwarmAgent {
   task?: string;
   status: 'pending' | 'active' | 'completed' | 'failed';
   tools?: string[];
+  model_id?: string;
+  model_provider?: string;
+  temperature?: number;
   toolCalls?: Array<{
     tool: string;
     input?: any;
@@ -25,6 +28,9 @@ export interface SwarmAgent {
   result?: string;
   startTime?: number;
   endTime?: number;
+  currentStep?: number;
+  maxSteps?: number;
+  tokensUsed?: number;
 }
 
 export interface SwarmState {
@@ -37,6 +43,12 @@ export interface SwarmState {
   endTime?: number;
   totalTokens?: number;
   result?: string;
+  currentAgent?: string;
+  totalHandoffs?: number;
+  completedAgents?: string[];
+  failedAgents?: string[];
+  maxHandoffs?: number;
+  maxIterations?: number;
 }
 
 interface SwarmDisplayProps {
@@ -73,9 +85,9 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
         return '[FAIL]';
       case 'pending':
       case 'initializing':
-        return '[WAIT]';
+        return '';
       default:
-        return '[?]';
+        return '';
     }
   };
 
@@ -104,9 +116,9 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
           <Text color={theme.primary} bold>[SWARM] </Text>
           <Text color={theme.info}>{swarmState.agents.length} agents</Text>
           <Text color={theme.muted}> | </Text>
-          <Text color={theme.warning}>{activeAgents} active</Text>
+          <Text color={theme.warning}>{String(activeAgents)} active</Text>
           <Text color={theme.muted}> | </Text>
-          <Text color={theme.success}>{completedAgents} completed</Text>
+          <Text color={theme.success}>{String(completedAgents)} completed</Text>
           <Text color={theme.muted}> | </Text>
           <Text color={theme.info}>{formatDuration(elapsedTime, true)}</Text>
         </Box>
@@ -120,9 +132,15 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
             {swarmState.agents.map((agent, i) => (
               <Box key={agent.id}>
                 <Text color={getStatusColor(agent.status)}>
-                  {getStatusIcon(agent.status)} 
+                  {getStatusIcon(agent.status)}
                 </Text>
                 <Text color={theme.foreground}> {agent.name}</Text>
+                {agent.role && (
+                  <Text color={theme.muted}> - {agent.role}</Text>
+                )}
+                {agent.currentStep && agent.maxSteps && (
+                  <Text color={theme.info}> [{agent.currentStep}/{agent.maxSteps}]</Text>
+                )}
                 {agent.tools && agent.tools.length > 0 && (
                   <Text color={theme.muted}> ({agent.tools.join(', ')})</Text>
                 )}
@@ -137,23 +155,33 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
   // Full view - detailed agent information
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {/* Swarm header */}
+      {/* Task description - no header needed */}
       <Box marginBottom={1}>
-        <Text color={theme.primary} bold>[SWARM] Multi-Agent Operation</Text>
-        <Text color={theme.muted}> [{swarmState.status}]</Text>
-      </Box>
-
-      {/* Task description */}
-      <Box marginLeft={2} marginBottom={1}>
-        <Text color={theme.muted}>Task: </Text>
+        <Text color={theme.accent} bold>Task: </Text>
         <Text>{swarmState.task}</Text>
       </Box>
 
       {/* Timing and metrics */}
       <Box marginLeft={2} marginBottom={1}>
-        <Text color={theme.muted}>Duration: </Text>
-        <Text color={theme.info}>{formatDuration(elapsedTime, true)}</Text>
-        {swarmState.totalTokens && (
+        {elapsedTime > 0 && (
+          <>
+            <Text color={theme.muted}>Duration: </Text>
+            <Text color={theme.info}>{formatDuration(elapsedTime, true)}</Text>
+          </>
+        )}
+        {swarmState.maxIterations && (
+          <>
+            <Text color={theme.muted}>{elapsedTime > 0 ? ' | ' : ''}Max iterations: </Text>
+            <Text color={theme.info}>{swarmState.maxIterations}</Text>
+          </>
+        )}
+        {swarmState.maxHandoffs && (
+          <>
+            <Text color={theme.muted}> | Max handoffs: </Text>
+            <Text color={theme.info}>{swarmState.maxHandoffs}</Text>
+          </>
+        )}
+        {swarmState.totalTokens !== undefined && swarmState.totalTokens > 0 && (
           <>
             <Text color={theme.muted}> | Tokens: </Text>
             <Text color={theme.info}>{swarmState.totalTokens}</Text>
@@ -166,31 +194,37 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
         <Text color={theme.accent} bold>Agents ({swarmState.agents.length}):</Text>
         
         {swarmState.agents.map((agent, index) => (
-          <Box key={agent.id} flexDirection="column" marginLeft={2} marginTop={index > 0 ? 1 : 0}>
+          <Box key={agent.id} flexDirection="column" marginLeft={2} {...(index > 0 ? { marginTop: 1 } : {})}>
             {/* Agent header */}
             <Box>
               <Text color={getStatusColor(agent.status)}>
                 {getStatusIcon(agent.status)} 
               </Text>
               <Text color={theme.foreground} bold> {agent.name}</Text>
-              {agent.role && (
-                <Text color={theme.muted}> ({agent.role})</Text>
-              )}
             </Box>
 
-            {/* Agent task */}
-            {agent.task && (
-              <Box marginLeft={3}>
-                <Text color={theme.muted}>{'> '}</Text>
-                <Text color={theme.foreground}>{agent.task}</Text>
+            {/* Agent full role/system prompt */}
+            {agent.role && (
+              <Box marginLeft={3} marginRight={2}>
+                <Text color={theme.muted} wrap="wrap">{agent.role}</Text>
               </Box>
             )}
 
-            {/* Tools being used */}
+            {/* Model and Tools */}
+            <Box marginLeft={3}>
+              {agent.model_id && (
+                <Text color={theme.muted}>
+                  Model: <Text color={theme.accent}>{agent.model_id.split('/').pop()?.split(':')[0] || agent.model_id}</Text>
+                  {agent.temperature !== undefined && (
+                    <Text color={theme.muted}> (temp: {agent.temperature})</Text>
+                  )}
+                </Text>
+              )}
+            </Box>
             {agent.tools && agent.tools.length > 0 && (
               <Box marginLeft={3}>
                 <Text color={theme.muted}>Tools: </Text>
-                <Text color={theme.info}>{agent.tools.join(', ')}</Text>
+                <Text color={theme.info}>[{agent.tools.join(', ')}]</Text>
               </Box>
             )}
 

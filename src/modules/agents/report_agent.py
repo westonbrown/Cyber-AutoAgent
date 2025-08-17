@@ -55,7 +55,7 @@ class ReportGenerator:
 
             config_manager = get_config_manager()
             host = config_manager.get_ollama_host()
-            model = OllamaModel(host=host, model_id=model_id or "llama3.2:3b")
+            model = OllamaModel(host=host, model_id=model_id or "qwen3-coder:30b-a3b-q4_K_M")
         else:  # litellm
             model = LiteLLMModel(model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 
@@ -83,14 +83,6 @@ class ReportGenerator:
             tools=[],  # No tools needed for report generation
             trace_attributes=trace_attrs if operation_id else None,
         )
-
-    # Removed extract_report_content() - no longer needed with structured prompts
-    # The new system prompt explicitly instructs the LLM to begin directly with
-    # "# SECURITY ASSESSMENT REPORT" making content extraction unnecessary
-
-    # Removed clean_duplicate_content() - harmful to structured XML output
-    # The function could corrupt XML tags and remove legitimate repeated content
-    # like numbered findings. The structured prompt system handles formatting.
 
 
 # For backward compatibility - in case anything is importing ReportAgent

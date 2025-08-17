@@ -47,17 +47,17 @@ class HandlerState:
     last_was_tool: bool = False
     last_was_reasoning: bool = False
     suppress_parent_handler: bool = False
-    suppress_parent_output: bool = False  # Added missing attribute
+    suppress_parent_output: bool = False
 
     # Operation tracking
     operation_id: Optional[str] = None
     report_generated: bool = False
     memory_operations: int = 0
-    stop_tool_used: bool = False  # Added missing attribute
-    created_tools: List[str] = field(default_factory=list)  # Added missing attribute
-    start_time: float = 0.0  # Added missing attribute
-    evaluation_triggered: bool = False  # Added missing attribute
-    evaluation_thread: Optional[Any] = None  # Added missing attribute
+    stop_tool_used: bool = False
+    created_tools: List[str] = field(default_factory=list)
+    start_time: float = 0.0
+    evaluation_triggered: bool = False
+    evaluation_thread: Optional[Any] = None
 
     # Swarm operation tracking
     in_swarm_operation: bool = False

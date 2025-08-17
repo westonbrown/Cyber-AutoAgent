@@ -11,7 +11,7 @@ data quality for accurate metric computation.
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ragas.dataset_schema import MultiTurnSample, SingleTurnSample
 
@@ -101,12 +101,12 @@ class TraceParser:
             trace_id = getattr(trace, "id", "unknown")
             trace_name = getattr(trace, "name", "Unknown Trace")
 
-            logger.debug(f"Parsing trace: {trace_id} - {trace_name}")
+            logger.debug("Parsing trace: %s - %s", trace_id, trace_name)
 
             # Extract objective from metadata
             objective = self._extract_objective(trace)
             if not objective:
-                logger.warning(f"No objective found for trace {trace_id}")
+                logger.warning("No objective found for trace %s", trace_id)
                 objective = "Security assessment"
 
             # Parse messages and tool calls
@@ -130,15 +130,17 @@ class TraceParser:
             )
 
             logger.info(
-                f"Successfully parsed trace {trace_id}: "
-                f"{len(messages)} messages, {len(tool_calls)} tool calls, "
-                f"multi_turn={parsed_trace.is_multi_turn}"
+                "Successfully parsed trace %s: %d messages, %d tool calls, multi_turn=%s",
+                trace_id,
+                len(messages),
+                len(tool_calls),
+                parsed_trace.is_multi_turn
             )
 
             return parsed_trace
 
         except Exception as e:
-            logger.error(f"Error parsing trace: {e}", exc_info=True)
+            logger.error("Error parsing trace: %s", e, exc_info=True)
             return None
 
     def _extract_objective(self, trace: Any) -> Optional[str]:
@@ -171,7 +173,7 @@ class TraceParser:
                     input_data = json.loads(input_str) if isinstance(input_str, str) else input_str
                     if isinstance(input_data, dict):
                         return input_data.get("objective")
-                except:
+                except Exception:
                     pass
 
         # Method 3: Extract from trace name
@@ -295,14 +297,15 @@ class TraceParser:
             name = obs.get("name", "").lower()
             obs_input = obs.get("input")
             obs_output = obs.get("output")
-            start_time = obs.get("startTime")
-            end_time = obs.get("endTime")
+            # start_time = obs.get("startTime")
+            # end_time = obs.get("endTime")
         else:
             name = getattr(obs, "name", "").lower()
             obs_input = getattr(obs, "input", None)
             obs_output = getattr(obs, "output", None)
-            start_time = getattr(obs, "start_time", None) or getattr(obs, "startTime", None)
-            end_time = getattr(obs, "end_time", None) or getattr(obs, "endTime", None)
+            # Timing information (currently not used)
+            # start_time = getattr(obs, "start_time", None) or getattr(obs, "startTime", None)
+            # end_time = getattr(obs, "end_time", None) or getattr(obs, "endTime", None)
 
         # Check if this is a security tool
         if any(tool in name for tool in self.security_tools):
@@ -394,10 +397,10 @@ class TraceParser:
             contexts = ["No tool outputs captured"]
 
         logger.debug(
-            f"Created SingleTurnSample: "
-            f"input_len={len(user_input)}, "
-            f"response_len={len(response)}, "
-            f"contexts={len(contexts)}"
+            "Created SingleTurnSample: input_len=%d, response_len=%d, contexts=%d",
+            len(user_input),
+            len(response),
+            len(contexts)
         )
 
         return SingleTurnSample(user_input=user_input, response=response, retrieved_contexts=contexts)
@@ -416,7 +419,9 @@ class TraceParser:
                 conversation.append({"role": "system", "content": f"Tool [{tool.name}]: {tool.output[:200]}..."})
 
         logger.debug(
-            f"Created MultiTurnSample: " f"{len(conversation)} messages, " f"{len(parsed_trace.tool_calls)} tool calls"
+            "Created MultiTurnSample: %d messages, %d tool calls",
+            len(conversation),
+            len(parsed_trace.tool_calls)
         )
 
         return MultiTurnSample(

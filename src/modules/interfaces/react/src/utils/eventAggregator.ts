@@ -21,6 +21,11 @@ export class EventAggregator {
   private outputDedupeTimeMs = 1000; // 1 second window for deduplication
   private lastOutputTime: number = 0;
   
+  // Swarm operation tracking for intelligent handoff transformation
+  private swarmActive: boolean = false;
+  private currentSwarmAgent: string | null = null;
+  private swarmHandoffSequence: number = 0;
+  
   // Legacy methods for backward compatibility with DirectTerminal
   hasPendingEvents(): boolean {
     return false; // No longer buffering events
@@ -42,6 +47,11 @@ export class EventAggregator {
         // End any active reasoning session
         this.activeReasoningSession = false;
         
+        // Track swarm agent from step header
+        if (event.is_swarm_operation && event.swarm_agent) {
+          this.currentSwarmAgent = event.swarm_agent;
+        }
+        
         // Backend now emits step headers at the correct time (after reasoning)
         // Just emit step header immediately
         results.push({
@@ -52,8 +62,12 @@ export class EventAggregator {
           duration: event.duration,
           // Include swarm-related properties if present
           is_swarm_operation: event.is_swarm_operation,
-          swarm_agent: event.swarm_agent,
-          swarm_context: event.swarm_context
+          swarm_agent: event.swarm_agent || this.currentSwarmAgent,
+          swarm_sub_step: event.swarm_sub_step,
+          swarm_max_sub_steps: event.swarm_max_sub_steps,
+          swarm_total_iterations: event.swarm_total_iterations,  // Pass through for x/y display
+          swarm_max_iterations: event.swarm_max_iterations,      // Pass through for x/y display
+          swarm_context: event.swarm_context || (this.swarmActive ? 'Multi-Agent Operation' : undefined)
         } as DisplayStreamEvent);
         
         // End reasoning session after step header
@@ -124,13 +138,43 @@ export class EventAggregator {
         
         this.currentToolId = event.toolId;
         
-        results.push({
-          type: 'tool_start',
-          tool_name: event.toolName || event.tool_name || '',
-          tool_input: event.args || event.tool_input || {},
-          toolId: event.toolId,
-          toolName: event.toolName
-        } as DisplayStreamEvent);
+        // Special handling for handoff_to_agent during swarm operations
+        if (event.tool_name === 'handoff_to_agent' && this.swarmActive) {
+          const toolInput = event.tool_input || {};
+          
+          // Create a proper swarm_handoff event with rich context
+          results.push({
+            type: 'swarm_handoff',
+            from_agent: this.currentSwarmAgent || 'unknown',
+            to_agent: toolInput.agent_name || toolInput.handoff_to || 'unknown',
+            message: toolInput.message || '',
+            shared_context: toolInput.context || {},
+            timestamp: event.timestamp || Date.now(),
+            sequence: ++this.swarmHandoffSequence
+          } as DisplayStreamEvent);
+          
+          // Update current agent
+          this.currentSwarmAgent = toolInput.agent_name || toolInput.handoff_to || this.currentSwarmAgent;
+          
+          // Still emit the tool event for completeness but mark it as processed
+          results.push({
+            type: 'tool_start',
+            tool_name: event.toolName || event.tool_name || '',
+            tool_input: event.args || event.tool_input || {},
+            toolId: event.toolId,
+            toolName: event.toolName,
+            _handoff_processed: true
+          } as DisplayStreamEvent);
+        } else {
+          // Normal tool start
+          results.push({
+            type: 'tool_start',
+            tool_name: event.toolName || event.tool_name || '',
+            tool_input: event.args || event.tool_input || {},
+            toolId: event.toolId,
+            toolName: event.toolName
+          } as DisplayStreamEvent);
+        }
         break;
         
       case 'shell_command':
@@ -211,11 +255,42 @@ export class EventAggregator {
         break;
         
       case 'swarm_start':
-        // Pass through swarm_start event
+        // Mark swarm as active and reset tracking
+        this.swarmActive = true;
+        this.swarmHandoffSequence = 0;
+        
+        // Extract first agent if available
+        if (event.agent_names && Array.isArray(event.agent_names) && event.agent_names.length > 0) {
+          this.currentSwarmAgent = event.agent_names[0];
+        }
+        
+        // Pass through swarm_start event with all details
+        results.push(event as DisplayStreamEvent);
+        break;
+        
+      case 'swarm_handoff':
+        // Handle swarm handoff events
+        // If the event has empty data, skip it (will be replaced by tool-based handoff)
+        if (!event.to_agent || !event.message) {
+          break;
+        }
+        
+        // Update current agent
+        if (event.to_agent) {
+          this.currentSwarmAgent = event.to_agent;
+        }
+        
+        // Pass through the handoff event
         results.push(event as DisplayStreamEvent);
         break;
         
       case 'swarm_end':
+      case 'swarm_complete':
+        // Reset swarm tracking
+        this.swarmActive = false;
+        this.currentSwarmAgent = null;
+        this.swarmHandoffSequence = 0;
+        
         // Pass through swarm_end event
         results.push(event as DisplayStreamEvent);
         break;

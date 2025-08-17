@@ -3,11 +3,7 @@
 
 from strands import tool
 import subprocess
-import tempfile
 import os
-import json
-import time
-import random
 from typing import Dict, List, Any
 
 
@@ -460,7 +456,7 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
         for origin in cors_test_origins[:2]:  # Test first 2 origins
             try:
                 headers = {"Origin": origin}
-                cmd = ["curl", "-s", "-I", "--max-time", "10"] + [f"-H", f"Origin: {origin}"] + [target_url]
+                cmd = ["curl", "-s", "-I", "--max-time", "10"] + ["-H", f"Origin: {origin}"] + [target_url]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
                 if result.returncode == 0:

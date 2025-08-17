@@ -9,7 +9,7 @@ import time
 import logging
 import os
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from strands.handlers import PrintingCallbackHandler
 from strands.hooks import HookProvider, HookRegistry
 from strands.experimental.hooks.events import (
@@ -96,7 +96,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
         event_loop_metrics = kwargs.get("event_loop_metrics")
 
         # Check if this is a reasoning delta (fragment)
-        reasoning_delta = kwargs.get("reasoning", False) and reasoning_text
+        # reasoning_delta = kwargs.get("reasoning", False) and reasoning_text
 
         # Process messages for tool results and step progression
         if message and isinstance(message, dict):
@@ -117,7 +117,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 self.pending_step_header = True
 
             # Process tool results from message content (SDK native pattern)
-            for i, block in enumerate(content):
+            for block in content:
                 if isinstance(block, dict):
                     # Check for various tool result formats
                     if "toolResult" in block:
@@ -311,7 +311,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
             if self.last_tool_name and not tool_result and not kwargs.get("toolResult"):
                 # Emit a completion status for tools that might not have explicit results
                 self._emit_ui_event({"type": "thinking_end"})
-                self._emit_ui_event({"type": "output", "content": f"Command completed successfully"})
+                self._emit_ui_event({"type": "output", "content": "Command completed successfully"})
 
         # Emit metrics periodically (every 5 seconds)
         current_time = time.time()
@@ -475,7 +475,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
 
         self._emit_ui_event({"type": "user_handoff", "message": message, "breakout": breakout})
 
-    def _emit_generic_tool_params(self, tool_name: str, tool_input: Any) -> None:
+    def _emit_generic_tool_params(self, _tool_name: str, tool_input: Any) -> None:
         """Emit generic tool parameters"""
         if isinstance(tool_input, dict) and tool_input:
             metadata = {}
@@ -752,12 +752,12 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 {"type": "output", "content": status_messages.get(self.last_tool_name, "Operation completed")}
             )
 
-    def _count_memory_ops(self, metrics):
+    def _count_memory_ops(self, _metrics):
         """Count memory operations from SDK metrics"""
         # Use our tracked count
         return self.memory_ops
 
-    def _count_evidence(self, metrics):
+    def _count_evidence(self, _metrics):
         """Count evidence from memory storage operations"""
         # Use our tracked count
         return self.evidence_count
@@ -816,14 +816,19 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 elif "LiteLLM" in model_class:
                     provider = "litellm"
 
+            # Prepare config data for report generation
+            config_data = json.dumps({
+                "steps_executed": steps_executed,
+                "tools_used": tools_used,
+                "provider": provider,
+                "module": module
+            })
+            
             report_content = generate_security_report(
                 target=target,
                 objective=objective,
                 operation_id=self.operation_id,
-                steps_executed=steps_executed,
-                tools_used=tools_used,
-                provider=provider,
-                module=module,
+                config_data=config_data
             )
 
             # Emit the report content
@@ -833,7 +838,7 @@ class SDKNativeHandler(PrintingCallbackHandler):
                 self._emit_ui_event({"type": "error", "content": f"Failed to generate report: {report_content}"})
 
         except Exception as e:
-            logger.error(f"Error generating final report: {e}")
+            logger.error("Error generating final report: %s", e)
             self._emit_ui_event({"type": "error", "content": f"Error generating report: {str(e)}"})
 
     @property
@@ -883,7 +888,6 @@ class SDKNativeHandler(PrintingCallbackHandler):
     def trigger_evaluation_on_completion(self):
         """Trigger evaluation after agent completion"""
         # Import here to avoid circular imports
-        import os
         from modules.evaluation.manager import EvaluationManager, TraceType
 
         # Check if evaluation is enabled
@@ -970,7 +974,7 @@ class ReactBridgeHook(HookProvider):
 
             # Only emit lifecycle events - let callback handler handle streaming
             tool_name = getattr(event.tool_use, "name", "unknown")
-            tool_input = getattr(event.tool_use, "input", {})
+            # tool_input = getattr(event.tool_use, "input", {})
 
             # Emit tool lifecycle event (not duplicate of callback handler)
             lifecycle_event = {

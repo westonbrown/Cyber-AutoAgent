@@ -1,7 +1,7 @@
 /**
  * WelcomeScreen Component
  * 
- * Clean welcome screen inspired by gemini-cli patterns
+ * Clean welcome screen for initial setup
  */
 
 import React, { useMemo } from 'react';

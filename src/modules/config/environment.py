@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from modules.handlers.utils import Colors, print_status
+from modules.handlers.utils import print_status
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
@@ -280,5 +280,10 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     root_file_handler.setLevel(logging.INFO)
     root_file_handler.setFormatter(formatter)
     root_logger.addHandler(root_file_handler)
+    
+    # Suppress verbose AWS credential detection messages
+    logging.getLogger('boto3').setLevel(logging.WARNING)
+    logging.getLogger('botocore').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
 
     return cyber_logger

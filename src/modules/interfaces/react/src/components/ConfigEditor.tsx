@@ -331,7 +331,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               updateConfigValue(field.key, numValue);
             }
           } else {
-            updateConfigValue(field.key, tempValue);
+            // Trim whitespace from text and password fields
+            const trimmedValue = tempValue.trim();
+            updateConfigValue(field.key, trimmedValue);
           }
         }
       }
@@ -348,14 +350,52 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
   }, { isActive: editingField !== null });
 
+  // Basic pre-save validation for required fields and dependent settings
+  const validateBeforeSave = useCallback(() => {
+    // Required fields
+    const requiredFields: Array<{ key: string; label: string }> = [
+      { key: 'modelProvider', label: 'Model Provider' },
+      { key: 'modelId', label: 'Primary Model' },
+    ];
+    const missing = requiredFields.filter(f => !(config as any)[f.key]);
+    if (missing.length > 0) {
+      return `Missing required: ${missing.map(m => m.label).join(', ')}`;
+    }
+    // Observability requirements when enabled
+    if (config.observability) {
+      if (!config.langfuseHost && !config.langfuseHostOverride) {
+        return 'Observability is enabled but Langfuse Host is not set.';
+      }
+      if (!config.langfusePublicKey || !config.langfuseSecretKey) {
+        return 'Observability requires Langfuse Public and Secret keys.';
+      }
+    }
+    return '';
+  }, [config]);
+
   const handleSave = useCallback(async () => {
+    // Clear any existing message timeout
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
+    }
+    
+    // Show saving message immediately
+    setMessage({ text: 'Saving configuration...', type: 'info' });
+    
     try {
       // Validate before saving
       const validationError = validateBeforeSave();
       if (validationError) {
         setMessage({ text: validationError, type: 'error' });
+        // Keep error message visible for longer
+        messageTimeoutRef.current = setTimeout(() => {
+          setMessage(null);
+          messageTimeoutRef.current = null;
+        }, 5000);
         return;
       }
+      
       // Mark configuration as complete when saving
       updateConfig({ isConfigured: true });
       
@@ -364,25 +404,63 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       
       await saveConfig();
       setUnsavedChanges(false);
-      setMessage({ text: 'Configuration saved successfully', type: 'success' });
       
-      // Clear existing timeout if any
-      if (messageTimeoutRef.current) {
-        clearTimeout(messageTimeoutRef.current);
-      }
+      // Show success message with checkmark
+      setMessage({ text: '✓ Configuration saved successfully', type: 'success' });
       
-      // Set new timeout with cleanup
+      // Keep success message visible for 3 seconds
       messageTimeoutRef.current = setTimeout(() => {
         setMessage(null);
         messageTimeoutRef.current = null;
       }, 3000);
+      
+      // Also log to console for debugging
+      loggingService.info('Configuration saved successfully via Ctrl+S');
     } catch (error) {
       loggingService.error('Config save error:', error);
-      setMessage({ text: `Save failed: ${error}`, type: 'error' });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setMessage({ text: `✗ Save failed: ${errorMessage}`, type: 'error' });
+      
+      // Keep error message visible for longer
+      messageTimeoutRef.current = setTimeout(() => {
+        setMessage(null);
+        messageTimeoutRef.current = null;
+      }, 5000);
     }
-  }, [saveConfig, updateConfig]);
+  }, [saveConfig, updateConfig, validateBeforeSave]);
 
   const updateConfigValue = useCallback((key: string, value: any) => {
+    // Special handling for provider changes - set appropriate default models
+    if (key === 'modelProvider') {
+      const updates: any = { modelProvider: value };
+      
+      // Set default models based on provider
+      if (value === 'ollama') {
+        // Set Ollama-specific defaults
+        updates.modelId = 'qwen3-coder:30b-a3b-q4_K_M';
+        updates.embeddingModel = 'mxbai-embed-large';
+        updates.evaluationModel = 'qwen3-coder:30b-a3b-q4_K_M';
+        updates.swarmModel = 'qwen3-coder:30b-a3b-q4_K_M';
+      } else if (value === 'bedrock') {
+        // Set AWS Bedrock defaults
+        updates.modelId = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+        updates.embeddingModel = 'amazon.titan-embed-text-v2:0';
+        updates.evaluationModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+        updates.swarmModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+      } else if (value === 'litellm') {
+        // Set LiteLLM defaults
+        updates.modelId = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+        updates.embeddingModel = 'bedrock/amazon.titan-embed-text-v2:0';
+        updates.evaluationModel = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+        updates.swarmModel = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+      }
+      
+      updateConfig(updates);
+      setUnsavedChanges(true);
+      setMessage({ text: `Switched to ${value} provider with default models`, type: 'info' });
+      return;
+    }
+    
     // Special handling for currentModel pricing - update the actual model's pricing
     if (key.startsWith('currentModel.')) {
       const pricingKey = key.replace('currentModel.', '');
@@ -438,28 +516,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     setUnsavedChanges(true);
   }, [config, updateConfig]);
 
-  // Basic pre-save validation for required fields and dependent settings
-  const validateBeforeSave = () => {
-    // Required fields
-    const requiredFields: Array<{ key: string; label: string }> = [
-      { key: 'modelProvider', label: 'Model Provider' },
-      { key: 'modelId', label: 'Primary Model' },
-    ];
-    const missing = requiredFields.filter(f => !(config as any)[f.key]);
-    if (missing.length > 0) {
-      return `Missing required: ${missing.map(m => m.label).join(', ')}`;
-    }
-    // Observability requirements when enabled
-    if (config.observability) {
-      if (!config.langfuseHost && !config.langfuseHostOverride) {
-        return 'Observability is enabled but Langfuse Host is not set.';
-      }
-      if (!config.langfusePublicKey || !config.langfuseSecretKey) {
-        return 'Observability requires Langfuse Public and Secret keys.';
-      }
-    }
-    return '';
-  };
   
   const startEditing = useCallback((field: ConfigField) => {
     // Prevent editing of read-only fields
@@ -692,7 +748,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               updateConfigValue(field.key, numValue);
             }
           } else {
-            updateConfigValue(field.key, value);
+            // Trim whitespace from text and password fields
+            const trimmedValue = value.trim();
+            updateConfigValue(field.key, trimmedValue);
           }
           setEditingField(null);
           setTempValue('');
@@ -800,13 +858,20 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       </Box>
       
         {/* Footer with shortcuts */}
-        <Box marginTop={1} borderStyle="single" borderColor={theme.muted} paddingX={1}>
-          <Text color={theme.muted}>
-            {navigationMode === 'sections'
-              ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to continue and exit'
-              : '↑↓ Navigate fields • Enter to edit • Tab/Shift+Tab to navigate • Esc to collapse section • Ctrl+S to save'
-            }
-          </Text>
+        <Box marginTop={1} borderStyle="single" borderColor={unsavedChanges ? theme.warning : theme.muted} paddingX={1}>
+          <Box justifyContent="space-between">
+            <Text color={theme.muted}>
+              {navigationMode === 'sections'
+                ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
+                : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
+              }
+            </Text>
+            {unsavedChanges && (
+              <Text color={theme.warning} bold>
+                [Unsaved Changes]
+              </Text>
+            )}
+          </Box>
         </Box>
       </Box>
     </Box>

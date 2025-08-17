@@ -79,6 +79,18 @@ const INSTALLATION_INFO = {
   }
 };
 
+// Clean leading status tags and punctuation from a line
+// - Removes leading bracketed tags like [OK], [WARN], [ERR] (one or multiple)
+// - Then trims any remaining leading non-alphanumeric characters and spaces
+function cleanLead(text: string): string {
+  if (!text) return text;
+  // Remove one or more leading bracketed tags (e.g., [OK] [WARN])
+  let cleaned = text.replace(/^\s*(\[[^\]]+\]\s*)+/, '');
+  // Remove any remaining leading punctuation/whitespace
+  cleaned = cleaned.replace(/^[^A-Za-z0-9]+\s*/, '');
+  return cleaned;
+}
+
 export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   deploymentMode,
   progress,
@@ -151,7 +163,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
           <Text color={theme.primary} bold>{installInfo.title}</Text>
           <Box flexDirection="column" marginLeft={1}>
             {installInfo.items.map((item, i) => (
-              <Text key={i} color={theme.muted}>• {item.replace(/^[^A-Za-z0-9]+\s*/, '')}</Text>
+              <Text key={i} color={theme.muted}>• {cleanLead(item)}</Text>
             ))}
           </Box>
         </Box>
@@ -225,7 +237,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
           {progress.message && (
             <Box marginTop={1}>
               <Text color={theme.muted}>
-                › {progress.message.replace(/^[^A-Za-z0-9]+\s*/, '')}
+                › {cleanLead(progress.message)}
               </Text>
             </Box>
           )}

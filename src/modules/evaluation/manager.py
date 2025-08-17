@@ -15,10 +15,9 @@ This module provides:
 import asyncio
 import logging
 import threading
-import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Any
+from typing import Dict, List, Optional, Any
 
 from .evaluation import CyberAgentEvaluator
 

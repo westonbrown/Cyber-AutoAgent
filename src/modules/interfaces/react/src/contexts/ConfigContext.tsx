@@ -209,14 +209,41 @@ export const defaultConfig: Config = {
   awsSessionToken: process.env.AWS_SESSION_TOKEN,
   ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
   
-  // AWS Bedrock Model Pricing (Real AWS CLI pricing from us-east-1 - per 1K tokens)
-  // Fetched via: aws pricing get-products --service-code "AmazonBedrock" --region us-east-1
+  // Model Pricing (per 1K tokens)
+  // AWS Bedrock: Real AWS CLI pricing from us-east-1
+  // Ollama: Free local models (0 cost)
   modelPricing: {
+    // Ollama Models (Free - local execution)
+    'qwen3-coder:30b-a3b-q4_K_M': {
+      inputCostPer1k: 0,
+      outputCostPer1k: 0,
+      description: 'Qwen3 Coder 30B - Advanced coding model, Local Ollama (free)'
+    },
+    'qwen3:1.7b': {
+      inputCostPer1k: 0,
+      outputCostPer1k: 0,
+      description: 'Qwen3 1.7B - Small fast model, Local Ollama (free)'
+    },
+    'llama3.2:3b': {
+      inputCostPer1k: 0,
+      outputCostPer1k: 0,
+      description: 'Llama 3.2 3B - Local Ollama model (free)'
+    },
+    'mxbai-embed-large': {
+      inputCostPer1k: 0,
+      outputCostPer1k: 0,
+      description: 'MXBAI Embeddings - Local Ollama model (free)'
+    },
     // Anthropic Claude Models (Verified AWS CLI pricing)
     'us.anthropic.claude-sonnet-4-20250514-v1:0': {
       inputCostPer1k: 0.006,
       outputCostPer1k: 0.030,
-      description: 'Claude Sonnet 4 - Latest model (AWS verified pricing)'
+      description: 'Claude Sonnet 4 - Advanced reasoning with thinking mode (AWS verified pricing)'
+    },
+    'us.anthropic.claude-opus-4-1-20250805-v1:0': {
+      inputCostPer1k: 0.015,
+      outputCostPer1k: 0.075,
+      description: 'Claude Opus 4.1 - Flagship model with advanced thinking capabilities'
     },
     'claude-3-5-sonnet-20241022-v2:0': {
       inputCostPer1k: 0.003,
@@ -402,10 +429,15 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const output = { ...target };
     if (target && typeof target === 'object' && source && typeof source === 'object') {
       Object.keys(source).forEach(key => {
-        if (source[key] && typeof source[key] === 'object' && key in target) {
-          output[key] = deepMerge(target[key], source[key]);
+        const value = (source as any)[key];
+        // Skip undefined so defaults are preserved
+        if (value === undefined) {
+          return;
+        }
+        if (value && typeof value === 'object' && !Array.isArray(value) && key in target) {
+          (output as any)[key] = deepMerge((target as any)[key], value);
         } else {
-          output[key] = source[key];
+          (output as any)[key] = value;
         }
       });
     }
@@ -419,11 +451,14 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const saveConfig = useCallback(async () => {
     try {
       await fs.mkdir(path.dirname(configFilePath), { recursive: true });
-      await fs.writeFile(configFilePath, JSON.stringify(configRef.current, null, 2));
+      // Use the actual config state instead of configRef to ensure we save the latest
+      await fs.writeFile(configFilePath, JSON.stringify(config, null, 2));
+      loggingService.info('Config saved successfully to:', configFilePath);
     } catch (error) {
       loggingService.error('Failed to save config:', error);
+      throw error; // Re-throw so ConfigEditor can show error message
     }
-  }, [configFilePath]);
+  }, [configFilePath, config]);
 
   const loadConfig = useCallback(async () => {
     setIsConfigLoading(true);
@@ -441,6 +476,20 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
         if (loadedConfig.autoEvaluation === undefined) {
           loadedConfig.autoEvaluation = false;
         }
+      }
+      
+      // For sensitive fields like passwords/tokens, respect the saved value
+      // even if it's empty. Don't let env vars override explicitly saved empty values.
+      // Only use env vars as defaults when the field is undefined (not saved).
+      if (loadedConfig.awsBearerToken === '') {
+        // User explicitly saved an empty bearer token, keep it empty
+        loadedConfig.awsBearerToken = '';
+      }
+      if (loadedConfig.awsAccessKeyId === '') {
+        loadedConfig.awsAccessKeyId = '';
+      }
+      if (loadedConfig.awsSecretAccessKey === '') {
+        loadedConfig.awsSecretAccessKey = '';
       }
       
       setConfig(prev => deepMerge(prev, loadedConfig));
@@ -473,7 +522,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
       if (!isModeHealthy) {
         // The configured deployment is not active. Invalidate it.
-        loadedConfig.deploymentMode = undefined;
+        delete loadedConfig.deploymentMode;
         loadedConfig.isConfigured = false; // Force setup
       }
     }

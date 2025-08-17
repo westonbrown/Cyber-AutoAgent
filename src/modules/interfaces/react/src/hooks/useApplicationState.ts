@@ -376,7 +376,7 @@ export function useApplicationState() {
     cleanupFunctions.current.push(cleanup);
   };
 
-  // CRITICAL FIX: Use useMemo for actions object to prevent recreation
+  // Use useMemo for actions object to prevent recreation
   const actions = useMemo(() => ({
     initializeApp,
     setConfigLoaded,
@@ -429,7 +429,7 @@ export function useApplicationState() {
     };
   }, [flushMetrics, flushContextUsage]);
   
-  // CRITICAL FIX: Use useMemo to prevent infinite re-renders
+  // Use useMemo to prevent infinite re-renders
   // Without this, the return object gets recreated on every render, causing all consumers to re-render
   return useMemo(() => ({
     state,

@@ -93,7 +93,7 @@ export class DirectDockerService extends EventEmitter {
       
       // Build command arguments
       // Pass module explicitly to enable module-specific prompts and tools
-      const objective = params.objective || `Perform comprehensive ${params.module.replace('_', ' ')} assessment`;
+      const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
       const args = [
         '--module', params.module,
         '--objective', objective,
@@ -133,11 +133,16 @@ export class DirectDockerService extends EventEmitter {
       if (fs.existsSync(faissPath) && fs.existsSync(pklPath)) {
         // Count memory entries for better context
         const faissSize = fs.statSync(faissPath).size;
-        const memoryContext = faissSize > 1000 ? 'extensive knowledge base' : 'previous findings';
+        const memoryContext = faissSize > 1000 ? 'knowledge base' : 'previous findings';
         
         this.emit('event', {
           type: 'output',
-          content: `◆ Found existing memory for ${params.target} - loading ${memoryContext}`,
+          content: `▶ MEMORY: Loading existing ${memoryContext} for ${params.target}`,
+          timestamp: Date.now()
+        });
+        this.emit('event', {
+          type: 'output',
+          content: `◆ Memory path: ${targetMemoryPath}`,
           timestamp: Date.now()
         });
       }
@@ -146,11 +151,11 @@ export class DirectDockerService extends EventEmitter {
       const env = [
         `BYPASS_TOOL_CONSENT=${config.confirmations ? 'false' : 'true'}`,
         '__REACT_INK__=true',
-        'CYBERAGENT_NO_BANNER=true',  // Suppress banner since React UI shows its own header
+        'CYBERAGENT_NO_BANNER=false', // Show banner in React stream (OLD behavior)
         `DEV=${config.verbose ? 'true' : 'false'}`,
       ];
 
-      // AWS credentials - essential for agent to function
+      // AWS credentials (original simple approach)
       if (config.awsAccessKeyId && config.awsSecretAccessKey) {
         env.push(`AWS_ACCESS_KEY_ID=${config.awsAccessKeyId}`);
         env.push(`AWS_SECRET_ACCESS_KEY=${config.awsSecretAccessKey}`);
@@ -163,6 +168,30 @@ export class DirectDockerService extends EventEmitter {
       if (config.awsRegion) {
         env.push(`AWS_DEFAULT_REGION=${config.awsRegion}`);
         env.push(`AWS_REGION=${config.awsRegion}`);
+      }
+
+      // Ollama configuration
+      if (config.ollamaHost) {
+        env.push(`OLLAMA_HOST=${config.ollamaHost}`);
+      }
+
+      // LiteLLM configuration
+      if (config.openaiApiKey) {
+        env.push(`OPENAI_API_KEY=${config.openaiApiKey}`);
+      }
+      if (config.anthropicApiKey) {
+        env.push(`ANTHROPIC_API_KEY=${config.anthropicApiKey}`);
+      }
+      if (config.cohereApiKey) {
+        env.push(`COHERE_API_KEY=${config.cohereApiKey}`);
+      }
+
+      // Model Configuration - pass separate models from config
+      if (config.swarmModel) {
+        env.push(`CYBER_AGENT_SWARM_MODEL=${config.swarmModel}`);
+      }
+      if (config.evaluationModel) {
+        env.push(`CYBER_AGENT_EVALUATION_MODEL=${config.evaluationModel}`);
       }
 
       // Get deployment mode for configuration and messaging decisions
@@ -311,6 +340,17 @@ export class DirectDockerService extends EventEmitter {
         WorkingDir: '/app',
       });
 
+      // Emit preflight details before attaching streams
+      setTimeout(() => {
+        this.emit('event', { type: 'output', content: '▶ Preflight checks', timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Execution mode: Docker (${currentDeploymentMode})`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Docker image: ${dockerImage}`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Output directory mount: ${outputPath} -> /app/outputs`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Network: ${dockerNetwork}`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Target: ${params.target}`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Provider: ${config.modelProvider || 'unknown'} (${config.modelId || 'default-model'})`, timestamp: Date.now() });
+      }, 900);
+
       // Attach to container streams
       const stream = await this.activeContainer.attach({
         stream: true,
@@ -356,7 +396,7 @@ export class DirectDockerService extends EventEmitter {
       stream.on('end', () => {
         this.isExecutionActive = false;
         this.abortController = undefined;
-        // CRITICAL FIX: Clear the stream buffer to prevent stale prompt detection
+        // Clear stream buffer to prevent stale prompt detection
         this.streamEventBuffer = '';
         this.emit('complete');
       });
@@ -424,6 +464,24 @@ export class DirectDockerService extends EventEmitter {
           });
         }
       }, 1000);
+
+      // Emit objective/target and plugin details early in the run
+      setTimeout(() => {
+        const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
+        this.emit('event', {
+          type: 'output',
+          content: `◆ Objective: ${objective}`,
+          timestamp: Date.now()
+        });
+        this.emit('event', {
+          type: 'output',
+          content: `◆ Target: ${params.target}`,
+          timestamp: Date.now()
+        });
+      }, 1200);
+
+      // Provider is already emitted in preflight checks (✓ Provider: ... at ~900ms).
+      // Avoid emitting here to prevent interleaving with tool discovery output.
 
       setTimeout(() => {
         if (deploymentMode === 'local-cli') {
@@ -496,8 +554,11 @@ export class DirectDockerService extends EventEmitter {
     
     // Tool discovery is now handled via structured events in parseEvents
     
-    this.streamEventBuffer += data;
+    // Filter out binary/control characters that corrupt the output
+    const cleanedData = data.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD]/g, '');
     
+    this.streamEventBuffer += cleanedData;
+
     // Look for event markers
     const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
     let match;
@@ -505,6 +566,7 @@ export class DirectDockerService extends EventEmitter {
     while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
       try {
         const eventData = JSON.parse(match[1]);
+
         // For legacy events, pass through all properties
         const event: any = {
           type: eventData.type as EventType,
@@ -604,7 +666,7 @@ export class DirectDockerService extends EventEmitter {
    * Handle interactive prompts by automatically sending appropriate responses
    */
   private handleInteractivePrompts() {
-    // CRITICAL FIX: Don't process prompts if container is not actively running
+    // Don't process prompts if container is not actively running
     // This prevents UI from showing stale prompts after assessment completion
     if (!this.isExecutionActive || !this.containerStream) {
       return;

@@ -4,6 +4,7 @@
 import os
 import logging
 import warnings
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List, Tuple, Any
 from pathlib import Path
@@ -18,12 +19,28 @@ from strands_tools import shell, editor, load_tool, stop, http_request, swarm, p
 from modules import prompts
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
-from modules.handlers.utils import Colors, sanitize_target_name, print_status
+from modules.handlers.utils import sanitize_target_name, print_status
 from modules.tools.memory import mem0_memory, initialize_memory_system, get_memory_client
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentConfig:
+    """Configuration object for agent creation."""
+    target: str
+    objective: str
+    max_steps: int = 100
+    available_tools: Optional[List[str]] = None
+    op_id: Optional[str] = None
+    model_id: Optional[str] = None
+    region_name: Optional[str] = None
+    provider: str = "bedrock"
+    memory_path: Optional[str] = None
+    memory_mode: str = "auto"
+    module: str = "general"
 
 
 def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
@@ -187,76 +204,82 @@ def _handle_model_creation_error(provider: str, error: Exception) -> None:
 def create_agent(
     target: str,
     objective: str,
-    max_steps: int = 100,
-    available_tools: Optional[List[str]] = None,
-    op_id: Optional[str] = None,
-    model_id: Optional[str] = None,
-    region_name: Optional[str] = None,
-    provider: str = "bedrock",
-    memory_path: Optional[str] = None,
-    memory_mode: str = "auto",
-    module: str = "general",
+    config: Optional[AgentConfig] = None,
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
+
+    # Use provided config or create default
+    if config is None:
+        config = AgentConfig(target=target, objective=objective)
+    else:
+        config.target = target
+        config.objective = objective
 
     agent_logger = logging.getLogger("CyberAutoAgent")
     agent_logger.debug(
         "Creating agent for target: %s, objective: %s, provider: %s",
-        target,
-        objective,
-        provider,
+        config.target,
+        config.objective,
+        config.provider,
     )
 
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
-    config_manager.validate_requirements(provider)
-    server_config = config_manager.get_server_config(provider)
+    config_manager.validate_requirements(config.provider)
+    
+    # Prepare overrides if user specified a model
+    overrides = {}
+    if config.model_id:
+        # Override both LLM and memory LLM with the user-specified model
+        overrides['model_id'] = config.model_id
+    
+    server_config = config_manager.get_server_config(config.provider, **overrides)
 
     # Get centralized region configuration
-    if region_name is None:
-        region_name = config_manager.get_default_region()
+    if config.region_name is None:
+        config.region_name = config_manager.get_default_region()
 
     # Use provided model_id or default
-    if model_id is None:
-        model_id = server_config.llm.model_id
+    if config.model_id is None:
+        config.model_id = server_config.llm.model_id
 
     # Use provided operation_id or generate new one
-    if not op_id:
+    if not config.op_id:
         operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     else:
-        operation_id = op_id
+        operation_id = config.op_id
 
     # Configure memory system using centralized configuration
-    memory_config = config_manager.get_mem0_service_config(provider)
+    memory_config = config_manager.get_mem0_service_config(config.provider)
 
     # Configure vector store with memory path if provided
-    if memory_path:
+    if config.memory_path:
         # Validate existing memory store path
-        if not os.path.exists(memory_path):
-            raise ValueError(f"Memory path does not exist: {memory_path}")
-        if not os.path.isdir(memory_path):
-            raise ValueError(f"Memory path is not a directory: {memory_path}")
+        if not os.path.exists(config.memory_path):
+            raise ValueError(f"Memory path does not exist: {config.memory_path}")
+        if not os.path.isdir(config.memory_path):
+            raise ValueError(f"Memory path is not a directory: {config.memory_path}")
 
         # Override vector store path in centralized config
-        memory_config["vector_store"] = {"config": {"path": memory_path}}
-        print_status(f"Loading existing memory from: {memory_path}", "SUCCESS")
+        memory_config["vector_store"] = {"config": {"path": config.memory_path}}
+        print_status(f"Loading existing memory from: {config.memory_path}", "SUCCESS")
 
     # Check for existing memories before initializing to avoid race conditions
     # Skip check if user explicitly wants fresh memory
-    if memory_mode == "fresh":
+    if config.memory_mode == "fresh":
         has_existing_memories = False
         print_status("Using fresh memory mode - ignoring any existing memories", "WARNING")
     else:
-        has_existing_memories = check_existing_memories(target, provider)
+        has_existing_memories = check_existing_memories(config.target, config.provider)
 
     # Initialize memory system
-    target_name = sanitize_target_name(target)
+    target_name = sanitize_target_name(config.target)
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
-    memory_overview = None
+    # memory_overview = None  # Reserved for future system prompt enhancement
 
     # Get memory overview for system prompt enhancement
-    if has_existing_memories or memory_path:
+    if has_existing_memories or config.memory_path:
         try:
             memory_client = get_memory_client()
             if memory_client:
@@ -270,7 +293,7 @@ def create_agent(
 
     try:
         module_loader = prompts.get_module_loader()
-        module_tool_paths = module_loader.discover_module_tools(module)
+        module_tool_paths = module_loader.discover_module_tools(config.module)
 
         if module_tool_paths:
             import importlib.util
@@ -293,10 +316,10 @@ def create_agent(
                             if callable(attr) and hasattr(attr, "__wrapped__"):
                                 # Check if this is a @tool decorated function
                                 loaded_module_tools.append(attr)
-                                agent_logger.debug(f"Found module tool: {attr_name}")
+                                agent_logger.debug("Found module tool: %s", attr_name)
 
                 except Exception as e:
-                    agent_logger.warning(f"Failed to load tool from {tool_path}: {e}")
+                    agent_logger.warning("Failed to load tool from %s: %s", tool_path, e)
 
             tool_names = [tool.__name__ for tool in loaded_module_tools] if loaded_module_tools else []
 
@@ -337,38 +360,38 @@ Available {module} module tools:
         else:
             print_status(f"No module-specific tools found for '{module}'", "INFO")
     except Exception as e:
-        logger.warning(f"Error discovering module tools for '{module}': {e}")
+        logger.warning("Error discovering module tools for '%s': %s", config.module, e)
 
     tools_context = ""
-    if available_tools:
+    if config.available_tools:
         tools_context = f"""
 ## ENVIRONMENTAL CONTEXT
 
 Professional tools discovered in your environment:
-{", ".join(available_tools)}
+{", ".join(config.available_tools)}
 
 Leverage these tools directly via shell. 
 """
 
     # Combine environmental and module tools context
-    full_tools_context = tools_context + module_tools_context
+    # Combined tools context available for future use\n    # full_tools_context = tools_context + module_tools_context
 
     # Load module-specific execution prompt
     module_execution_prompt = None
     try:
         module_loader = prompts.get_module_loader()
-        module_execution_prompt = module_loader.load_module_execution_prompt(module)
+        module_execution_prompt = module_loader.load_module_execution_prompt(config.module)
         if module_execution_prompt:
-            print_status(f"Loaded module-specific execution prompt for '{module}'", "SUCCESS")
+            print_status(f"Loaded module-specific execution prompt for '{config.module}'", "SUCCESS")
         else:
-            print_status(f"No module-specific execution prompt found for '{module}' - using default", "INFO")
+            print_status(f"No module-specific execution prompt found for '{config.module}' - using default", "INFO")
     except Exception as e:
-        logger.warning(f"Error loading module execution prompt for '{module}': {e}")
+        logger.warning("Error loading module execution prompt for '%s': %s", config.module, e)
 
     system_prompt = prompts.get_system_prompt(
-        target=target,
-        objective=objective,
-        remaining_steps=max_steps,  # The new prompt uses remaining_steps
+        target=config.target,
+        objective=config.objective,
+        remaining_steps=config.max_steps,  # The new prompt uses remaining_steps
     )
 
     # Always use the React bridge handler as it has all the functionality we need
@@ -376,9 +399,10 @@ Leverage these tools directly via shell.
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
 
     callback_handler = ReactBridgeHandler(
-        max_steps=max_steps,
+        max_steps=config.max_steps,
         operation_id=operation_id,
-        model_id=model_id,
+        model_id=config.model_id,
+        swarm_model_id=server_config.swarm.llm.model_id,
     )
 
     # No hooks needed - the callback handler handles everything
@@ -386,23 +410,23 @@ Leverage these tools directly via shell.
 
     # Create model based on provider type
     try:
-        if provider == "ollama":
+        if config.provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
-            model = _create_local_model(model_id, provider)
-            print_status(f"Ollama model initialized: {model_id}", "SUCCESS")
-        elif provider == "bedrock":
+            model = _create_local_model(config.model_id, config.provider)
+            print_status(f"Ollama model initialized: {config.model_id}", "SUCCESS")
+        elif config.provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(model_id, region_name, provider)
-            print_status(f"Bedrock model initialized: {model_id}", "SUCCESS")
-        elif provider == "litellm":
+            model = _create_remote_model(config.model_id, config.region_name, config.provider)
+            print_status(f"Bedrock model initialized: {config.model_id}", "SUCCESS")
+        elif config.provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
-            model = _create_litellm_model(model_id, region_name, provider)
-            print_status(f"LiteLLM model initialized: {model_id}", "SUCCESS")
+            model = _create_litellm_model(config.model_id, config.region_name, config.provider)
+            print_status(f"LiteLLM model initialized: {config.model_id}", "SUCCESS")
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            raise ValueError(f"Unsupported provider: {config.provider}")
 
     except Exception as e:
-        _handle_model_creation_error(provider, e)
+        _handle_model_creation_error(config.provider, e)
         raise
 
     # Always use original tools - event emission is handled by callback
@@ -421,7 +445,7 @@ Leverage these tools directly via shell.
     # Inject module-specific tools if available
     if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
-        agent_logger.info(f"Injected {len(loaded_module_tools)} module tools into agent")
+        agent_logger.info("Injected %d module tools into agent", len(loaded_module_tools))
 
     agent_logger.debug("Creating autonomous agent")
 
@@ -431,7 +455,7 @@ Leverage these tools directly via shell.
     # Create agent with telemetry for token tracking
     agent_kwargs = {
         "model": model,
-        "name": f"Cyber-AutoAgent {op_id}",
+        "name": f"Cyber-AutoAgent {config.op_id or operation_id}",
         "tools": tools_list,
         "system_prompt": system_prompt,
         "callback_handler": callback_handler,
@@ -441,13 +465,13 @@ Leverage these tools directly via shell.
         "trace_attributes": {
             # Core identification - session_id is the key for Langfuse trace naming
             "langfuse.session.id": operation_id,
-            "langfuse.user.id": f"cyber-agent-{target}",
+            "langfuse.user.id": f"cyber-agent-{config.target}",
             # Human-readable name that Langfuse will pick up
-            "name": f"Security Assessment - {target} - {operation_id}",
+            "name": f"Security Assessment - {config.target} - {operation_id}",
             # Tags for filtering and categorization
             "langfuse.tags": [
                 "Cyber-AutoAgent",
-                provider.upper(),
+                config.provider.upper(),
                 operation_id,
             ],
             "langfuse.environment": os.getenv("DEPLOYMENT_ENV", "production"),
@@ -455,7 +479,7 @@ Leverage these tools directly via shell.
             "langfuse.capabilities.swarm": True,
             # Standard OTEL attributes
             "session.id": operation_id,
-            "user.id": f"cyber-agent-{target}",
+            "user.id": f"cyber-agent-{config.target}",
             # Agent identification
             "agent.name": "Cyber-AutoAgent",
             "agent.version": "1.0.0",
@@ -465,15 +489,15 @@ Leverage these tools directly via shell.
             "operation.id": operation_id,
             "operation.type": "security_assessment",
             "operation.start_time": datetime.now().isoformat(),
-            "operation.max_steps": max_steps,
+            "operation.max_steps": config.max_steps,
             # Target and objective
-            "target.host": target,
-            "objective.description": objective,
+            "target.host": config.target,
+            "objective.description": config.objective,
             # Model configuration
-            "model.provider": provider,
-            "model.id": model_id,
-            "model.region": region_name if provider in ["bedrock", "litellm"] else "local",
-            "gen_ai.request.model": model_id,
+            "model.provider": config.provider,
+            "model.id": config.model_id,
+            "model.region": config.region_name if config.provider in ["bedrock", "litellm"] else "local",
+            "gen_ai.request.model": config.model_id,
             # Tool configuration
             "tools.available": 11,  # Number of core tools
             "tools.names": [
@@ -490,7 +514,7 @@ Leverage these tools directly via shell.
             "tools.parallel_limit": 8,
             # Memory configuration
             "memory.enabled": True,
-            "memory.path": memory_path if memory_path else "ephemeral",
+            "memory.path": config.memory_path if config.memory_path else "ephemeral",
         },
     }
 

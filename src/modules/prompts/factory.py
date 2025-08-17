@@ -7,10 +7,12 @@ report generation prompts, and module-specific prompts.
 """
 
 import logging
-import yaml
-from pathlib import Path
-from typing import Optional, List, Dict, Any
+import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +24,12 @@ def _load_prompt_template(template_name: str) -> str:
     try:
         template_path = Path(__file__).parent / "templates" / template_name
         if not template_path.exists():
-            logger.error(f"Prompt template not found: {template_path}")
+            logger.error("Prompt template not found: %s", template_path)
             return f"ERROR: Prompt template '{template_name}' not found."
         with open(template_path, "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
-        logger.exception(f"Failed to load prompt template '{template_name}': {e}")
+        logger.exception("Failed to load prompt template '%s': %s", template_name, e)
         return f"ERROR: Failed to load prompt template '{template_name}'."
 
 
@@ -50,7 +52,7 @@ def _extract_domain_lens(module_prompt: str) -> Dict[str, str]:
                 in_lens = True
                 continue
             if in_lens and line.strip():
-                if line.strip().startswith("</") or (line.strip().endswith(":") and not ":" in line[:-1]):
+                if line.strip().startswith("</") or (line.strip().endswith(":") and ":" not in line[:-1]):
                     break
                 if ":" in line:
                     parts = line.split(":", 1)
@@ -77,7 +79,7 @@ def _generate_findings_table(evidence_text: str) -> str:
     findings = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": []}
     lines = evidence_text.split("\n")
     for line in lines:
-        for severity in findings.keys():
+        for severity in findings:
             if f"[{severity}]" in line or f"| {severity}" in line:
                 content = line
                 for marker in [f"[{severity}]", f"| {severity}]", f"| {severity} |"]:
@@ -221,9 +223,9 @@ def get_system_prompt(
     """Construct the system prompt.
 
     Supports two usage modes:
-    - Template mode (preferred): pass target/objective/operation_id/steps and it will render `templates/system_prompt.md`,
+    - Template mode: pass target/objective/operation_id/steps and it will render `templates/system_prompt.md`,
       inserting `tools_guide` (from template if not provided) and optional `tools_context` and `module_execution_prompt` sections.
-    - Legacy mode: if `persona` and `workflow` are provided (old API), constructs a simple composed prompt.
+    - Fallback mode: if `persona` and `workflow` are provided, constructs a simple composed prompt.
     """
 
     # Preferred: render from template with variables
@@ -262,7 +264,7 @@ def get_system_prompt(
             rendered += f"\n\n<module_execution_guidance>\n{module_execution_prompt}\n</module_execution_guidance>"
         return rendered
 
-    # Legacy fallback mode
+    # Fallback mode
     if persona is not None and workflow is not None and tools_guide is not None:
         system_prompt = (
             f"# CYBER-AUTOAGENT\n\n"
@@ -298,12 +300,12 @@ class ModulePromptLoader:
             for path in potential_paths:
                 if path.exists():
                     self.modules_path = path
-                    logger.info(f"Found operation_plugins at: {path}")
+                    logger.info("Found operation_plugins at: %s", path)
                     break
             else:
                 self.modules_path = current_file.parent.parent / "operation_plugins"
-                logger.warning(f"Operation_plugins directory not found, using fallback: {self.modules_path}")
-        logger.debug(f"ModulePromptLoader initialized with path: {self.modules_path}")
+                logger.warning("Operation_plugins directory not found, using fallback: %s", self.modules_path)
+        logger.debug("ModulePromptLoader initialized with path: %s", self.modules_path)
 
     def load_module_execution_prompt(self, module_name: str) -> Optional[str]:
         """Load the execution prompt for a specific module."""
@@ -313,18 +315,18 @@ class ModulePromptLoader:
         prompt_path = self.modules_path / module_name / "execution_prompt.txt"
         try:
             if not prompt_path.exists():
-                logger.debug(f"No execution prompt found for module '{module_name}' at {prompt_path}")
+                logger.debug("No execution prompt found for module '%s' at %s", module_name, prompt_path)
                 return None
             with open(prompt_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if content:
-                logger.info(f"Loaded execution prompt for module '{module_name}' ({len(content)} chars)")
+                logger.info("Loaded execution prompt for module '%s' (%d chars)", module_name, len(content))
                 return content
             else:
-                logger.warning(f"Empty execution prompt file for module '{module_name}'")
+                logger.warning("Empty execution prompt file for module '%s'", module_name)
                 return None
         except Exception as e:
-            logger.error(f"Error loading execution prompt for module '{module_name}': {e}")
+            logger.error("Error loading execution prompt for module '%s': %s", module_name, e)
             return None
 
     def load_module_report_prompt(self, module_name: str) -> Optional[str]:
@@ -335,18 +337,18 @@ class ModulePromptLoader:
         prompt_path = self.modules_path / module_name / "report_prompt.txt"
         try:
             if not prompt_path.exists():
-                logger.debug(f"No report prompt found for module '{module_name}' at {prompt_path}")
+                logger.debug("No report prompt found for module '%s' at %s", module_name, prompt_path)
                 return None
             with open(prompt_path, "r", encoding="utf-8") as f:
                 content = f.read().strip()
             if content:
-                logger.info(f"Loaded report prompt for module '{module_name}' ({len(content)} chars)")
+                logger.info("Loaded report prompt for module '%s' (%d chars)", module_name, len(content))
                 return content
             else:
-                logger.warning(f"Empty report prompt file for module '{module_name}'")
+                logger.warning("Empty report prompt file for module '%s'", module_name)
                 return None
         except Exception as e:
-            logger.error(f"Error loading report prompt for module '{module_name}': {e}")
+            logger.error("Error loading report prompt for module '%s': %s", module_name, e)
             return None
 
     def load_module_metadata(self, module_name: str) -> Optional[Dict[str, Any]]:
@@ -356,14 +358,14 @@ class ModulePromptLoader:
         yaml_path = self.modules_path / module_name / "module.yaml"
         try:
             if not yaml_path.exists():
-                logger.debug(f"No module.yaml found for module '{module_name}'")
+                logger.debug("No module.yaml found for module '%s'", module_name)
                 return None
             with open(yaml_path, "r", encoding="utf-8") as f:
                 metadata = yaml.safe_load(f)
-            logger.debug(f"Loaded metadata for module '{module_name}'")
+            logger.debug("Loaded metadata for module '%s'", module_name)
             return metadata
         except Exception as e:
-            logger.error(f"Error loading metadata for module '{module_name}': {e}")
+            logger.error("Error loading metadata for module '%s': %s", module_name, e)
             return None
 
     def discover_module_tools(self, module_name: str) -> List[str]:
@@ -374,7 +376,7 @@ class ModulePromptLoader:
         tools = []
         try:
             if not tools_path.exists() or not tools_path.is_dir():
-                logger.debug(f"No tools directory found for module '{module_name}'")
+                logger.debug("No tools directory found for module '%s'", module_name)
                 return []
             for tool_file in tools_path.glob("*.py"):
                 if tool_file.name != "__init__.py":
@@ -384,10 +386,10 @@ class ModulePromptLoader:
                     f"Discovered {len(tools)} tools for module '{module_name}': {[Path(t).name for t in tools]}"
                 )
             else:
-                logger.debug(f"No tool files found for module '{module_name}'")
+                logger.debug("No tool files found for module '%s'", module_name)
             return tools
         except Exception as e:
-            logger.error(f"Error discovering tools for module '{module_name}': {e}")
+            logger.error("Error discovering tools for module '%s': %s", module_name, e)
             return []
 
     def get_available_modules(self) -> List[str]:
@@ -395,15 +397,15 @@ class ModulePromptLoader:
         modules = []
         try:
             if not self.modules_path.exists():
-                logger.warning(f"Modules directory not found: {self.modules_path}")
+                logger.warning("Modules directory not found: %s", self.modules_path)
                 return []
             for item in self.modules_path.iterdir():
                 if item.is_dir() and not item.name.startswith("."):
                     modules.append(item.name)
-            logger.debug(f"Found {len(modules)} available modules: {modules}")
+            logger.debug("Found %d available modules: %s", len(modules), modules)
             return sorted(modules)
         except Exception as e:
-            logger.error(f"Error scanning modules directory: {e}")
+            logger.error("Error scanning modules directory: %s", e)
             return []
 
     def validate_module(self, module_name: str) -> bool:
@@ -412,7 +414,7 @@ class ModulePromptLoader:
             return False
         module_path = self.modules_path / module_name
         if not module_path.exists() or not module_path.is_dir():
-            logger.warning(f"Module directory does not exist: {module_path}")
+            logger.warning("Module directory does not exist: %s", module_path)
             return False
         has_yaml = (module_path / "module.yaml").exists()
         has_exec_prompt = (module_path / "execution_prompt.txt").exists()
@@ -422,7 +424,7 @@ class ModulePromptLoader:
                 f"Module '{module_name}' missing key files (module.yaml, execution_prompt.txt, report_prompt.txt)"
             )
             return False
-        logger.debug(f"Module '{module_name}' validation passed")
+        logger.debug("Module '%s' validation passed", module_name)
         return True
 
 

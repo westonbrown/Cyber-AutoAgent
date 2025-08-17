@@ -2,7 +2,7 @@
  * Professional Log Container Component
  * 
  * Provides a structured, scrollable log display with proper formatting,
- * status indicators, and overflow management. Inspired by Jest and Gemini CLI.
+ * status indicators, and overflow management.
  */
 
 import React, { useRef, useEffect } from 'react';

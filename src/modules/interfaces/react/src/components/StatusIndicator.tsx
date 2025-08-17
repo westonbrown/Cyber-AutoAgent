@@ -4,7 +4,7 @@
  * Professional monitoring display inspired by enterprise dashboards
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import { HealthMonitor, HealthStatus } from '../services/HealthMonitor.js';
 import { ContainerManager } from '../services/ContainerManager.js';
@@ -25,18 +25,46 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = React.memo(({
   const [deploymentMode, setDeploymentMode] = useState<string>('cli');
   const [lastCheckAt, setLastCheckAt] = useState<number | null>(null);
   const theme = themeManager.getCurrentTheme();
+  const lastStatusRef = useRef<HealthStatus | null>(null);
+  const lastEmitRef = useRef<number>(0);
+  const MIN_EMIT_INTERVAL_MS = 15000; // 15s
 
   useEffect(() => {
     const monitor = HealthMonitor.getInstance();
     const containerManager = ContainerManager.getInstance();
     
-    // Use slower polling to prevent memory issues - 5 seconds is sufficient for status monitoring
-    monitor.startMonitoring(5000); // Check every 5 seconds for better performance
+    // Use environment-aware or slower polling to reduce churn. 10s is sufficient for status monitoring
+    monitor.startMonitoring(10000);
     
     // Subscribe to updates
     const unsubscribe = monitor.subscribe((status) => {
-      setHealthStatus(status);
-      setLastCheckAt(Date.now());
+      // Deduplicate updates to avoid unnecessary re-renders
+      const prev = lastStatusRef.current;
+      const now = Date.now();
+      const canEmitByTime = now - lastEmitRef.current >= MIN_EMIT_INTERVAL_MS;
+
+      const shallowEqual = (a?: HealthStatus | null, b?: HealthStatus | null): boolean => {
+        if (!a || !b) return false;
+        if (a.overall !== b.overall) return false;
+        if (a.dockerRunning !== b.dockerRunning) return false;
+        if (a.services.length !== b.services.length) return false;
+        for (let i = 0; i < a.services.length; i++) {
+          const sa = a.services[i];
+          const sb = b.services[i];
+          if (sa.name !== sb.name || sa.status !== sb.status || sa.health !== sb.health) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+      const changed = !shallowEqual(prev, status);
+      if (changed || canEmitByTime) {
+        lastStatusRef.current = status;
+        lastEmitRef.current = now;
+        setHealthStatus(status);
+        setLastCheckAt(now);
+      }
     });
 
     // Update deployment mode - use override if provided, otherwise auto-detect

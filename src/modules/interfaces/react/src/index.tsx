@@ -309,9 +309,11 @@ function renderReactApp() {
     try {
       process.stdin.on('data', (d) => fakeStdin.write(d));
     } catch {}
-    // trick Ink into not throwing on setRawMode
+    // trick Ink into not throwing on setRawMode and ref/unref
     fakeStdin.isTTY = true;
     fakeStdin.setRawMode = () => {};
+    fakeStdin.ref = () => {};
+    fakeStdin.unref = () => {};
     renderOptions.stdin = fakeStdin;
     renderOptions.exitOnCtrlC = false;
   }

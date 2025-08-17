@@ -74,7 +74,7 @@ export function getEnvironmentConfig(): EnvironmentConfig {
     docker: {
       networkName: env === 'production' ? 'cyber-autoagent-prod' : 'cyber-autoagent_default',
       autoCleanup: env !== 'development',
-      healthCheckInterval: env === 'production' ? 30000 : 10000
+      healthCheckInterval: env === 'production' ? 30000 : 3000
     },
     api: {
       timeout: env === 'production' ? 60000 : 30000,

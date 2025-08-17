@@ -78,12 +78,21 @@ export class OperationManager {
     // Add models from configuration pricing
     if (this.config.modelPricing) {
       Object.entries(this.config.modelPricing).forEach(([modelId, pricing]) => {
+        // Determine provider based on model ID pattern
+        let provider = 'bedrock';
+        if (modelId.includes(':') && !modelId.includes('.')) {
+          // Ollama models typically have format "model:version"
+          provider = 'ollama';
+        } else if (modelId.startsWith('bedrock/') || modelId.startsWith('openai/')) {
+          provider = 'litellm';
+        }
+        
         models.push({
           id: modelId,
           name: this.getModelDisplayName(modelId),
-          provider: 'bedrock',
-          inputCostPer1k: pricing.inputCostPer1k,
-          outputCostPer1k: pricing.outputCostPer1k,
+          provider: provider,
+          inputCostPer1k: this.config.modelProvider === 'ollama' ? 0 : pricing.inputCostPer1k,
+          outputCostPer1k: this.config.modelProvider === 'ollama' ? 0 : pricing.outputCostPer1k,
           contextLimit: this.getModelContextLimit(modelId),
           isAvailable: true
         });
@@ -97,6 +106,7 @@ export class OperationManager {
   private getModelDisplayName(modelId: string): string {
     const nameMap: { [key: string]: string } = {
       'us.anthropic.claude-sonnet-4-20250514-v1:0': 'Claude Sonnet 4',
+      'us.anthropic.claude-opus-4-1-20250805-v1:0': 'Claude Opus 4.1',
       'claude-3-5-sonnet-20241022-v2:0': 'Claude 3.5 Sonnet v2',
       'claude-3-5-sonnet-20240620-v1:0': 'Claude 3.5 Sonnet v1',
       'claude-3-haiku-20240307-v1:0': 'Claude 3 Haiku',
@@ -111,7 +121,17 @@ export class OperationManager {
       'amazon.titan-text-premier-v1:0': 'Amazon Titan Premier',
       'amazon.titan-text-express-v1': 'Amazon Titan Express',
       'cohere.command-r-plus-v1:0': 'Cohere Command R+',
-      'cohere.command-r-v1:0': 'Cohere Command R'
+      'cohere.command-r-v1:0': 'Cohere Command R',
+      // Ollama Models
+      'qwen3:1.7b': 'Qwen3 1.7B (Ollama)',
+      'llama3.2:3b': 'Llama 3.2 3B (Ollama)',
+      'llama3.2:1b': 'Llama 3.2 1B (Ollama)',
+      'llama3.1:8b': 'Llama 3.1 8B (Ollama)',
+      'mistral:7b': 'Mistral 7B (Ollama)',
+      'mxbai-embed-large': 'MXBAI Embeddings (Ollama)',
+      'nomic-embed-text': 'Nomic Embeddings (Ollama)',
+      'qwen2.5:7b': 'Qwen2.5 7B (Ollama)',
+      'qwen2.5:3b': 'Qwen2.5 3B (Ollama)'
     };
     return nameMap[modelId] || modelId;
   }
@@ -120,6 +140,7 @@ export class OperationManager {
   private getModelContextLimit(modelId: string): number {
     const contextLimits: { [key: string]: number } = {
       'us.anthropic.claude-sonnet-4-20250514-v1:0': 200000,
+      'us.anthropic.claude-opus-4-1-20250805-v1:0': 200000,
       'claude-3-5-sonnet-20241022-v2:0': 200000,
       'claude-3-5-sonnet-20240620-v1:0': 200000,
       'claude-3-haiku-20240307-v1:0': 200000,
@@ -134,7 +155,17 @@ export class OperationManager {
       'amazon.titan-text-premier-v1:0': 32000,
       'amazon.titan-text-express-v1': 8000,
       'cohere.command-r-plus-v1:0': 128000,
-      'cohere.command-r-v1:0': 128000
+      'cohere.command-r-v1:0': 128000,
+      // Ollama Models (approximate context limits)
+      'qwen3:1.7b': 32000,
+      'llama3.2:3b': 128000,
+      'llama3.2:1b': 128000,
+      'llama3.1:8b': 128000,
+      'mistral:7b': 32000,
+      'mxbai-embed-large': 512,  // Embedding model
+      'nomic-embed-text': 512,  // Embedding model
+      'qwen2.5:7b': 128000,
+      'qwen2.5:3b': 32000
     };
     return contextLimits[modelId] || 8000;
   }
@@ -355,6 +386,14 @@ export class OperationManager {
   }
 
   private getModelPricing(modelId: string): { inputCostPer1k: number; outputCostPer1k: number } {
+    // All Ollama models are free (local execution)
+    if (this.config.modelProvider === 'ollama') {
+      return {
+        inputCostPer1k: 0,
+        outputCostPer1k: 0
+      };
+    }
+    
     // Try to get pricing from configuration first
     if (this.config.modelPricing && this.config.modelPricing[modelId]) {
       const pricing = this.config.modelPricing[modelId];

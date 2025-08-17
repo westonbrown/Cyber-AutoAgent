@@ -16,7 +16,6 @@ Key Components:
 """
 
 import os
-import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -24,7 +23,6 @@ from typing import Dict, Any, Optional, List
 import requests
 import ollama
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
 from modules.handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
@@ -274,6 +272,7 @@ class ConfigManager:
         """Get list of models that support thinking capabilities."""
         return [
             "us.anthropic.claude-opus-4-20250514-v1:0",
+            "us.anthropic.claude-opus-4-1-20250805-v1:0",
             "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             "us.anthropic.claude-sonnet-4-20250514-v1:0",
         ]
@@ -326,7 +325,7 @@ class ConfigManager:
             "ollama": {
                 "llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="llama3.2:3b",
+                    model_id="qwen3:1.7b",
                     temperature=0.95,
                     max_tokens=4096,
                 ),
@@ -337,20 +336,20 @@ class ConfigManager:
                 ),
                 "memory_llm": MemoryLLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="llama3.2:3b",
+                    model_id="qwen3:1.7b",
                     temperature=0.1,
                     max_tokens=2000,
                     aws_region="ollama",
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="llama3.2:3b",
+                    model_id="qwen3:1.7b",
                     temperature=0.1,
                     max_tokens=2000,
                 ),
                 "swarm_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="llama3.2:3b",
+                    model_id="qwen3:1.7b",
                     temperature=0.7,
                     max_tokens=500,
                 ),
@@ -447,6 +446,34 @@ class ConfigManager:
 
         # Apply function parameter overrides
         defaults.update(overrides)
+        
+        # Special handling for model_id override - apply to LLM configs
+        if 'model_id' in overrides:
+            user_model = overrides['model_id']
+            # Update main LLM
+            if 'llm' in defaults and isinstance(defaults['llm'], LLMConfig):
+                defaults['llm'].model_id = user_model
+            # Update memory LLM
+            if 'memory_llm' in defaults and isinstance(defaults['memory_llm'], MemoryLLMConfig):
+                defaults['memory_llm'].model_id = user_model
+            # Update evaluation LLM  
+            if 'evaluation_llm' in defaults and isinstance(defaults['evaluation_llm'], LLMConfig):
+                defaults['evaluation_llm'].model_id = user_model
+            # Don't override swarm LLM with user model - keep swarm using v2 for better performance
+            # Swarm model can be overridden via CYBER_AGENT_SWARM_MODEL env var if needed
+            # For Ollama, also use the same model for embeddings if mxbai-embed-large is not available
+            if provider == "ollama" and 'embedding' in defaults and isinstance(defaults['embedding'], EmbeddingConfig):
+                # Check if the default embedding model is available
+                try:
+                    client = ollama.Client(host=self.get_ollama_host())
+                    models_response = client.list()
+                    available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
+                    if not any("mxbai-embed-large" in model for model in available_models):
+                        # Use the user's model for embeddings too
+                        defaults['embedding'].model_id = user_model
+                except:
+                    # If we can't check, use the user's model for safety
+                    defaults['embedding'].model_id = user_model
 
         # Build memory configuration
         memory_config = MemoryConfig(
@@ -640,7 +667,6 @@ class ConfigManager:
                         "model": model_id.replace("bedrock/", ""),  # Remove prefix for Mem0
                         "temperature": memory_config.llm.temperature,
                         "max_tokens": memory_config.llm.max_tokens,
-                        "aws_region": memory_config.llm.aws_region,
                     },
                 }
             else:
@@ -651,7 +677,6 @@ class ConfigManager:
                         "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                         "temperature": memory_config.llm.temperature,
                         "max_tokens": memory_config.llm.max_tokens,
-                        "aws_region": memory_config.llm.aws_region,
                     },
                 }
         else:  # bedrock
@@ -661,7 +686,6 @@ class ConfigManager:
                     "model": memory_config.llm.model_id,
                     "temperature": memory_config.llm.temperature,
                     "max_tokens": memory_config.llm.max_tokens,
-                    "aws_region": memory_config.llm.aws_region,
                 },
             }
 
@@ -841,7 +865,6 @@ class ConfigManager:
             or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
         )
 
-        # cleanup_memory removed as part of memory management simplification
 
         return OutputConfig(
             base_dir=base_dir,
@@ -864,27 +887,47 @@ class ConfigManager:
                 f"Ollama server not accessible at {ollama_host}. " "Please ensure Ollama is installed and running."
             ) from e
 
-        # Check if required models are available
+        # Check if at least one model is available
         try:
             client = ollama.Client(host=ollama_host)
             models_response = client.list()
             available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
 
+            if not available_models:
+                raise ValueError(
+                    "No Ollama models found. Please pull at least one model, e.g.: ollama pull qwen3:1.7b"
+                )
+            
+            # Log available models for debugging
+            logger.info(f"Available Ollama models: {available_models}")
+            
+            # Only check for default models if no user override is expected
+            # This allows users to specify any model they have available
             server_config = self.get_server_config("ollama")
-            required_models = [
+            default_models = [
                 server_config.llm.model_id,
                 server_config.embedding.model_id,
             ]
-
-            missing = [m for m in required_models if not any(m in model for model in available_models)]
-
-            if missing:
-                raise ValueError(
-                    f"Required models not found: {missing}. "
-                    f"Pull them with: ollama pull {' && ollama pull '.join(missing)}"
+            
+            # Check if at least one default model is available, or any model exists for override
+            has_default = any(
+                any(default_model in model for model in available_models) 
+                for default_model in default_models
+            )
+            
+            if not has_default and len(available_models) > 0:
+                # User has models but not the defaults - this is OK, they can override
+                logger.info(
+                    f"Default models {default_models} not found, but {len(available_models)} model(s) available. "
+                    f"User can specify --model parameter to use: {available_models[0]}"
                 )
+            elif not has_default and len(available_models) == 0:
+                raise ValueError(
+                    f"No models available. Pull a model with: ollama pull qwen3:1.7b"
+                )
+                
         except Exception as e:
-            if "Required models not found" in str(e):
+            if "No Ollama models found" in str(e) or "No models available" in str(e):
                 raise e
             raise ConnectionError(f"Could not verify Ollama models: {e}") from e
 
@@ -910,22 +953,15 @@ class ConfigManager:
             logger.debug("Could not create bedrock-runtime client: %s", e)
             # Model-specific errors will be handled by strands-agents during actual usage
 
-    def _convert_bearer_token_if_needed(self) -> None:
-        """Convert AWS Bedrock API key to session credentials if provided."""
+    def _validate_aws_requirements(self) -> None:
+        """Validate AWS requirements including Bedrock model access."""
+        # Convert bearer token to session credentials for Strands SDK compatibility
         bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
-        access_key = os.getenv("AWS_ACCESS_KEY_ID")
-
-        # Handle both None and empty string cases (Docker Compose sets empty strings)
-        if bearer_token and (not access_key or access_key.strip() == ""):
+        if bearer_token and not os.getenv("AWS_ACCESS_KEY_ID"):
             os.environ["AWS_ACCESS_KEY_ID"] = "ASIABEARERTOKEN"
             os.environ["AWS_SECRET_ACCESS_KEY"] = "bearer+token+placeholder"
             os.environ["AWS_SESSION_TOKEN"] = bearer_token
-
-    def _validate_aws_requirements(self) -> None:
-        """Validate AWS requirements including Bedrock model access."""
-        # Convert bearer token if needed
-        self._convert_bearer_token_if_needed()
-
+        
         # Verify AWS credentials are configured
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(
