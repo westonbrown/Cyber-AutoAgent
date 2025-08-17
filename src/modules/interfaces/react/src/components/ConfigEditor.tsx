@@ -676,7 +676,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               </Box>
               
               {/* Fields (if expanded) */}
-              {section.expanded && navigationMode === 'fields' && (
+              {section.expanded && navigationMode === 'fields' && sectionIndex === selectedSectionIndex && (
                 <Box flexDirection="column" paddingLeft={2} marginTop={1}>
                   {getCurrentSectionFields().map((field, fieldIndex) => {
                     const isFieldSelected = fieldIndex === selectedFieldIndex;
