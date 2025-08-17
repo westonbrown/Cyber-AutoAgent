@@ -205,6 +205,11 @@ temp/
 # Evidence files
 evidence_*
 
+# Configuration files with sensitive data
+config.json
+*.config.json
+.config.json
+
 # Local experimentation and memory files
 experimentation/
 memory/

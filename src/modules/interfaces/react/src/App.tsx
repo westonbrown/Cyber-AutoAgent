@@ -75,7 +75,7 @@ const AppContent: React.FC<AppProps> = ({
   const escSuppressUntilRef = React.useRef<number>(0);
   
   // Configuration and theme management
-  const { config: applicationConfig, isConfigLoading } = useConfig();
+  const { config: applicationConfig, isConfigLoading, updateConfig, saveConfig } = useConfig();
   const currentTheme = themeManager.getCurrentTheme();
   
   // Consolidated state management
@@ -219,7 +219,9 @@ const AppContent: React.FC<AppProps> = ({
     actions,
     applicationConfig,
     activeModal,
-    openConfig
+    openConfig,
+    updateConfig,
+    saveConfig
   });
   
   // Ensure the main view (Static sections) repaints after closing modals

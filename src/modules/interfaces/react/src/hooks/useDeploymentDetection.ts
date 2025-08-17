@@ -24,8 +24,13 @@ export function useDeploymentDetection({
   actions,
   applicationConfig,
   activeModal,
-  openConfig
-}: UseDeploymentDetectionParams) {
+  openConfig,
+  updateConfig,
+  saveConfig
+}: UseDeploymentDetectionParams & {
+  updateConfig?: (updates: any) => void;
+  saveConfig?: () => Promise<void>;
+}) {
   React.useEffect(() => {
     if (isConfigLoading) return;
     if (appState.isInitializationFlowActive) return;
@@ -46,11 +51,43 @@ export function useDeploymentDetection({
           return;
         }
 
-        // If a healthy deployment is detected, do not show the setup wizard.
+        // If a healthy deployment is detected, check if we need to switch modes
         if (hasHealthy) {
-          // Do not auto-open the config editor here; allow the main app to load.
-          // The later block will handle prompting the config editor only after setup
-          // when the app is configured but model details are missing.
+          // Check if the configured deployment mode is unhealthy
+          const configuredMode = applicationConfig?.deploymentMode;
+          if (configuredMode) {
+            const configuredDeployment = detection.availableDeployments?.find(
+              d => d.mode === configuredMode
+            );
+            
+            // If configured mode is unhealthy, switch to a healthy one
+            if (configuredDeployment && !configuredDeployment.isHealthy) {
+              const healthyDeployment = detection.availableDeployments?.find(d => d.isHealthy);
+              if (healthyDeployment && updateConfig && saveConfig) {
+                // Auto-switch to the healthy deployment
+                updateConfig({ deploymentMode: healthyDeployment.mode });
+                await saveConfig();
+                
+                // Log the auto-switch for debugging
+                console.log(`Auto-switched from unhealthy ${configuredMode} to ${healthyDeployment.mode}`);
+              }
+            }
+          } else if (!applicationConfig?.isConfigured) {
+            // No deployment mode configured yet, but we have healthy deployments
+            // Auto-select the best available healthy deployment
+            const healthyDeployment = detection.availableDeployments?.find(d => d.isHealthy);
+            if (healthyDeployment && updateConfig && saveConfig) {
+              updateConfig({ 
+                deploymentMode: healthyDeployment.mode,
+                isConfigured: true,
+                hasSeenWelcome: true
+              });
+              await saveConfig();
+              console.log(`Auto-selected healthy deployment: ${healthyDeployment.mode}`);
+            }
+          }
+          
+          // Do not show setup wizard - we have healthy deployments
           return;
         }
 
@@ -82,5 +119,5 @@ export function useDeploymentDetection({
     };
 
     run();
-  }, [isConfigLoading, appState.isUserTriggeredSetup, appState.isInitializationFlowActive, appState.isConfigLoaded, appState.hasUserDismissedInit, applicationConfig, activeModal, actions, openConfig]);
+  }, [isConfigLoading, appState.isUserTriggeredSetup, appState.isInitializationFlowActive, appState.isConfigLoaded, appState.hasUserDismissedInit, applicationConfig, activeModal, actions, openConfig, updateConfig, saveConfig]);
 }
