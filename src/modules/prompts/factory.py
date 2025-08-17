@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # --- Template and Utility Functions ---
 
 
-def _load_prompt_template(template_name: str) -> str:
+def load_prompt_template(template_name: str) -> str:
     """Load a prompt template from the templates directory."""
     try:
         template_path = Path(__file__).parent / "templates" / template_name
@@ -157,6 +157,99 @@ def format_tools_summary(tools_used: List[str]) -> str:
     return "\n".join([f"- {name}: {count} uses" for name, count in tools_summary.items()])
 
 
+def _transform_evidence_to_content(
+    evidence: List[Dict[str, Any]], 
+    domain_lens: Dict[str, str],
+    target: str,
+    objective: str
+) -> Dict[str, str]:
+    """
+    Transform evidence into report content guided by domain lens.
+    
+    This function bridges the semantic gap between raw evidence and report sections
+    by using the domain lens as a transformation guide. It maintains the structure
+    and meaning of evidence while preparing content for the report template.
+    
+    Args:
+        evidence: List of evidence dictionaries with severity, category, content
+        domain_lens: Module-specific guidance for report sections
+        target: Assessment target
+        objective: Assessment objective
+        
+    Returns:
+        Dictionary with keys matching report template placeholders
+    """
+    # Group evidence by severity for structured analysis
+    severity_groups = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
+    
+    for item in evidence:
+        severity = item.get("severity", "info").lower()
+        if severity in severity_groups:
+            severity_groups[severity].append(item)
+    
+    # Count findings for overview context
+    total_findings = len(evidence)
+    critical_count = len(severity_groups["critical"])
+    high_count = len(severity_groups["high"])
+    
+    # Initialize content with domain lens defaults or evidence-based summaries
+    content = {}
+    
+    # Overview: Combine assessment context with domain guidance
+    if domain_lens.get("overview"):
+        # Use domain lens overview as foundation
+        content["overview"] = domain_lens["overview"]
+    else:
+        # Build from evidence if no domain guidance
+        content["overview"] = (
+            f"Security assessment of {target} identified {total_findings} findings. "
+            f"Objective: {objective}. "
+        )
+        if critical_count > 0:
+            content["overview"] += f"Critical vulnerabilities require immediate attention. "
+    
+    # Analysis: Structure findings with domain perspective
+    if domain_lens.get("analysis"):
+        # Prepend domain analysis framework
+        content["analysis"] = f"{domain_lens['analysis']}\n\n"
+    else:
+        content["analysis"] = ""
+    
+    # Add evidence summary to analysis
+    for severity in ["critical", "high", "medium"]:
+        if severity_groups[severity]:
+            content["analysis"] += f"\n### {severity.upper()} Severity Findings\n"
+            # Include top findings per category
+            for finding in severity_groups[severity][:3]:
+                finding_content = finding.get("content", "")[:150]
+                content["analysis"] += f"- {finding_content}\n"
+    
+    # Recommendations: Use domain lens with evidence context
+    # Map domain lens keys to recommendation timeframes
+    recommendation_map = {
+        "immediate": (severity_groups["critical"] + severity_groups["high"][:2]),
+        "short_term": (severity_groups["high"][2:] + severity_groups["medium"]),
+        "long_term": (severity_groups["low"] + severity_groups["info"])
+    }
+    
+    for timeframe, relevant_evidence in recommendation_map.items():
+        if domain_lens.get(timeframe):
+            # Use domain lens recommendation as base
+            content[timeframe] = domain_lens[timeframe]
+        elif relevant_evidence:
+            # Generate basic recommendation from evidence
+            severity_label = timeframe.replace("_", " ").title()
+            content[timeframe] = (
+                f"{severity_label} actions needed to address "
+                f"{len(relevant_evidence)} identified issues"
+            )
+        else:
+            # Default when no evidence or guidance
+            content[timeframe] = ""
+    
+    return content
+
+
 def get_report_generation_prompt(
     target: str,
     objective: str,
@@ -174,7 +267,19 @@ def get_report_generation_prompt(
     high_count = evidence_text.count("[HIGH]") + evidence_text.count("| HIGH")
     medium_count = evidence_text.count("[MEDIUM]") + evidence_text.count("| MEDIUM")
     low_count = evidence_text.count("[LOW]") + evidence_text.count("| LOW")
-    template = _load_prompt_template("report_template.md")
+    
+    # Extract domain lens to guide content generation
+    domain_lens = _extract_domain_lens(module_prompt) if module_prompt else {}
+    
+    # Transform evidence into structured content using domain lens
+    report_content = _transform_evidence_to_content(
+        evidence=evidence,
+        domain_lens=domain_lens,
+        target=target,
+        objective=objective
+    )
+    
+    template = load_prompt_template("report_template.md")
     report_body = template.format(
         target=target,
         objective=objective,
@@ -185,15 +290,15 @@ def get_report_generation_prompt(
         high_count=high_count,
         medium_count=medium_count,
         low_count=low_count,
-        overview="",
+        overview=report_content.get("overview", ""),
         findings_table=findings_table,
-        analysis_details="",
+        analysis_details=report_content.get("analysis", ""),
         evidence_text=evidence_text,
-        immediate_recommendations="",
-        short_term_recommendations="",
-        long_term_recommendations="",
+        immediate_recommendations=report_content.get("immediate", ""),
+        short_term_recommendations=report_content.get("short_term", ""),
+        long_term_recommendations=report_content.get("long_term", ""),
         tools_summary=tools_summary,
-        analysis_framework="",
+        analysis_framework=domain_lens.get("framework", ""),
         module_report=(module_prompt or ""),
     )
     return report_body
@@ -201,7 +306,7 @@ def get_report_generation_prompt(
 
 def get_report_agent_system_prompt() -> str:
     """Get the system prompt for the report generation agent."""
-    return _load_prompt_template("report_agent_system_prompt.md")
+    return load_prompt_template("report_agent_system_prompt.md")
 
 
 # --- Core System Prompt and Module Loading ---
@@ -230,10 +335,10 @@ def get_system_prompt(
 
     # Preferred: render from template with variables
     if target is not None and objective is not None:
-        base = _load_prompt_template("system_prompt.md")
+        base = load_prompt_template("system_prompt.md")
         # Load tools guide template if not supplied
         if tools_guide is None:
-            tools_guide = _load_prompt_template("tools_guide.md")
+            tools_guide = load_prompt_template("tools_guide.md")
 
         # Simple placeholder replacement for {{ var }} occurrences
         def _subst(s: str, mapping: Dict[str, Any]) -> str:

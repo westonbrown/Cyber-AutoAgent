@@ -59,6 +59,9 @@ class ReportGenerator:
         else:  # litellm
             model = LiteLLMModel(model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 
+        # Import the report builder tool
+        from modules.tools.report_builder import build_report_sections
+        
         # Create agent with report-specific configuration
         trace_attrs = {
             # Core identification - CRITICAL for trace continuity
@@ -76,12 +79,23 @@ class ReportGenerator:
 
         # Only add trace attributes if operation_id is provided
         # This ensures proper parent-child relationship
+        
+        # Create a silent callback handler to prevent duplicate output
+        # The report content will be returned and emitted once by the caller
+        from strands.handlers import BaseCallbackHandler
+        
+        class SilentCallbackHandler(BaseCallbackHandler):
+            """Silent handler that doesn't print anything."""
+            def __call__(self, **kwargs):
+                pass  # Do nothing - prevent any output
+        
         return Agent(
             model=model,
             name="Cyber-ReportGenerator",
             system_prompt=get_report_agent_system_prompt(),
-            tools=[],  # No tools needed for report generation
+            tools=[build_report_sections],  # Report agent now has the builder tool
             trace_attributes=trace_attrs if operation_id else None,
+            callback_handler=SilentCallbackHandler(),  # Prevent duplicate output
         )
 
 

@@ -1,46 +1,27 @@
 #!/usr/bin/env python3
 """
-Report Generation Tool for Cyber-AutoAgent
+Report Generation Handler Utility for Cyber-AutoAgent
 
-This tool provides report generation capabilities that can be called by the main agent,
-ensuring proper trace hierarchy and span management through the Strands SDK.
+This module provides report generation functionality that is called
+directly by handlers (ReactBridgeHandler, sdk_native_handler) at the 
+end of operations to guarantee report generation.
 
-Key Features:
-- Generates comprehensive security assessment reports
-- Automatically creates proper child spans when called by agent
-- Maintains trace continuity without manual span management
-- Integrates with memory system to retrieve evidence
+The actual report generation is done by a specialized Report Agent
+that has access to the build_report_sections tool.
+
+This is NOT a Strands tool - it's a handler utility function.
 """
 
 import json
 import logging
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
-from strands import tool
 
 from modules.agents.report_agent import ReportGenerator
-from modules.prompts.factory import get_report_generation_prompt
 from modules.tools.memory import get_memory_client
-
-
-@dataclass
-class ReportConfig:
-    """Configuration object for security report generation to reduce parameter count."""
-    target: str
-    objective: str
-    operation_id: str
-    steps_executed: int
-    tools_used: List[str]
-    evidence: Optional[List[Dict[str, Any]]] = None
-    provider: str = "bedrock"
-    model_id: Optional[str] = None
-    module: Optional[str] = None
-
 
 logger = logging.getLogger(__name__)
 
 
-@tool
 def generate_security_report(
     target: str,
     objective: str,
@@ -50,9 +31,10 @@ def generate_security_report(
     """
     Generate a comprehensive security assessment report based on the operation results.
 
-    This tool creates a professional penetration testing report by analyzing the
-    evidence collected during the security assessment. It uses an LLM to generate
-    a well-structured report with findings, recommendations, and risk assessments.
+    This function is called by handlers to create a professional penetration testing 
+    report by analyzing the evidence collected during the security assessment. 
+    It uses a specialized Report Agent with tools to generate a well-structured 
+    report with findings, recommendations, and risk assessments.
 
     Args:
         target: The target system that was assessed
@@ -114,28 +96,63 @@ def generate_security_report(
                 "Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count
             )
 
-        # Get module report prompt if available
+        # Get module report prompt if available for domain guidance
         module_report_prompt = _get_module_report_prompt(module)
-
-        # Get the report prompt from centralized prompts
-        report_prompt = get_report_generation_prompt(
-            target=target,
-            objective=objective,
-            operation_id=operation_id,
-            steps_executed=steps_executed,
-            evidence=evidence,
-            tools_used=tools_used,
-            module_prompt=module_report_prompt,
-        )
-
-        # Create report agent using utility class with trace attributes
+        
+        # Load the report template from file
+        from modules.prompts import load_prompt_template
+        report_template = load_prompt_template("report_template.md")
+        
+        # Create report agent with the builder tool
         report_agent = ReportGenerator.create_report_agent(
             provider=provider, model_id=model_id, operation_id=operation_id, target=target
         )
 
-        # Generate the report
-        logger.info("Invoking report generation agent...")
-        result = report_agent(report_prompt)
+        # Create comprehensive prompt with template structure and module guidance
+        agent_prompt = f"""<operation_context>
+Target: {target}
+Objective: {objective}
+Operation ID: {operation_id}
+Module: {module or 'general'}
+Steps Executed: {steps_executed}
+Tools Used Count: {len(tools_used) if tools_used else 0}
+</operation_context>
+
+<module_guidance>
+{module_report_prompt if module_report_prompt else 'Apply general security assessment best practices focusing on OWASP Top 10 and common vulnerability patterns.'}
+</module_guidance>
+
+<report_template_instructions>
+Use the following template structure for your report. Fill in each section with data from your build_report_sections tool:
+
+{report_template}
+</report_template_instructions>
+
+<generation_instructions>
+1. **First Step**: Call your build_report_sections tool with these parameters:
+   - operation_id: "{operation_id}"
+   - target: "{target}"
+   - objective: "{objective}"
+   - module: "{module or 'general'}"
+   - steps_executed: {steps_executed}
+   - tools_used: {tools_used if tools_used else '[]'}
+
+2. **Second Step**: Use the data returned by your tool to fill in the template above:
+   - The tool will return a dictionary with keys like: overview, findings_table, analysis, 
+     immediate_recommendations, short_term_recommendations, long_term_recommendations,
+     severity_counts, tools_summary, date, analysis_framework
+   - Replace each [bracketed instruction] with the corresponding data from your tool
+   - For severity counts, use severity_counts['critical'], severity_counts['high'], etc.
+   - Expand on the evidence with professional analysis where appropriate
+
+3. **Final Step**: Generate the complete report following the template structure exactly
+
+Remember: You MUST use your build_report_sections tool first to get the evidence and analysis data.
+</generation_instructions>"""
+
+        # Generate the report using the agent with its tool
+        logger.info("Invoking report generation agent with structured prompt...")
+        result = report_agent(agent_prompt)
 
         # Extract the report content
         if result and hasattr(result, "message"):
@@ -250,10 +267,6 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
         logger.warning("Error retrieving evidence from memory: %s", e)
 
     return evidence
-
-
-# Note: formatting and cleaning functions are now imported from
-# modules.prompts.report and modules.agents.report_agent to maintain modularity
 
 
 def _get_module_report_prompt(module_name: Optional[str]) -> Optional[str]:

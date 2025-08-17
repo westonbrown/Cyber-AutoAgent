@@ -15,6 +15,7 @@ from .factory import (
     format_tools_summary,
     get_module_loader,
     ModulePromptLoader,
+    load_prompt_template,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "format_tools_summary",
     "get_module_loader",
     "ModulePromptLoader",
+    "load_prompt_template",
 ]
