@@ -27,7 +27,7 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Environment :: Console"
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"
 dependencies = [
     "strands-agents[ollama,otel,litellm]==1.4.0",
     "strands-agents-tools==0.2.3", 
@@ -41,6 +41,7 @@ dependencies = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "pyarrow>=14.0.0,<20.0.0",
     "ragas>=0.3.0",
     "langfuse>=2.0.0",
     "langchain-aws>=0.2.0",

@@ -409,6 +409,14 @@ export interface PythonSystemEvent extends BaseEvent {
 // UNION TYPES AND UTILITY INTERFACES - Event system foundations
 // =============================================================================
 
+// Simple event for displaying the final security report
+export interface ReportContentEvent {
+  type: 'report_content';
+  content: string;
+  id?: string;
+  timestamp?: string;
+}
+
 /**
  * StreamEvent Union Type - Discriminated Union of All Event Types
  * 
@@ -433,7 +441,8 @@ export type StreamEvent =
   | SystemEvent
   | ConnectionEvent
   | AgentEvent
-  | PythonSystemEvent;
+  | PythonSystemEvent
+  | ReportContentEvent;
 
 /**
  * Event Handler Function Type

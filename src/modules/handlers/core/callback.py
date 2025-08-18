@@ -97,9 +97,8 @@ class ReasoningHandler(PrintingCallbackHandler):
             if isinstance(message, dict):
                 content = message.get("content", [])
 
-                # Detect current swarm agent if in swarm operation
-                if self.state.in_swarm_operation:
-                    self._detect_current_swarm_agent(kwargs)
+                # Agent tracking handled through explicit handoff events only
+                # Text-based detection removed - it's unreliable
 
                 # Process text blocks
                 for block in content:
@@ -241,116 +240,6 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Default validation
             return bool(tool_input)
 
-    def _detect_current_swarm_agent(self, event_data: Dict[str, Any]) -> None:
-        """Detect which agent is currently executing in a swarm operation.
-
-        This method analyzes callback event data to identify the current agent
-        in a swarm execution. It helps provide context in the UI by showing
-        which agent is performing each action.
-
-        Args:
-            event_data: The callback event data dictionary
-        """
-        # Method 1: Check for agent context in the event data directly
-        # The SDK might provide agent context in various places
-        if "agent_name" in event_data:
-            agent_name = event_data.get("agent_name", "")
-            if agent_name in self.state.swarm_agents:
-                self.state.current_swarm_agent = agent_name
-                return
-
-        # Check for node_id which might contain agent name
-        if "node_id" in event_data:
-            node_id = event_data.get("node_id", "")
-            for agent_name in self.state.swarm_agents:
-                if agent_name in node_id:
-                    self.state.current_swarm_agent = agent_name
-                    return
-
-        # Method 2: Check message events for agent context
-        if "message" in event_data:
-            message = event_data["message"]
-            if isinstance(message, dict):
-                # Check metadata for agent info
-                metadata = message.get("metadata", {})
-                if isinstance(metadata, dict):
-                    # Check for agent name in metadata
-                    for key in ["agent", "agent_name", "node", "node_id", "current_agent"]:
-                        if key in metadata:
-                            agent_value = metadata[key]
-                            if agent_value in self.state.swarm_agents:
-                                self.state.current_swarm_agent = agent_value
-                                return
-                            # Check if any agent name is contained in the value
-                            for agent_name in self.state.swarm_agents:
-                                if agent_name in str(agent_value):
-                                    self.state.current_swarm_agent = agent_name
-                                    return
-
-                # Check for role-based agent identification
-                role = message.get("role", "")
-                if role == "assistant":
-                    # Look for agent context in the message content
-                    content = message.get("content", [])
-                    for block in content:
-                        if isinstance(block, dict):
-                            # Check for agent identification in text blocks
-                            if block.get("type") == "text":
-                                text = block.get("text", "")
-                                # Look for explicit agent declarations
-                                if text.strip():
-                                    # Check for agent introductions or declarations
-                                    for agent_name in self.state.swarm_agents:
-                                        # Check various patterns for agent identification
-                                        agent_patterns = [
-                                            f"I am {agent_name}",
-                                            f"As {agent_name}",
-                                            f"This is {agent_name}",
-                                            f"{agent_name} here",
-                                            f"{agent_name} speaking",
-                                            # Also check for formatted names
-                                            f"I am {agent_name.replace('_', ' ')}",
-                                            f"As {agent_name.replace('_', ' ')}",
-                                            f"{agent_name.replace('_', ' ')} here",
-                                        ]
-                                        for pattern in agent_patterns:
-                                            if pattern.lower() in text.lower():
-                                                self.state.current_swarm_agent = agent_name
-                                                return
-
-                            # Check tool use for handoff patterns and complete_swarm_task
-                            elif "toolUse" in block:
-                                tool_use = block["toolUse"]
-                                tool_name = tool_use.get("name", "")
-
-                                if tool_name == "handoff_to_agent":
-                                    # Extract the target agent from handoff
-                                    tool_input = tool_use.get("input", {})
-                                    if isinstance(tool_input, dict):
-                                        next_agent = tool_input.get("agent_name", "")
-                                        if next_agent in self.state.swarm_agents:
-                                            # The next message will be from this agent
-                                            self.state.current_swarm_agent = next_agent
-                                            return
-
-                                elif tool_name == "complete_swarm_task":
-                                    # Swarm is completing, clear the swarm state
-                                    self.state.in_swarm_operation = False
-                                    self.state.current_swarm_agent = None
-                                    return
-
-        # Method 3: Track based on the execution flow
-        # If we're in swarm and no agent detected, cycle through agents
-        if self.state.in_swarm_operation and not self.state.current_swarm_agent:
-            # If this is the first step after swarm starts, use first agent
-            if self.state.swarm_step_count == 1 and self.state.swarm_agents:
-                self.state.current_swarm_agent = self.state.swarm_agents[0]
-            # Otherwise, we might have missed a handoff - use a simple rotation
-            # This is a fallback and may not be accurate
-            elif self.state.swarm_agents and self.state.swarm_step_count > 1:
-                # Rotate through agents based on step count
-                agent_index = (self.state.swarm_step_count - 1) % len(self.state.swarm_agents)
-                self.state.current_swarm_agent = self.state.swarm_agents[agent_index]
 
     def _handle_text_block(self, text: str) -> None:
         """Handle text blocks (reasoning/thinking) with proper formatting"""

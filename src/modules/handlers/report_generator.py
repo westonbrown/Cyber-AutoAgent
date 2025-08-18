@@ -3,7 +3,7 @@
 Report Generation Handler Utility for Cyber-AutoAgent
 
 This module provides report generation functionality that is called
-directly by handlers (ReactBridgeHandler, sdk_native_handler) at the 
+directly by handlers (ReactBridgeHandler) at the 
 end of operations to guarantee report generation.
 
 The actual report generation is done by a specialized Report Agent
@@ -64,7 +64,8 @@ def generate_security_report(
             try:
                 config_params = json.loads(config_data)
             except json.JSONDecodeError:
-                return "Error: Invalid JSON in config_data parameter"
+                logger.error("Invalid JSON in config_data parameter")
+                return "Report generation failed: Invalid configuration format"
         
         # Extract parameters with defaults
         steps_executed = config_params.get('steps_executed', 0)
@@ -169,16 +170,35 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
 
                 logger.info("Report generated successfully (%d characters)", len(report_text))
 
-                # Validate report length and content
-                report_length = len(report_text.strip())
-                if report_length < 50:
+                # Validate report structure and completeness
+                report_text_lower = report_text.lower()
+                required_sections = [
+                    "# security assessment report",
+                    "## executive summary",
+                    "## key findings",
+                    "## remediation"
+                ]
+                
+                missing_sections = [
+                    section for section in required_sections 
+                    if section not in report_text_lower
+                ]
+                
+                if missing_sections:
                     logger.warning(
-                        "Generated report is unusually short (%d chars) - may indicate generation issues", report_length
+                        "Generated report missing required sections: %s", 
+                        ", ".join(missing_sections)
                     )
-                    # Don't fail completely, but add warning to report
-                    report_text = f"⚠️ **REPORT GENERATION WARNING**: Unusually short report ({report_length} characters) - please verify completeness.\n\n{report_text}"
-                elif report_length < 200:
-                    logger.info("Generated report is shorter than typical (%d chars) but proceeding", report_length)
+                    warning = (
+                        f"⚠️ **REPORT WARNING**: The following sections may be incomplete: "
+                        f"{', '.join(missing_sections)}\n\n"
+                    )
+                    report_text = warning + report_text
+                
+                # Validate minimum content length
+                if len(report_text.strip()) < 100:
+                    logger.error("Report is critically short - likely generation failure")
+                    return "Report generation failed: Insufficient content generated"
 
                 return report_text
 
@@ -187,7 +207,8 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
 
     except Exception as e:
         logger.error("Error generating security report: %s", e, exc_info=True)
-        return f"Error: {str(e)}"
+        # Don't expose internal error details to user
+        return "Report generation failed. Please check logs for details."
 
 
 def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
@@ -203,9 +224,8 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
     evidence = []
 
     try:
-        # Use pre-imported memory client
-
-        memory_client = get_memory_client()
+        # Use pre-imported memory client with silent mode to prevent output during report generation
+        memory_client = get_memory_client(silent=True)
         if not memory_client:
             error_msg = (
                 "Critical: Memory service unavailable - cannot generate comprehensive report with stored evidence"

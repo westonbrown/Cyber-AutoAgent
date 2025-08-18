@@ -77,25 +77,25 @@ class ReportGenerator:
             "target.host": target or "unknown",
         }
 
-        # Only add trace attributes if operation_id is provided
-        # This ensures proper parent-child relationship
+        # Configure trace attributes for observability
+        # Only add if operation_id is provided to ensure proper parent-child relationship
         
         # Create a silent callback handler to prevent duplicate output
-        # The report content will be returned and emitted once by the caller
-        from strands.handlers import BaseCallbackHandler
+        # The report will be returned and handled by the caller
+        from strands.handlers import PrintingCallbackHandler
         
-        class SilentCallbackHandler(BaseCallbackHandler):
-            """Silent handler that doesn't print anything."""
+        class SilentCallbackHandler(PrintingCallbackHandler):
+            """Silent callback handler that suppresses all output."""
             def __call__(self, **kwargs):
-                pass  # Do nothing - prevent any output
+                pass  # Suppress output to prevent duplication
         
         return Agent(
             model=model,
             name="Cyber-ReportGenerator",
             system_prompt=get_report_agent_system_prompt(),
-            tools=[build_report_sections],  # Report agent now has the builder tool
+            tools=[build_report_sections],
             trace_attributes=trace_attrs if operation_id else None,
-            callback_handler=SilentCallbackHandler(),  # Prevent duplicate output
+            callback_handler=SilentCallbackHandler(),
         )
 
 

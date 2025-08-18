@@ -49,10 +49,11 @@ export const DISPLAY_LIMITS = {
   REPORT_PREVIEW_LINES: 100,  // Show first 100 lines when collapsed (unused for final reports)
   REPORT_TAIL_LINES: 20,  // Show last 20 lines when collapsed (unused for final reports)
   OPERATION_SUMMARY_LINES: 200,  // Show all operation summary info including paths
-  DEFAULT_COLLAPSE_LINES: 10,  // Normal output collapse threshold
+  DEFAULT_COLLAPSE_LINES: 20,  // Normal output collapse threshold
+  TOOL_OUTPUT_COLLAPSE_LINES: Infinity,  // Never collapse tool output - it's all important
   // Stream display limits
   REASONING_MAX_LINES: 30,  // Maximum lines to show for reasoning
-  OUTPUT_MAX_LINES: 50,  // Maximum lines to show for output
+  OUTPUT_MAX_LINES: 150,  // Maximum lines to show for output (increased for tool outputs)
 } as const;
 
 // Token pricing (per million tokens)

@@ -12,6 +12,7 @@ import { Box, Text } from 'ink';
 import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
+import { useEventBatcher } from '../utils/useBatchedState.js';
 
 interface UnconstrainedTerminalProps {
   executionService: ExecutionService | null;

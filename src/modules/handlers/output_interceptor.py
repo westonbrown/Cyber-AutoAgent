@@ -9,10 +9,38 @@ import sys
 import io
 import os
 import threading
-from typing import TextIO
+from typing import TextIO, List
 from contextlib import contextmanager
 
 from .utils import CyberEvent
+
+# Global state for tool execution and output buffering
+_in_tool_execution = False
+_tool_execution_lock = threading.Lock()
+_tool_output_buffer: List[str] = []
+
+def set_tool_execution_state(is_executing: bool):
+    """Set the global tool execution state and manage output buffer."""
+    global _in_tool_execution, _tool_output_buffer
+    with _tool_execution_lock:
+        _in_tool_execution = is_executing
+        if is_executing:
+            # Starting tool execution - clear buffer
+            _tool_output_buffer = []
+        # When ending tool execution, buffer is returned by get_buffered_output()
+
+def is_in_tool_execution() -> bool:
+    """Check if we're currently executing a tool."""
+    with _tool_execution_lock:
+        return _in_tool_execution
+
+def get_buffered_output() -> str:
+    """Get and clear the buffered tool output."""
+    global _tool_output_buffer
+    with _tool_execution_lock:
+        output = "\n".join(_tool_output_buffer)
+        _tool_output_buffer = []
+        return output
 
 
 class OutputInterceptor(io.TextIOBase):
@@ -60,7 +88,15 @@ class OutputInterceptor(io.TextIOBase):
             return len(data)
 
     def _emit_output_event(self, content: str):
-        """Emit output as a structured event."""
+        """Emit output as a structured event or buffer during tool execution."""
+        global _tool_output_buffer
+        
+        # During tool execution, buffer the output instead of emitting line by line
+        if is_in_tool_execution():
+            with _tool_execution_lock:
+                _tool_output_buffer.append(content)
+            return  # Don't emit individual lines during tool execution
+        
         try:
             self._in_event_emission = True
 
@@ -74,7 +110,13 @@ class OutputInterceptor(io.TextIOBase):
             else:
                 event_type = self.event_type
 
-            event = CyberEvent(type=event_type, content=content, metadata={"source": "python_backend"})
+            # Add metadata to prevent truncation if this is during tool execution
+            metadata = {"source": "python_backend"}
+            if is_in_tool_execution():
+                metadata["fromToolBuffer"] = True
+                metadata["tool"] = "shell"  # Most tool outputs are from shell
+            
+            event = CyberEvent(type=event_type, content=content, metadata=metadata)
 
             # Write the structured event to the original stream
             self.original_stream.write(event.to_json() + "\n")

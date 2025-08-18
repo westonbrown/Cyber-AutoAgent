@@ -384,12 +384,12 @@ def main():
     def cleanup_logging():
         """Ensure log files are properly closed on exit"""
         try:
-            # Write session end marker before closing
-
-            width = get_terminal_width()
-            print("\n" + "=" * width)
-            print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print("=" * width + "\n")
+            # Write session end marker before closing (skip in React mode)
+            if not os.environ.get("__REACT_INK__"):
+                width = get_terminal_width()
+                print("\n" + "=" * width)
+                print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print("=" * width + "\n")
         except Exception:
             pass
 
@@ -612,44 +612,47 @@ def main():
             logger.error("Operation error: %s", str(e))
             raise
 
-        # Display comprehensive results
-        print(f"\n{'=' * 80}")
-        print(f"{Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
-        print(f"{'=' * 80}")
+        # Display operation results (suppressed in React mode where handler emits UI events)
+        if not os.environ.get("__REACT_INK__"):
+            print(f"\n{'=' * 80}")
+            print(f"{Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
+            print(f"{'=' * 80}")
 
-        # Operation summary
+        # Generate operation summary
         if callback_handler:
             summary = callback_handler.get_summary()
             elapsed_time = time.time() - start_time
             minutes = int(elapsed_time // 60)
             seconds = int(elapsed_time % 60)
 
-            print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
+            # Display summary in terminal mode only
+            if not os.environ.get("__REACT_INK__"):
+                print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
 
-            # Determine status based on completion
-            if callback_handler.stop_tool_used:
-                status_text = f"{Colors.GREEN}Objective Achieved{Colors.RESET}"
-            elif callback_handler.has_reached_limit():
-                status_text = f"{Colors.YELLOW}Step Limit Reached{Colors.RESET}"
-            else:
-                status_text = f"{Colors.GREEN}Operation Completed{Colors.RESET}"
+                # Determine status based on completion
+                if callback_handler.stop_tool_used:
+                    status_text = f"{Colors.GREEN}Objective Achieved{Colors.RESET}"
+                elif callback_handler.has_reached_limit():
+                    status_text = f"{Colors.YELLOW}Step Limit Reached{Colors.RESET}"
+                else:
+                    status_text = f"{Colors.GREEN}Operation Completed{Colors.RESET}"
 
-            print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
-            print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
+                print(f"{Colors.BOLD}Status:{Colors.RESET}            {status_text}")
+                print(f"{Colors.BOLD}Duration:{Colors.RESET}          {minutes}m {seconds}s")
 
-            print(f"\n{Colors.BOLD}Execution Metrics:{Colors.RESET}")
-            print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
-            print(f"  • Tools Created: {summary['tools_created']}")
-            print(f"  • Evidence Collected: {summary['evidence_collected']} items")
-            print(f"  • Memory Operations: {summary['memory_operations']} total")
+                print(f"\n{Colors.BOLD}Execution Metrics:{Colors.RESET}")
+                print(f"  • Total Steps: {summary['total_steps']}/{args.iterations}")
+                print(f"  • Tools Created: {summary['tools_created']}")
+                print(f"  • Evidence Collected: {summary['evidence_collected']} items")
+                print(f"  • Memory Operations: {summary['memory_operations']} total")
 
-            if summary["capability_expansion"]:
-                print(f"\n{Colors.BOLD}Capabilities Created:{Colors.RESET}")
-                for tool in summary["capability_expansion"]:
-                    print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
+                if summary["capability_expansion"]:
+                    print(f"\n{Colors.BOLD}Capabilities Created:{Colors.RESET}")
+                    for tool in summary["capability_expansion"]:
+                        print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
 
-            # Show evidence summary if available
-            if callback_handler:
+            # Display evidence summary in terminal mode
+            if callback_handler and not os.environ.get("__REACT_INK__"):
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
                     print(f"\n{Colors.BOLD}Key Evidence:{Colors.RESET}")
@@ -679,29 +682,29 @@ def main():
                 server_config.output.base_dir,
             )
 
-            # Detect if running in Docker
-            is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
+            # Display output paths in terminal mode
+            if not os.environ.get("__REACT_INK__"):
+                is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
 
-            # Show appropriate paths based on environment
-            if is_docker:
-                # In Docker, show both container and host paths
-                host_evidence_location = evidence_location.replace("/app/outputs", "./outputs")
-                host_memory_location = memory_location.replace("./outputs", "./outputs")
-                print(
-                    f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET}"
-                    f"\n  {Colors.DIM}Container:{Colors.RESET} {evidence_location}"
-                    f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_evidence_location}"
-                )
-                print(
-                    f"{Colors.BOLD}Memory stored in:{Colors.RESET}"
-                    f"\n  {Colors.DIM}Container:{Colors.RESET} {memory_location}"
-                    f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_memory_location}"
-                )
-            else:
-                # Running locally, just show the paths
-                print(f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}")
-                print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
-            print(f"{'=' * 80}")
+                if is_docker:
+                    # Docker environment: show both container and host paths
+                    host_evidence_location = evidence_location.replace("/app/outputs", "./outputs")
+                    host_memory_location = memory_location.replace("./outputs", "./outputs")
+                    print(
+                        f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET}"
+                        f"\n  {Colors.DIM}Container:{Colors.RESET} {evidence_location}"
+                        f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_evidence_location}"
+                    )
+                    print(
+                        f"{Colors.BOLD}Memory stored in:{Colors.RESET}"
+                        f"\n  {Colors.DIM}Container:{Colors.RESET} {memory_location}"
+                        f"\n  {Colors.GREEN}Host:{Colors.RESET} {host_memory_location}"
+                    )
+                else:
+                    # Local environment: show direct paths
+                    print(f"\n{Colors.BOLD}Outputs stored in:{Colors.RESET} {evidence_location}")
+                    print(f"{Colors.BOLD}Memory stored in:{Colors.RESET} {memory_location}")
+                print(f"{'=' * 80}")
 
     except KeyboardInterrupt:
         print_status("\nOperation cancelled by user", "WARNING")

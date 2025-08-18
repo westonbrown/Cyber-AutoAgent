@@ -472,7 +472,7 @@ class ConfigManager:
                         # Use the user's model for embeddings too
                         defaults['embedding'].model_id = user_model
                 except:
-                    # If we can't check, use the user's model for safety
+                    # Fallback to user's model if availability check fails
                     defaults['embedding'].model_id = user_model
 
         # Build memory configuration

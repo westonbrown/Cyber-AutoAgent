@@ -15,6 +15,8 @@ from typing import Dict, Any, List
 from strands.handlers import PrintingCallbackHandler
 
 from .tool_emitters import ToolEventEmitter
+from ..output_interceptor import set_tool_execution_state, get_buffered_output
+from ..events import EventEmitter, get_emitter
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
     metrics tracking, and operation state management.
     """
 
-    def __init__(self, max_steps: int = 100, operation_id: str = None, model_id: str = None, swarm_model_id: str = None):
+    def __init__(self, max_steps: int = 100, operation_id: str = None, model_id: str = None, swarm_model_id: str = None, emitter: EventEmitter = None, init_context: Dict[str, Any] = None):
         """
         Initialize the React bridge handler.
 
@@ -37,17 +39,23 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             operation_id: Unique operation identifier
             model_id: Model ID for accurate pricing calculations
             swarm_model_id: Model ID to use for swarm agents
+            emitter: Event emitter to use (defaults to stdout)
+            init_context: Optional initialization context with rich operation details
         """
         super().__init__()
-
+        
         # Operation configuration
         self.current_step = 0
         self.max_steps = max_steps
         self.operation_id = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Initialize emitter with operation context
+        self.emitter = emitter or get_emitter(operation_id=self.operation_id)
         self.start_time = time.time()
         self.model_id = model_id
         self.swarm_model_id = swarm_model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-
+        self.init_context = init_context or {}
+        
         # Metrics tracking
         self.memory_ops = 0
         self.evidence_count = 0
@@ -95,6 +103,38 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Emit initial metrics
         self._emit_initial_metrics()
 
+        # Emit operation initialization details if provided
+        try:
+            op_event = {
+                "type": "operation_init",
+                "operation_id": self.operation_id,
+                "max_steps": self.max_steps,
+                "model_id": self.model_id,
+            }
+
+            # Merge provided context
+            if isinstance(self.init_context, dict):
+                op_event.update(self.init_context)
+
+            # Best-effort defaults for memory backend if not supplied
+            memory_info = op_event.get("memory", {}) or {}
+            if "backend" not in memory_info:
+                if os.getenv("MEM0_API_KEY"):
+                    memory_info["backend"] = "mem0_cloud"
+                elif os.getenv("OPENSEARCH_HOST"):
+                    memory_info["backend"] = "opensearch"
+                else:
+                    memory_info["backend"] = "faiss"
+            op_event["memory"] = memory_info
+
+            # UI mode hint
+            if "ui_mode" not in op_event:
+                op_event["ui_mode"] = "react" if os.getenv("__REACT_INK__") else "cli"
+
+            self._emit_ui_event(op_event)
+        except Exception as e:
+            logger.debug("Failed to emit operation_init event: %s", e)
+
     def __call__(self, **kwargs):
         """
         Process SDK callbacks and emit appropriate UI events.
@@ -102,7 +142,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         This is the main entry point for all SDK callbacks. It routes
         different callback types to appropriate handlers.
         """
-        # SDK event adapter - transform SDK events to UI events
+        # Debug log to verify handler is being called
+        if kwargs:
+            logger.debug("ReactBridgeHandler.__call__ invoked with keys: %s", list(kwargs.keys()))
+        
+        # Transform SDK events to UI events
         self._transform_sdk_event(kwargs)
 
     def _emit_ui_event(self, event: Dict[str, Any]) -> None:
@@ -112,8 +156,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         All events are emitted with a specific format that the React UI
         can parse and display appropriately.
         """
-        event["timestamp"] = datetime.now().isoformat()
-        print(f"__CYBER_EVENT__{json.dumps(event)}__CYBER_EVENT_END__", flush=True)
+        # Use the pluggable emitter - maintains backward compatibility
+        # The emitter handles timestamp addition and protocol formatting
+        self.emitter.emit(event)
 
     def _transform_sdk_event(self, kwargs: Dict[str, Any]) -> None:
         """
@@ -146,13 +191,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if reasoning_text:
             self._accumulate_reasoning_text(reasoning_text)
             # Estimate tokens for metrics
-            # Token counting handled by SDK metrics only
-            pass
+            pass  # Token counting via SDK metrics
 
         # 3. Streaming data events
         elif data and not complete:
-            # Token counting handled by SDK metrics only
-            pass
+            pass  # Token counting via SDK metrics
 
         # 4. Tool announcement events
         if current_tool_use:
@@ -233,15 +276,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Count output tokens
             for item in content:
                 if isinstance(item, dict) and "text" in item:
-                    # Token counting handled by SDK metrics only
-                    pass
+                    pass  # Token counting via SDK metrics
 
         elif message.get("role") == "user":
             # Count input tokens
             for item in content:
                 if isinstance(item, dict) and "text" in item:
-                    # Token counting handled by SDK metrics only
-                    pass
+                    pass  # Token counting via SDK metrics
 
         # Process tool results in message content
         for block in content:
@@ -290,6 +331,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Emit tool_start ONLY if we have meaningful input; otherwise wait for streaming update
             has_meaningful_input = bool(tool_input) and tool_input != {} and self._is_valid_input(tool_input)
             if has_meaningful_input:
+                # Suppress OutputInterceptor during tool execution
+                set_tool_execution_state(True)
+                
                 # Add swarm context to tool_start events
                 tool_event = {
                     "type": "tool_start", 
@@ -361,6 +405,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Only emit when we transition to complete content
             if was_empty_or_partial and has_complete_content:
+                # Suppress OutputInterceptor during tool execution
+                set_tool_execution_state(True)
+                
                 # Re-emit tool_start with the complete input
                 self._emit_ui_event({"type": "tool_start", "tool_name": self.last_tool_name, "tool_input": new_input})
 
@@ -377,6 +424,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _process_tool_result_from_message(self, tool_result: Any) -> None:
         """Process tool execution results."""
+        # Clear tool execution flag and get buffered output
+        set_tool_execution_state(False)
+        buffered_output = get_buffered_output()
+        
         # Stop thinking animation
         self._emit_ui_event({"type": "thinking_end"})
 
@@ -387,6 +438,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             tool_result_dict = tool_result
         else:
             tool_result_dict = {"content": [{"text": str(tool_result)}], "status": "success"}
+        
+        # Debug logging for shell tool results
+        if self.last_tool_name == "shell":
+            logger.debug("Shell tool result structure: %s", tool_result_dict.keys() if isinstance(tool_result_dict, dict) else type(tool_result_dict))
+            if "content" in tool_result_dict:
+                logger.debug("Shell content items: %d", len(tool_result_dict.get("content", [])))
+                for i, item in enumerate(tool_result_dict.get("content", [])[:3]):  # Log first 3 items
+                    logger.debug("Content item %d: %s", i, item if isinstance(item, dict) else str(item)[:100])
 
         # Extract result details
         content_items = tool_result_dict.get("content", [])
@@ -416,21 +475,58 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     error_text += item["text"] + "\n"
             
             if error_text.strip():
+                # Combine buffered output with error text for single emission
+                combined_output = ""
+                if buffered_output:
+                    combined_output = buffered_output + "\n"
+                
                 # Process errors through tool-specific handlers for cleaner display
                 if self.last_tool_name == "shell":
-                    clean_output = self._parse_shell_tool_output(error_text.strip())
-                    self._emit_ui_event({"type": "output", "content": clean_output})
+                    clean_error = self._parse_shell_tool_output(error_text.strip())
+                    combined_output += clean_error
                 elif self.last_tool_name == "http_request":
-                    clean_output = self._parse_http_tool_output(error_text.strip())
-                    self._emit_ui_event({"type": "output", "content": clean_output})
+                    clean_error = self._parse_http_tool_output(error_text.strip())
+                    combined_output += clean_error
                 else:
-                    # Generic error handling for other tools
-                    self._emit_ui_event({"type": "error", "content": error_text.strip()})
+                    combined_output += error_text.strip()
+                
+                # Emit single consolidated output event
+                self._emit_ui_event({
+                    "type": "output", 
+                    "content": combined_output.strip(),
+                    "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+                })
+                
+                # Mark that we've emitted output for this tool invocation
+                if tool_use_id:
+                    self.tool_use_output_emitted[tool_use_id] = True
             return
 
         # Extract output text
         output_text = self._extract_output_text(content_items)
+        
+        # Check for buffered output from tool execution
+        if buffered_output:
+            # Emit buffered output to avoid duplicates
+            # Add metadata for proper UI handling
+            self._emit_ui_event({
+                "type": "output", 
+                "content": buffered_output,
+                "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+            })
+            
+            # Mark that we've emitted output for this tool invocation
+            if tool_use_id:
+                self.tool_use_output_emitted[tool_use_id] = True
+            
+            # Return to prevent duplicate output
+            return
 
+        # If we reach here, there was no buffered output, so process normally
+        # But first check if output was already emitted to prevent duplicates
+        if tool_use_id and self.tool_use_output_emitted.get(tool_use_id, False):
+            return  # Skip - output already emitted from error handling or buffered output
+        
         # Special handling for shell tool results
         if self.last_tool_name == "shell":
             self._process_shell_output(output_text, content_items, status, tool_use_id)
@@ -448,16 +544,20 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 if not hasattr(self, '_processed_outputs'):
                     self._processed_outputs = set()
                 
-                # Detect swarm agent changes in output
-                if self.in_swarm_operation:
-                    self._detect_current_swarm_agent(output_text)
+                # Agent tracking is handled through explicit handoff events only
+                # No text parsing needed - it's unreliable and causes false positives
 
                 # Mark this output as processed
                 self._processed_outputs.add(output_key)
                 # Mark meaningful output for this tool invocation
                 if tool_use_id:
                     self.tool_use_output_emitted[tool_use_id] = True
-                self._emit_ui_event({"type": "output", "content": output_text.strip()})
+                # Mark all tool outputs with metadata to prevent truncation
+                self._emit_ui_event({
+                    "type": "output", 
+                    "content": output_text.strip(),
+                    "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+                })
 
         # Update metrics
         if self.last_tool_name == "mem0_memory":
@@ -471,19 +571,43 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if not output_text:
             return ""
         
-        # Filter out "Execution Summary" wrapper added by Strands SDK
-        # This prevents duplicate output display
+        # Check if this output contains individual command echoes that duplicate
+        # what we already show in the tool invocation display
+        # The pattern is lines that start with the tree character ⎿ followed by a command
+        lines = output_text.split('\n')
+        filtered_lines = []
+        for line in lines:
+            # Skip lines that are just command echoes (they start with ⎿)
+            if line.strip().startswith('⎿'):
+                continue
+            filtered_lines.append(line)
+        
+        # Rejoin the filtered output
+        output_text = '\n'.join(filtered_lines)
+        
+        # Filter SDK execution wrapper to prevent duplicate display
         if "Execution Summary:" in output_text and "Total commands:" in output_text:
-            # This is the wrapper format, extract just the actual output and errors
+            # Extract command info and actual output/error content
             lines = output_text.split('\n')
+            command = ""
             actual_output = []
             in_output_section = False
             capture_error = False
+            status = ""
+            exit_code = ""
             
             for line in lines:
-                if line.startswith("Output:"):
+                if line.startswith("Command:"):
+                    command = line[8:].strip()
+                elif line.startswith("Status:"):
+                    status = line[7:].strip()
+                    in_output_section = False
+                    capture_error = False
+                elif line.startswith("Exit Code:"):
+                    exit_code = line[10:].strip()
+                elif line.startswith("Output:"):
                     in_output_section = True
-                    # Check if there's content on the same line after "Output:"
+                    # Check for inline content
                     content_after = line[7:].strip()
                     if content_after:
                         actual_output.append(content_after)
@@ -491,24 +615,51 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 elif line.startswith("Error:"):
                     in_output_section = False
                     capture_error = True
-                    # Capture error message if it's on the same line
+                    # Check for inline error message
                     error_msg = line[6:].strip()
                     if error_msg:
                         actual_output.append(f"Error: {error_msg}")
                     continue
-                elif line.startswith("Status:") or line.startswith("Command:"):
-                    in_output_section = False
-                    capture_error = False
+                elif line.startswith("Execution Summary:") or line.startswith("Total commands:"):
+                    continue  # Skip wrapper headers
                 elif in_output_section:
                     actual_output.append(line)
                 elif capture_error and line.strip():
                     actual_output.append(line)
             
-            # If we found actual output or error, return it
+            # If we have extracted content, return it
             if actual_output:
                 return '\n'.join(actual_output).strip()
+            
+            # If no output/error captured but we have command info, provide context
+            # Also extract any other information from the full text that might be useful
+            if command:
+                # Try to extract any additional info from the original text
+                additional_info = []
+                for line in lines:
+                    # Skip already processed lines and wrapper lines
+                    if (not line.startswith("Execution Summary:") and 
+                        not line.startswith("Total commands:") and
+                        not line.startswith("Command:") and
+                        not line.startswith("Status:") and
+                        not line.startswith("Exit Code:") and
+                        not line.startswith("Output:") and
+                        not line.startswith("Error:") and
+                        not line.startswith("Successful:") and
+                        not line.startswith("Failed:") and
+                        line.strip()):
+                        additional_info.append(line)
+                
+                if additional_info:
+                    return "\n".join(additional_info)
+                elif status == "error" and exit_code:
+                    return f"Command failed: {command}\nExit code: {exit_code}\n(No output captured)"
+                elif status == "success":
+                    return f"Command succeeded: {command}\n(No output)"
+                else:
+                    return f"Command: {command}\nStatus: {status or 'unknown'}"
         
-        # Otherwise return the full output
+        # Return full output as fallback
         return output_text.strip()
     
     def _parse_http_tool_output(self, output_text: str) -> str:
@@ -521,11 +672,19 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _process_shell_output(self, output_text: str, _content_items: List, _status: str, tool_use_id: str = None) -> None:
         """Process shell command output with intelligent parsing and clean display."""
+        # Skip if output was already emitted
+        if tool_use_id and self.tool_use_output_emitted.get(tool_use_id, False):
+            return
+            
         if not output_text.strip():
             # Only emit generic completion if no prior meaningful output for this invocation
-            if tool_use_id and self.tool_use_output_emitted.get(tool_use_id, False):
-                return
-            self._emit_ui_event({"type": "output", "content": "Command completed"})
+            self._emit_ui_event({
+                "type": "output", 
+                "content": "Command completed",
+                "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+            })
+            if tool_use_id:
+                self.tool_use_output_emitted[tool_use_id] = True
             return
 
         # Check if we already processed this exact output
@@ -540,22 +699,34 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Parse and clean shell tool output
         clean_output = self._parse_shell_tool_output(output_text.strip())
         
-        if self.in_swarm_operation:
-            self._detect_current_swarm_agent(clean_output)
+        # Agent tracking handled through explicit events, not text parsing
         
         # Mark this output as processed
         self._processed_outputs.add(output_key)
         if tool_use_id:
             self.tool_use_output_emitted[tool_use_id] = True
-        self._emit_ui_event({"type": "output", "content": clean_output})
+        # Always mark shell output with metadata to prevent truncation
+        self._emit_ui_event({
+            "type": "output", 
+            "content": clean_output,
+            "metadata": {"fromToolBuffer": True, "tool": "shell"}
+        })
 
     def _process_http_output(self, output_text: str, _content_items: List, _status: str, tool_use_id: str = None) -> None:
         """Process HTTP request output with intelligent parsing and clean display."""
+        # Skip if output was already emitted
+        if tool_use_id and self.tool_use_output_emitted.get(tool_use_id, False):
+            return
+            
         if not output_text.strip():
             # Only emit generic completion if no prior meaningful output for this invocation
-            if tool_use_id and self.tool_use_output_emitted.get(tool_use_id, False):
-                return
-            self._emit_ui_event({"type": "output", "content": "Request completed"})
+            self._emit_ui_event({
+                "type": "output", 
+                "content": "Request completed",
+                "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+            })
+            if tool_use_id:
+                self.tool_use_output_emitted[tool_use_id] = True
             return
 
         # Check if we already processed this exact output
@@ -570,14 +741,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Parse and clean HTTP tool output
         clean_output = self._parse_http_tool_output(output_text.strip())
         
-        if self.in_swarm_operation:
-            self._detect_current_swarm_agent(clean_output)
+        # Agent tracking handled through explicit events, not text parsing
         
         # Mark this output as processed
         self._processed_outputs.add(output_key)
         if tool_use_id:
             self.tool_use_output_emitted[tool_use_id] = True
-        self._emit_ui_event({"type": "output", "content": clean_output})
+        # Always mark HTTP output with metadata to prevent truncation
+        self._emit_ui_event({
+            "type": "output",
+            "content": clean_output,
+            "metadata": {"fromToolBuffer": True, "tool": "http_request"}
+        })
 
     def _accumulate_reasoning_text(self, text: str) -> None:
         """Accumulate reasoning text to prevent fragmentation."""
@@ -715,10 +890,21 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         if self.last_tool_name and not hasattr(self, "_last_tool_had_result"):
             self._emit_ui_event({"type": "thinking_end"})
-            self._emit_ui_event({"type": "output", "content": "Command completed successfully"})
+            self._emit_ui_event({
+                "type": "output", 
+                "content": "Command completed successfully",
+                "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name}
+            })
 
     def _track_swarm_start(self, tool_input: Dict[str, Any]) -> None:
-        """Track swarm operation start. Emit a single, well-formed swarm_start."""
+        """Track swarm operation start. Emit a single, well-formed swarm_start.
+        
+        Agent Tracking Flow:
+        1. Initial agent is set from the agents list (first agent)
+        2. Agent changes are tracked ONLY through explicit handoff_to_agent events
+        3. No text parsing is used - it's unreliable and causes false positives
+        4. The current_swarm_agent is displayed in step headers and events
+        """
         if not isinstance(tool_input, dict):
             tool_input = {}
         agents = tool_input.get("agents", [])
@@ -783,7 +969,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.swarm_agents = agent_names
         self.current_swarm_agent = agent_names[0] if agent_names else None
         self.swarm_handoff_count = 0
-        self._last_swarm_signature = signature
         # Reset sub-agent step tracking for new swarm
         self.swarm_agent_steps = {}
         
@@ -884,42 +1069,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.current_swarm_agent = None
             self.swarm_handoff_count = 0
 
-    def _detect_current_swarm_agent(self, text: str) -> None:
-        """Detect which agent is currently executing based on output text."""
-        if not self.in_swarm_operation or not text:
-            return
-
-        # Common patterns for agent identification in swarm output
-        agent_patterns = [
-            r"\[([A-Z_]+)\]",  # [AGENT_NAME] in square brackets (common in reasoning)
-            r"\*\*([^*]+):\*\*",  # **AGENT_NAME:**
-            r"Agent ([^:]+):",  # Agent NAME:
-            r"\[([^]]+)\]:",  # [AGENT_NAME]:
-            r"• ([^:]+):",  # • AGENT_NAME:
-        ]
-
-        import re
-
-        for pattern in agent_patterns:
-            match = re.search(pattern, text)
-            if match:
-                detected_name = match.group(1).strip()
-                # Skip known non-agent labels
-                if detected_name in ["Individual Agent Contributions", "Final Team Result", "Team Resource Usage"]:
-                    continue
-                
-                # Normalize the detected name for comparison (lowercase)
-                normalized_detected = detected_name.lower().replace(' ', '_')
-                
-                # Check if this matches any known swarm agent (case-insensitive)
-                for known_agent in self.swarm_agents:
-                    if known_agent.lower() == normalized_detected:
-                        # Use the known agent name (preserves original case)
-                        self.current_swarm_agent = known_agent
-                        return
-                
-                # If not found in known agents but looks like an agent name, ignore it
-                # This prevents false positives from random bracketed text
 
     def _is_valid_input(self, tool_input: Any) -> bool:
         """Check if tool input is valid."""
@@ -994,10 +1143,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         return {"value": str(tool_input)} if tool_input else {}
 
     def _extract_output_text(self, content_items: List[Any]) -> str:
-        """Extract text from content items."""
+        """Extract text from content items, handling all possible formats."""
         output_text = ""
         for item in content_items:
             if isinstance(item, dict):
+                # Extract text from various possible keys
                 if "text" in item:
                     output_text += item["text"]
                 elif "json" in item:
@@ -1008,6 +1158,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     output_text += str(item["output"])
                 elif "result" in item:
                     output_text += str(item["result"])
+                elif "message" in item:
+                    output_text += str(item["message"])
+                elif "data" in item:
+                    output_text += str(item["data"])
+                else:
+                    # If dict has no recognized keys, convert entire dict to string
+                    output_text += json.dumps(item, indent=2)
             elif isinstance(item, str):
                 output_text += item
             else:
@@ -1042,7 +1199,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         try:
             self._report_generated = True
-            from modules.tools.report_generator import generate_security_report
+            # Import report generator function (not a tool, called directly by handler)
+            from modules.handlers.report_generator import generate_security_report
 
             # Emit completion header before generating report
             self._emit_ui_event(
@@ -1086,9 +1244,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             )
 
             if report_content and not report_content.startswith("Error:"):
-                self._emit_ui_event({"type": "output", "content": "\n" + report_content})
-
-                # Save report to file
+                # Save report to file first
                 try:
                     from modules.handlers.utils import sanitize_target_name, get_output_path
                     from pathlib import Path
@@ -1104,40 +1260,19 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
 
-                    # Also save as HTML for better viewing
-                    try:
-                        import markdown
+                    # Emit the full report content to the UI
+                    self._emit_ui_event(
+                        {
+                            "type": "report_content",
+                            "content": report_content
+                        }
+                    )
 
-                        html_content = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Security Assessment Report - {target}</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }}
-        pre {{ background: #f4f4f4; padding: 10px; overflow-x: auto; }}
-        code {{ background: #f4f4f4; padding: 2px 4px; }}
-        table {{ border-collapse: collapse; width: 100%; }}
-        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-        th {{ background-color: #f2f2f2; }}
-    </style>
-</head>
-<body>
-{markdown.markdown(report_content, extensions=['tables', 'fenced_code'])}
-</body>
-</html>"""
-                        html_path = os.path.join(output_dir, "security_assessment_report.html")
-                        with open(html_path, "w", encoding="utf-8") as f:
-                            f.write(html_content)
-                    except ImportError:
-                        # Markdown library not available, skip HTML generation
-                        pass
-
-                    # Emit file path information with polished formatting
+                    # Also emit file path information for reference
                     self._emit_ui_event(
                         {
                             "type": "output",
-                            "content": f"\n{'━'*80}\n\n✅ ASSESSMENT COMPLETE\n\n📁 REPORT SAVED TO:\n  • Markdown: {report_path}\n  • HTML: {report_path.replace('.md', '.html')}\n\n📂 MEMORY STORED IN:\n  • Location: {output_dir}/memory/\n\n🔍 OPERATION LOGS:\n  • Log file: {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n",
+                            "content": f"\n{'━'*80}\n\nASSESSMENT COMPLETE\n\nREPORT ALSO SAVED TO:\n  • {report_path}\n\nMEMORY STORED IN:\n  • {output_dir}/memory/\n\nOPERATION LOGS:\n  • {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n",
                         }
                     )
 

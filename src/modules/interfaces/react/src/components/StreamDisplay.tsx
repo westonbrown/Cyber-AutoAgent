@@ -36,7 +36,10 @@ export type LegacyStreamEvent =
   | { type: 'content_block_delta'; delta?: string; isReasoning?: boolean; [key: string]: any }
   | { type: 'swarm_start'; agent_names?: any[]; agent_details?: any[]; task?: string; [key: string]: any }
   | { type: 'swarm_handoff'; from_agent?: string; to_agent?: string; message?: string; [key: string]: any }
-  | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any };
+  | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any }
+  | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
+  | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
+  | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any };
 
 // Combined event type supporting both SDK and legacy events
 export type DisplayStreamEvent = StreamEvent | LegacyStreamEvent;
@@ -61,7 +64,8 @@ interface ToolState {
 
 const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 
-const EventLine: React.FC<{ 
+// Export EventLine for use in VirtualizedStreamDisplay
+export const EventLine: React.FC<{ 
   event: DisplayStreamEvent; 
   toolStates?: Map<string, ToolState>;
   animationsEnabled?: boolean;
@@ -147,7 +151,8 @@ const EventLine: React.FC<{
         stepDisplay = "📋 [FINAL REPORT]";
       } else if (swarmAgent && swarmSubStep) {
         // For swarm operations, show agent name and iteration count
-        const agentName = String(swarmAgent).toUpperCase().replace('_', ' ');
+        // Use replaceAll to handle multi-word agent names correctly
+        const agentName = String(swarmAgent).toUpperCase().replaceAll('_', ' ');
         if (swarmTotalIterations && swarmMaxIterations) {
           stepDisplay = `[SWARM: ${agentName} • STEP ${swarmTotalIterations}/${swarmMaxIterations}]`;
         } else {
@@ -252,13 +257,64 @@ const EventLine: React.FC<{
           break;
           
         case 'shell': {
-          // Show tool header with swarm agent context if available
+          // Show tool header with command(s) if available
           const agentContext = ('swarm_agent' in event && event.swarm_agent) 
             ? ` (${event.swarm_agent})` : '';
+          const command = event.tool_input?.command || event.tool_input?.cmd || '';
+          
+          // Skip displaying raw JSON arrays - they will be handled by individual command events
+          // This prevents the duplicate display of ["cmd1", "cmd2"] alongside formatted commands
+          const shouldSkipDisplay = (cmd: any): boolean => {
+            // If it's a string that looks like a JSON array, skip it
+            if (typeof cmd === 'string') {
+              const trimmed = cmd.trim();
+              if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  return Array.isArray(parsed);
+                } catch {
+                  return false;
+                }
+              }
+            }
+            return false;
+          };
+          
+          // Only show the tool header, not the raw JSON
+          // Individual commands will be displayed via 'command' events
+          if (shouldSkipDisplay(command)) {
+            return (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="green" bold>tool: shell{agentContext}</Text>
+              </Box>
+            );
+          }
+          
+          // Handle non-JSON array commands (single commands)
+          const formatCommand = (cmd: any): React.ReactElement => {
+            if (typeof cmd === 'string' && !shouldSkipDisplay(cmd)) {
+              // Single command string that's not a JSON array
+              return (
+                <Box marginLeft={2}>
+                  <Text dimColor>⎿ {cmd}</Text>
+                </Box>
+              );
+            } else if (cmd && typeof cmd === 'object' && !Array.isArray(cmd)) {
+              // Command object - extract the command field
+              const cmdStr = cmd.command || JSON.stringify(cmd);
+              return (
+                <Box marginLeft={2}>
+                  <Text dimColor>⎿ {cmdStr}</Text>
+                </Box>
+              );
+            }
+            return <></>;
+          };
           
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell{agentContext}</Text>
+              {command && formatCommand(command)}
             </Box>
           );
         }
@@ -520,11 +576,10 @@ const EventLine: React.FC<{
         // If "Command:" was concatenated onto a previous line without a newline, insert one.
         .replace(/(\S)Command:/g, '$1\nCommand:');
 
-      // Strip ANSI color codes for filtering logic
-      const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
-      const plain = stripAnsi(normalized);
+      // Backend now sends clean content without ANSI codes
+      const plain = normalized;
 
-      // Skip placeholder tokens even if wrapped in ANSI codes
+      // Skip placeholder tokens
       const plainTrimmed = plain.trim();
       if (plainTrimmed === 'output' || plainTrimmed === 'reasoning') {
         return null;
@@ -638,15 +693,17 @@ const EventLine: React.FC<{
                                  contentStr.includes('evidence stored in:');
       
       // Use constants for display limits
+      const fromToolBuffer = (event as any).metadata && (event as any).metadata.fromToolBuffer === true;
+      
       const collapseThreshold = isReport ? DISPLAY_LIMITS.REPORT_MAX_LINES : 
                                (isOperationSummary ? DISPLAY_LIMITS.OPERATION_SUMMARY_LINES : 
-                                DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES);
-      const fromToolBuffer = (event as any).metadata && (event as any).metadata.fromToolBuffer === true;
-      const shouldCollapse = dedupedLines.length > collapseThreshold && !fromToolBuffer;
+                                (fromToolBuffer ? DISPLAY_LIMITS.TOOL_OUTPUT_COLLAPSE_LINES : 
+                                 DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES));
+      const shouldCollapse = dedupedLines.length > collapseThreshold;
       
       let displayLines;
-      if (shouldCollapse && !isReport && !isOperationSummary) {
-        // For normal output, show first 5 and last 3 lines
+      if (shouldCollapse && !isReport && !isOperationSummary && !fromToolBuffer) {
+        // For normal output only (not tool output), show first 5 and last 3 lines
         displayLines = [...dedupedLines.slice(0, 5), '...', ...dedupedLines.slice(-3)];
       } else if (shouldCollapse && (isReport || isOperationSummary)) {
         // For reports and summaries, show much more content
@@ -706,12 +763,31 @@ const EventLine: React.FC<{
         );
       }
 
+      // Show tool output with special formatting
+      if (fromToolBuffer) {
+        return (
+          <Box flexDirection="column" marginTop={1}>
+            <Box>
+              <Text color="yellow">output</Text>
+              {dedupedLines.length > 10 && <Text dimColor> [{dedupedLines.length} lines]</Text>}
+              {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
+            </Box>
+            <Box marginLeft={2} flexDirection="column">
+              {displayLines.map((line, index) => (
+                <Text key={index} dimColor>{line}</Text>
+              ))}
+            </Box>
+          </Box>
+        );
+      }
+      
+      // Regular output (not tool output)
       return (
         <Box flexDirection="column" marginTop={1}>
           <Box>
             <Text color="yellow">output</Text>
             {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
-            {shouldCollapse && <Text dimColor> [{dedupedLines.length} lines]</Text>}
+            {shouldCollapse && <Text dimColor> [{dedupedLines.length} lines, truncated]</Text>}
           </Box>
           <Box marginLeft={2} flexDirection="column">
             {displayLines.map((line, index) => (
@@ -721,6 +797,52 @@ const EventLine: React.FC<{
         </Box>
       );
     }
+    
+    case 'tool_output': {
+      // Standardized tool output from backend protocol
+      if (!('tool' in event) || !('output' in event)) {
+        return null;
+      }
+      
+      const toolName = event.tool as string;
+      const toolStatus = (event.status as string) || 'success';
+      const output = event.output as any;
+      
+      // Extract text content
+      const outputText = output?.text || '';
+      
+      if (!outputText.trim()) {
+        return null;
+      }
+      
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color={toolStatus === 'error' ? 'red' : 'green'}>
+              {toolName}: {toolStatus}
+            </Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text>{outputText}</Text>
+          </Box>
+        </Box>
+      );
+    }
+      
+    case 'report_content':
+      // Display the full security assessment report
+      if (!event.content) return null;
+      
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Box borderStyle="double" borderColor="cyan" paddingX={1}>
+            <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1} paddingX={1}>
+            <Text>{event.content}</Text>
+          </Box>
+        </Box>
+      );
       
     case 'error':
       // Simplified error display - just show the content
@@ -840,19 +962,19 @@ const EventLine: React.FC<{
         </Box>
       );
       
-    case 'swarm_complete':
+    case 'swarm_complete': {
       // Enhanced swarm completion display
       const finalAgent = 'final_agent' in event ? String(event.final_agent || 'unknown') : 'unknown';
       const executionCount = 'execution_count' in event ? Number(event.execution_count || 0) : 0;
       const duration = 'duration' in event ? String(event.duration || 'unknown') : 'unknown';
       const totalTokens = 'total_tokens' in event ? Number(event.total_tokens || 0) : 0;
       const agentMetrics = 'agent_metrics' in event ? (event.agent_metrics as any[] || []) : [];
-      const status = 'status' in event ? String(event.status || 'completed') : 'completed';
+      const swarmStatus = 'status' in event ? String(event.status || 'completed') : 'completed';
       const completedAgents = 'completed_agents' in event ? (event.completed_agents as string[] || []) : [];
       const failedAgents = 'failed_agents' in event ? (event.failed_agents as string[] || []) : [];
       
       // Determine if this was a timeout/failure
-      const isTimeout = status.toLowerCase().includes('failed') || status.toLowerCase().includes('timeout');
+      const isTimeout = swarmStatus.toLowerCase().includes('failed') || swarmStatus.toLowerCase().includes('timeout');
       const statusColor = isTimeout ? 'red' : 'green';
       const statusText = isTimeout ? 'TIMEOUT' : 'COMPLETE';
       
@@ -900,6 +1022,90 @@ const EventLine: React.FC<{
           )}
         </Box>
       );
+    }
+      
+    case 'batch':
+      // Handle batched events from backend
+      // Recursively render each event in the batch
+      if (!('events' in event) || !Array.isArray(event.events)) {
+        return null;
+      }
+      return (
+        <>
+          {event.events.map((batchedEvent, idx) => (
+            <MemoizedEventLine 
+              key={batchedEvent.id || `${event.id}_${idx}`}
+              event={batchedEvent}
+              toolStates={toolStates}
+              animationsEnabled={animationsEnabled}
+            />
+          ))}
+        </>
+      );
+      
+    case 'operation_init':
+      // Display comprehensive operation initialization info (preflight checks)
+      if (!event || typeof event !== 'object') return null;
+      
+      return (
+        <Box flexDirection="column">
+          <Text color="#89B4FA" bold>◆ Operation initialization complete</Text>
+          
+          {/* Operation Details */}
+          {('operation_id' in event && event.operation_id) && (
+            <Text dimColor>  Operation ID: {event.operation_id}</Text>
+          )}
+          {('target' in event && event.target) && (
+            <Text dimColor>  Target: {event.target}</Text>
+          )}
+          {('objective' in event && event.objective) && (
+            <Text dimColor>  Objective: {event.objective}</Text>
+          )}
+          {('max_steps' in event && event.max_steps) && (
+            <Text dimColor>  Max Steps: {event.max_steps}</Text>
+          )}
+          {('model_id' in event && event.model_id) && (
+            <Text dimColor>  Model: {event.model_id}</Text>
+          )}
+          {('provider' in event && event.provider) && (
+            <Text dimColor>  Provider: {event.provider}</Text>
+          )}
+          
+          {/* Memory Configuration */}
+          {('memory' in event && event.memory) && (
+            <>
+              <Text dimColor>  Memory backend: {event.memory.backend || 'unknown'}</Text>
+              {event.memory.has_existing && (
+                <Text dimColor>  Previous memories detected - will be loaded</Text>
+              )}
+              {event.memory.total_count && (
+                <Text dimColor>  Existing memories: {event.memory.total_count}</Text>
+              )}
+              
+              {/* Memory Categories */}
+              {event.memory.categories && Object.keys(event.memory.categories).length > 0 && (
+                <Text dimColor>  Memory categories: {Object.entries(event.memory.categories).map(([category, count]) => `${category}:${count}`).join(', ')}</Text>
+              )}
+              
+              {/* Recent Findings Summary */}
+              {event.memory.recent_findings && Array.isArray(event.memory.recent_findings) && event.memory.recent_findings.length > 0 && (
+                <Text dimColor>  Recent findings: {event.memory.recent_findings.length} items available</Text>
+              )}
+            </>
+          )}
+          
+          {/* Environment Info */}
+          {('ui_mode' in event && event.ui_mode) && (
+            <Text dimColor>  UI Mode: {event.ui_mode}</Text>
+          )}
+          {('observability' in event) && (
+            <Text dimColor>  Observability: {event.observability ? 'enabled' : 'disabled'}</Text>
+          )}
+          {('tools_available' in event && event.tools_available) && (
+            <Text dimColor>  Available Tools: {event.tools_available}</Text>
+          )}
+        </Box>
+      );
       
     default:
       return null;
@@ -916,234 +1122,126 @@ type DisplayGroup = {
   startIdx: number;
 };
 
+/**
+ * Simplifies event grouping now that backend handles deduplication.
+ * Only groups consecutive reasoning events for visual presentation.
+ */
 export const computeDisplayGroups = (events: DisplayStreamEvent[]): DisplayGroup[] => {
+  // Flatten any batch events first
+  const flattened: DisplayStreamEvent[] = [];
+  
+  for (const event of events) {
+    if (event.type === 'batch' && 'events' in event && Array.isArray(event.events)) {
+      // Expand batch events
+      flattened.push(...event.events);
+    } else {
+      flattened.push(event);
+    }
+  }
+  
+  // Group consecutive reasoning events for cleaner display
+  const groups: DisplayGroup[] = [];
+  let currentReasoningGroup: DisplayStreamEvent[] = [];
+  let startIdx = 0;
+  
+  flattened.forEach((event, idx) => {
+    if (event.type === 'reasoning' || event.type === 'reasoning_delta') {
+      currentReasoningGroup.push(event);
+    } else {
+      // Flush any pending reasoning group
+      if (currentReasoningGroup.length > 0) {
+        groups.push({
+          type: 'reasoning_group',
+          events: currentReasoningGroup,
+          startIdx
+        });
+        currentReasoningGroup = [];
+      }
+      
+      // Add non-reasoning event as single
+      groups.push({
+        type: 'single',
+        events: [event],
+        startIdx: idx
+      });
+      startIdx = idx + 1;
+    }
+  });
+  
+  // Flush final reasoning group if any
+  if (currentReasoningGroup.length > 0) {
+    groups.push({
+      type: 'reasoning_group',
+      events: currentReasoningGroup,
+      startIdx
+    });
+  }
+  
+  return groups;
+};
+
+// Legacy complex deduplication function - kept for reference
+// TODO: Remove after verifying simplified version works
+const computeDisplayGroupsLegacy = (events: DisplayStreamEvent[]): DisplayGroup[] => {
   // First, normalize events to remove duplicate swarm_start emissions
   const normalized: DisplayStreamEvent[] = [];
-  let lastSwarmSignature = '';
+  // Backend handles event deduplication - no signature tracking needed
   // Track if the previous event ended a tool so we can tag the next output
   let lastWasToolEnd = false;
   // Track active tool between start/end to tag outputs during tool execution
   let activeToolName: string | null = null;
-  // Helper to normalize output content for duplicate comparison
-  const normalizeOutputContent = (ev: any): string => {
-    if (!ev || ev.type !== 'output') return '';
-    const raw = typeof ev.content === 'string' ? ev.content : String(ev.content ?? '');
-    const noCr = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
-    const stripLogAndPrompt = (line: string) => {
-      const ansiStripped = stripAnsi(line);
-      // remove leading timestamp + level prefixes e.g., 2025-08-16 22:23:59 - INFO -
-      const noLog = ansiStripped.replace(/^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,\.]\d+)?\s*-\s*(?:DEBUG|INFO|WARNING|WARN|ERROR)\s*-\s*/i, '');
-      // remove common shell prompts at start of line: user@host:~$, $, #, >, PS ...>
-      const noPrompt = noLog.replace(/^\s*(?:[\w_.-]+@[\w.-]+(?:[:~][^\s#\$>]*)?[#\$>]\s*|\$\s*|#\s*|>\s*|PS [^>]+>\s*)/, '');
-      return noPrompt;
-    };
-    const normalizedLines = noCr.split('\n').map(stripLogAndPrompt).map(l => l.trim());
-    return normalizedLines.join('\n').trim();
-  };
-  // Helpers to extract command text and boundary lines for overlap trimming
-  const parseCommandText = (ev: any): string => {
-    if (!ev || ev.type !== 'command') return '';
-    try {
-      if (typeof ev.content === 'string' && ev.content.startsWith('{')) {
-        const parsed = JSON.parse(ev.content);
-        if (parsed && typeof parsed.command === 'string') return parsed.command;
-      }
-    } catch {}
-    return typeof ev.content === 'string' ? ev.content : String(ev.content ?? '');
-  };
-  const stripAnsi = (s: string) => s.replace(/\x1B\[[0-9;]*m/g, '');
-  const stripLogPrefixAndPrompt = (line: string) => {
-    const noLog = line.replace(/^\s*\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[,\.]\d+)?\s*-\s*(?:DEBUG|INFO|WARNING|WARN|ERROR)\s*-\s*/i, '');
-    return noLog.replace(/^\s*(?:[\w_.-]+@[\w.-]+(?:[:~][^\s#\$>]*)?[#\$>]\s*|\$\s*|#\s*|>\s*|PS [^>]+>\s*)/, '');
-  };
-  const firstNonEmpty = (s: string): string => {
-    const line = s.split('\n').find(l => stripAnsi(stripLogPrefixAndPrompt(l)).trim().length > 0) ?? '';
-    return stripAnsi(stripLogPrefixAndPrompt(line)).trim();
-  };
-  const lastNonEmpty = (s: string): string => {
-    const lines = s.split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const l = stripAnsi(stripLogPrefixAndPrompt(lines[i])).trim();
-      if (l.length > 0) return l;
-    }
-    return '';
-  };
   events.forEach((ev) => {
-    if (ev.type === 'swarm_start') {
-      const names = 'agent_names' in ev && Array.isArray(ev.agent_names)
-        ? (ev.agent_names as any[]).map(a => typeof a === 'string' ? a : (a && (a.name || a.role)) || '').join(',')
-        : '';
-      const task = ev.task || 'Unknown task';
-      const signature = `${names}|${task}`;
-      if (signature === lastSwarmSignature) {
-        // skip duplicate consecutive swarm_start
-        return;
-      }
-      lastSwarmSignature = signature;
-    } else if (ev.type !== 'metrics_update') {
-      // Reset signature on other meaningful events
-      lastSwarmSignature = '';
-    }
-    // Drop redundant metadata that immediately repeats swarm_start info
-    if (
-      ev.type === 'metadata' &&
-      normalized.length > 0 &&
-      normalized[normalized.length - 1].type === 'swarm_start'
-    ) {
-      const last = normalized[normalized.length - 1] as any;
-      const meta = (ev as any).content || {};
-      const agentsMatch = typeof meta.agents === 'string' && meta.agents.includes(String(last.agent_count || ''));
-      const taskMatch = typeof meta.task === 'string' && meta.task === (last.task || '');
-      if (agentsMatch || taskMatch) {
-        // Skip this metadata; it's a summary of the swarm_start already shown
-        return;
-      }
-    }
+    // Backend now handles deduplication - trust events as-is
+    // Events have unique IDs for tracking
 
-    // Deduplicate consecutive tool_start events for the same tool
-    if (ev.type === 'tool_start') {
-      const currentTool = (ev as any).tool_name || '';
-      const hasMeaningful = (() => {
-        const input = (ev as any).tool_input || {};
-        if (!input) return false;
-        // Consider presence of non-empty string or any numeric/boolean as meaningful
-        for (const key of Object.keys(input)) {
-          const val = (input as any)[key];
-          if (val == null) continue;
-          if (typeof val === 'string' && val.trim().length > 0) return true;
-          if (typeof val === 'number' || typeof val === 'boolean') return true;
-          if (Array.isArray(val) && val.length > 0) return true;
-          if (typeof val === 'object' && Object.keys(val).length > 0) return true;
-        }
-        return false;
-      })();
-
-      const lastEv = normalized[normalized.length - 1];
-      if (lastEv && lastEv.type === 'tool_start') {
-        const lastTool = (lastEv as any).tool_name || '';
-        if (lastTool === currentTool) {
-          // If previous had no meaningful input and current has, replace previous
-          const lastHasMeaningful = (() => {
-            const input = (lastEv as any).tool_input || {};
-            if (!input) return false;
-            for (const key of Object.keys(input)) {
-              const val = (input as any)[key];
-              if (val == null) continue;
-              if (typeof val === 'string' && val.trim().length > 0) return true;
-              if (typeof val === 'number' || typeof val === 'boolean') return true;
-              if (Array.isArray(val) && val.length > 0) return true;
-              if (typeof val === 'object' && Object.keys(val).length > 0) return true;
-            }
-            return false;
-          })();
-
-          if (!lastHasMeaningful && hasMeaningful) {
-            normalized.pop();
-            normalized.push(ev);
-            return;
-          }
-          if (!lastHasMeaningful && !hasMeaningful) {
-            // Keep only one empty-header for back-to-back starts
-            return;
-          }
-        }
-      }
-    }
-
-    // Track active tool state
+    // Track active tool state - be more aggressive about detecting tool output
     if (ev.type === 'tool_start') {
       activeToolName = (ev as any).tool_name || 'unknown_tool';
-    } else if (ev.type === 'tool_invocation_end' || ev.type === 'step_header') {
-      // Consider tool ended on these
+      lastWasToolEnd = false;
+    } else if (ev.type === 'tool_invocation_end') {
+      // Tool just ended, next output is likely tool result
       lastWasToolEnd = true;
       activeToolName = null;
+    } else if (ev.type === 'command') {
+      // Commands indicate shell tool activity
+      activeToolName = 'shell';
+      lastWasToolEnd = false;
     }
 
-    // If we're in/after a tool, tag outputs so they don't collapse in the UI
-    if ((lastWasToolEnd || activeToolName) && ev.type === 'output') {
+    // Tag outputs that come during or immediately after tool execution
+    // This ensures all tool output is shown in full without truncation
+    if (ev.type === 'output') {
       const anyEv: any = ev as any;
-      anyEv.metadata = anyEv.metadata || {};
-      if (anyEv.metadata.fromToolBuffer !== true) {
+      
+      // Check if this output is likely from a tool
+      const isLikelyToolOutput = (
+        lastWasToolEnd ||  // Output right after tool end
+        activeToolName !== null ||  // Output during tool execution
+        (anyEv.content && anyEv.content.length > 200) ||  // Long output likely from tool
+        (anyEv.metadata && anyEv.metadata.source === 'tool')  // Explicitly marked as tool
+      );
+      
+      if (isLikelyToolOutput) {
+        anyEv.metadata = anyEv.metadata || {};
         anyEv.metadata.fromToolBuffer = true;
       }
+      
+      // Reset lastWasToolEnd after processing output
+      if (lastWasToolEnd) {
+        lastWasToolEnd = false;
+      }
+    } else if (ev.type === 'step_header') {
+      // New step resets tool state
+      activeToolName = null;
       lastWasToolEnd = false;
-    } else if (ev.type !== 'metadata') {
-      // Reset on other meaningful events
-      lastWasToolEnd = false;
-    }
-
-    // Trim echoed command line from immediate output after a command event
-    if (ev.type === 'output' && normalized.length > 0 && normalized[normalized.length - 1].type === 'command') {
-      const prevCmd = normalized[normalized.length - 1] as any;
-      const cmdText = stripAnsi(parseCommandText(prevCmd)).trim();
-      if (cmdText) {
-        const raw = typeof (ev as any).content === 'string' ? (ev as any).content : String((ev as any).content ?? '');
-        const norm = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        const head = firstNonEmpty(norm);
-        // Also compare after removing common prompts from head
-        const headNoPrompt = stripLogPrefixAndPrompt(head);
-        if (head && (head === cmdText || head.startsWith(cmdText) || headNoPrompt === cmdText || headNoPrompt.startsWith(cmdText))) {
-          const lines = norm.split('\n');
-          let removed = false;
-          const newLines: string[] = [];
-          for (const line of lines) {
-            const candidate = stripAnsi(stripLogPrefixAndPrompt(line)).trim();
-            if (!removed && candidate.length > 0) {
-              removed = true; // skip echoed head
-              continue;
-            }
-            newLines.push(line);
-          }
-          const joined = newLines.join('\n');
-          // If effectively empty after removal, skip this event entirely
-          if (stripAnsi(joined).trim().length === 0) {
-            return; // do not push ev
-          }
-          (ev as any).content = joined;
-        }
+    } else if (ev.type === 'reasoning') {
+      // Reasoning after tool typically means tool is done
+      if (activeToolName) {
+        activeToolName = null;
       }
     }
 
-    // Trim overlap line when consecutive outputs share boundary
-    if (ev.type === 'output' && normalized.length > 0 && normalized[normalized.length - 1].type === 'output') {
-      const prev = normalized[normalized.length - 1] as any;
-      const prevRaw = typeof prev.content === 'string' ? prev.content : String(prev.content ?? '');
-      const currRaw = typeof (ev as any).content === 'string' ? (ev as any).content : String((ev as any).content ?? '');
-      const prevNorm = prevRaw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const currNorm = currRaw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const tail = lastNonEmpty(prevNorm);
-      const head = firstNonEmpty(currNorm);
-      if (tail && head && tail === head) {
-        const lines = currNorm.split('\n');
-        let removed = false;
-        const newLines: string[] = [];
-        for (const line of lines) {
-          const candidate = stripAnsi(stripLogPrefixAndPrompt(line)).trim();
-          if (!removed && candidate.length > 0) {
-            removed = true; // skip overlapping head line
-            continue;
-          }
-          newLines.push(line);
-        }
-        const joined = newLines.join('\n');
-        if (stripAnsi(joined).trim().length === 0) {
-          return; // nothing left to show
-        }
-        (ev as any).content = joined;
-      }
-    }
-
-    // Deduplicate consecutive output events with identical normalized content
-    if (ev.type === 'output' && normalized.length > 0 && normalized[normalized.length - 1].type === 'output') {
-      const prev = normalized[normalized.length - 1] as any;
-      const prevNorm = normalizeOutputContent(prev);
-      const currNorm = normalizeOutputContent(ev as any);
-      if (prevNorm.length > 0 && prevNorm === currNorm) {
-        // Skip duplicate output event
-        return;
-      }
-    }
+    // Backend now sends clean events - no normalization needed
 
     normalized.push(ev);
   });
@@ -1329,13 +1427,17 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
   // Group consecutive reasoning events to prevent multiple labels
   const displayGroups = React.useMemo(() => computeDisplayGroups(events), [events]);
   
-  // Find active swarm for display - only show if not handled by swarm_start events
-  const activeSwarm = Array.from(swarmStates.values()).find(s => 
-    s.status === 'running' || s.status === 'initializing'
-  );
+  // Memoize active swarm lookup - expensive operation
+  const activeSwarm = React.useMemo(() => {
+    return Array.from(swarmStates.values()).find(s => 
+      s.status === 'running' || s.status === 'initializing'
+    );
+  }, [swarmStates]);
   
-  // Only show swarm display if we have actual swarm_start events in this session
-  const hasSwarmStartEvent = events.some(e => e.type === 'swarm_start');
+  // Memoize swarm event check
+  const hasSwarmStartEvent = React.useMemo(() => {
+    return events.some(e => e.type === 'swarm_start');
+  }, [events]);
   
   return (
     <Box flexDirection="column">
@@ -1348,13 +1450,13 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
       
       {displayGroups.map((group, idx) => {
         if (group.type === 'reasoning_group') {
-          // Display reasoning group with single label
-          const combinedContent = group.events.map(e => {
+          // Display reasoning group with single label - memoize content combination
+          const combinedContent = group.events.reduce((acc, e) => {
             if ('content' in e && e.content) {
-              return e.content;
+              return acc + e.content;
             }
-            return '';
-          }).join('');
+            return acc;
+          }, '');
           return (
             <Box key={`reasoning-group-${group.startIdx}`} flexDirection="column" marginTop={1}>
               <Text color="cyan" bold>reasoning</Text>
@@ -1366,7 +1468,12 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         } else {
           // Display single events normally
           return group.events.map((event, i) => (
-            <MemoizedEventLine key={`ev-${idx}-${i}`} event={event} toolStates={toolStates} animationsEnabled={animationsEnabled} />
+            <MemoizedEventLine 
+              key={event.id || `ev-${idx}-${i}`}  // Use event ID if available
+              event={event} 
+              toolStates={toolStates} 
+              animationsEnabled={animationsEnabled} 
+            />
           ));
         }
       })}
@@ -1380,7 +1487,7 @@ import { Static } from 'ink';
 
 export const StaticStreamDisplay: React.FC<{
   events: DisplayStreamEvent[];
-}> = ({ events }) => {
+}> = React.memo(({ events }) => {
   const groups = React.useMemo(() => computeDisplayGroups(events), [events]);
 
   // Flatten groups into discrete render items with stable keys
@@ -1389,7 +1496,13 @@ export const StaticStreamDisplay: React.FC<{
     const out: Item[] = [];
     groups.forEach((group, gIdx) => {
       if (group.type === 'reasoning_group') {
-        const combinedContent = group.events.map(e => ('content' in e && (e as any).content) ? (e as any).content : '').join('');
+        // Use reduce for better performance with large arrays
+        const combinedContent = group.events.reduce((acc, e) => {
+          if ('content' in e && (e as any).content) {
+            return acc + (e as any).content;
+          }
+          return acc;
+        }, '');
         const key = `rg-${group.startIdx}`;
         out.push({
           key,
@@ -1423,4 +1536,4 @@ export const StaticStreamDisplay: React.FC<{
       {(item: Item) => item.render()}
     </Static>
   );
-};
+});

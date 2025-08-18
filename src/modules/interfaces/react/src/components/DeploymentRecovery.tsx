@@ -1,7 +1,7 @@
 /**
  * Deployment Recovery Component
  * 
- * Handles quick fixes and recovery actions for unhealthy deployments.
+ * Manages recovery actions and remediation procedures for unhealthy deployments.
  * Shows inline recovery options without requiring full setup wizard.
  */
 

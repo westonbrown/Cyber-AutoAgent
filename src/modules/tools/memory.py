@@ -189,13 +189,14 @@ class Mem0ServiceClient:
 
         return mem0_config
 
-    def __init__(self, config: Optional[Dict] = None, has_existing_memories: bool = False):
+    def __init__(self, config: Optional[Dict] = None, has_existing_memories: bool = False, silent: bool = False):
         """Initialize the Mem0 service client.
 
         Args:
             config: Optional configuration dictionary to override defaults.
                    If provided, it will be merged with the default configuration.
             has_existing_memories: Whether memories already existed before initialization
+            silent: If True, suppress initialization output (used during report generation)
 
         The client will use one of three backends based on environment variables:
         1. Mem0 Platform if MEM0_API_KEY is set
@@ -204,14 +205,16 @@ class Mem0ServiceClient:
         """
         self.region = None  # Initialize region attribute
         self.has_existing_memories = has_existing_memories  # Store existing memory info
+        self.silent = silent  # Store silent flag for use in initialization methods
         self.mem0 = self._initialize_client(config)
         self.config = config  # Store config for later use
         self._should_reflect = False  # Flag for automatic reflection
         self._finding_count = 0  # Counter for automatic reflection trigger
         self._reflection_threshold = 3  # Trigger reflection after N findings
 
-        # Display memory overview if existing memories are detected
-        self._display_startup_overview()
+        # Display memory overview if existing memories are detected (unless silent)
+        if not silent:
+            self._display_startup_overview()
 
     def _initialize_client(self, config: Optional[Dict] = None) -> Any:
         """Initialize the appropriate Mem0 client based on environment variables.
@@ -223,8 +226,9 @@ class Mem0ServiceClient:
             An initialized Mem0 client (MemoryClient or Mem0Memory instance).
         """
         if os.environ.get("MEM0_API_KEY"):
-            print("[+] Memory Backend: Mem0 Platform (cloud)")
-            print(f"    API Key: {'*' * 8}{os.environ.get('MEM0_API_KEY', '')[-4:]}")
+            if not self.silent:
+                print("[+] Memory Backend: Mem0 Platform (cloud)")
+                print(f"    API Key: {'*' * 8}{os.environ.get('MEM0_API_KEY', '')[-4:]}")
             logger.debug("Using Mem0 Platform backend (MemoryClient)")
             return MemoryClient()
 
@@ -241,11 +245,12 @@ class Mem0ServiceClient:
                 .get("aws_region", config_manager.get_default_region())
             )
 
-            print("[+] Memory Backend: OpenSearch")
-            print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
-            print(f"    Region: {embedder_region}")
-            print(f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)")
-            print(f"    LLM: AWS Bedrock - {merged_config['llm']['config']['model']}")
+            if not self.silent:
+                print("[+] Memory Backend: OpenSearch")
+                print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
+                print(f"    Region: {embedder_region}")
+                print(f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)")
+                print(f"    LLM: AWS Bedrock - {merged_config['llm']['config']['model']}")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
             return self._initialize_opensearch_client(config, server_type)
 
@@ -329,37 +334,38 @@ class Mem0ServiceClient:
 
         merged_config["vector_store"]["config"]["path"] = faiss_path
 
-        # Display FAISS configuration
-        print("[+] Memory Backend: FAISS (local)")
-        print(f"    Store Location: {faiss_path}")
+        # Display FAISS configuration (unless silent mode for report generation)
+        if not self.silent:
+            print("[+] Memory Backend: FAISS (local)")
+            print(f"    Store Location: {faiss_path}")
 
-        # Display embedder configuration
-        embedder_config = merged_config.get("embedder", {})
-        embedder_provider = embedder_config.get("provider", "aws_bedrock")
-        embedder_model = embedder_config.get("config", {}).get("model")
-        config_manager = get_config_manager()
-        embedder_region = embedder_config.get("config", {}).get("aws_region", config_manager.get_default_region())
+            # Display embedder configuration
+            embedder_config = merged_config.get("embedder", {})
+            embedder_provider = embedder_config.get("provider", "aws_bedrock")
+            embedder_model = embedder_config.get("config", {}).get("model")
+            config_manager = get_config_manager()
+            embedder_region = embedder_config.get("config", {}).get("aws_region", config_manager.get_default_region())
 
-        # Display LLM configuration
-        llm_config = merged_config.get("llm", {})
-        llm_model = llm_config.get("config", {}).get("model")
+            # Display LLM configuration
+            llm_config = merged_config.get("llm", {})
+            llm_model = llm_config.get("config", {}).get("model")
 
-        if embedder_provider == "ollama":
-            print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
-            print(f"    LLM: Ollama - {llm_model}")
-        else:
-            print(f"    Region: {embedder_region}")
-            print(f"    Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
-            print(f"    LLM: AWS Bedrock - {llm_model}")
+            if embedder_provider == "ollama":
+                print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
+                print(f"    LLM: Ollama - {llm_model}")
+            else:
+                print(f"    Region: {embedder_region}")
+                print(f"    Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
+                print(f"    LLM: AWS Bedrock - {llm_model}")
 
-        # Display appropriate message based on whether store existed before initialization
-        # Use has_existing_memories parameter which includes proper file size validation
-        if has_existing_memories or store_existed_before:
-            print(f"    Loading existing FAISS store from: {faiss_path}")
-            print("    Memory will persist across operations for this target")
-        else:
-            # For fresh starts, just show the persistence message
-            print("    Memory will persist across operations for this target")
+            # Display appropriate message based on whether store existed before initialization
+            # Use has_existing_memories parameter which includes proper file size validation
+            if has_existing_memories or store_existed_before:
+                print(f"    Loading existing FAISS store from: {faiss_path}")
+                print("    Memory will persist across operations for this target")
+            else:
+                # For fresh starts, just show the persistence message
+                print("    Memory will persist across operations for this target")
 
         logger.debug("Initializing Mem0Memory with config: %s", merged_config)
         try:
@@ -1010,6 +1016,7 @@ def initialize_memory_system(
     operation_id: Optional[str] = None,
     target_name: Optional[str] = None,
     has_existing_memories: bool = False,
+    silent: bool = False,
 ) -> None:
     """Initialize the memory system with custom configuration.
 
@@ -1018,6 +1025,7 @@ def initialize_memory_system(
         operation_id: Unique operation identifier
         target_name: Sanitized target name for organizing memory by target
         has_existing_memories: Whether memories already existed before initialization
+        silent: If True, suppress initialization output (used during report generation)
     """
     global _MEMORY_CONFIG, _MEMORY_CLIENT
 
@@ -1027,7 +1035,7 @@ def initialize_memory_system(
     enhanced_config["target_name"] = target_name or "default_target"
 
     _MEMORY_CONFIG = enhanced_config
-    _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config, has_existing_memories)
+    _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config, has_existing_memories, silent)
     logger.info(
         "Memory system initialized for operation %s, target: %s",
         enhanced_config["operation_id"],
@@ -1035,13 +1043,20 @@ def initialize_memory_system(
     )
 
 
-def get_memory_client() -> Optional[Mem0ServiceClient]:
-    """Get the current memory client, initializing if needed."""
+def get_memory_client(silent: bool = False) -> Optional[Mem0ServiceClient]:
+    """Get the current memory client, initializing if needed.
+    
+    Args:
+        silent: If True, suppress initialization output (used during report generation)
+        
+    Returns:
+        The memory client instance or None if initialization fails
+    """
     global _MEMORY_CLIENT
     if _MEMORY_CLIENT is None:
         # Try to initialize with default config
         try:
-            initialize_memory_system()
+            initialize_memory_system(silent=silent)
         except Exception as e:
             logger.error("Failed to auto-initialize memory client: %s", e)
             return None
@@ -1081,7 +1096,8 @@ def mem0_memory(
 
     if _MEMORY_CLIENT is None:
         # Initialize with default config if not already initialized
-        initialize_memory_system()
+        # Always use silent mode for auto-initialization to prevent unwanted output
+        initialize_memory_system(silent=True)
 
     if _MEMORY_CLIENT is None:
         return "Error: Memory client could not be initialized"
@@ -1180,7 +1196,7 @@ def mem0_memory(
                         cleaned_metadata[key] = value
                 metadata = cleaned_metadata
 
-            # Temporarily suppress mem0's internal error logging
+            # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")
             original_level = mem0_logger.level
             mem0_logger.setLevel(logging.CRITICAL)

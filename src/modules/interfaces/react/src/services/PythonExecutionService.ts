@@ -849,7 +849,7 @@ export class PythonExecutionService extends EventEmitter {
       try {
         const eventData = JSON.parse(match[1]);
 
-        // Track tool execution state
+        // Track tool execution state for raw output buffering (not for structured events)
         if (eventData.type === 'tool_start' || eventData.type === 'tool_invocation_start') {
           this.inToolExecution = true;
           this.toolOutputBuffer = '';
@@ -858,7 +858,7 @@ export class PythonExecutionService extends EventEmitter {
           eventData.type === 'tool_result' ||
           eventData.type === 'step_header'
         ) {
-          // Flush once per tool when it ends
+          // Flush any remaining raw output when tool ends
           if (this.toolOutputBuffer.trim().length > 0) {
             this.emit('event', { 
               type: 'output', 
@@ -871,13 +871,10 @@ export class PythonExecutionService extends EventEmitter {
           this.inToolExecution = false;
         }
 
-        // If a structured 'output' arrives during tool execution, buffer it instead of emitting now
-        if (eventData.type === 'output' && this.inToolExecution) {
-          if (typeof eventData.content === 'string' && eventData.content.length > 0) {
-            this.toolOutputBuffer += eventData.content;
-            if (!this.toolOutputBuffer.endsWith('\n')) this.toolOutputBuffer += '\n';
-          }
-          // Advance cursor and continue without emitting this event
+        // Emit tool output immediately - backend already handles proper metadata and deduplication
+        if (eventData.type === 'output') {
+          // Always emit output events immediately for real-time display
+          this.emit('event', eventData);
           cursor = match.index + match[0].length;
           continue;
         }
@@ -930,7 +927,7 @@ export class PythonExecutionService extends EventEmitter {
             });
           }, 1000);
         }
-        // Forward standard events (step headers, tool calls, etc.)
+        // Forward all other events (step headers, tool calls, reasoning, etc.)
         else {
           this.emit('event', eventData);
         }

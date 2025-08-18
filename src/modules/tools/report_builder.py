@@ -8,6 +8,8 @@ security assessment reports from operation evidence.
 
 import json
 import logging
+import re
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
@@ -22,6 +24,43 @@ from modules.prompts.factory import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_target_for_path(target: str) -> str:
+    """Sanitize a target URL/string for safe use in filesystem paths.
+    
+    Prevents directory traversal attacks and ensures the resulting path
+    is safe for use in file operations.
+    
+    Args:
+        target: The target URL or string to sanitize (e.g., "https://example.com/path")
+        
+    Returns:
+        A sanitized string safe for use in filesystem paths
+        
+    Examples:
+        >>> sanitize_target_for_path("https://example.com/test")
+        'example.com_test'
+        >>> sanitize_target_for_path("../../etc/passwd")
+        'etc_passwd'
+    """
+    # Remove protocol prefixes
+    clean = re.sub(r'^https?://', '', target)
+    
+    # Remove directory traversal attempts
+    clean = clean.replace('..', '').replace('./', '')
+    
+    # Keep only safe characters: alphanumeric, dots, hyphens, underscores
+    clean = re.sub(r'[^a-zA-Z0-9._-]', '_', clean)
+    
+    # Normalize multiple underscores to single
+    clean = re.sub(r'_+', '_', clean)
+    
+    # Enforce maximum length and trim special chars
+    clean = clean[:100].strip('_.')
+    
+    # Provide fallback for empty results
+    return clean or "unknown_target"
 
 
 @tool
@@ -61,24 +100,25 @@ def build_report_sections(
     try:
         logger.info("Building report sections for operation: %s", operation_id)
         
-        # Retrieve evidence from memory
+        # Initialize memory client and retrieve evidence
         evidence = []
-        # Initialize memory client for the specific target
         from modules.tools.memory import Mem0ServiceClient
         import os
         
-        # Set up memory client with correct target path
+        # Configure memory client with target-specific path
         config = Mem0ServiceClient.get_default_config()
         if config and "vector_store" in config and "config" in config["vector_store"]:
-            # Update path to use the target-specific memory location
-            config["vector_store"]["config"]["path"] = f"outputs/{target.replace('https://', '').replace('http://', '').replace('/', '_')}/memory"
+            safe_target_name = sanitize_target_for_path(target)
+            config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
         
         try:
-            memory_client = Mem0ServiceClient(config)
+            # Use silent mode to suppress initialization output during report generation
+            memory_client = Mem0ServiceClient(config, silent=True)
             logger.info("Initialized memory client for target: %s", target)
         except Exception as e:
             logger.warning("Could not initialize target-specific memory client: %s. Using default.", e)
-            memory_client = get_memory_client()
+            # Fallback to global client with silent mode
+            memory_client = get_memory_client(silent=True)
         
         if memory_client:
             try:

@@ -1,11 +1,12 @@
 /**
  * Custom hook for managing event streams
- * Simplifies event processing and state management
+ * Optimized with EventStore for better performance
  */
 
 import React from 'react';
 import { DisplayStreamEvent } from '../components/StreamDisplay.js';
 import { EVENT_TYPES } from '../constants/config.js';
+import { EventStore } from '../utils/EventStore.js';
 
 interface EventStreamState {
   events: DisplayStreamEvent[];
@@ -24,8 +25,13 @@ interface EventStreamActions {
 }
 
 export const useEventStream = (
-  initialMaxSteps: number = 100
+  initialMaxSteps: number = 100,
+  maxEvents: number = 5000
 ): [EventStreamState, EventStreamActions] => {
+  // Use EventStore for efficient event management
+  const eventStoreRef = React.useRef(new EventStore(maxEvents));
+  const [version, setVersion] = React.useState(0); // Force re-render when events change
+  
   const [state, setState] = React.useState<EventStreamState>({
     events: [],
     isThinking: false,
@@ -35,15 +41,25 @@ export const useEventStream = (
     lastToolName: null,
   });
 
+  // Get events from store
+  const events = React.useMemo(() => {
+    return eventStoreRef.current.toArray();
+  }, [version]);
+
+  // Update state.events when store changes
+  React.useEffect(() => {
+    setState(prev => ({ ...prev, events }));
+  }, [events]);
+
   const actions = React.useMemo<EventStreamActions>(() => ({
     addEvent: (event: DisplayStreamEvent) => {
-      setState(prev => ({
-        ...prev,
-        events: [...prev.events, event],
-      }));
+      eventStoreRef.current.append(event);
+      setVersion(v => v + 1);
     },
 
     clearEvents: () => {
+      eventStoreRef.current.clear();
+      setVersion(v => v + 1);
       setState(prev => ({
         ...prev,
         events: [],
@@ -88,10 +104,13 @@ export const useEventStream = (
             break;
         }
 
-        // Add event to list
-        newState.events = [...prev.events, event];
+        // Don't add event here - add to store after state update
         return newState;
       });
+      
+      // Add event to store after state update
+      eventStoreRef.current.append(event);
+      setVersion(v => v + 1);
     },
 
     flushReasoningBuffer: () => {
@@ -103,14 +122,17 @@ export const useEventStream = (
           content: prev.reasoningBuffer.join(''),
         };
 
+        eventStoreRef.current.append(reasoningEvent);
+        setVersion(v => v + 1);
+        
         return {
           ...prev,
-          events: [...prev.events, reasoningEvent],
+          events: eventStoreRef.current.toArray(),
           reasoningBuffer: [],
         };
       });
     },
-  }), []);
+  }), [version]); // Include version to ensure actions see latest store state
 
   return [state, actions];
 };

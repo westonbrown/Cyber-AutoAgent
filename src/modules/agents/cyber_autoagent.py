@@ -278,7 +278,8 @@ def create_agent(
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
     # memory_overview = None  # Reserved for future system prompt enhancement
 
-    # Get memory overview for system prompt enhancement
+    # Get memory overview for system prompt enhancement and UI display
+    memory_overview = None
     if has_existing_memories or config.memory_path:
         try:
             memory_client = get_memory_client()
@@ -397,12 +398,38 @@ Leverage these tools directly via shell.
     # Always use the React bridge handler as it has all the functionality we need
     # It works in both CLI and React modes
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
+    
+    # Set up output interception to prevent duplicate output
+    # This must be done before creating the handler to ensure all stdout is captured
+    import os
+    if os.environ.get("__REACT_INK__"):
+        from modules.handlers.output_interceptor import setup_output_interception
+        setup_output_interception()
 
     callback_handler = ReactBridgeHandler(
         max_steps=config.max_steps,
         operation_id=operation_id,
         model_id=config.model_id,
         swarm_model_id=server_config.swarm.llm.model_id,
+        init_context={
+            "objective": config.objective,
+            "target": config.target,
+            "module": config.module,
+            "provider": config.provider,
+            "model": config.model_id,
+            "region": config.region_name,
+            "tools_available": len(config.available_tools) if config.available_tools else 0,
+            "memory": {
+                "mode": config.memory_mode,
+                "path": config.memory_path or None,
+                "has_existing": has_existing_memories if 'has_existing_memories' in locals() else False,
+                "reused": (has_existing_memories and config.memory_mode != "fresh") if 'has_existing_memories' in locals() else False,
+                "backend": "mem0_cloud" if os.getenv("MEM0_API_KEY") else ("opensearch" if os.getenv("OPENSEARCH_HOST") else "faiss"),
+                **(memory_overview if memory_overview and isinstance(memory_overview, dict) else {}),
+            },
+            "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
+            "ui_mode": "react" if os.getenv("__REACT_INK__") else "cli",
+        },
     )
 
     # No hooks needed - the callback handler handles everything

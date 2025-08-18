@@ -14,6 +14,22 @@ from contextlib import contextmanager
 
 from modules.handlers.core.utils import CyberEvent
 
+# Global flag to track if we're currently executing a tool
+# This prevents duplicate output events during tool execution
+_in_tool_execution = False
+_tool_execution_lock = threading.Lock()
+
+def set_tool_execution_state(is_executing: bool):
+    """Set the global tool execution state."""
+    global _in_tool_execution
+    with _tool_execution_lock:
+        _in_tool_execution = is_executing
+
+def is_in_tool_execution() -> bool:
+    """Check if we're currently executing a tool."""
+    with _tool_execution_lock:
+        return _in_tool_execution
+
 
 class OutputInterceptor(io.TextIOBase):
     """Intercepts stdout/stderr and converts to structured events."""
@@ -38,6 +54,11 @@ class OutputInterceptor(io.TextIOBase):
             # Check if this is already a structured event
             if "__CYBER_EVENT__" in data:
                 # Pass through structured events unchanged
+                return self.original_stream.write(data)
+            
+            # During tool execution, pass through raw output without creating events
+            # The tool result handler will emit the proper event
+            if is_in_tool_execution():
                 return self.original_stream.write(data)
 
             # Buffer the data

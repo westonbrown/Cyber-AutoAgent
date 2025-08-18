@@ -349,8 +349,29 @@ export function useOperationManager({
           });
         }
         
-        // Handle token usage updates
-        if (event.tokens || event.inputTokens || event.outputTokens || event.cost) {
+        // Handle token usage updates from metrics_update events
+        if (event.type === 'metrics_update' && event.metrics) {
+          const inputTokens = event.metrics.inputTokens || 0;
+          const outputTokens = event.metrics.outputTokens || 0;
+          
+          if (inputTokens > 0 || outputTokens > 0) {
+            operationManager.updateTokenUsage(operation.id, inputTokens, outputTokens);
+            
+            const currentOp = operationManager.getOperation(operation.id);
+            if (currentOp) {
+              updateMetricsThrottled({
+                tokens: currentOp.cost.tokensUsed,
+                cost: currentOp.cost.estimatedCost,
+                duration: event.metrics.duration || operationManager.getOperationDuration(operation.id),
+                memoryOps: event.metrics.memoryOps || currentOp.findings,
+                evidence: event.metrics.evidence || currentOp.findings
+              });
+            }
+          }
+        }
+        
+        // Also handle legacy token updates at top level (for backward compatibility)
+        else if (event.tokens || event.inputTokens || event.outputTokens || event.cost) {
           const inputTokens = event.inputTokens || 0;
           const outputTokens = event.outputTokens || 0;
           
