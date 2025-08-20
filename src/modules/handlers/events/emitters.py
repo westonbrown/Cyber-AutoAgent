@@ -73,6 +73,10 @@ class StdoutEventEmitter:
         Returns:
             Signature string for comparison
         """
+        event_type = event.get("type", "")
+        if event_type in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
+            return f"{event_type}_{event.get('tool_name', '')}_{datetime.now().isoformat()}_{self._event_counter}"
+        
         # Create a copy without volatile fields
         sig_dict = {k: v for k, v in event.items() 
                    if k not in ("timestamp", "id", "duration", "metrics")}

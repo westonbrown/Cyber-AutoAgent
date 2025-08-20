@@ -433,7 +433,7 @@ Leverage these tools directly via shell.
     )
 
     # No hooks needed - the callback handler handles everything
-    hooks = []
+    hooks = None
 
     # Create model based on provider type
     try:

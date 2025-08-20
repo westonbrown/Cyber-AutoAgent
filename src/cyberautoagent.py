@@ -521,7 +521,8 @@ def main():
             while not interrupted:
                 try:
                     # Execute agent with current message
-                    result = agent(current_message)
+                    # Pass callback_handler explicitly to ensure it's used
+                    result = agent(current_message, callback_handler=callback_handler)
 
                     # Pass the metrics from the result to the callback handler
                     if callback_handler and hasattr(result, "metrics") and result.metrics:
@@ -717,9 +718,23 @@ def main():
         sys.exit(1)
 
     finally:
+        # Ensure log files are properly closed before exit
+        def close_log_outputs():
+            if hasattr(sys.stdout, 'close') and hasattr(sys.stdout, 'log'):
+                try:
+                    sys.stdout.close()
+                except:
+                    pass
+            if hasattr(sys.stderr, 'close') and hasattr(sys.stderr, 'log'):
+                try:
+                    sys.stderr.close()
+                except:
+                    pass
+        
         # Skip cleanup if interrupted
         if interrupted:
             print_status("Exiting immediately due to interrupt", "WARNING")
+            close_log_outputs()
             os._exit(1)
 
         # Ensure final report is generated - single trigger point
@@ -786,6 +801,9 @@ def main():
                 logger.debug("Traces flushed successfully")
         except Exception as e:
             logger.warning("Error flushing traces: %s", e)
+        
+        # Final cleanup of log outputs before exit
+        close_log_outputs()
 
 
 if __name__ == "__main__":

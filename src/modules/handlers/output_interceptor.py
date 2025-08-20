@@ -65,8 +65,11 @@ class OutputInterceptor(io.TextIOBase):
         with self.lock:
             # Check if this is already a structured event
             if "__CYBER_EVENT__" in data:
-                # Pass through structured events unchanged
-                return self.original_stream.write(data)
+                # Pass through structured events unchanged and flush immediately
+                result = self.original_stream.write(data)
+                if hasattr(self.original_stream, 'flush'):
+                    self.original_stream.flush()
+                return result
 
             # Buffer the data
             self.buffer.write(data)

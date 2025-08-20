@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import atexit
 import logging
 import os
 import re
@@ -247,6 +248,16 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Set up stdout and stderr redirection to capture ALL terminal output
     sys.stdout = TeeOutput(sys.stdout, log_file)
     sys.stderr = TeeOutput(sys.stderr, log_file)
+    
+    # Register cleanup handler to ensure log files are properly closed
+    def cleanup_tee_outputs():
+        if isinstance(sys.stdout, TeeOutput):
+            sys.stdout.close()
+            sys.stdout = sys.__stdout__
+        if isinstance(sys.stderr, TeeOutput):
+            sys.stderr.close()
+            sys.stderr = sys.__stderr__
+    atexit.register(cleanup_tee_outputs)
 
     # Traditional logger setup for structured logging
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")

@@ -82,12 +82,15 @@ class ReportGenerator:
         
         # Create a silent callback handler to prevent duplicate output
         # The report will be returned and handled by the caller
-        from strands.handlers import PrintingCallbackHandler
-        
-        class SilentCallbackHandler(PrintingCallbackHandler):
-            """Silent callback handler that suppresses all output."""
+        class SilentCallbackHandler:
+            """Completely silent callback handler that prevents all output and interactions."""
             def __call__(self, **kwargs):
-                pass  # Suppress output to prevent duplication
+                # Suppress all callbacks
+                pass
+            
+            def __getattr__(self, name):
+                # Return no-op for any method call to ensure complete silence
+                return lambda *args, **kwargs: None
         
         return Agent(
             model=model,

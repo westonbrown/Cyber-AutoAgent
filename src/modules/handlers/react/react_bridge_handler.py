@@ -301,10 +301,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         raw_input = tool_use.get("input", {})
         tool_input = self._parse_tool_input_from_stream(raw_input)
 
+        # Emit reasoning for swarm agents regardless of tool announcement status
+        if self.in_swarm_operation and self.reasoning_buffer:
+            self._emit_accumulated_reasoning()
+        
         # Only process new tools
         if tool_id and tool_id not in self.announced_tools:
-            # Emit accumulated reasoning first
-            self._emit_accumulated_reasoning()
+            # Emit accumulated reasoning first (for non-swarm or if not already emitted)
+            if not self.in_swarm_operation:
+                self._emit_accumulated_reasoning()
 
             # Emit step header if pending or first tool
             if self.pending_step_header or (self.current_step == 0 and tool_id):
