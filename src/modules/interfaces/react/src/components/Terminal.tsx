@@ -1,7 +1,7 @@
 /**
- * Unconstrained Terminal - Full terminal buffer streaming display
+ * Terminal - Full terminal buffer streaming display
  * 
- * Uses React Ink's Static component for smooth, unconstrained output without height limits.
+ * Uses React Ink's Static component for smooth output without height limits.
  * 
  * This component allows the full agent output to flow naturally without
  * artificial height constraints, preventing text overlap and cutoff issues.
@@ -14,7 +14,7 @@ import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { useEventBatcher } from '../utils/useBatchedState.js';
 
-interface UnconstrainedTerminalProps {
+interface TerminalProps {
   executionService: ExecutionService | null;
   sessionId: string;
   terminalWidth?: number;
@@ -24,7 +24,7 @@ interface UnconstrainedTerminalProps {
   animationsEnabled?: boolean;
 }
 
-export const UnconstrainedTerminal: React.FC<UnconstrainedTerminalProps> = React.memo(({
+export const Terminal: React.FC<TerminalProps> = React.memo(({
   executionService,
   sessionId,
   terminalWidth = 80,

@@ -12,8 +12,9 @@ import { formatToolInput } from '../utils/toolFormatters.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 
-// Legacy simplified event types for backward compatibility
-export type LegacyStreamEvent = 
+// Additional event types not yet in the SDK-aligned events.ts
+// TODO: Migrate these to the main StreamEvent type in events.ts
+export type AdditionalStreamEvent = 
   | { type: 'step_header'; step: number | string; maxSteps: number; operation: string; duration: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
   | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; [key: string]: any }
@@ -26,7 +27,7 @@ export type LegacyStreamEvent =
   | { type: 'metadata'; content: Record<string, string>; [key: string]: any }
   | { type: 'divider'; [key: string]: any }
   | { type: 'user_handoff'; message: string; breakout: boolean; [key: string]: any }
-  | { type: 'metrics_update'; metrics: any; [key: string]: any } // Pass-through type
+  | { type: 'metrics_update'; metrics: any; [key: string]: any }
   | { type: 'model_invocation_start'; modelId?: string; [key: string]: any }
   | { type: 'model_stream_delta'; delta?: string; [key: string]: any }
   | { type: 'reasoning_delta'; delta?: string; [key: string]: any }
@@ -41,8 +42,8 @@ export type LegacyStreamEvent =
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
   | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any };
 
-// Combined event type supporting both SDK and legacy events
-export type DisplayStreamEvent = StreamEvent | LegacyStreamEvent;
+// Combined event type supporting both SDK-aligned and additional events
+export type DisplayStreamEvent = StreamEvent | AdditionalStreamEvent;
 
 // Re-export StreamEvent type for backward compatibility
 export type { StreamEvent };
@@ -64,7 +65,7 @@ interface ToolState {
 
 const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 
-// Export EventLine for use in VirtualizedStreamDisplay
+// Export EventLine for potential reuse in other components
 export const EventLine: React.FC<{ 
   event: DisplayStreamEvent; 
   toolStates?: Map<string, ToolState>;
@@ -1180,145 +1181,6 @@ export const computeDisplayGroups = (events: DisplayStreamEvent[]): DisplayGroup
   return groups;
 };
 
-// Legacy complex deduplication function - kept for reference
-// TODO: Remove after verifying simplified version works
-const computeDisplayGroupsLegacy = (events: DisplayStreamEvent[]): DisplayGroup[] => {
-  // First, normalize events to remove duplicate swarm_start emissions
-  const normalized: DisplayStreamEvent[] = [];
-  // Backend handles event deduplication - no signature tracking needed
-  // Track if the previous event ended a tool so we can tag the next output
-  let lastWasToolEnd = false;
-  // Track active tool between start/end to tag outputs during tool execution
-  let activeToolName: string | null = null;
-  events.forEach((ev) => {
-    // Backend now handles deduplication - trust events as-is
-    // Events have unique IDs for tracking
-
-    // Track active tool state - be more aggressive about detecting tool output
-    if (ev.type === 'tool_start') {
-      activeToolName = (ev as any).tool_name || 'unknown_tool';
-      lastWasToolEnd = false;
-    } else if (ev.type === 'tool_invocation_end') {
-      // Tool just ended, next output is likely tool result
-      lastWasToolEnd = true;
-      activeToolName = null;
-    } else if (ev.type === 'command') {
-      // Commands indicate shell tool activity
-      activeToolName = 'shell';
-      lastWasToolEnd = false;
-    }
-
-    // Tag outputs that come during or immediately after tool execution
-    // This ensures all tool output is shown in full without truncation
-    if (ev.type === 'output') {
-      const anyEv: any = ev as any;
-      
-      // Check if this output is likely from a tool
-      const isLikelyToolOutput = (
-        lastWasToolEnd ||  // Output right after tool end
-        activeToolName !== null ||  // Output during tool execution
-        (anyEv.content && anyEv.content.length > 200) ||  // Long output likely from tool
-        (anyEv.metadata && anyEv.metadata.source === 'tool')  // Explicitly marked as tool
-      );
-      
-      if (isLikelyToolOutput) {
-        anyEv.metadata = anyEv.metadata || {};
-        anyEv.metadata.fromToolBuffer = true;
-      }
-      
-      // Reset lastWasToolEnd after processing output
-      if (lastWasToolEnd) {
-        lastWasToolEnd = false;
-      }
-    } else if (ev.type === 'step_header') {
-      // New step resets tool state
-      activeToolName = null;
-      lastWasToolEnd = false;
-    } else if (ev.type === 'reasoning') {
-      // Reasoning after tool typically means tool is done
-      if (activeToolName) {
-        activeToolName = null;
-      }
-    }
-
-    // Backend now sends clean events - no normalization needed
-
-    normalized.push(ev);
-  });
-
-  const groups: DisplayGroup[] = [];
-
-  let currentReasoningGroup: DisplayStreamEvent[] = [];
-  let groupStartIdx = 0;
-  let activeThinking = false;
-  let lastThinkingIdx = -1;
-
-  normalized.forEach((event, idx) => {
-    if (event.type === 'reasoning') {
-      if (currentReasoningGroup.length === 0) {
-        groupStartIdx = idx;
-      }
-      currentReasoningGroup.push(event);
-    } else if (event.type === 'thinking') {
-      // End current reasoning group if exists
-      if (currentReasoningGroup.length > 0) {
-        groups.push({
-          type: 'reasoning_group',
-          events: currentReasoningGroup,
-          startIdx: groupStartIdx
-        });
-        currentReasoningGroup = [];
-      }
-
-      activeThinking = true;
-      lastThinkingIdx = groups.length;
-
-      // Add thinking event
-      groups.push({
-        type: 'single',
-        events: [event],
-        startIdx: idx
-      });
-    } else if (event.type === 'thinking_end') {
-      // Mark that thinking has ended
-      activeThinking = false;
-      // Don't add thinking_end to display
-    } else {
-      // End current reasoning group if exists
-      if (currentReasoningGroup.length > 0) {
-        groups.push({
-          type: 'reasoning_group',
-          events: currentReasoningGroup,
-          startIdx: groupStartIdx
-        });
-        currentReasoningGroup = [];
-      }
-
-      // Add non-reasoning event as single
-      groups.push({
-        type: 'single',
-        events: [event],
-        startIdx: idx
-      });
-    }
-  });
-
-  // Handle any remaining reasoning group
-  if (currentReasoningGroup.length > 0) {
-    groups.push({
-      type: 'reasoning_group',
-      events: currentReasoningGroup,
-      startIdx: groupStartIdx
-    });
-  }
-
-  // If we have an active thinking that should be hidden, filter it out
-  if (!activeThinking && lastThinkingIdx >= 0) {
-    return groups.filter((_, idx) => idx !== lastThinkingIdx);
-  }
-
-  return groups;
-};
 
 export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events, animationsEnabled = true }) => {
   // Track active swarm operations

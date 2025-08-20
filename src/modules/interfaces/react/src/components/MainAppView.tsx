@@ -13,7 +13,7 @@ import ansiEscapes from 'ansi-escapes';
 import { Header } from './Header.js';
 import { Footer } from './Footer.js';
 import { UnifiedInputPrompt } from './UnifiedInputPrompt.js';
-import { UnconstrainedTerminal } from './UnconstrainedTerminal.js';
+import { Terminal } from './Terminal.js';
 import { ModalRegistry } from './ModalRegistry.js';
 
 // Types
@@ -219,7 +219,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
           customContent ? (
             <Box flexDirection="column" marginTop={1}>{customContent}</Box>
           ) : (!deferStreamMount) && (
-            <UnconstrainedTerminal
+            <Terminal
               executionService={appState.executionService}
               sessionId={appState.activeOperation!.id}
               terminalWidth={appState.terminalDisplayWidth}

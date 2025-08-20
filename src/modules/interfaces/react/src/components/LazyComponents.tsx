@@ -35,8 +35,8 @@ export const LazySwarmDisplay = React.lazy(() =>
   import('./SwarmDisplay.js').then(module => ({ default: module.SwarmDisplay }))
 );
 
-export const LazyUnconstrainedTerminal = React.lazy(() => 
-  import('./UnconstrainedTerminal.js').then(module => ({ default: module.UnconstrainedTerminal }))
+export const LazyTerminal = React.lazy(() => 
+  import('./Terminal.js').then(module => ({ default: module.Terminal }))
 );
 
 // Wrapper components with Suspense boundaries
@@ -64,8 +64,8 @@ export const SwarmDisplayLazy: React.FC<any> = (props) => (
   </Suspense>
 );
 
-export const UnconstrainedTerminalLazy: React.FC<any> = (props) => (
+export const TerminalLazy: React.FC<any> = (props) => (
   <Suspense fallback={<LoadingFallback componentName="Terminal" />}>
-    <LazyUnconstrainedTerminal {...props} />
+    <LazyTerminal {...props} />
   </Suspense>
 );
