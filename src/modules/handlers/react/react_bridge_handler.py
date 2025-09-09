@@ -526,6 +526,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                                         self._track_agent_handoff(tool_input)
                                         break
                             else:
+                                pass  # No known agent found in input
                 except Exception as e:
                     logger.warning("AGENT_HANDOFF parsing failed: %s; input=%s", e, raw_input)
             elif tool_name == "complete_swarm_task":
