@@ -78,13 +78,21 @@ export class SetupService extends EventEmitter {
     const totalSteps = 4;
     let currentStep = 0;
 
+    // Immediate initial progress to show UI is responsive
+    onProgress?.({
+      current: 0,
+      total: totalSteps,
+      message: 'Starting Python environment setup...',
+      stepName: 'environment'
+    });
+
     // Step 1: Update deployment mode first (fast operation)
     currentStep++;
     onProgress?.({
       current: currentStep,
       total: totalSteps,
       message: 'Configuring CLI mode...',
-      stepName: 'mode-setup'
+      stepName: 'environment'
     });
 
     // Update ContainerManager's deployment mode early to avoid Docker operations
@@ -97,7 +105,7 @@ export class SetupService extends EventEmitter {
       current: currentStep,
       total: totalSteps,
       message: 'Checking Python installation...',
-      stepName: 'python-check'
+      stepName: 'environment'
     });
 
     this.logger.info('Verifying Python 3.10+ is installed');
@@ -114,7 +122,7 @@ export class SetupService extends EventEmitter {
       current: currentStep,
       total: totalSteps,
       message: `Python ${pythonCheck.version} detected`,
-      stepName: 'python-check'
+      stepName: 'environment'
     });
 
     // Step 3: Setup virtual environment and dependencies

@@ -104,7 +104,7 @@ def _generate_findings_table(evidence_text: str) -> str:
     return table
 
 
-def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 100) -> str:
+def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 400) -> str:
     """Format evidence list into structured text for the report."""
     if not evidence:
         return "<no_evidence>No specific evidence collected during assessment.</no_evidence>"
@@ -125,7 +125,7 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
             evidence_text += f"\n<{severity.lower()}_findings>\n"
             for item in severity_groups[severity]:
                 category = item.get("category", "unknown").upper()
-                content = item.get("content", "")[:800]
+                content = item.get("content", "")[:4000]
                 confidence = item.get("confidence", "unknown")
                 if item.get("category") == "finding":
                     if confidence != "unknown":
@@ -134,7 +134,7 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                         evidence_text += f"{finding_number}. [{category} | {severity}] {content}"
                 else:
                     evidence_text += f"{finding_number}. [{category}] {content}"
-                if len(item.get("content", "")) > 800:
+                if len(item.get("content", "")) > 4000:
                     evidence_text += "..."
                 evidence_text += "\n"
                 finding_number += 1

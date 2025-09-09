@@ -48,7 +48,10 @@ class ReportGenerator:
         """
         # Get appropriate model based on provider
         if provider == "bedrock":
-            model = BedrockModel(model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            model = BedrockModel(
+                model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                max_tokens=8192  # Increased for comprehensive reports
+            )
         elif provider == "ollama":
             # Get Ollama host from environment or use default
             from modules.config.manager import get_config_manager

@@ -13,6 +13,7 @@ import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './Stream
 import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { useEventBatcher } from '../utils/useBatchedState.js';
+import { normalizeEvent } from '../services/events/normalize.js';
 
 interface TerminalProps {
   executionService: ExecutionService | null;
@@ -67,6 +68,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const seenThinkingThisPhaseRef = useRef<boolean>(false);
   const suppressTerminationBannerRef = useRef<boolean>(false);
+  // Duplicate emission resolved in ReactBridgeHandler
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingActiveUpdaterRef = useRef<((prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) | null>(null);
@@ -128,8 +130,10 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           swarm_agent: event.swarm_agent || currentSwarmAgent,
           swarm_sub_step: event.swarm_sub_step,
           swarm_max_sub_steps: event.swarm_max_sub_steps,
+          swarm_agent_max: event.swarm_agent_max,  // Per-agent max steps
           swarm_total_iterations: event.swarm_total_iterations,  // Pass through for x/y display
           swarm_max_iterations: event.swarm_max_iterations,      // Pass through for x/y display
+          agent_count: event.agent_count,  // Number of agents in swarm
           swarm_context: event.swarm_context || (swarmActive ? 'Multi-Agent Operation' : undefined)
         } as DisplayStreamEvent);
         break;
@@ -162,7 +166,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         
       case 'thinking':
         // Handle thinking start without conflicting with reasoning
-        if (!activeReasoning && !activeThinking) {
+        if (!activeReasoning && !activeThinkingRef.current) {
           // If a delayed thinking timer is pending, cancel it to avoid duplicate spinner
           if (delayedThinkingTimerRef.current) {
             clearTimeout(delayedThinkingTimerRef.current);
@@ -208,44 +212,38 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'tool_start':
+        // Get the tool ID from the event (support both camel/snake)
+        let toolId: string | undefined = event.toolId || event.tool_id;
+        // Some tools (e.g., orchestrators) don't emit IDs; use a stable fallback so headers render.
+        if (!toolId) {
+          const bucket = Math.floor((event.timestamp ? Date.parse(event.timestamp) : Date.now()) / 1000); // 1s buckets
+          const name = event.toolName || event.tool_name || 'tool';
+          toolId = `${name}-${bucket}`;
+        }
+        
+        // Always render the tool header now that we have a deterministic id
+        
         // Reset phase flags
         seenThinkingThisPhaseRef.current = false;
-        setCurrentToolId(event.toolId);
+        setCurrentToolId(toolId);
         // Entering a tool phase should end any active reasoning session
         if (activeReasoning) {
           setActiveReasoning(false);
         }
         
-        // Special handling for handoff_to_agent during swarm operations
-        if ((event.tool_name === 'handoff_to_agent' || event.toolName === 'handoff_to_agent') && swarmActive) {
-          const toolInput = event.tool_input || event.args || {};
-          
-          // Create a proper swarm_handoff event with rich context
-          results.push({
-            type: 'swarm_handoff',
-            from_agent: currentSwarmAgent || 'unknown',
-            to_agent: toolInput.agent_name || toolInput.handoff_to || 'unknown',
-            message: toolInput.message || '',
-            shared_context: toolInput.context || {},
-            timestamp: event.timestamp || Date.now(),
-            sequence: ++swarmHandoffSequenceRef.current
-          } as DisplayStreamEvent);
-          
-          // Update current agent
-          setCurrentSwarmAgent(toolInput.agent_name || toolInput.handoff_to || currentSwarmAgent);
-        }
-        
+        // Note: Do NOT synthesize swarm_handoff here; backend already emits swarm_handoff events
         // Always emit the tool event
         results.push({
           type: 'tool_start',
           tool_name: event.toolName || event.tool_name || '',
           tool_input: event.args || event.tool_input || {},
-          toolId: event.toolId,
-          toolName: event.toolName
+          toolId: toolId,
+          toolName: event.toolName,
+          tool_id: toolId  // Include tool_id for compatibility
         } as DisplayStreamEvent);
 
         // Show single unified thinking animation
-        if (!activeReasoning && !activeThinking) {
+        if (!activeReasoning && !activeThinkingRef.current) {
           if (delayedThinkingTimerRef.current) {
             clearTimeout(delayedThinkingTimerRef.current);
             delayedThinkingTimerRef.current = null;
@@ -260,29 +258,37 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           } as DisplayStreamEvent);
         }
         break;
+        
+      case 'tool_input_update':
+        // Handle tool input updates from swarm agents
+        // Pass through the event with tool_id and updated input
+        results.push({
+          type: 'tool_input_update',
+          tool_id: event.tool_id || event.toolId,
+          tool_input: event.tool_input || event.args || {}
+        } as DisplayStreamEvent);
+        break;
 
       case 'tool_invocation_start':
-        // SDK variant of tool start - don't duplicate animations
+        // Skip this event - the backend emits both tool_start and tool_invocation_start
+        // We only need to process tool_start which has more complete information
+        // This prevents duplicate tool displays in the UI
+        break;
+        
+      case 'tool_invocation_end':
+        // Some backends emit tool_invocation_end without a corresponding tool_end.
+        // Ensure we stop any active thinking spinner and reset tool state to avoid "still running" UI.
+        if (activeThinking) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+        if (delayedThinkingTimerRef.current) {
+          clearTimeout(delayedThinkingTimerRef.current);
+          delayedThinkingTimerRef.current = null;
+        }
         seenThinkingThisPhaseRef.current = false;
-        setCurrentToolId(event.toolId);
-        // Also end any active reasoning and start spinner just like legacy tool_start
-        if (activeReasoning) {
-          setActiveReasoning(false);
-        }
-        results.push(event as DisplayStreamEvent);
-        if (!activeThinking) {
-          if (delayedThinkingTimerRef.current) {
-            clearTimeout(delayedThinkingTimerRef.current);
-            delayedThinkingTimerRef.current = null;
-          }
-          setActiveThinking(true);
-          seenThinkingThisPhaseRef.current = true;
-          results.push({
-            type: 'thinking',
-            context: 'tool_execution',
-            startTime: Date.now()
-          } as DisplayStreamEvent);
-        }
+        setCurrentToolId(undefined);
+        // Optionally, we do not emit a separate tool_end display item here to avoid duplicates
         break;
         
       case 'shell_command':
@@ -321,13 +327,26 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               break; // skip noisy termination lines
             }
           }
-          // Basic deduplication
+          // Enhanced deduplication - check for similar content
           const currentTime = Date.now();
-          if (event.content === lastOutputContent && 
-              currentTime - lastOutputTime < OUTPUT_DEDUPE_TIME_MS) {
-            break; // Skip duplicate
+          const contentStr = String(event.content);
+          
+          // Check if this is a duplicate or subset of the last output
+          if (lastOutputContent && currentTime - lastOutputTime < OUTPUT_DEDUPE_TIME_MS) {
+            // Exact match
+            if (contentStr === lastOutputContent) {
+              break; // Skip duplicate
+            }
+            
+            // Check if one contains the other (common with Execution Summary vs raw output)
+            if (contentStr.includes(lastOutputContent) || lastOutputContent.includes(contentStr)) {
+              // Keep the longer/more complete version
+              if (contentStr.length <= lastOutputContent.length) {
+                break; // Skip this shorter/subset version
+              }
+            }
           }
-          setLastOutputContent(event.content);
+          setLastOutputContent(contentStr);
           setLastOutputTime(currentTime);
           
           // Clear any active thinking when output appears
@@ -368,21 +387,6 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         setCurrentToolId(undefined);
         break;
 
-      case 'tool_invocation_end':
-        // SDK variant of tool end
-        if (activeThinking) {
-          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
-          setActiveThinking(false);
-        }
-        if (delayedThinkingTimerRef.current) {
-          clearTimeout(delayedThinkingTimerRef.current);
-          delayedThinkingTimerRef.current = null;
-        }
-        seenThinkingThisPhaseRef.current = false;
-        results.push(event as DisplayStreamEvent);
-        setCurrentToolId(undefined);
-        break;
-        
       case 'operation_complete':
         // Clear any active states
         setActiveThinking(false);
@@ -448,7 +452,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   useEffect(() => {
     
     // Listen for events from Docker service
-    const handleEvent = (event: any) => {
+    const handleEvent = (rawEvent: any) => {
+      const event = normalizeEvent(rawEvent);
       // Debug logging disabled for production use
       // console.error(`[DEBUG] UnconstrainedTerminal received event:`, {
       //   type: event.type,

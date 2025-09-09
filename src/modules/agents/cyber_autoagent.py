@@ -26,6 +26,27 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
 
+# Configure SDK logging for debugging swarm operations
+def configure_sdk_logging(enable_debug: bool = False):
+    """Configure logging for Strands SDK components."""
+    if enable_debug:
+        # Only enable verbose logging when explicitly requested
+        log_level = logging.INFO
+        logging.getLogger("strands").setLevel(log_level)
+        logging.getLogger("strands.multiagent").setLevel(log_level)
+        logging.getLogger("strands.multiagent.swarm").setLevel(log_level)
+        logging.getLogger("strands.tools").setLevel(log_level)
+        logging.getLogger("strands.tools.registry").setLevel(log_level)
+        logging.getLogger("strands.event_loop").setLevel(log_level)
+        logging.getLogger("strands_tools").setLevel(log_level)
+        logging.getLogger("strands_tools.swarm").setLevel(log_level)
+        
+        # Also set our own modules to INFO level
+        logging.getLogger("modules.handlers").setLevel(log_level)
+        logging.getLogger("modules.handlers.react").setLevel(log_level)
+        
+        logger.info("SDK verbose logging enabled")
+
 
 @dataclass
 class AgentConfig:
@@ -208,6 +229,9 @@ def create_agent(
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
+    # Enable comprehensive SDK logging for debugging
+    configure_sdk_logging(enable_debug=True)
+    
     # Use provided config or create default
     if config is None:
         config = AgentConfig(target=target, objective=objective)
@@ -326,13 +350,13 @@ def create_agent(
 
             if tool_names:
                 print_status(
-                    f"Loaded {len(tool_names)} module-specific tools for '{module}': {', '.join(tool_names)}", "SUCCESS"
+                    f"Loaded {len(tool_names)} module-specific tools for '{config.module}': {', '.join(tool_names)}", "SUCCESS"
                 )
             else:
                 # Fallback to just showing discovered tools
                 tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
                 print_status(
-                    f"Discovered {len(module_tool_paths)} module-specific tools for '{module}' (will need load_tool)",
+                    f"Discovered {len(module_tool_paths)} module-specific tools for '{config.module}' (will need load_tool)",
                     "INFO",
                 )
 
@@ -346,20 +370,20 @@ def create_agent(
                 # Fallback to load_tool instructions
                 for tool_name in tool_names:
                     tool_examples.append(
-                        f'load_tool(path="/app/src/modules/operation_plugins/{module}/tools/{tool_name}.py", name="{tool_name}")'
+                        f'load_tool(path="/app/src/modules/operation_plugins/{config.module}/tools/{tool_name}.py", name="{tool_name}")'
                     )
 
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
 
-Available {module} module tools:
+Available {config.module} module tools:
 {", ".join(tool_names)}
 
 {"Ready to use:" if loaded_module_tools else "Load these tools when needed:"}
 {chr(10).join(f"- {example}" for example in tool_examples)}
 """
         else:
-            print_status(f"No module-specific tools found for '{module}'", "INFO")
+            print_status(f"No module-specific tools found for '{config.module}'", "INFO")
     except Exception as e:
         logger.warning("Error discovering module tools for '%s': %s", config.module, e)
 
@@ -401,7 +425,6 @@ Leverage these tools directly via shell.
     
     # Set up output interception to prevent duplicate output
     # This must be done before creating the handler to ensure all stdout is captured
-    import os
     if os.environ.get("__REACT_INK__"):
         from modules.handlers.output_interceptor import setup_output_interception
         setup_output_interception()
@@ -432,8 +455,16 @@ Leverage these tools directly via shell.
         },
     )
 
-    # No hooks needed - the callback handler handles everything
-    hooks = None
+    # Create hooks for SDK lifecycle events (tool invocations, etc.)
+    # These work alongside the callback handler to capture all events
+    from modules.handlers.react.hooks import ReactHooks
+    
+    # Use the same emitter as the callback handler for consistency
+    react_hooks = ReactHooks(
+        emitter=callback_handler.emitter,
+        operation_id=operation_id
+    )
+    hooks = [react_hooks]
 
     # Create model based on provider type
     try:

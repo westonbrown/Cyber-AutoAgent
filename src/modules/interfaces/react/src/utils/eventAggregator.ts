@@ -26,17 +26,18 @@ export class EventAggregator {
   private currentSwarmAgent: string | null = null;
   private swarmHandoffSequence: number = 0;
   
-  // Legacy methods for backward compatibility with DirectTerminal
+  // These methods are no longer used since we don't buffer events
+  // Kept for potential future use if buffering is needed
   hasPendingEvents(): boolean {
-    return false; // No longer buffering events
+    return false;
   }
   
   flushPendingEvents(): DisplayStreamEvent[] {
-    return []; // No pending events to flush
+    return [];
   }
   
   flush(): DisplayStreamEvent[] {
-    return []; // No buffered events to flush
+    return [];
   }
   
   processEvent(event: any): DisplayStreamEvent[] {

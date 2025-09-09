@@ -40,6 +40,10 @@ export class PythonExecutionService extends EventEmitter {
   // Emit policy: only stream raw stdout during active tool execution
   private inToolExecution = false;
   private toolOutputBuffer = '';
+  // Track execution start time for duration reporting
+  private startTime?: number;
+  // Track whether backend emitted consolidated tool output to avoid duplication
+  private sawBackendToolOutput = false;
   
   // Paths
   private readonly projectRoot: string;
@@ -488,10 +492,11 @@ export class PythonExecutionService extends EventEmitter {
         // Validate venv Python version >= 3.10
         try {
           const { stdout: venvVerOut } = await execAsync(`"${this.pythonPath}" --version`);
-          const vMatch = venvVerOut.trim().match(/Python (\d+)\.(\d+)/);
-          if (vMatch) {
-            const vMaj = parseInt(vMatch[1]);
-            const vMin = parseInt(vMatch[2]);
+          const versionStr = venvVerOut.trim();
+          const m = versionStr.match(/Python (\d+)\.(\d+)/);
+          if (m) {
+            const vMaj = parseInt(m[1]);
+            const vMin = parseInt(m[2]);
             if (!(vMaj > 3 || (vMaj === 3 && vMin >= 10))) {
               progress('[INFO] Recreating virtual environment with Python 3.10+...');
               await execAsync(`rm -rf "${this.venvPath}"`);
@@ -514,12 +519,15 @@ export class PythonExecutionService extends EventEmitter {
       if (!status.dependenciesInstalled || !status.packageInstalled) {
         progress('[INFO] Installing Python dependencies...');
         
-        // Upgrade pip first
+        // Upgrade pip first with immediate feedback
+        progress('[INFO] Upgrading pip...');
         await execAsync(`"${this.pipPath}" install --upgrade pip`, {
           cwd: this.projectRoot
         });
+        progress('[OK] pip upgraded');
         
         // Install with editable mode for development
+        progress('[INFO] Installing cyberautoagent package (this may take a moment)...');
         await execAsync(`"${this.pipPath}" install -e .`, {
           cwd: this.projectRoot
         });
@@ -566,6 +574,7 @@ export class PythonExecutionService extends EventEmitter {
     
     this.isExecutionActive = true;
     this.abortController = new AbortController();
+    this.startTime = Date.now();
     
     return new Promise<void>((resolve, reject) => {
       try {
@@ -784,6 +793,29 @@ export class PythonExecutionService extends EventEmitter {
           this.emit('stopped');
           resolve(); // Process was stopped intentionally
         } else if (code === 0) {
+          // Compute human-readable duration
+          const end = Date.now();
+          const ms = this.startTime ? (end - this.startTime) : 0;
+          const seconds = Math.max(0, Math.round(ms / 1000));
+          const durationStr = `${seconds}s`;
+          
+          // Ensure any active spinners terminate in UI
+          this.emit('event', { type: 'thinking_end' });
+          
+          // Emit a final metrics_update so UI can update duration/counters
+          this.emit('event', {
+            type: 'metrics_update',
+            metrics: { duration: durationStr },
+            duration: durationStr
+          });
+          
+          // Emit a terminal stream event indicating operation completion
+          this.emit('event', {
+            type: 'operation_complete',
+            duration: durationStr,
+            metrics: { duration: durationStr }
+          });
+          
           this.emit('complete');
           resolve(); // Process completed successfully
         } else {
@@ -831,16 +863,17 @@ export class PythonExecutionService extends EventEmitter {
     this.streamEventBuffer += data;
 
     // Look for structured event markers (UNIFIED with Docker service)
-    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
+    // Use non-global regex with exec() loop to ensure proper cursor management
+    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/s;
     let match;
-    let anyMatch = false;
-    let cursor = 0;
+    let processedEvents = false;
+    let lastProcessedIndex = 0;
 
     while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
-      anyMatch = true;
+      processedEvents = true;
 
       // Emit any raw text preceding this structured event
-      const preText = this.streamEventBuffer.slice(cursor, match.index);
+      const preText = this.streamEventBuffer.slice(lastProcessedIndex, match.index);
       if (preText && this.inToolExecution) {
         // Buffer raw output; flush on tool end so it appears once per tool
         this.toolOutputBuffer += preText;
@@ -853,13 +886,15 @@ export class PythonExecutionService extends EventEmitter {
         if (eventData.type === 'tool_start' || eventData.type === 'tool_invocation_start') {
           this.inToolExecution = true;
           this.toolOutputBuffer = '';
+          this.sawBackendToolOutput = false; // reset per tool
         } else if (
           eventData.type === 'tool_invocation_end' ||
           eventData.type === 'tool_result' ||
           eventData.type === 'step_header'
         ) {
-          // Flush any remaining raw output when tool ends
-          if (this.toolOutputBuffer.trim().length > 0) {
+          // Flush any remaining raw output when tool ends, but only if backend
+          // did NOT send a consolidated tool output event. This avoids duplicates.
+          if (!this.sawBackendToolOutput && this.toolOutputBuffer.trim().length > 0) {
             this.emit('event', { 
               type: 'output', 
               content: this.toolOutputBuffer, 
@@ -869,13 +904,20 @@ export class PythonExecutionService extends EventEmitter {
           }
           this.toolOutputBuffer = '';
           this.inToolExecution = false;
+          this.sawBackendToolOutput = false;
         }
 
         // Emit tool output immediately - backend already handles proper metadata and deduplication
         if (eventData.type === 'output') {
+          // Track if this is backend-consolidated tool output
+          if (eventData.metadata && eventData.metadata.fromToolBuffer) {
+            this.sawBackendToolOutput = true;
+          }
           // Always emit output events immediately for real-time display
           this.emit('event', eventData);
-          cursor = match.index + match[0].length;
+          lastProcessedIndex = match.index + match[0].length;
+          this.streamEventBuffer = this.streamEventBuffer.slice(lastProcessedIndex);
+          lastProcessedIndex = 0;
           continue;
         }
 
@@ -932,8 +974,12 @@ export class PythonExecutionService extends EventEmitter {
           this.emit('event', eventData);
         }
 
-        // Advance cursor to end of this match
-        cursor = match.index + match[0].length;
+        // Update last processed index
+        lastProcessedIndex = match.index + match[0].length;
+        
+        // Move past this match for next iteration
+        this.streamEventBuffer = this.streamEventBuffer.slice(lastProcessedIndex);
+        lastProcessedIndex = 0;
 
       } catch (error) {
         this.logger.warn('Failed to parse event', {
@@ -941,14 +987,13 @@ export class PythonExecutionService extends EventEmitter {
           error: error instanceof Error ? error.message : 'Unknown error'
         });
         // Move past this match to avoid infinite loop
-        cursor = match.index + match[0].length;
+        const skipLength = match.index + match[0].length;
+        this.streamEventBuffer = this.streamEventBuffer.slice(skipLength);
+        lastProcessedIndex = 0;
       }
     }
 
-    if (anyMatch) {
-      // Keep only the unprocessed tail in the buffer
-      this.streamEventBuffer = this.streamEventBuffer.slice(cursor);
-    } else {
+    if (!processedEvents) {
       // No structured events found in this chunk; emit raw output immediately
       if (data) {
         if (this.inToolExecution) {
@@ -970,6 +1015,7 @@ export class PythonExecutionService extends EventEmitter {
   } {
     return {
       sessionId: this.sessionId,
+      startTime: this.startTime,
       isActive: this.isExecutionActive
     };
   }

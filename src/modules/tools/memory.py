@@ -1195,6 +1195,30 @@ def mem0_memory(
                     else:
                         cleaned_metadata[key] = value
                 metadata = cleaned_metadata
+                
+                # Enhanced metadata for findings with validation tracking
+                if metadata.get("category") == "finding":
+                    # Set default validation fields if not provided
+                    if "validation_status" not in metadata:
+                        metadata["validation_status"] = "unverified"
+                    if "evidence_type" not in metadata:
+                        # Determine evidence type based on confidence level
+                        confidence_str = metadata.get("confidence", "0%")
+                        try:
+                            confidence_val = float(confidence_str.rstrip("%"))
+                        except (ValueError, AttributeError):
+                            confidence_val = 0
+                        
+                        if confidence_val >= 70:
+                            metadata["evidence_type"] = "exploited"
+                        elif confidence_val >= 50:
+                            metadata["evidence_type"] = "behavioral"
+                        else:
+                            metadata["evidence_type"] = "pattern_match"
+                    
+                    # Ensure low initial confidence for pattern matches
+                    if metadata.get("evidence_type") == "pattern_match" and metadata.get("confidence", "0%") == "0%":
+                        metadata["confidence"] = "35%"
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")

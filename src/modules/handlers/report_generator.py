@@ -146,7 +146,11 @@ Use the following template structure for your report. Fill in each section with 
    - For severity counts, use severity_counts['critical'], severity_counts['high'], etc.
    - Expand on the evidence with professional analysis where appropriate
 
-3. **Final Step**: Generate the complete report following the template structure exactly
+3. **Final Step**: Output the complete report following the template structure exactly
+   - Start IMMEDIATELY with "# SECURITY ASSESSMENT REPORT"
+   - Do NOT include any preamble text like "Now I'll generate..." or "Let me create..."
+   - Do NOT explain what you're doing - just output the report directly
+   - Output ONLY the markdown report content - nothing else
 
 Remember: You MUST use your build_report_sections tool first to get the evidence and analysis data.
 </generation_instructions>"""

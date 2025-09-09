@@ -109,10 +109,10 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   const divider = useMemo(() => '─'.repeat(Math.max(20, Math.min(width - 4, 120))), [width]);
 
   useEffect(() => {
-    // Update timer less frequently to reduce re-renders during setup
+    // Update timer every second for responsive display
     const interval = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTime.current) / 1000));
-    }, 5000); // Update every 5 seconds instead of every second
+    }, 1000); // Update every second
     return () => clearInterval(interval);
   }, []);
 

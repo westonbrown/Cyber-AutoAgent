@@ -77,9 +77,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
 
     // Avoid clearing here; modal manager owns terminal clears during transitions
 
-    // Strategy: give detection a short window to confirm an already-healthy deployment.
-    // If confirmed quickly, fast-switch config and exit. Otherwise, start setup.
-    setTimeout(async () => {
+    // Start setup immediately for responsive UI
+    // Use microtask to ensure UI has rendered first
+    queueMicrotask(async () => {
       const DETECTION_BUDGET_MS = 350; // small budget to avoid visible delay
       let didFastSwitch = false;
 
@@ -125,7 +125,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
         // Start setup after budget window; ProgressScreen is already mounted
         void actions.startSetup(mode);
       }
-    }, 0);
+    });
   }, [actions, config, updateConfig, saveConfig, onComplete]);
 
   // Handle setup retry

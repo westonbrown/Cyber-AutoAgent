@@ -176,15 +176,15 @@ const runAutoAssessment = async () => {
           includeEvidence: true,
           includeMemoryOps: true
         },
-        observability: true,
+        observability: false,  // Default to disabled for CLI mode
         langfuseHost: 'http://localhost:3000',
         langfuseHostOverride: false,
         langfusePublicKey: 'cyber-public',
         langfuseSecretKey: 'cyber-secret',
-        enableLangfusePrompts: true,
+        enableLangfusePrompts: false,  // Default to disabled for CLI mode
         langfusePromptLabel: 'production',
         langfusePromptCacheTTL: 300,
-        autoEvaluation: true,
+        autoEvaluation: false,  // Default to disabled for CLI mode
         evaluationBatchSize: 5,
         minToolAccuracyScore: 0.8,
         minEvidenceQualityScore: 0.7,

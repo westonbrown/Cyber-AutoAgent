@@ -53,43 +53,92 @@ type ToolFormatter = (toolInput: any) => string;
 
 // Generic object formatter for unknown tools
 export const formatGenericToolInput = (toolInput: any): string => {
-  if (!toolInput) return '';
+  if (!toolInput && toolInput !== 0 && toolInput !== false) return '';
   
+  // If input is a JSON-looking string, try to parse it for better previews
   if (isNonEmptyString(toolInput)) {
+    const str = String(toolInput).trim();
+    if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(str);
+        // Recurse with parsed structure
+        return formatGenericToolInput(parsed);
+      } catch {
+        // Fall through to truncated string preview
+      }
+    }
     return truncate(toolInput, DISPLAY_LIMITS.TRUNCATE_LONG);
   }
   
+  // Arrays: show count and a short preview of first few items
+  if (Array.isArray(toolInput)) {
+    const arr = toolInput as any[];
+    const n = arr.length;
+    if (n === 0) return '[0 items]';
+    const sampleCount = Math.min(n, 3);
+    const sample = arr.slice(0, sampleCount).map((v) => {
+      if (isNonEmptyString(v)) return truncate(String(v), DISPLAY_LIMITS.TRUNCATE_SHORT);
+      if (Array.isArray(v)) return `[${v.length} items]`;
+      if (isObject(v)) {
+        const keys = Object.keys(v);
+        return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '…' : ''}}`;
+      }
+      return toSafeString(v);
+    });
+    const more = n > sampleCount ? ` (+${n - sampleCount} more)` : '';
+    return `items: ${sample.join(', ')}${more}`;
+  }
+  
+  // Plain objects
   if (isObject(toolInput)) {
     const keys = Object.keys(toolInput);
+    if (keys.length === 0) return '{}';
     
-    if (keys.length === 0) return '';
-    
+    // For single key, show key: value with type-aware preview
     if (keys.length === 1) {
       const key = keys[0];
-      const value = toolInput[key];
-      const displayValue = isNonEmptyString(value) 
-        ? truncate(value, DISPLAY_LIMITS.TRUNCATE_MEDIUM)
-        : toSafeString(value);
+      const value = (toolInput as any)[key];
+      let displayValue: string;
+      if (Array.isArray(value)) {
+        displayValue = `[${value.length} items]`;
+      } else if (isObject(value)) {
+        const k = Object.keys(value);
+        displayValue = `{${k.slice(0, 3).join(', ')}${k.length > 3 ? '…' : ''}}`;
+      } else if (isNonEmptyString(value)) {
+        displayValue = truncate(value, DISPLAY_LIMITS.TRUNCATE_MEDIUM);
+      } else {
+        displayValue = toSafeString(value);
+      }
       return `${key}: ${displayValue}`;
     }
     
+    // For a few keys, render compact k: v previews
     if (keys.length <= DISPLAY_LIMITS.TOOL_INPUT_MAX_KEYS) {
       return keys.map(k => {
-        const value = toolInput[k];
-        const displayValue = isNonEmptyString(value)
-          ? truncate(value, DISPLAY_LIMITS.TRUNCATE_SHORT)
-          : toSafeString(value);
+        const value = (toolInput as any)[k];
+        let displayValue: string;
+        if (Array.isArray(value)) {
+          displayValue = `[${value.length} items]`;
+        } else if (isObject(value)) {
+          const k2 = Object.keys(value);
+          displayValue = `{${k2.slice(0, 2).join(', ')}${k2.length > 2 ? '…' : ''}}`;
+        } else if (isNonEmptyString(value)) {
+          displayValue = truncate(value, DISPLAY_LIMITS.TRUNCATE_SHORT);
+        } else {
+          displayValue = toSafeString(value);
+        }
         return `${k}: ${displayValue}`;
       }).join(' | ');
     }
     
-    // For larger objects
+    // Larger objects: list a few top-level keys and counts
     const importantKeys = keys.slice(0, DISPLAY_LIMITS.TOOL_INPUT_PREVIEW_KEYS);
     const remainingCount = keys.length - DISPLAY_LIMITS.TOOL_INPUT_PREVIEW_KEYS;
     return `${importantKeys.join(', ')}${remainingCount > 0 ? ` (+${remainingCount} more)` : ''}`;
   }
   
-  return '';
+  // Fallback primitive
+  return toSafeString(toolInput);
 };
 
 // Tool-specific formatters
@@ -110,7 +159,20 @@ export const toolFormatters: Record<string, ToolFormatter> = {
   
   shell: (input) => {
     const commands = input.command || input.commands || input.cmd || input.input || '';
-    return `Commands: ${commands}`;
+    const parts: string[] = [
+      `Commands: ${commands}`
+    ];
+    const flags: string[] = [];
+    if (input.parallel === true) flags.push('parallel');
+    if (input.ignore_errors === true) flags.push('ignore_errors');
+    if (input.non_interactive === true) flags.push('non_interactive');
+    const extras: string[] = [];
+    if (typeof input.timeout === 'number') extras.push(`timeout: ${input.timeout}s`);
+    const workDir = input.work_dir || input.cwd;
+    if (typeof workDir === 'string' && workDir.length > 0) extras.push(`cwd: ${workDir}`);
+
+    const suffix = [flags.join(', '), extras.join(' | ')].filter(Boolean).join(' | ');
+    return suffix ? `${parts.join(' | ')} | ${suffix}` : parts.join(' | ');
   },
   
   http_request: (input) => {

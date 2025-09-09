@@ -262,19 +262,19 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Traditional logger setup for structured logging
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    # File handler - log everything to file
+    # File handler - log INFO and above to file
     file_handler = logging.FileHandler(log_file, mode="a")
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
 
     # Console handler - only show warnings and above unless verbose
     console_handler = logging.StreamHandler(sys.__stdout__)  # Use original stdout
-    console_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    console_handler.setLevel(logging.INFO if verbose else logging.WARNING)
     console_handler.setFormatter(formatter)
 
     # Configure the logger specifically
     cyber_logger = logging.getLogger("CyberAutoAgent")
-    cyber_logger.setLevel(logging.DEBUG)
+    cyber_logger.setLevel(logging.INFO)
     cyber_logger.addHandler(file_handler)
     if verbose:
         cyber_logger.addHandler(console_handler)

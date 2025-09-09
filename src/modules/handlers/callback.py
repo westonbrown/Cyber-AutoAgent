@@ -18,6 +18,7 @@ from strands.handlers import PrintingCallbackHandler
 
 from .base import HandlerState, StepLimitReached
 from .utils import emit_event
+from ..handlers.events import get_emitter
 
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
@@ -35,6 +36,9 @@ class ReasoningHandler(PrintingCallbackHandler):
         memory_config=None,
     ):  # pylint: disable=too-many-positional-arguments
         super().__init__()
+        
+        # Initialize emitter for event emission
+        self.emitter = get_emitter(operation_id=operation_id)
 
         # Initialize handler state
         self.state = HandlerState(max_steps=max_steps)
@@ -118,6 +122,18 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
                                 try:
+                                    # Emit tool start event
+                                    tool_name = tool_use.get("name", "unknown")
+                                    emit_event("tool_start", tool_name, 
+                                        tool_name=tool_name,
+                                        tool_id=tool_id,
+                                        tool_input=tool_input,
+                                        operation_id=self.state.operation_id)
+                                    
+                                    emit_event("tool_invocation_start", tool_name,
+                                        tool_name=tool_name,
+                                        operation_id=self.state.operation_id)
+                                    
                                     self.state.last_was_tool = True
                                     self.state.last_was_reasoning = False
                                 except StepLimitReached:
@@ -133,9 +149,23 @@ class ReasoningHandler(PrintingCallbackHandler):
                         # Store result for later display
                         if tool_id in self.state.tool_use_map:
                             self.state.tool_results[tool_id] = tool_result
+                            
+                            # Emit tool end event
+                            tool_name = self.state.tool_use_map[tool_id].get("name", "")
+                            success = tool_result.get("status", "success") == "success"
+                            
+                            emit_event("tool_end", tool_name,
+                                tool_name=tool_name,
+                                tool_id=tool_id,
+                                success=success,
+                                operation_id=self.state.operation_id)
+                            
+                            emit_event("tool_invocation_end", tool_name,
+                                tool_name=tool_name,
+                                success=success,
+                                operation_id=self.state.operation_id)
 
                             # Track memory operations
-                            tool_name = self.state.tool_use_map[tool_id].get("name", "")
                             if tool_name == "mem0_memory":
                                 tool_input = self.state.tool_use_map[tool_id].get("input", {})
                                 if tool_input.get("action") == "store":
@@ -162,7 +192,18 @@ class ReasoningHandler(PrintingCallbackHandler):
                     self.state.shown_tools.add(tool_id)
                     self.state.tool_use_map[tool_id] = tool
                     try:
-                        # show_tool_execution(tool, self.state)
+                        # Emit tool start event
+                        tool_name = tool.get("name", "unknown")
+                        emit_event("tool_start", tool_name,
+                            tool_name=tool_name,
+                            tool_id=tool_id,
+                            tool_input=tool_input,
+                            operation_id=self.state.operation_id)
+                        
+                        emit_event("tool_invocation_start", tool_name,
+                            tool_name=tool_name,
+                            operation_id=self.state.operation_id)
+                        
                         self.state.last_was_tool = True
                         self.state.last_was_reasoning = False
                     except StepLimitReached:
@@ -176,9 +217,20 @@ class ReasoningHandler(PrintingCallbackHandler):
             tool_id = tool_result.get("toolUseId", "")
 
             if tool_id in self.state.tool_use_map:
-                # show_tool_result(tool_id, tool_result, self.state)
-                # track_tool_effectiveness(tool_id, tool_result, self.state)
-                pass
+                # Emit tool end event
+                tool_name = self.state.tool_use_map[tool_id].get("name", "")
+                success = tool_result.get("status", "success") == "success"
+                
+                emit_event("tool_end", tool_name,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    success=success,
+                    operation_id=self.state.operation_id)
+                
+                emit_event("tool_invocation_end", tool_name,
+                    tool_name=tool_name,
+                    success=success,
+                    operation_id=self.state.operation_id)
             return
 
         # Handle lifecycle events

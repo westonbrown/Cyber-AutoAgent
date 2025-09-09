@@ -56,39 +56,9 @@ class ToolEventEmitter:
 
     def _emit_shell_commands(self, tool_input: Any) -> None:
         """Emit shell commands for display."""
-        commands = []
-
-        if isinstance(tool_input, str):
-            commands = [tool_input]
-        elif isinstance(tool_input, dict):
-            # Check various field names that tools might use
-            for field in ["command", "commands", "cmd", "script", "bash_command", "shell_command"]:
-                if field in tool_input:
-                    value = tool_input[field]
-                    if isinstance(value, list):
-                        commands = value
-                    elif isinstance(value, str):
-                        # Handle JSON string format like '["cmd1", "cmd2"]'
-                        try:
-                            parsed_value = json.loads(value)
-                            if isinstance(parsed_value, list):
-                                commands = parsed_value
-                            else:
-                                commands = [str(value)]
-                        except (json.JSONDecodeError, TypeError):
-                            commands = [str(value)]
-                    else:
-                        commands = [str(value)]
-                    break
-
-        # Emit each command individually
-        for cmd in commands:
-            if cmd:
-                self.emit_ui_event({"type": "command", "content": str(cmd)})
-
-        # Signal completion of command emission
-        if commands:
-            self.emit_ui_event({"type": "tool_commands_complete"})
+        # StreamDisplay renders shell commands directly from the 'tool_start' event's tool_input.
+        # Emitting separate 'command' events here causes duplicate "⎿" lines.
+        return
 
     def _emit_memory_operation(self, tool_input: Any) -> None:
         """Emit memory operation details."""
@@ -149,19 +119,12 @@ class ToolEventEmitter:
 
     def _emit_generic_tool_params(self, tool_name: str, tool_input: Any) -> None:  # pylint: disable=unused-argument
         """Emit generic tool parameters for tools without specialized handlers."""
-        if isinstance(tool_input, dict) and tool_input:
-            metadata = {}
-            for i, (key, value) in enumerate(tool_input.items()):
-                if i >= 3:  # Limit to first 3 parameters for readability
-                    metadata["..."] = f"and {len(tool_input) - 3} more"
-                    break
-                value_str = str(value)[:50]
-                if len(str(value)) > 50:
-                    value_str += "..."
-                metadata[key] = value_str
-
-            if metadata:
-                self.emit_ui_event({"type": "metadata", "content": metadata})
+        # REMOVED: Generic tools no longer emit metadata events
+        # The StreamDisplay component already properly formats tool parameters
+        # from the tool_start event in the default case. Emitting metadata here
+        # causes duplicate display of the same information.
+        # This was the root cause of the duplicate tool parameter display issue.
+        pass
 
     def _emit_swarm_operation(self, tool_input: Any) -> None:
         """Emit swarm orchestration details."""

@@ -12,8 +12,8 @@ import { formatToolInput } from '../utils/toolFormatters.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 
-// Additional event types not yet in the SDK-aligned events.ts
-// TODO: Migrate these to the main StreamEvent type in events.ts
+// Extended event types for UI-specific events not covered by the core SDK events
+// These events are used for UI state management and display formatting
 export type AdditionalStreamEvent = 
   | { type: 'step_header'; step: number | string; maxSteps: number; operation: string; duration: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
@@ -21,6 +21,7 @@ export type AdditionalStreamEvent =
   | { type: 'thinking_end'; [key: string]: any }
   | { type: 'delayed_thinking_start'; context?: string; startTime?: number; delay?: number; [key: string]: any }
   | { type: 'tool_start'; tool_name: string; tool_input: any; [key: string]: any }
+  | { type: 'tool_input_update'; tool_id: string; tool_input: any; [key: string]: any }
   | { type: 'command'; content: string; [key: string]: any }
   | { type: 'output'; content: string; exitCode?: number; duration?: number; [key: string]: any }
   | { type: 'error'; content: string; [key: string]: any }
@@ -69,8 +70,9 @@ const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 export const EventLine: React.FC<{ 
   event: DisplayStreamEvent; 
   toolStates?: Map<string, ToolState>;
+  toolInputs?: Map<string, any>;
   animationsEnabled?: boolean;
-}> = React.memo(({ event, toolStates, animationsEnabled = true }) => {
+}> = React.memo(({ event, toolStates, toolInputs, animationsEnabled = true }) => {
   switch (event.type) {
     // =======================================================================
     // SDK NATIVE EVENT HANDLERS - Integrated with SDK context
@@ -79,9 +81,9 @@ export const EventLine: React.FC<{
       return (
         <>
           <Text color="blue" bold>model invocation started</Text>
-          {'modelId' in event && event.modelId && (
+          {'modelId' in event && event.modelId ? (
             <Text dimColor>Model: {event.modelId}</Text>
-          )}
+          ) : null}
           <Text> </Text>
         </>
       );
@@ -89,9 +91,9 @@ export const EventLine: React.FC<{
     case 'model_stream_delta':
       return (
         <>
-          {'delta' in event && event.delta && (
+          {'delta' in event && event.delta ? (
             <Text>{event.delta}</Text>
-          )}
+          ) : null}
         </>
       );
       
@@ -125,12 +127,12 @@ export const EventLine: React.FC<{
     case 'content_block_delta':
       return (
         <>
-          {'delta' in event && event.delta && (
+          {'delta' in event && event.delta ? (
             <Text>{'isReasoning' in event && event.isReasoning ? 
               <Text color="cyan">{event.delta}</Text> : 
               <Text>{event.delta}</Text>
             }</Text>
-          )}
+          ) : null}
         </>
       );
       
@@ -151,14 +153,14 @@ export const EventLine: React.FC<{
       if (event.step === "FINAL REPORT") {
         stepDisplay = "📋 [FINAL REPORT]";
       } else if (swarmAgent && swarmSubStep) {
-        // For swarm operations, show agent name and iteration count
+        // For swarm operations, show agent name with their step count and swarm-wide progress
         // Use replaceAll to handle multi-word agent names correctly
         const agentName = String(swarmAgent).toUpperCase().replaceAll('_', ' ');
-        if (swarmTotalIterations && swarmMaxIterations) {
-          stepDisplay = `[SWARM: ${agentName} • STEP ${swarmTotalIterations}/${swarmMaxIterations}]`;
-        } else {
-          stepDisplay = `[SWARM: ${agentName} • STEP ${swarmSubStep}]`;
-        }
+        // Show both agent's step count and swarm-wide iteration progress
+        const swarmTotalIterations = (event as any)['swarm_total_iterations'] || swarmSubStep;
+        const maxIterations = swarmMaxIterations || 30;
+        // Display format: agent step count + swarm-wide progress to show actual SDK enforcement
+        stepDisplay = `[SWARM: ${agentName} • STEP ${swarmSubStep} | SWARM TOTAL ${swarmTotalIterations}/${maxIterations}]`;
       } else if (isSwarmOperation) {
         // Generic swarm operation without specific agent
         stepDisplay = `[SWARM • STEP ${event.step}/${event.maxSteps}]`;
@@ -200,11 +202,14 @@ export const EventLine: React.FC<{
     case 'reasoning':
       // This case should not be reached anymore as reasoning is handled in StreamDisplay
       // But keep it as fallback
+      const swarmAgentLabel = ('swarm_agent' in event && event.swarm_agent) 
+        ? ` (${event.swarm_agent})` 
+        : '';
       return (
         <Box flexDirection="column">
           <Text> </Text>
           <Text> </Text>
-          <Text color="cyan" bold>reasoning</Text>
+          <Text color="cyan" bold>reasoning{swarmAgentLabel}</Text>
           <Box paddingLeft={0}>
             <Text color="cyan">{event.content}</Text>
           </Box>
@@ -212,15 +217,18 @@ export const EventLine: React.FC<{
         </Box>
       );
       
-    case 'tool_start':
+    case 'tool_start': {
+      // Get the latest tool input (may have been updated via tool_input_update)
+      const latestInput = ('tool_id' in event && event.tool_id && toolInputs?.get(event.tool_id)) || event.tool_input || {};
+      
       // Always show tool header even if args are not yet available.
       // Individual tool renderers will gracefully handle missing fields.
       // Otherwise handle specific tool formatting
       switch (event.tool_name) {
         case 'swarm':
           // Simplified swarm tool header to avoid duplication
-          const agentCount = event.tool_input?.agents?.length || 0;
-          const agentNames = event.tool_input?.agents?.map((a: any) => 
+          const agentCount = latestInput?.agents?.length || 0;
+          const agentNames = latestInput?.agents?.map((a: any) => 
             typeof a === 'string' ? a : a.name
           ).filter(Boolean).slice(0, 4).join(', ') || 'agents';
           
@@ -232,9 +240,9 @@ export const EventLine: React.FC<{
               </Box>
             </Box>
           );
-        case 'mem0_memory':
-          const action = event.tool_input?.action || 'list';
-          const content = event.tool_input?.content || event.tool_input?.query || '';
+        case 'mem0_memory': {
+          const action = latestInput?.action || 'list';
+          const content = latestInput?.content || latestInput?.query || '';
           const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
           
           return (
@@ -255,45 +263,60 @@ export const EventLine: React.FC<{
               )}
             </Box>
           );
-          break;
+        }
           
         case 'shell': {
           // Show tool header with command(s) if available
           const agentContext = ('swarm_agent' in event && event.swarm_agent) 
             ? ` (${event.swarm_agent})` : '';
-          const command = event.tool_input?.command || event.tool_input?.cmd || '';
+          const command = latestInput?.command || latestInput?.cmd || '';
           
-          // Skip displaying raw JSON arrays - they will be handled by individual command events
-          // This prevents the duplicate display of ["cmd1", "cmd2"] alongside formatted commands
-          const shouldSkipDisplay = (cmd: any): boolean => {
-            // If it's a string that looks like a JSON array, skip it
+          // Parse and display commands properly
+          const parseCommands = (cmd: any): string[] => {
             if (typeof cmd === 'string') {
               const trimmed = cmd.trim();
+              // Check if it's a JSON array of commands
               if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
                 try {
-                  const parsed = JSON.parse(trimmed);
-                  return Array.isArray(parsed);
+                  // Handle JSON strings with escaped newlines and spaces
+                  // Replace literal \n with actual newlines for parsing
+                  const normalized = trimmed.replace(/\\n/g, '\n');
+                  const parsed = JSON.parse(normalized);
+                  if (Array.isArray(parsed)) {
+                    return parsed;
+                  }
                 } catch {
-                  return false;
+                  // Not valid JSON, treat as single command
+                  return [cmd];
                 }
               }
+              // Single command string
+              return [cmd];
+            } else if (Array.isArray(cmd)) {
+              return cmd;
             }
-            return false;
+            return [];
           };
           
-          // Only show the tool header, not the raw JSON
-          // Individual commands will be displayed via 'command' events
-          if (shouldSkipDisplay(command)) {
+          const commands = parseCommands(command);
+          
+          // Always show tool header
+          if (commands.length > 0) {
             return (
               <Box flexDirection="column" marginTop={1}>
                 <Text color="green" bold>tool: shell{agentContext}</Text>
+                {commands.map((cmd, index) => (
+                  <Box key={index} marginLeft={2}>
+                    <Text dimColor>⎿ {cmd}</Text>
+                  </Box>
+                ))}
               </Box>
             );
           }
           
           // Handle non-JSON array commands (single commands)
           const formatCommand = (cmd: any): React.ReactElement => {
-            if (typeof cmd === 'string' && !shouldSkipDisplay(cmd)) {
+            if (typeof cmd === 'string') {
               // Single command string that's not a JSON array
               return (
                 <Box marginLeft={2}>
@@ -321,8 +344,8 @@ export const EventLine: React.FC<{
         }
           
         case 'http_request': {
-          const method = event.tool_input.method || 'GET';
-          const url = event.tool_input.url || '';
+          const method = latestInput.method || 'GET';
+          const url = latestInput.url || '';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: http_request</Text>
@@ -337,8 +360,8 @@ export const EventLine: React.FC<{
         }
           
         case 'file_write': {
-          const filePath = event.tool_input.path || 'unknown';
-          const fileContent = event.tool_input.content || '';
+          const filePath = latestInput.path || 'unknown';
+          const fileContent = latestInput.content || '';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: file_write</Text>
@@ -355,9 +378,9 @@ export const EventLine: React.FC<{
         }
           
         case 'editor': {
-          const editorCmd = event.tool_input.command || 'edit';
-          const editorPath = event.tool_input.path || '';
-          const editorContent = event.tool_input.content || '';
+          const editorCmd = latestInput.command || 'edit';
+          const editorPath = latestInput.path || '';
+          const editorContent = latestInput.content || '';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: editor</Text>
@@ -379,7 +402,7 @@ export const EventLine: React.FC<{
         
         case 'think': {
           // think output goes to reasoning, but still show tool invocation
-          const thought = event.tool_input.thought || event.tool_input.content || '';
+          const thought = latestInput.thought || latestInput.content || '';
           
           return (
             <Box flexDirection="column" marginTop={1}>
@@ -394,7 +417,7 @@ export const EventLine: React.FC<{
         }
           
         case 'python_repl': {
-          const code = event.tool_input.code || '';
+          const code = latestInput.code || '';
           const codeLines = code.split('\n');
           const previewLines = 8; // Increased from 5 to show more context
           let codeDisplayLines: string[];
@@ -430,8 +453,8 @@ export const EventLine: React.FC<{
         }
           
         case 'report_generator': {
-          const target = event.tool_input.target || 'unknown';
-          const reportType = event.tool_input.report_type || event.tool_input.type || 'general';
+          const target = latestInput.target || 'unknown';
+          const reportType = latestInput.report_type || latestInput.type || 'general';
           return (
             <Box flexDirection="column">
               <Text color="green" bold>tool: report_generator</Text>
@@ -447,7 +470,7 @@ export const EventLine: React.FC<{
           
         case 'handoff_to_user': {
           // Message will be shown in the special user handoff display
-          const userMessage = event.tool_input.message || '';
+          const userMessage = latestInput.message || '';
           
           // Still show tool call with tree format even though there's a special display
           return (
@@ -463,8 +486,8 @@ export const EventLine: React.FC<{
         }
           
         case 'handoff_to_agent': {
-          const targetAgent = event.tool_input.agent || event.tool_input.target_agent || 'unknown';
-          const handoffMsg = event.tool_input.message || '';
+          const targetAgent = latestInput.agent || latestInput.target_agent || 'unknown';
+          const handoffMsg = latestInput.message || '';
           const msgPreview = handoffMsg.length > 80 ? handoffMsg.substring(0, 80) + '...' : handoffMsg;
           return (
             <Box flexDirection="column">
@@ -482,9 +505,9 @@ export const EventLine: React.FC<{
         }
           
         case 'load_tool': {
-          const toolName = event.tool_input.tool_name || event.tool_input.tool || 'unknown';
-          const toolPath = event.tool_input.path || '';
-          const toolDescription = event.tool_input.description || '';
+          const toolName = latestInput.tool_name || latestInput.tool || 'unknown';
+          const toolPath = latestInput.path || '';
+          const toolDescription = latestInput.description || '';
           const hasPath = !!toolPath;
           const hasDesc = !!toolDescription;
           return (
@@ -508,7 +531,7 @@ export const EventLine: React.FC<{
         }
           
         case 'stop': {
-          const stopReason = event.tool_input.reason || 'Manual stop requested';
+          const stopReason = latestInput.reason || 'Manual stop requested';
           
           return (
             <Box flexDirection="column" marginTop={1}>
@@ -521,10 +544,76 @@ export const EventLine: React.FC<{
         }
 
         default: {
-          // Enhanced tool display with swarm agent context
+          // Enhanced tool display with swarm agent context and structured parameters
           const agentContext = ('swarm_agent' in event && event.swarm_agent) 
             ? ` (${event.swarm_agent})` : '';
-          const preview = formatToolInput(event.tool_name as any, (event as any).tool_input);
+          
+          // Check if tool_input is an object with multiple properties for structured display
+          const toolInput = latestInput;
+          const isStructuredInput = toolInput && typeof toolInput === 'object' && !Array.isArray(toolInput);
+          
+          // Special handling for shell tool to display commands with ⎿ prefix
+          if (event.tool_name === 'shell' && isStructuredInput) {
+            const commands = toolInput.commands || toolInput.command || toolInput.cmd || [];
+            const commandList = Array.isArray(commands) ? commands : 
+                               (typeof commands === 'string' ? commands.split('\n').filter(c => c.trim()) : []);
+            
+            return (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="green" bold>tool: shell{agentContext}</Text>
+                {commandList.map((cmd: string, index: number) => (
+                  <Box key={index} marginLeft={2}>
+                    <Text><Text dimColor>⎿</Text> {cmd}</Text>
+                  </Box>
+                ))}
+                {toolInput.timeout && (
+                  <Box marginLeft={2}>
+                    <Text dimColor>└─ timeout: {toolInput.timeout}ms</Text>
+                  </Box>
+                )}
+              </Box>
+            );
+          }
+          
+          if (isStructuredInput && Object.keys(toolInput).length > 0) {
+            // Display structured parameters with tree format
+            const params = Object.entries(toolInput);
+            const paramCount = params.length;
+            
+            return (
+              <Box flexDirection="column" marginTop={1}>
+                <Text color="green" bold>tool: {event.tool_name}{agentContext}</Text>
+                {params.map(([key, value], index) => {
+                  const isLast = index === paramCount - 1;
+                  const prefix = isLast ? '└─' : '├─';
+                  
+                  // Format value based on type
+                  let displayValue: string;
+                  if (value === null || value === undefined) {
+                    displayValue = 'null';
+                  } else if (typeof value === 'string') {
+                    // Truncate long strings
+                    displayValue = value.length > 100 ? value.substring(0, 100) + '...' : value;
+                  } else if (Array.isArray(value)) {
+                    displayValue = `[${value.length} items]`;
+                  } else if (typeof value === 'object') {
+                    displayValue = '{...}';
+                  } else {
+                    displayValue = String(value);
+                  }
+                  
+                  return (
+                    <Box key={key} marginLeft={2}>
+                      <Text dimColor>{prefix} {key}: {displayValue}</Text>
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
+          }
+          
+          // Fallback to single-line preview for non-structured inputs
+          const preview = formatToolInput(event.tool_name as any, toolInput);
           
           return (
             <Box flexDirection="column" marginTop={1}>
@@ -538,7 +627,7 @@ export const EventLine: React.FC<{
           );
         }
       }
-      break;
+    }
 
     case 'command':
           // Parse command if it's a JSON object
@@ -694,7 +783,7 @@ export const EventLine: React.FC<{
                                  contentStr.includes('evidence stored in:');
       
       // Use constants for display limits
-      const fromToolBuffer = (event as any).metadata && (event as any).metadata.fromToolBuffer === true;
+      const fromToolBuffer = (event as any).metadata && (event as any).metadata.fromToolBuffer;
       
       const collapseThreshold = isReport ? DISPLAY_LIMITS.REPORT_MAX_LINES : 
                                (isOperationSummary ? DISPLAY_LIMITS.OPERATION_SUMMARY_LINES : 
@@ -854,7 +943,8 @@ export const EventLine: React.FC<{
       );
       
     case 'metadata':
-      // Display metadata parameters for tools that don't have built-in formatting
+      // Render metadata events normally
+      // Generic tools no longer emit duplicate metadata
       if (event.content && typeof event.content === 'object') {
         const metadataEntries = Object.entries(event.content);
         if (metadataEntries.length > 0) {
@@ -887,9 +977,9 @@ export const EventLine: React.FC<{
           <Box borderStyle="round" borderColor="green" paddingX={1} marginY={1}>
             <Text>{event.message}</Text>
           </Box>
-          {event.breakout && (
+          {event.breakout ? (
             <Text color="red" bold>Agent execution will stop after this handoff</Text>
-          )}
+          ) : null}
           <Box marginTop={1}>
             <Text color="yellow" bold>➤ Type your response below and press Enter to send it to the agent</Text>
           </Box>
@@ -967,6 +1057,9 @@ export const EventLine: React.FC<{
       // Enhanced swarm completion display
       const finalAgent = 'final_agent' in event ? String(event.final_agent || 'unknown') : 'unknown';
       const executionCount = 'execution_count' in event ? Number(event.execution_count || 0) : 0;
+      const handoffCount = 'handoff_count' in event ? Number(event.handoff_count || 0) : executionCount - 1;
+      const totalSteps = 'total_steps' in event ? Number(event.total_steps || 0) : 0;
+      const totalIterations = 'total_iterations' in event ? Number(event.total_iterations || 0) : 0;
       const duration = 'duration' in event ? String(event.duration || 'unknown') : 'unknown';
       const totalTokens = 'total_tokens' in event ? Number(event.total_tokens || 0) : 0;
       const agentMetrics = 'agent_metrics' in event ? (event.agent_metrics as any[] || []) : [];
@@ -981,7 +1074,7 @@ export const EventLine: React.FC<{
       
       return (
         <Box flexDirection="column" marginTop={1}>
-          <Text color={statusColor} bold>[SWARM: {statusText}] {agentMetrics.length || completedAgents.length || 0} agents, {executionCount} handoffs</Text>
+          <Text color={statusColor} bold>[SWARM: {statusText}] {completedAgents.length || agentMetrics.length || 0} agents, {handoffCount} handoffs, {totalIterations > 0 ? totalIterations : totalSteps} iterations</Text>
           {duration !== 'unknown' && (
             <Box marginLeft={2}>
               <Text dimColor>├─ duration: {duration}</Text>
@@ -1053,58 +1146,58 @@ export const EventLine: React.FC<{
           <Text color="#89B4FA" bold>◆ Operation initialization complete</Text>
           
           {/* Operation Details */}
-          {('operation_id' in event && event.operation_id) && (
+          {('operation_id' in event && event.operation_id) ? (
             <Text dimColor>  Operation ID: {event.operation_id}</Text>
-          )}
-          {('target' in event && event.target) && (
+          ) : null}
+          {('target' in event && event.target) ? (
             <Text dimColor>  Target: {event.target}</Text>
-          )}
-          {('objective' in event && event.objective) && (
+          ) : null}
+          {('objective' in event && event.objective) ? (
             <Text dimColor>  Objective: {event.objective}</Text>
-          )}
-          {('max_steps' in event && event.max_steps) && (
+          ) : null}
+          {('max_steps' in event && event.max_steps) ? (
             <Text dimColor>  Max Steps: {event.max_steps}</Text>
-          )}
-          {('model_id' in event && event.model_id) && (
+          ) : null}
+          {('model_id' in event && event.model_id) ? (
             <Text dimColor>  Model: {event.model_id}</Text>
-          )}
-          {('provider' in event && event.provider) && (
+          ) : null}
+          {('provider' in event && event.provider) ? (
             <Text dimColor>  Provider: {event.provider}</Text>
-          )}
+          ) : null}
           
           {/* Memory Configuration */}
-          {('memory' in event && event.memory) && (
+          {('memory' in event && event.memory) ? (
             <>
               <Text dimColor>  Memory backend: {event.memory.backend || 'unknown'}</Text>
-              {event.memory.has_existing && (
+              {event.memory.has_existing ? (
                 <Text dimColor>  Previous memories detected - will be loaded</Text>
-              )}
-              {event.memory.total_count && (
+              ) : null}
+              {event.memory.total_count ? (
                 <Text dimColor>  Existing memories: {event.memory.total_count}</Text>
-              )}
+              ) : null}
               
               {/* Memory Categories */}
-              {event.memory.categories && Object.keys(event.memory.categories).length > 0 && (
+              {event.memory.categories && Object.keys(event.memory.categories).length > 0 ? (
                 <Text dimColor>  Memory categories: {Object.entries(event.memory.categories).map(([category, count]) => `${category}:${count}`).join(', ')}</Text>
-              )}
+              ) : null}
               
               {/* Recent Findings Summary */}
-              {event.memory.recent_findings && Array.isArray(event.memory.recent_findings) && event.memory.recent_findings.length > 0 && (
+              {event.memory.recent_findings && Array.isArray(event.memory.recent_findings) && event.memory.recent_findings.length > 0 ? (
                 <Text dimColor>  Recent findings: {event.memory.recent_findings.length} items available</Text>
-              )}
+              ) : null}
             </>
-          )}
+          ) : null}
           
           {/* Environment Info */}
-          {('ui_mode' in event && event.ui_mode) && (
+          {('ui_mode' in event && event.ui_mode) ? (
             <Text dimColor>  UI Mode: {event.ui_mode}</Text>
-          )}
+          ) : null}
           {('observability' in event) && (
             <Text dimColor>  Observability: {event.observability ? 'enabled' : 'disabled'}</Text>
           )}
-          {('tools_available' in event && event.tools_available) && (
+          {('tools_available' in event && event.tools_available) ? (
             <Text dimColor>  Available Tools: {event.tools_available}</Text>
-          )}
+          ) : null}
         </Box>
       );
       
@@ -1264,8 +1357,12 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
   // Track tool execution states
   const [toolStates, setToolStates] = React.useState<Map<string, ToolState>>(new Map());
   
+  // Track tool inputs (for handling tool_input_update events from swarm agents)
+  const [toolInputs, setToolInputs] = React.useState<Map<string, any>>(new Map());
+  
   React.useEffect(() => {
     const newToolStates = new Map<string, ToolState>();
+    const newToolInputs = new Map<string, any>();
     
     events.forEach(event => {
       if (event.type === 'tool_start') {
@@ -1273,6 +1370,15 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           status: 'executing',
           startTime: Date.now()
         });
+        // Store initial tool input (may be empty for swarm agents)
+        if ('tool_id' in event && event.tool_id) {
+          newToolInputs.set(event.tool_id, event.tool_input || {});
+        }
+      } else if (event.type === 'tool_input_update') {
+        // Update tool input with complete data
+        if ('tool_id' in event && event.tool_id && 'tool_input' in event) {
+          newToolInputs.set(event.tool_id, event.tool_input);
+        }
       } else if (event.type === 'tool_invocation_end') {
         const toolName = ('tool_name' in event && event.tool_name) || 'unknown';
         const success = ('success' in event && event.success !== false);
@@ -1284,6 +1390,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
     });
     
     setToolStates(newToolStates);
+    setToolInputs(newToolInputs);
   }, [events]);
   
   // Group consecutive reasoning events to prevent multiple labels
@@ -1319,9 +1426,20 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
             }
             return acc;
           }, '');
+          
+          // Check if this is swarm agent reasoning
+          const swarmAgent = group.events[0] && 'swarm_agent' in group.events[0] 
+            ? group.events[0].swarm_agent 
+            : null;
+          
+          // Create reasoning label with agent info if available
+          const reasoningLabel = swarmAgent 
+            ? `reasoning (${swarmAgent})`
+            : 'reasoning';
+          
           return (
             <Box key={`reasoning-group-${group.startIdx}`} flexDirection="column" marginTop={1}>
-              <Text color="cyan" bold>reasoning</Text>
+              <Text color="cyan" bold>{reasoningLabel}</Text>
               <Box paddingLeft={0}>
                 <Text color="cyan" wrap="wrap">{combinedContent}</Text>
               </Box>
@@ -1333,7 +1451,8 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
             <MemoizedEventLine 
               key={event.id || `ev-${idx}-${i}`}  // Use event ID if available
               event={event} 
-              toolStates={toolStates} 
+              toolStates={toolStates}
+              toolInputs={toolInputs} 
               animationsEnabled={animationsEnabled} 
             />
           ));
@@ -1365,12 +1484,23 @@ export const StaticStreamDisplay: React.FC<{
           }
           return acc;
         }, '');
+        
+        // Check if this is swarm agent reasoning
+        const swarmAgent = group.events[0] && 'swarm_agent' in group.events[0] 
+          ? (group.events[0] as any).swarm_agent 
+          : null;
+        
+        // Create reasoning label with agent info if available
+        const reasoningLabel = swarmAgent 
+          ? `reasoning (${swarmAgent})`
+          : 'reasoning';
+        
         const key = `rg-${group.startIdx}`;
         out.push({
           key,
           render: () => (
             <Box key={key} flexDirection="column" marginTop={1}>
-              <Text color="cyan" bold>reasoning</Text>
+              <Text color="cyan" bold>{reasoningLabel}</Text>
               <Box paddingLeft={0}>
                 <Text color="cyan" wrap="wrap">{combinedContent}</Text>
               </Box>

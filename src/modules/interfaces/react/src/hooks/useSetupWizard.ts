@@ -77,12 +77,8 @@ function setupReducer(state: SetupState, action: SetupAction): SetupState {
       };
 
     case 'UPDATE_PROGRESS':
-      // Throttle progress updates at the reducer level
-      const now = Date.now();
-      if (now - state.lastProgressUpdate < 500) {
-        return state; // Ignore rapid updates
-      }
-      return { ...state, progress: action.payload, lastProgressUpdate: now };
+      // Immediate progress updates for responsive UI
+      return { ...state, progress: action.payload, lastProgressUpdate: Date.now() };
 
     case 'COMPLETE_SETUP':
       return {

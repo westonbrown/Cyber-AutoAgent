@@ -2,9 +2,10 @@
 
 import json
 import os
-from typing import Dict, Any, Protocol, Set, Optional
+from typing import Dict, Any, Protocol, Optional
 from datetime import datetime
 from collections import deque
+import hashlib
 
 
 class EventEmitter(Protocol):
@@ -19,7 +20,7 @@ class StdoutEventEmitter:
     """Emits events to stdout using the existing __CYBER_EVENT__ protocol.
     
     This maintains 100% backward compatibility with the React UI while
-    adding deduplication at the source to prevent duplicate events.
+    adding intelligent deduplication to prevent duplicate events.
     """
     
     def __init__(self, operation_id: Optional[str] = None):
@@ -30,9 +31,11 @@ class StdoutEventEmitter:
         """
         self.operation_id = operation_id or "default"
         self._event_counter = 0
-        self._emitted_ids: Set[str] = set()
         # Keep last 100 event signatures for deduplication
         self._recent_signatures = deque(maxlen=100)
+        # Track the last output content to prevent exact duplicates
+        self._last_output_content = None
+        self._last_output_time = None
         
     def emit(self, event: Dict[str, Any]) -> None:
         """Emit event with deduplication and ID tracking.
@@ -45,23 +48,42 @@ class StdoutEventEmitter:
             event["id"] = f"{self.operation_id}_{self._event_counter}"
             self._event_counter += 1
         
-        # Create signature for deduplication (excluding timestamp and ID)
-        signature = self._create_signature(event)
-        
-        # Skip duplicate events
-        if signature in self._recent_signatures:
-            return  # Silent skip - prevents duplicate emission
-            
         # Add timestamp if not present
         if "timestamp" not in event:
             event["timestamp"] = datetime.now().isoformat()
         
+        # Create signature for deduplication (excluding timestamp and ID)
+        signature = self._create_signature(event)
+        
+        # Special handling for output events - prevent exact duplicates within 100ms window
+        if event.get("type") == "output":
+            content = event.get("content", "")
+            current_time = datetime.now()
+            
+            # Check if this is an exact duplicate within a short time window
+            if (self._last_output_content == content and 
+                self._last_output_time and 
+                (current_time - self._last_output_time).total_seconds() < 0.1):
+                return  # Skip duplicate output within 100ms
+            
+            self._last_output_content = content
+            self._last_output_time = current_time
+        
+        # Skip duplicate events based on signature
+        # Tool events and metrics updates should not be deduplicated
+        event_type = event.get("type", "")
+        if event_type not in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
+            if signature in self._recent_signatures:
+                return  # Silent skip - prevents duplicate emission
+        
         # Emit the event
-        print(f"__CYBER_EVENT__{json.dumps(event)}__CYBER_EVENT_END__", flush=True)
+        # Include newline to ensure TeeOutput writes to log file immediately
+        print(f"__CYBER_EVENT__{json.dumps(event)}__CYBER_EVENT_END__\n", end="", flush=True)
         
-        # Track for deduplication
-        self._recent_signatures.append(signature)
-        
+        # Track for deduplication (except tool events and metrics updates)
+        if event_type not in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
+            self._recent_signatures.append(signature)
+    
     def _create_signature(self, event: Dict[str, Any]) -> str:
         """Create a signature for event deduplication.
         
@@ -74,21 +96,29 @@ class StdoutEventEmitter:
             Signature string for comparison
         """
         event_type = event.get("type", "")
-        if event_type in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
-            return f"{event_type}_{event.get('tool_name', '')}_{datetime.now().isoformat()}_{self._event_counter}"
         
-        # Create a copy without volatile fields
+        # Tool events and metrics updates should have unique signatures to avoid deduplication
+        if event_type in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
+            # Include timestamp to make each event unique
+            return f"{event_type}_{event.get('tool_name', '')}_{event.get('timestamp', datetime.now().isoformat())}"
+        
+        # Create a copy without volatile fields for other events
         sig_dict = {k: v for k, v in event.items() 
                    if k not in ("timestamp", "id", "duration", "metrics")}
         
         # Special handling for output events - include content for dedup
-        if event.get("type") == "output":
+        if event_type == "output":
             # Normalize output content for comparison
             content = sig_dict.get("content", "")
             if isinstance(content, str):
-                # Strip whitespace variations
+                # Strip whitespace variations but preserve content
                 content = content.strip()
             sig_dict["content"] = content
+            
+            # Use a hash of the content for more efficient comparison
+            if content:
+                content_hash = hashlib.md5(content.encode()).hexdigest()
+                return f"output_{content_hash}"
             
         # Create stable signature
         return json.dumps(sig_dict, sort_keys=True)

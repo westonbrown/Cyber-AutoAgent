@@ -37,7 +37,7 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
 
   constructor(mode: ExecutionMode) {
     super();
-    // Allow multiple UI subscribers (UnconstrainedTerminal, useOperationManager, etc.)
+    // Allow multiple UI subscribers (Terminal, useOperationManager, etc.)
     // without triggering noisy warnings. We still properly clean up listeners.
     this.setMaxListeners(25);
     if (mode !== ExecutionMode.DOCKER_SINGLE && mode !== ExecutionMode.DOCKER_STACK) {

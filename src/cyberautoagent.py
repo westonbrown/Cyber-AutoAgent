@@ -375,7 +375,9 @@ def main():
     )
     log_file = os.path.join(log_path, "cyber_operations.log")
 
-    logger = setup_logging(log_file=log_file, verbose=args.verbose)
+    # Enable verbose logging in React mode to capture debug information
+    verbose_mode = args.verbose or os.environ.get("__REACT_INK__")
+    logger = setup_logging(log_file=log_file, verbose=verbose_mode)
 
     # Setup telemetry (always enabled for token counting) and observability (deployment-aware)
     telemetry = setup_telemetry(logger)
@@ -521,14 +523,11 @@ def main():
             while not interrupted:
                 try:
                     # Execute agent with current message
-                    # Pass callback_handler explicitly to ensure it's used
-                    result = agent(current_message, callback_handler=callback_handler)
+                    result = agent(current_message)
 
                     # Pass the metrics from the result to the callback handler
                     if callback_handler and hasattr(result, "metrics") and result.metrics:
-                        logger.debug("Agent result has metrics: %s", type(result.metrics))
                         if hasattr(result.metrics, "accumulated_usage"):
-                            logger.debug("Accumulated usage found: %s", result.metrics.accumulated_usage)
                             if result.metrics.accumulated_usage:
                                 # Create an object that matches what _process_metrics expects
                                 # It expects event_loop_metrics.accumulated_usage to be accessible
@@ -537,17 +536,7 @@ def main():
                                         self.accumulated_usage = accumulated_usage
 
                                 metrics_obj = MetricsObject(result.metrics.accumulated_usage)
-                                logger.debug(
-                                    "Passing metrics object to callback handler with usage: %s",
-                                    metrics_obj.accumulated_usage,
-                                )
                                 callback_handler._process_metrics(metrics_obj)
-                            else:
-                                logger.debug("accumulated_usage is empty or None")
-                        else:
-                            logger.debug("No accumulated_usage attribute in metrics")
-                    else:
-                        logger.debug("No metrics found in agent result or callback_handler missing")
 
                     # Check if we should continue
                     if callback_handler and callback_handler.should_stop():
@@ -759,12 +748,6 @@ def main():
         # Clean up resources
         should_cleanup = not args.keep_memory and not args.memory_path
 
-        logger.debug(
-            "Cleanup evaluation: keep_memory=%s, memory_path=%s, should_cleanup=%s",
-            args.keep_memory,
-            args.memory_path,
-            should_cleanup,
-        )
 
         if should_cleanup:
             try:

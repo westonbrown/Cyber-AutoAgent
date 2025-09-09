@@ -150,13 +150,14 @@ export class DirectDockerService extends EventEmitter {
 
       // Environment variables
       const env = [
+        'PYTHONUNBUFFERED=1', // Disable Python output buffering for real-time streaming
         `BYPASS_TOOL_CONSENT=${config.confirmations ? 'false' : 'true'}`,
         '__REACT_INK__=true',
-        'CYBERAGENT_NO_BANNER=false', // Show banner in React stream (OLD behavior)
+        'CYBERAGENT_NO_BANNER=false',
         `DEV=${config.verbose ? 'true' : 'false'}`,
       ];
 
-      // AWS credentials (original simple approach)
+      // AWS credentials
       if (config.awsAccessKeyId && config.awsSecretAccessKey) {
         env.push(`AWS_ACCESS_KEY_ID=${config.awsAccessKeyId}`);
         env.push(`AWS_SECRET_ACCESS_KEY=${config.awsSecretAccessKey}`);
@@ -264,23 +265,27 @@ export class DirectDockerService extends EventEmitter {
         env.push(`EVALUATION_BATCH_SIZE=${config.evaluationBatchSize || 5}`);
       }
 
-      // First, try to reuse the persistent service container via docker exec
-      const serviceContainerName = 'cyber-autoagent';
-      const serviceContainer = await this.findRunningContainerByName(serviceContainerName);
+      // Docker exec is disabled due to volume permission issues on macOS
+      // Always create new containers for each assessment
+      const ENABLE_SERVICE_CONTAINER_REUSE = false;
+      
+      if (ENABLE_SERVICE_CONTAINER_REUSE) {
+        const serviceContainerName = 'cyber-autoagent';
+        const serviceContainer = await this.findRunningContainerByName(serviceContainerName);
 
-      if (serviceContainer) {
-        this.emit('event', {
-          type: 'output',
-          content: '◆ Reusing existing service container (docker exec)',
-          timestamp: Date.now()
-        });
+        if (serviceContainer) {
+          this.emit('event', {
+            type: 'output',
+            content: '◆ Reusing existing service container (docker exec)',
+            timestamp: Date.now()
+          });
 
-        await this.execIntoContainer(serviceContainer, args, env, currentDeploymentMode);
-        return; // Execution path handles streaming and completion
+          await this.execIntoContainer(serviceContainer, args, env, currentDeploymentMode);
+          return;
+        }
       }
 
-      // Fallback: create a new ad-hoc container
-      // Resolve Docker runtime settings
+      // Create a new ad-hoc container for the assessment
       const dockerImage = process.env.CYBER_DOCKER_IMAGE || 'cyber-autoagent:latest';
       let dockerNetwork = process.env.CYBER_DOCKER_NETWORK || 'bridge';
 
@@ -319,6 +324,7 @@ export class DirectDockerService extends EventEmitter {
       } catch {
         // If any error occurs during tools resolution, skip binding tools to avoid failure
       }
+
 
       this.activeContainer = await this.dockerClient.createContainer({
         Image: dockerImage,
@@ -371,10 +377,13 @@ export class DirectDockerService extends EventEmitter {
         },
       });
 
-      // Handle stream
-      this.activeContainer.modem.demuxStream(stream, eventParser, eventParser);
+      // Handle stream - With Tty:true, stream is NOT multiplexed
+      // We get a single stream, not separate stdout/stderr
+      // So we pipe directly to the parser instead of using demuxStream
+      stream.pipe(eventParser);
       
-      eventParser.on('data', () => {}); // Required to consume stream
+      // Consume the stream to trigger transform function
+      eventParser.on('data', () => {});
       
       eventParser.on('error', (error) => {
         // Emit parser errors as events instead of console.error
@@ -549,10 +558,6 @@ export class DirectDockerService extends EventEmitter {
    * Parse structured events from stdout and capture tool discovery
    */
   private parseEvents(data: string) {
-    // Debug logging disabled for production
-    // const rawLog = `[${new Date().toISOString()}] RAW: ${data}\n`;
-    // fs.appendFileSync('/tmp/cyber-docker-raw.log', rawLog);
-    
     // Tool discovery is now handled via structured events in parseEvents
     
     // Filter out binary/control characters that corrupt the output
@@ -560,11 +565,13 @@ export class DirectDockerService extends EventEmitter {
     
     this.streamEventBuffer += cleanedData;
 
-    // Look for event markers
-    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
+    // Look for event markers - use non-global regex to prevent duplicate processing
+    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/s;
     let match;
+    let processedEvents = false;
     
     while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
+      processedEvents = true;
       try {
         const eventData = JSON.parse(match[1]);
 
@@ -641,6 +648,11 @@ export class DirectDockerService extends EventEmitter {
         }
         
         this.emit('event', event);
+        
+        // Remove processed event from buffer immediately to prevent duplicate processing
+        const processedLength = match.index + match[0].length;
+        this.streamEventBuffer = this.streamEventBuffer.slice(processedLength);
+        
       } catch (error) {
         // Emit parsing errors as events instead of console.error
         this.emit('event', {
@@ -648,11 +660,12 @@ export class DirectDockerService extends EventEmitter {
           content: `Error parsing event: ${error}`,
           timestamp: Date.now()
         });
+        
+        // Skip this malformed event to avoid infinite loop
+        const skipLength = match.index + match[0].length;
+        this.streamEventBuffer = this.streamEventBuffer.slice(skipLength);
       }
     }
-    
-    // Clean processed events from buffer
-    this.streamEventBuffer = this.streamEventBuffer.replace(eventRegex, '');
     
     // Check for interactive prompts that need automatic responses
     this.handleInteractivePrompts();
@@ -875,6 +888,8 @@ export class DirectDockerService extends EventEmitter {
     env: string[],
     deploymentMode: DeploymentMode
   ): Promise<void> {
+    this.isExecutionActive = true;
+    
     // Prepare command (python entrypoint + args) to align with container Entrypoint
     const cmd = ['python', '/app/src/cyberautoagent.py', ...args];
 
