@@ -339,9 +339,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Check if step limit exceeded BEFORE emitting confusing header
                 # Don't enforce step limit for swarm agents - they have their own limits
                 if not self.in_swarm_operation and self.current_step > self.max_steps:
-                    from modules.handlers.base import StepLimitReached
-
-                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    logger.info(f"Step limit reached: {self.current_step}/{self.max_steps} - signaling completion")
+                    self._stop_requested = True
+                    return
 
                 # Only emit header if within step limits
                 self._emit_step_header()
@@ -417,9 +417,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Check if step limit exceeded BEFORE emitting confusing header
                 # Don't enforce step limit for swarm agents - they have their own limits
                 if not self.in_swarm_operation and self.current_step > self.max_steps:
-                    from modules.handlers.base import StepLimitReached
-
-                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    logger.info(f"Step limit reached: {self.current_step}/{self.max_steps} - signaling completion")
+                    self._stop_requested = True
+                    return
 
                 # Only emit header if within step limits
                 self._emit_step_header()
@@ -1075,14 +1075,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _accumulate_reasoning_text(self, text: str) -> None:
         """Accumulate reasoning text to prevent fragmentation."""
-        if not text or text.strip().lower() == "reasoning":
+        if not text:
+            return
+        
+        if text.strip().lower() == "reasoning":
             return
 
-        cleaned_text = text.strip()
-        if cleaned_text:
-            # For character-by-character streaming, don't add any automatic spacing
-            # The SDK will include proper spaces in the streamed text
-            self.reasoning_buffer.append(cleaned_text)
+        self.reasoning_buffer.append(text)
         self.last_reasoning_time = time.time()
         
         # For swarm agents, check if we should emit based on buffer size or time
@@ -1686,9 +1685,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Guard against step limit overflow similar to initial header emission
                 # Don't enforce step limit for swarm agents - they have their own limits
                 if not self.in_swarm_operation and self.current_step > self.max_steps:
-                    from modules.handlers.base import StepLimitReached
-
-                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    logger.info(f"Step limit reached: {self.current_step}/{self.max_steps} - completion signaled")
+                    self._stop_requested = True
+                    return
                 elif self.current_step <= self.max_steps or self.in_swarm_operation:
                     self._emit_step_header()
             except Exception as _:

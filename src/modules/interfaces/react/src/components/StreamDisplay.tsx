@@ -271,20 +271,22 @@ export const EventLine: React.FC<{
             ? ` (${event.swarm_agent})` : '';
           const command = latestInput?.command || latestInput?.cmd || '';
           
-          // Parse and display commands properly
+          // Unified command parser that handles all formats
           const parseCommands = (cmd: any): string[] => {
+            if (!cmd) return [];
+            
+            // Handle string inputs
             if (typeof cmd === 'string') {
               const trimmed = cmd.trim();
-              // Check if it's a JSON array of commands
-              if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+              // Check if it's a JSON array or object
+              if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+                  (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
                 try {
-                  // Handle JSON strings with escaped newlines and spaces
-                  // Replace literal \n with actual newlines for parsing
+                  // Handle JSON strings with escaped newlines
                   const normalized = trimmed.replace(/\\n/g, '\n');
                   const parsed = JSON.parse(normalized);
-                  if (Array.isArray(parsed)) {
-                    return parsed;
-                  }
+                  // Recurse with parsed value
+                  return parseCommands(parsed);
                 } catch {
                   // Not valid JSON, treat as single command
                   return [cmd];
@@ -292,53 +294,59 @@ export const EventLine: React.FC<{
               }
               // Single command string
               return [cmd];
-            } else if (Array.isArray(cmd)) {
-              return cmd;
             }
+            
+            // Handle arrays
+            if (Array.isArray(cmd)) {
+              const results: string[] = [];
+              for (const item of cmd) {
+                if (typeof item === 'string') {
+                  results.push(item);
+                } else if (typeof item === 'object' && item && item.command) {
+                  results.push(item.command);
+                } else if (typeof item === 'object' && item && item.cmd) {
+                  results.push(item.cmd);
+                }
+              }
+              return results;
+            }
+            
+            // Handle single command object
+            if (typeof cmd === 'object' && cmd) {
+              if (cmd.command) return [cmd.command];
+              if (cmd.cmd) return [cmd.cmd];
+            }
+            
             return [];
           };
           
           const commands = parseCommands(command);
           
-          // Always show tool header
-          if (commands.length > 0) {
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="green" bold>tool: shell{agentContext}</Text>
-                {commands.map((cmd, index) => (
-                  <Box key={index} marginLeft={2}>
-                    <Text dimColor>⎿ {cmd}</Text>
-                  </Box>
-                ))}
-              </Box>
-            );
-          }
-          
-          // Handle non-JSON array commands (single commands)
-          const formatCommand = (cmd: any): React.ReactElement => {
-            if (typeof cmd === 'string') {
-              // Single command string that's not a JSON array
-              return (
-                <Box marginLeft={2}>
-                  <Text dimColor>⎿ {cmd}</Text>
-                </Box>
-              );
-            } else if (cmd && typeof cmd === 'object' && !Array.isArray(cmd)) {
-              // Command object - extract the command field
-              const cmdStr = cmd.command || JSON.stringify(cmd);
-              return (
-                <Box marginLeft={2}>
-                  <Text dimColor>⎿ {cmdStr}</Text>
-                </Box>
-              );
-            }
-            return <></>;
-          };
-          
+          // Display commands with timeout info if available
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell{agentContext}</Text>
-              {command && formatCommand(command)}
+              {commands.length > 0 ? (
+                commands.map((cmd, index) => (
+                  <Box key={index} marginLeft={2}>
+                    <Text dimColor>⎿ {cmd}</Text>
+                  </Box>
+                ))
+              ) : (
+                <Box marginLeft={2}>
+                  <Text dimColor>⎿ (no command)</Text>
+                </Box>
+              )}
+              {latestInput?.timeout && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ timeout: {latestInput.timeout}s</Text>
+                </Box>
+              )}
+              {latestInput?.parallel && (
+                <Box marginLeft={2}>
+                  <Text dimColor>└─ parallel execution</Text>
+                </Box>
+              )}
             </Box>
           );
         }
@@ -551,43 +559,6 @@ export const EventLine: React.FC<{
           // Check if tool_input is an object with multiple properties for structured display
           const toolInput = latestInput;
           const isStructuredInput = toolInput && typeof toolInput === 'object' && !Array.isArray(toolInput);
-          
-          // Special handling for shell tool to display commands with ⎿ prefix
-          if (event.tool_name === 'shell' && isStructuredInput) {
-            const commands = toolInput.commands || toolInput.command || toolInput.cmd || [];
-            let commandList: string[] = [];
-            
-            if (Array.isArray(commands)) {
-              // Extract command strings from array of objects or strings
-              commandList = commands.map((cmd: any) => {
-                if (typeof cmd === 'string') return cmd;
-                if (typeof cmd === 'object' && cmd.command) return cmd.command;
-                return String(cmd);
-              });
-            } else if (typeof commands === 'object' && commands.command) {
-              // Single command object
-              commandList = [commands.command];
-            } else if (typeof commands === 'string') {
-              // String command(s)
-              commandList = commands.split('\n').filter(c => c.trim());
-            }
-            
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="green" bold>tool: shell{agentContext}</Text>
-                {commandList.map((cmd: string, index: number) => (
-                  <Box key={index} marginLeft={2}>
-                    <Text><Text dimColor>⎿</Text> {cmd}</Text>
-                  </Box>
-                ))}
-                {toolInput.timeout && (
-                  <Box marginLeft={2}>
-                    <Text dimColor>└─ timeout: {toolInput.timeout}ms</Text>
-                  </Box>
-                )}
-              </Box>
-            );
-          }
           
           if (isStructuredInput && Object.keys(toolInput).length > 0) {
             // Display structured parameters with tree format
