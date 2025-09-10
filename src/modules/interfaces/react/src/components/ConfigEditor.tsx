@@ -144,6 +144,13 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   
   // Use ref to track timeout for cleanup
   const messageTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  
+  // Use ref for handleSave to avoid stale closure issues
+  const handleSaveRef = React.useRef<() => void>();
+  
+  // Use ref to protect message during saves
+  const isSavingRef = React.useRef(false);
+  
 
   // Screen clearing is handled by modal manager's refreshStatic()
   
@@ -215,6 +222,75 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     
     return fields;
   }, [sections, selectedSectionIndex, config.modelProvider, config.memoryBackend]);
+  
+  // Basic pre-save validation for required fields and dependent settings
+  const validateBeforeSave = useCallback(() => {
+    // Required fields
+    const requiredFields: Array<{ key: string; label: string }> = [
+      { key: 'modelProvider', label: 'Model Provider' },
+      { key: 'modelId', label: 'Primary Model' },
+    ];
+    const missing = requiredFields.filter(f => !(config as any)[f.key]);
+    if (missing.length > 0) {
+      return `Missing required: ${missing.map(m => m.label).join(', ')}`;
+    }
+    // Observability requirements when enabled
+    if (config.observability) {
+      if (!config.langfuseHost && !config.langfuseHostOverride) {
+        return 'Observability is enabled but Langfuse Host is not set.';
+      }
+      if (!config.langfusePublicKey || !config.langfuseSecretKey) {
+        return 'Observability requires Langfuse Public and Secret keys.';
+      }
+    }
+    return '';
+  }, [config]);
+
+  const handleSave = useCallback(() => {
+    // Clear any existing message timeout
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
+    }
+    
+    // Show saving message
+    setMessage({ text: 'Saving configuration...', type: 'info' });
+    
+    // Do the ACTUAL save immediately (but don't update any state yet)
+    saveConfig().then(() => {
+      // After save succeeds, wait 2 seconds then update message and state
+      setTimeout(() => {
+        const timestamp = new Date().toLocaleTimeString();
+        setMessage({ text: `Configuration saved at ${timestamp}`, type: 'success' });
+        
+        // NOW update the other state
+        updateConfig({ isConfigured: true });
+        setUnsavedChanges(false);
+        
+        // Clear message after another 3 seconds
+        messageTimeoutRef.current = setTimeout(() => {
+          setMessage(null);
+          messageTimeoutRef.current = null;
+        }, 3000);
+      }, 2000);
+    }).catch((error) => {
+      // On error, show error message
+      setTimeout(() => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        setMessage({ text: `Save failed: ${errorMessage}`, type: 'error' });
+        
+        messageTimeoutRef.current = setTimeout(() => {
+          setMessage(null);
+          messageTimeoutRef.current = null;
+        }, 5000);
+      }, 1000);
+    });
+  }, [saveConfig, updateConfig]);
+  
+  // Store handleSave in ref to avoid stale closures
+  React.useEffect(() => {
+    handleSaveRef.current = handleSave;
+  }, [handleSave]);
   
   // Handle keyboard navigation
   useInput((input, key) => {
@@ -294,7 +370,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
     
     if (key.ctrl && input === 's') {
-      handleSave();
+      handleSaveRef.current?.();
+      return;
     }
     
     // Expand/collapse with arrows in sections mode
@@ -339,7 +416,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
       setEditingField(null);
       setTempValue('');
-      handleSave();
+      handleSaveRef.current?.();
       // Prevent the 's' from being added to the input
       return;
     }
@@ -349,85 +426,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       setTempValue('');
     }
   }, { isActive: editingField !== null });
-
-  // Basic pre-save validation for required fields and dependent settings
-  const validateBeforeSave = useCallback(() => {
-    // Required fields
-    const requiredFields: Array<{ key: string; label: string }> = [
-      { key: 'modelProvider', label: 'Model Provider' },
-      { key: 'modelId', label: 'Primary Model' },
-    ];
-    const missing = requiredFields.filter(f => !(config as any)[f.key]);
-    if (missing.length > 0) {
-      return `Missing required: ${missing.map(m => m.label).join(', ')}`;
-    }
-    // Observability requirements when enabled
-    if (config.observability) {
-      if (!config.langfuseHost && !config.langfuseHostOverride) {
-        return 'Observability is enabled but Langfuse Host is not set.';
-      }
-      if (!config.langfusePublicKey || !config.langfuseSecretKey) {
-        return 'Observability requires Langfuse Public and Secret keys.';
-      }
-    }
-    return '';
-  }, [config]);
-
-  const handleSave = useCallback(async () => {
-    // Clear any existing message timeout
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-      messageTimeoutRef.current = null;
-    }
-    
-    // Show saving message immediately
-    setMessage({ text: 'Saving configuration...', type: 'info' });
-    
-    try {
-      // Validate before saving
-      const validationError = validateBeforeSave();
-      if (validationError) {
-        setMessage({ text: validationError, type: 'error' });
-        // Keep error message visible for longer
-        messageTimeoutRef.current = setTimeout(() => {
-          setMessage(null);
-          messageTimeoutRef.current = null;
-        }, 5000);
-        return;
-      }
-      
-      // Mark configuration as complete when saving
-      updateConfig({ isConfigured: true });
-      
-      // Small delay to ensure state has updated before saving
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      await saveConfig();
-      setUnsavedChanges(false);
-      
-      // Show success message with checkmark
-      setMessage({ text: '✓ Configuration saved successfully', type: 'success' });
-      
-      // Keep success message visible for 3 seconds
-      messageTimeoutRef.current = setTimeout(() => {
-        setMessage(null);
-        messageTimeoutRef.current = null;
-      }, 3000);
-      
-      // Also log to console for debugging
-      loggingService.info('Configuration saved successfully via Ctrl+S');
-    } catch (error) {
-      loggingService.error('Config save error:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      setMessage({ text: `✗ Save failed: ${errorMessage}`, type: 'error' });
-      
-      // Keep error message visible for longer
-      messageTimeoutRef.current = setTimeout(() => {
-        setMessage(null);
-        messageTimeoutRef.current = null;
-      }, 5000);
-    }
-  }, [saveConfig, updateConfig, validateBeforeSave]);
 
   const updateConfigValue = useCallback((key: string, value: any) => {
     // Special handling for provider changes - set appropriate default models
@@ -626,6 +624,38 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     return String(value);
   };
 
+  const renderNotification = () => {
+    if (!message) return null;
+    
+    // Create a prominent notification box that stands out
+    return (
+      <Box 
+        borderStyle="double"
+        borderColor={
+          message.type === 'success' ? theme.success :
+          message.type === 'error' ? theme.danger :
+          theme.info
+        }
+        paddingX={1}
+        marginBottom={1}
+        width="100%"
+      >
+        <Text 
+          bold
+          color={
+            message.type === 'success' ? theme.success :
+            message.type === 'error' ? theme.danger :
+            theme.info
+          }
+        >
+          {message.type === 'success' && '━━━ '}
+          {message.text}
+          {message.type === 'success' && ' ━━━'}
+        </Text>
+      </Box>
+    );
+  };
+
   const renderHeader = () => {
     return (
       <Box marginBottom={1} flexDirection="column">
@@ -810,7 +840,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   // Main render logic
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <Box flexDirection="column">
       <Box 
         flexDirection="column"
         borderStyle="single" 
@@ -819,6 +849,34 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         width="100%"
         marginTop={1}
       >
+        {/* Notification appears INSIDE the main border at the very top */}
+        {message && (
+          <Box 
+            borderStyle="double"
+            borderColor={
+              message.type === 'success' ? theme.success :
+              message.type === 'error' ? theme.danger :
+              theme.info
+            }
+            paddingX={1}
+            marginBottom={1}
+          >
+            <Text 
+              bold
+              color={
+                message.type === 'success' ? theme.success :
+                message.type === 'error' ? theme.danger :
+                theme.info
+              }
+            >
+              {message.type === 'success' && '✓ '}
+              {message.type === 'error' && '✗ '}
+              {message.type === 'info' && '⏳ '}
+              {message.text}
+            </Text>
+          </Box>
+        )}
+        
         {renderHeader()}
       
       {/* Status bar */}
@@ -839,18 +897,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           {deploymentStatus.description}
         </Text>
       </Box>
-      
-      {message && (
-        <Box marginBottom={1}>
-          <Text color={
-            message.type === 'success' ? theme.success :
-            message.type === 'error' ? theme.danger :
-            theme.info
-          }>
-            {message.text}
-          </Text>
-        </Box>
-      )}
       
       {/* Main configuration sections */}
       <Box flexDirection="column" flexGrow={1}>

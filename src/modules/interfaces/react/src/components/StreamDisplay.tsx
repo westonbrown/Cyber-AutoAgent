@@ -555,8 +555,22 @@ export const EventLine: React.FC<{
           // Special handling for shell tool to display commands with ⎿ prefix
           if (event.tool_name === 'shell' && isStructuredInput) {
             const commands = toolInput.commands || toolInput.command || toolInput.cmd || [];
-            const commandList = Array.isArray(commands) ? commands : 
-                               (typeof commands === 'string' ? commands.split('\n').filter(c => c.trim()) : []);
+            let commandList: string[] = [];
+            
+            if (Array.isArray(commands)) {
+              // Extract command strings from array of objects or strings
+              commandList = commands.map((cmd: any) => {
+                if (typeof cmd === 'string') return cmd;
+                if (typeof cmd === 'object' && cmd.command) return cmd.command;
+                return String(cmd);
+              });
+            } else if (typeof commands === 'object' && commands.command) {
+              // Single command object
+              commandList = [commands.command];
+            } else if (typeof commands === 'string') {
+              // String command(s)
+              commandList = commands.split('\n').filter(c => c.trim());
+            }
             
             return (
               <Box flexDirection="column" marginTop={1}>

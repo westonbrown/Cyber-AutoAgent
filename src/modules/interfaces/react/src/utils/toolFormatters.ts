@@ -159,8 +159,27 @@ export const toolFormatters: Record<string, ToolFormatter> = {
   
   shell: (input) => {
     const commands = input.command || input.commands || input.cmd || input.input || '';
+    
+    // Format commands properly based on type
+    let commandsDisplay: string;
+    if (Array.isArray(commands)) {
+      // If array of command objects, extract the command strings
+      const cmdStrings = commands.map((cmd: any) => {
+        if (typeof cmd === 'string') return cmd;
+        if (typeof cmd === 'object' && cmd.command) return cmd.command;
+        return String(cmd);
+      });
+      commandsDisplay = cmdStrings.join(' | ');
+    } else if (typeof commands === 'object' && commands.command) {
+      // Single command object
+      commandsDisplay = commands.command;
+    } else {
+      // String or other type
+      commandsDisplay = String(commands);
+    }
+    
     const parts: string[] = [
-      `Commands: ${commands}`
+      `Commands: ${commandsDisplay}`
     ];
     const flags: string[] = [];
     if (input.parallel === true) flags.push('parallel');
