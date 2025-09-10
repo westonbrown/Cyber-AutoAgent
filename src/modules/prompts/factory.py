@@ -324,6 +324,8 @@ def get_system_prompt(
     persona: Optional[str] = None,
     workflow: Optional[str] = None,
     tools_guide: Optional[str] = None,
+    has_existing_memories: bool = False,
+    memory_overview: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Construct the system prompt.
 
@@ -349,6 +351,15 @@ def get_system_prompt(
                 out = out.replace(f"{{{{ {k} }}}}", str(v))
             return out
 
+        # Build memory context string for the prompt
+        memory_context = ""
+        if has_existing_memories and memory_overview:
+            categories = memory_overview.get("categories", {})
+            total = memory_overview.get("total_count", 0)
+            if total > 0:
+                cat_str = ", ".join([f"{k}:{v}" for k, v in categories.items()])
+                memory_context = f"EXISTING MEMORIES DETECTED: {total} total ({cat_str})"
+        
         rendered = _subst(
             base,
             {
@@ -359,6 +370,8 @@ def get_system_prompt(
                 "max_steps": max_steps,
                 "remaining_steps": remaining_steps,
                 "tools_guide": tools_guide,
+                "has_existing_memories": "true" if has_existing_memories else "false",
+                "memory_context": memory_context,
             },
         )
 

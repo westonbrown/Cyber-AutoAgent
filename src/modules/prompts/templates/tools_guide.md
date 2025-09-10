@@ -3,9 +3,13 @@
   - Prefer existing cyber tools that are already in the env. Default using professional cyber tools loaded into the environment rather than building your own or attempting yourself with other methods. For example use sqlmap (if you have it) rather than attempting to exploit an identified sql injection yourself.
   - If a required tool is missing, you may install it non-interactively with explicit flags; document the command and rationale.
   - **TIMEOUT MANAGEMENT**: Default timeout is 120s. For long-running operations:
-    * Full port scans (-p-): Use {"command": "nmap -p-", "timeout": 600} or break into ranges
-    * Service scans: Start with common ports first: "nmap -sV -p 80,443,22,21,3306"
-    * Large operations: Split into smaller chunks that complete under 60s each
+    * ALWAYS specify timeout for parallel operations: {"parallel": true, "timeout": 180}
+    * Quick operations (ping, curl, basic checks): 60-120s timeout
+    * Port scans with service detection (-sV -sC): Use {"timeout": 300} minimum
+    * Full port scans (-p-): Use {"timeout": 600} or break into ranges
+    * Web scanners (nikto, gobuster, dirb): Use {"timeout": 300} minimum
+    * Database/exploit tools (sqlmap, metasploit): Use {"timeout": 600}
+    * If you see "Command timed out", DOUBLE the timeout and retry
     * Network latency: Check RTT first with ping, adjust timeouts accordingly
   - **PROGRESSIVE SCANNING**: Start narrow, expand based on findings:
     * Quick: "nmap -p 80,443,8080,8443 --open" (10-30s)
@@ -15,7 +19,14 @@
   - Use to iterate quickly; once stable, migrate PoCs into a proper tool via `editor` + `load_tool`.
   - Store important snippets and results in memory as `artifact` with reproduction notes.
 - **mem0_memory**: Central knowledge base for planning, reflection, evidence, and findings (see `modules/tools/memory.py`).
-  - Use `store_plan`/`get_plan` for active strategy; `store_reflection`/`reflect` for periodic reasoning checkpoints.
+  - **MANDATORY Step 0-1 (single step for ALL memory ops)**: 
+    * With existing memories: Use ONE comprehensive `retrieve` query like:
+      `retrieve("plan strategy findings vulnerabilities critical high", user_id="cyber_agent")`
+      Then `get_plan()` → review → decide → ALL within Step 1 (no step increment)
+    * Without existing memories: Use `store_plan` to create initial strategy BEFORE any other tool
+  - **MANDATORY Every 20 steps**: Use `get_plan` to retrieve and validate current strategy alignment
+  - **When phase completes**: Use `get_plan` early to update phase status and transition
+  - Use `store_reflection`/`reflect` for periodic reasoning checkpoints (every 20-25 steps)
   - Use `store` with `metadata` (e.g., `category: finding|signal|decision|artifact|observation`, plus `severity`, `confidence`, etc.).
   - Use `retrieve` to surface prior context and guide next actions.
 - **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API). Each agent should have a clear specialization
@@ -32,8 +43,13 @@
   - Use for validation: Query CVE databases, check vendor docs, verify if findings are standard practice.
 - **handoff_to_user**: Escalate only for privileged/destructive steps or policy decisions; include options and a recommendation.
 - **stop**: Cleanly terminate when objective achieved or guardrails require halt.
+  - Use when: All plan phases complete, objective met with evidence, or 80%+ steps used with diminishing returns.
 
 Interrelation and flow:
+- **Step 0-1 ONLY**: Complete ALL memory operations in single step:
+  * If existing memories: Batch operations - `retrieve` (comprehensive query) → `get_plan` → decision → ALL IN STEP 1
+  * If no memories: `store_plan` with JSON plan before ANY other tool
+- **Every 20 steps OR phase completion**: MUST use `mem0_memory(action="get_plan")` to check strategy alignment  
 - Signals → store as `signal` in memory → design probe with `shell`/`http_request` → store `observation`.
 - Craft PoC in `python_repl` → if stable, convert to tool via `editor` + `load_tool` → execute deterministically.
 - Use `mem0_memory` to log `finding` with evidence and to maintain `store_plan` and `store_reflection` checkpoints.
