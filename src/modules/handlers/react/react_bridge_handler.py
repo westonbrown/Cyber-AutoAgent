@@ -1080,27 +1080,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         cleaned_text = text.strip()
         if cleaned_text:
-            # Handle spacing between fragments
-            if self.reasoning_buffer:
-                last_chunk = self.reasoning_buffer[-1] if self.reasoning_buffer else ""
-                last_char = last_chunk[-1] if last_chunk else ""
-                first_char = cleaned_text[0]
-
-                # Only add space between word boundaries, not single characters
-                # If either the last chunk or new chunk is a single character, 
-                # it's likely character-by-character streaming, so don't add space
-                should_add_space = (
-                    len(last_chunk) > 1 and len(cleaned_text) > 1 and  # Both are multi-char
-                    last_char.isalnum() and first_char.isalnum()  # Both end/start with alphanumeric
-                )
-                
-                # Also add space after punctuation if next is a word
-                if not should_add_space and len(cleaned_text) > 1:
-                    should_add_space = last_char in ".!?:;," and first_char.isalnum()
-                
-                if should_add_space:
-                    self.reasoning_buffer.append(" ")
-
+            # For character-by-character streaming, don't add any automatic spacing
+            # The SDK will include proper spaces in the streamed text
             self.reasoning_buffer.append(cleaned_text)
         self.last_reasoning_time = time.time()
         
