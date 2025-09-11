@@ -44,16 +44,16 @@ Usage Examples:
 --------------
 ```python
 from strands import Agent
-from modules.memory_tools import mem0_memory
+from modules.tools.memory import mem0_memory
 
 agent = Agent(tools=[mem0_memory])
 
-# Store memory in Memory
+# Store finding with structured evidence format
 agent.tool.mem0_memory(
     action="store",
-    content="Important information to remember",
-    user_id="alex",  # or agent_id="agent1"
-    metadata={"category": "finding"}
+    content="[VULNERABILITY] SQL Injection [WHERE] /api/users [IMPACT] Data breach [EVIDENCE] id=1' OR '1'='1 [STEPS] Send crafted parameter [REMEDIATION] Use prepared statements [CONFIDENCE] 85%",
+    user_id="cyber_agent",
+    metadata={"category": "finding", "severity": "CRITICAL"}
 )
 
 # Retrieve content using semantic search
@@ -111,8 +111,8 @@ TOOL_SPEC = {
         "4. Delete memories\n"
         "5. Get memory history\n\n"
         "Actions:\n"
-        "- store: Store new memory (requires user_id or agent_id)\n"
-        "- store_plan: Store strategic plan (100-300 chars, phase-based format)\n"
+        "- store: Store new memory with structured evidence format\n"
+        "- store_plan: Store strategic plan (phase-based JSON format)\n"
         "- store_reflection: Store reflection on findings/plan progress\n"
         "- get_plan: Get current active plan\n"
         "- reflect: Generate reflection prompt from recent findings\n"
@@ -121,7 +121,8 @@ TOOL_SPEC = {
         "- retrieve: Semantic search (requires user_id or agent_id)\n"
         "- delete: Delete memory\n"
         "- history: Get memory history\n\n"
-        "Note: Most operations require either user_id or agent_id to be specified."
+        "Finding Format: [VULNERABILITY] title [WHERE] location [IMPACT] impact [EVIDENCE] proof [STEPS] steps [REMEDIATION] fix [CONFIDENCE] %\n\n"
+        "Note: Defaults to user_id='cyber_agent' if not specified."
     ),
     "inputSchema": {
         "json": {
@@ -1045,10 +1046,10 @@ def initialize_memory_system(
 
 def get_memory_client(silent: bool = False) -> Optional[Mem0ServiceClient]:
     """Get the current memory client, initializing if needed.
-    
+
     Args:
         silent: If True, suppress initialization output (used during report generation)
-        
+
     Returns:
         The memory client instance or None if initialization fails
     """
@@ -1080,14 +1081,24 @@ def mem0_memory(
     including storing new memories, retrieving existing ones, listing all memories,
     performing semantic searches, and managing memory history.
 
+    IMPORTANT: Store only atomic findings during operation. Do NOT store:
+    - Executive summaries or final reports (auto-generated at operation end)
+    - Comprehensive assessments or operation summaries
+    - Aggregated findings (aggregation happens at report generation)
+
+    For findings, use structured format:
+    [VULNERABILITY] title [WHERE] location [IMPACT] impact
+    [EVIDENCE] proof [STEPS] reproduction [REMEDIATION] fix or "Not determined"
+    [CONFIDENCE] percentage with justification
+
     Args:
         action: The action to perform (store, get, list, retrieve, delete, history)
-        content: Content to store (for store action)
+        content: Content to store (for store action) - use structured format for findings
         memory_id: Memory ID (for get, delete, history actions)
         query: Search query (for retrieve action)
-        user_id: User ID for the memory operations
+        user_id: User ID for the memory operations (defaults to 'cyber_agent')
         agent_id: Agent ID for the memory operations
-        metadata: Optional metadata to store with the memory
+        metadata: Optional metadata with category, severity, confidence
 
     Returns:
         Formatted string response with operation results
@@ -1195,9 +1206,18 @@ def mem0_memory(
                     else:
                         cleaned_metadata[key] = value
                 metadata = cleaned_metadata
-                
+
                 # Enhanced metadata for findings with validation tracking
                 if metadata.get("category") == "finding":
+                    # Validate and normalize severity
+                    valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+                    severity = metadata.get("severity", "MEDIUM").upper()
+                    if severity not in valid_severities:
+                        logger.warning(f"Invalid severity '{severity}', defaulting to MEDIUM")
+                        metadata["severity"] = "MEDIUM"
+                    else:
+                        metadata["severity"] = severity
+
                     # Set default validation fields if not provided
                     if "validation_status" not in metadata:
                         metadata["validation_status"] = "unverified"
@@ -1208,17 +1228,21 @@ def mem0_memory(
                             confidence_val = float(confidence_str.rstrip("%"))
                         except (ValueError, AttributeError):
                             confidence_val = 0
-                        
+
                         if confidence_val >= 70:
                             metadata["evidence_type"] = "exploited"
                         elif confidence_val >= 50:
                             metadata["evidence_type"] = "behavioral"
                         else:
                             metadata["evidence_type"] = "pattern_match"
-                    
+
                     # Ensure low initial confidence for pattern matches
                     if metadata.get("evidence_type") == "pattern_match" and metadata.get("confidence", "0%") == "0%":
                         metadata["confidence"] = "35%"
+
+                    # Validate findings include evidence
+                    if "[EVIDENCE]" not in cleaned_content and "evidence" not in cleaned_content.lower():
+                        logger.warning("Finding stored without [EVIDENCE] section - may lack validation")
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")
@@ -1380,9 +1404,3 @@ def mem0_memory(
             )
             console.print(error_panel)
         return error_msg
-
-
-# Note: All memory operations now go through the unified mem0_memory tool
-# Use mem0_memory(action="store", content="...", metadata={"category": "finding"})
-# Use mem0_memory(action="retrieve", query="category:finding")
-# Use mem0_memory(action="list")

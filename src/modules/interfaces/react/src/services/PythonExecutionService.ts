@@ -589,10 +589,11 @@ export class PythonExecutionService extends EventEmitter {
       
       // Build command arguments
       const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
+      
       const args = [
         path.join(this.srcPath, 'cyberautoagent.py'),
         '--module', params.module,
-        '--objective', objective,
+        '--objective', 'via environment',  // Placeholder, actual value comes from env
         '--target', params.target,
         '--iterations', String(config.iterations || 100),
         '--provider', config.modelProvider || 'bedrock',
@@ -603,11 +604,13 @@ export class PythonExecutionService extends EventEmitter {
       }
       
       // Set up environment variables
-      const env = {
+      const env: Record<string, string> = {
         ...process.env,
         PYTHONPATH: this.srcPath,
         PYTHONUNBUFFERED: '1',
         FORCE_COLOR: '1',
+        // Always pass objective via environment to avoid escaping issues
+        CYBER_OBJECTIVE: objective,
         // React UI integration - critical for event emission
         BYPASS_TOOL_CONSENT: config.confirmations ? 'false' : 'true',
         __REACT_INK__: 'true',

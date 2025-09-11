@@ -3,7 +3,7 @@
 Report Generation Handler Utility for Cyber-AutoAgent
 
 This module provides report generation functionality that is called
-directly by handlers (ReactBridgeHandler) at the 
+directly by handlers (ReactBridgeHandler) at the
 end of operations to guarantee report generation.
 
 The actual report generation is done by a specialized Report Agent
@@ -31,16 +31,16 @@ def generate_security_report(
     """
     Generate a comprehensive security assessment report based on the operation results.
 
-    This function is called by handlers to create a professional penetration testing 
-    report by analyzing the evidence collected during the security assessment. 
-    It uses a specialized Report Agent with tools to generate a well-structured 
+    This function is called by handlers to create a professional penetration testing
+    report by analyzing the evidence collected during the security assessment.
+    It uses a specialized Report Agent with tools to generate a well-structured
     report with findings, recommendations, and risk assessments.
 
     Args:
         target: The target system that was assessed
         objective: The security assessment objective
         operation_id: The operation identifier
-        config_data: JSON string containing additional config (steps_executed, tools_used, 
+        config_data: JSON string containing additional config (steps_executed, tools_used,
                     evidence, provider, model_id, module)
 
     Returns:
@@ -66,14 +66,14 @@ def generate_security_report(
             except json.JSONDecodeError:
                 logger.error("Invalid JSON in config_data parameter")
                 return "Report generation failed: Invalid configuration format"
-        
+
         # Extract parameters with defaults
-        steps_executed = config_params.get('steps_executed', 0)
-        tools_used = config_params.get('tools_used', [])
-        evidence = config_params.get('evidence')
-        provider = config_params.get('provider', 'bedrock')
-        model_id = config_params.get('model_id')
-        module = config_params.get('module')
+        steps_executed = config_params.get("steps_executed", 0)
+        tools_used = config_params.get("tools_used", [])
+        evidence = config_params.get("evidence")
+        provider = config_params.get("provider", "bedrock")
+        model_id = config_params.get("model_id")
+        module = config_params.get("module")
 
         # If evidence not provided, retrieve from memory
         if evidence is None:
@@ -99,11 +99,12 @@ def generate_security_report(
 
         # Get module report prompt if available for domain guidance
         module_report_prompt = _get_module_report_prompt(module)
-        
+
         # Load the report template from file
         from modules.prompts import load_prompt_template
+
         report_template = load_prompt_template("report_template.md")
-        
+
         # Create report agent with the builder tool
         report_agent = ReportGenerator.create_report_agent(
             provider=provider, model_id=model_id, operation_id=operation_id, target=target
@@ -180,25 +181,19 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
                     "# security assessment report",
                     "## executive summary",
                     "## key findings",
-                    "## remediation"
+                    "## remediation",
                 ]
-                
-                missing_sections = [
-                    section for section in required_sections 
-                    if section not in report_text_lower
-                ]
-                
+
+                missing_sections = [section for section in required_sections if section not in report_text_lower]
+
                 if missing_sections:
-                    logger.warning(
-                        "Generated report missing required sections: %s", 
-                        ", ".join(missing_sections)
-                    )
+                    logger.warning("Generated report missing required sections: %s", ", ".join(missing_sections))
                     warning = (
                         f"⚠️ **REPORT WARNING**: The following sections may be incomplete: "
                         f"{', '.join(missing_sections)}\n\n"
                     )
                     report_text = warning + report_text
-                
+
                 # Validate minimum content length
                 if len(report_text.strip()) < 100:
                     logger.error("Report is critically short - likely generation failure")

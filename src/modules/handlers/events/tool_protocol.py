@@ -1,65 +1,61 @@
 """Standardized tool output protocol."""
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict
 
 
 class ToolOutputProtocol:
     """Standardizes tool outputs for consistent UI rendering.
-    
+
     All tools emit the same structure, eliminating tool-specific
     handling in both backend and frontend.
     """
-    
+
     @staticmethod
     def format_start(tool_name: str, tool_input: Any) -> Dict[str, Any]:
         """Format tool start event.
-        
+
         Args:
             tool_name: Name of the tool
             tool_input: Tool input parameters
-            
+
         Returns:
             Standardized tool start event
         """
-        return {
-            "type": "tool_start",
-            "tool": tool_name,
-            "input": ToolOutputProtocol._normalize_input(tool_input)
-        }
-    
+        return {"type": "tool_start", "tool": tool_name, "input": ToolOutputProtocol._normalize_input(tool_input)}
+
     @staticmethod
     def format_output(tool_name: str, result: Any, status: str = "success") -> Dict[str, Any]:
         """Format tool output event.
-        
+
         Args:
             tool_name: Name of the tool
             result: Tool execution result
             status: Status (success/error)
-            
+
         Returns:
             Standardized tool output event
         """
         # Extract text content
         text = ToolOutputProtocol._extract_text(result)
-        
+
         return {
             "type": "tool_output",
             "tool": tool_name,
             "status": status,
             "output": {
                 "text": text,
-                "lines": text.split('\n') if text else [],
-                "structured": result if isinstance(result, dict) else None
-            }
+                "lines": text.split("\n") if text else [],
+                "structured": result if isinstance(result, dict) else None,
+            },
         }
-    
+
     @staticmethod
     def _normalize_input(tool_input: Any) -> Dict[str, Any]:
         """Normalize tool input to consistent structure.
-        
+
         Args:
             tool_input: Raw tool input
-            
+
         Returns:
             Normalized input dictionary
         """
@@ -72,14 +68,14 @@ class ToolOutputProtocol:
             return {"commands": tool_input}
         else:
             return {"raw": str(tool_input)}
-    
+
     @staticmethod
     def _extract_text(result: Any) -> str:
         """Extract text from various result formats.
-        
+
         Args:
             result: Tool result in any format
-            
+
         Returns:
             Text representation
         """

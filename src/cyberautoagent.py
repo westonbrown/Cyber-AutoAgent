@@ -53,7 +53,6 @@ from modules.handlers.utils import (
 )
 from modules.handlers.base import StepLimitReached
 from modules.config.environment import auto_setup, setup_logging, clean_operation_memory
-from modules.handlers.output_interceptor import setup_output_interception
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -314,6 +313,11 @@ def main():
 
     args = parser.parse_args()
 
+    # Always check environment variable first for objective (React UI passes it this way)
+    env_objective = os.environ.get("CYBER_OBJECTIVE")
+    if env_objective:
+        args.objective = env_objective  # Env var takes precedence
+
     # Handle service mode
     if args.service_mode:
         print("Starting Cyber-AutoAgent in service mode...")
@@ -381,6 +385,13 @@ def main():
 
     # Setup telemetry (always enabled for token counting) and observability (deployment-aware)
     telemetry = setup_telemetry(logger)
+
+    # Suppress benign OpenTelemetry context cleanup errors that occur during normal operation
+    # These happen when async generators are terminated and don't affect functionality
+    import logging as stdlib_logging
+
+    otel_logger = stdlib_logging.getLogger("opentelemetry.context")
+    otel_logger.setLevel(stdlib_logging.CRITICAL)
 
     # Register cleanup function to properly close log files
     def cleanup_logging():
@@ -499,17 +510,14 @@ def main():
         # available_tools is a list of tool names (strings) from auto_setup
         tools_context = "\n".join([f"- {tool}: Available for security assessment" for tool in available_tools])
 
-        # Initial strategic prompt
-        initial_prompt = get_system_prompt(
-            target=args.target, objective=args.objective, remaining_steps=args.iterations, tools_context=tools_context
-        )
+        # Initial user message to start the agent
+        initial_prompt = f"Begin security assessment of {args.target} for: {args.objective}"
 
         print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
 
         # Execute autonomous operation
         try:
             operation_start = time.time()
-            messages = []
             current_message = initial_prompt
 
             # SDK-aligned execution loop with continuation support
@@ -567,9 +575,10 @@ def main():
                     else:
                         break
 
-                except StepLimitReached as error:
-                    # Handle step limit reached
+                except StepLimitReached:
+                    # Handle step limit reached gracefully without context errors
                     print_status(f"Step limit reached ({callback_handler.max_steps} steps)", "SUCCESS")
+                    logger.debug("Step limit reached - terminating gracefully")
                     break
 
                 except StopIteration as error:
@@ -590,6 +599,12 @@ def main():
                         print_status(f"Agent terminated: {reason}", "SUCCESS")
                     elif "step limit" in error_str:
                         print_status("Step limit reached", "SUCCESS")
+                    elif "read timed out" in error_str or "readtimeouterror" in error_str:
+                        # Handle AWS Bedrock timeouts - these are now less likely with our config
+                        # but if they occur, we should save progress and report it
+                        logger.warning("AWS Bedrock timeout detected - operation interrupted but progress saved")
+                        print_status("Network timeout - progress saved", "WARNING")
+                        # Don't break - let finally block handle report generation
                     else:
                         print_status(f"Agent error: {str(error)}", "ERROR")
                         logger.exception("Unexpected agent error occurred")
@@ -709,17 +724,17 @@ def main():
     finally:
         # Ensure log files are properly closed before exit
         def close_log_outputs():
-            if hasattr(sys.stdout, 'close') and hasattr(sys.stdout, 'log'):
+            if hasattr(sys.stdout, "close") and hasattr(sys.stdout, "log"):
                 try:
                     sys.stdout.close()
-                except:
+                except Exception:
                     pass
-            if hasattr(sys.stderr, 'close') and hasattr(sys.stderr, 'log'):
+            if hasattr(sys.stderr, "close") and hasattr(sys.stderr, "log"):
                 try:
                     sys.stderr.close()
-                except:
+                except Exception:
                     pass
-        
+
         # Skip cleanup if interrupted
         if interrupted:
             print_status("Exiting immediately due to interrupt", "WARNING")
@@ -747,7 +762,6 @@ def main():
 
         # Clean up resources
         should_cleanup = not args.keep_memory and not args.memory_path
-
 
         if should_cleanup:
             try:
@@ -784,7 +798,7 @@ def main():
                 logger.debug("Traces flushed successfully")
         except Exception as e:
             logger.warning("Error flushing traces: %s", e)
-        
+
         # Final cleanup of log outputs before exit
         close_log_outputs()
 

@@ -160,7 +160,7 @@ class EvaluationManager:
                 # Use session_id for evaluation (Langfuse uses this for lookup)
                 scores = await self.evaluator.evaluate_trace(
                     trace_id=trace_info.session_id,
-                    max_retries=5,
+                    _max_retries=5,
                 )
 
                 if scores:

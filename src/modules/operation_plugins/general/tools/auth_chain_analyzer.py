@@ -193,7 +193,7 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
                             "type": endpoint_type,
                         }
                     )
-        except:
+        except Exception:
             continue
 
     # Method 2: Use feroxbuster for deeper directory discovery (if available)
@@ -254,7 +254,7 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
                             auth_endpoints.append(
                                 {"path": path, "full_url": url, "status": status, "type": endpoint_type}
                             )
-    except:
+    except Exception:
         pass
 
     return auth_endpoints
@@ -329,7 +329,7 @@ def _analyze_auth_mechanisms(target_url: str, auth_endpoints: List[Dict], auth_t
                     session_mechanism = _analyze_session_mechanism(endpoint, content)
                     if session_mechanism:
                         mechanisms.append(session_mechanism)
-        except:
+        except Exception:
             continue
 
     # Auto-detect if no specific type requested
@@ -372,7 +372,7 @@ def _analyze_auth_mechanisms(target_url: str, auth_endpoints: List[Dict], auth_t
                             "confidence": "high",
                         }
                     )
-        except:
+        except Exception:
             pass
 
     return mechanisms
@@ -400,7 +400,7 @@ def _analyze_jwt_mechanism(endpoint: Dict, content: str) -> Dict[str, Any]:
                 jwks_data = json.loads(content)
                 if "keys" in jwks_data:
                     jwt_info["properties"]["key_count"] = len(jwks_data["keys"])
-        except:
+        except Exception:
             pass
 
     elif "token" in endpoint["path"].lower():
@@ -564,7 +564,7 @@ def _analyze_tokens_and_sessions(target_url: str, mechanisms: List[Dict]) -> Dic
                 "security_analysis": _analyze_session_security(session_cookies),
             }
 
-    except:
+    except Exception:
         pass
 
     # Use jwt_tool if available for JWT analysis
@@ -655,7 +655,7 @@ def _analyze_jwt_with_tools(target_url: str, jwt_mechanisms: List[Dict]) -> List
         result = subprocess.run(["jwt_tool", "--help"], capture_output=True, timeout=10)
         if result.returncode != 0:
             return jwt_tokens  # jwt_tool not available
-    except:
+    except Exception:
         return jwt_tokens
 
     # Extract sample tokens from mechanisms
@@ -680,7 +680,7 @@ def _analyze_jwt_with_tools(target_url: str, jwt_mechanisms: List[Dict]) -> List
                         }
                     )
 
-            except:
+            except Exception:
                 continue
 
     return jwt_tokens
@@ -881,7 +881,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                             "status_code": status_code,
                         }
                     )
-        except:
+        except Exception:
             continue
 
     # Test 2: HTTP method bypass
@@ -922,7 +922,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                             }
                         )
                         break  # Found bypass, no need to test other methods
-            except:
+            except Exception:
                 continue
 
     # Test 3: Parameter pollution and header manipulation
@@ -969,7 +969,7 @@ def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[st
                             }
                         )
                         break  # Found bypass
-            except:
+            except Exception:
                 continue
 
     return bypass_results

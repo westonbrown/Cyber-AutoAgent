@@ -94,10 +94,14 @@ export class DirectDockerService extends EventEmitter {
       // Build command arguments
       // Pass module explicitly to enable module-specific prompts and tools
       const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
+      
+      // Initialize environment variables - always pass objective via env to avoid escaping issues
+      const env: string[] = [`CYBER_OBJECTIVE=${objective}`];
+      
       const args = [
         // Note: --service-mode will be added later ONLY for new containers, not for docker exec
         '--module', params.module,
-        '--objective', objective,
+        '--objective', 'via environment',  // Placeholder, actual value comes from env
         '--target', params.target,
         '--iterations', String(config.iterations || 100),
         '--provider', config.modelProvider || 'bedrock',
@@ -148,14 +152,14 @@ export class DirectDockerService extends EventEmitter {
         });
       }
 
-      // Environment variables
-      const env = [
+      // Add standard environment variables
+      env.push(
         'PYTHONUNBUFFERED=1', // Disable Python output buffering for real-time streaming
         `BYPASS_TOOL_CONSENT=${config.confirmations ? 'false' : 'true'}`,
         '__REACT_INK__=true',
         'CYBERAGENT_NO_BANNER=false',
         `DEV=${config.verbose ? 'true' : 'false'}`,
-      ];
+      );
 
       // AWS credentials
       if (config.awsAccessKeyId && config.awsSecretAccessKey) {
@@ -265,9 +269,9 @@ export class DirectDockerService extends EventEmitter {
         env.push(`EVALUATION_BATCH_SIZE=${config.evaluationBatchSize || 5}`);
       }
 
-      // Docker exec is disabled due to volume permission issues on macOS
-      // Always create new containers for each assessment
-      const ENABLE_SERVICE_CONTAINER_REUSE = false;
+      // Enable container reuse in full-stack mode to use the existing docker-compose container
+      // This container is already running with --service-mode flag
+      const ENABLE_SERVICE_CONTAINER_REUSE = currentDeploymentMode === 'full-stack';
       
       if (ENABLE_SERVICE_CONTAINER_REUSE) {
         const serviceContainerName = 'cyber-autoagent';
@@ -948,6 +952,9 @@ export class DirectDockerService extends EventEmitter {
     this.abortController?.signal.addEventListener('abort', () => {
       this.stop();
     });
+
+    // Consume the stream to trigger transform events
+    eventParser.on('data', () => {});
 
     this.emit('started');
   }

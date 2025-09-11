@@ -50,7 +50,7 @@ class ReportGenerator:
         if provider == "bedrock":
             model = BedrockModel(
                 model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                max_tokens=8192  # Increased for comprehensive reports
+                max_tokens=8192,  # Increased for comprehensive reports
             )
         elif provider == "ollama":
             # Get Ollama host from environment or use default
@@ -64,7 +64,7 @@ class ReportGenerator:
 
         # Import the report builder tool
         from modules.tools.report_builder import build_report_sections
-        
+
         # Create agent with report-specific configuration
         trace_attrs = {
             # Core identification - CRITICAL for trace continuity
@@ -82,19 +82,20 @@ class ReportGenerator:
 
         # Configure trace attributes for observability
         # Only add if operation_id is provided to ensure proper parent-child relationship
-        
+
         # Create a silent callback handler to prevent duplicate output
         # The report will be returned and handled by the caller
         class SilentCallbackHandler:
             """Completely silent callback handler that prevents all output and interactions."""
+
             def __call__(self, **kwargs):
                 # Suppress all callbacks
                 pass
-            
+
             def __getattr__(self, name):
                 # Return no-op for any method call to ensure complete silence
                 return lambda *args, **kwargs: None
-        
+
         return Agent(
             model=model,
             name="Cyber-ReportGenerator",

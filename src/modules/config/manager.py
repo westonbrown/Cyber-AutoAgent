@@ -446,23 +446,23 @@ class ConfigManager:
 
         # Apply function parameter overrides
         defaults.update(overrides)
-        
+
         # Special handling for model_id override - apply to LLM configs
-        if 'model_id' in overrides:
-            user_model = overrides['model_id']
+        if "model_id" in overrides:
+            user_model = overrides["model_id"]
             # Update main LLM
-            if 'llm' in defaults and isinstance(defaults['llm'], LLMConfig):
-                defaults['llm'].model_id = user_model
+            if "llm" in defaults and isinstance(defaults["llm"], LLMConfig):
+                defaults["llm"].model_id = user_model
             # Update memory LLM
-            if 'memory_llm' in defaults and isinstance(defaults['memory_llm'], MemoryLLMConfig):
-                defaults['memory_llm'].model_id = user_model
-            # Update evaluation LLM  
-            if 'evaluation_llm' in defaults and isinstance(defaults['evaluation_llm'], LLMConfig):
-                defaults['evaluation_llm'].model_id = user_model
+            if "memory_llm" in defaults and isinstance(defaults["memory_llm"], MemoryLLMConfig):
+                defaults["memory_llm"].model_id = user_model
+            # Update evaluation LLM
+            if "evaluation_llm" in defaults and isinstance(defaults["evaluation_llm"], LLMConfig):
+                defaults["evaluation_llm"].model_id = user_model
             # Don't override swarm LLM with user model - keep swarm using v2 for better performance
             # Swarm model can be overridden via CYBER_AGENT_SWARM_MODEL env var if needed
             # For Ollama, also use the same model for embeddings if mxbai-embed-large is not available
-            if provider == "ollama" and 'embedding' in defaults and isinstance(defaults['embedding'], EmbeddingConfig):
+            if provider == "ollama" and "embedding" in defaults and isinstance(defaults["embedding"], EmbeddingConfig):
                 # Check if the default embedding model is available
                 try:
                     client = ollama.Client(host=self.get_ollama_host())
@@ -470,10 +470,10 @@ class ConfigManager:
                     available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
                     if not any("mxbai-embed-large" in model for model in available_models):
                         # Use the user's model for embeddings too
-                        defaults['embedding'].model_id = user_model
-                except:
+                        defaults["embedding"].model_id = user_model
+                except Exception:
                     # Fallback to user's model if availability check fails
-                    defaults['embedding'].model_id = user_model
+                    defaults["embedding"].model_id = user_model
 
         # Build memory configuration
         memory_config = MemoryConfig(
@@ -865,7 +865,6 @@ class ConfigManager:
             or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
         )
 
-
         return OutputConfig(
             base_dir=base_dir,
             target_name=target_name,
@@ -894,13 +893,11 @@ class ConfigManager:
             available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
 
             if not available_models:
-                raise ValueError(
-                    "No Ollama models found. Please pull at least one model, e.g.: ollama pull qwen3:1.7b"
-                )
-            
+                raise ValueError("No Ollama models found. Please pull at least one model, e.g.: ollama pull qwen3:1.7b")
+
             # Log available models for debugging
             logger.info(f"Available Ollama models: {available_models}")
-            
+
             # Only check for default models if no user override is expected
             # This allows users to specify any model they have available
             server_config = self.get_server_config("ollama")
@@ -908,13 +905,12 @@ class ConfigManager:
                 server_config.llm.model_id,
                 server_config.embedding.model_id,
             ]
-            
+
             # Check if at least one default model is available, or any model exists for override
             has_default = any(
-                any(default_model in model for model in available_models) 
-                for default_model in default_models
+                any(default_model in model for model in available_models) for default_model in default_models
             )
-            
+
             if not has_default and len(available_models) > 0:
                 # User has models but not the defaults - this is OK, they can override
                 logger.info(
@@ -922,10 +918,8 @@ class ConfigManager:
                     f"User can specify --model parameter to use: {available_models[0]}"
                 )
             elif not has_default and len(available_models) == 0:
-                raise ValueError(
-                    f"No models available. Pull a model with: ollama pull qwen3:1.7b"
-                )
-                
+                raise ValueError("No models available. Pull a model with: ollama pull qwen3:1.7b")
+
         except Exception as e:
             if "No Ollama models found" in str(e) or "No models available" in str(e):
                 raise e
@@ -961,7 +955,7 @@ class ConfigManager:
             os.environ["AWS_ACCESS_KEY_ID"] = "ASIABEARERTOKEN"
             os.environ["AWS_SECRET_ACCESS_KEY"] = "bearer+token+placeholder"
             os.environ["AWS_SESSION_TOKEN"] = bearer_token
-        
+
         # Verify AWS credentials are configured
         if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             raise EnvironmentError(

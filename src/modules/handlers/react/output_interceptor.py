@@ -19,11 +19,13 @@ from modules.handlers.core.utils import CyberEvent
 _in_tool_execution = False
 _tool_execution_lock = threading.Lock()
 
+
 def set_tool_execution_state(is_executing: bool):
     """Set the global tool execution state."""
     global _in_tool_execution
     with _tool_execution_lock:
         _in_tool_execution = is_executing
+
 
 def is_in_tool_execution() -> bool:
     """Check if we're currently executing a tool."""
@@ -55,7 +57,7 @@ class OutputInterceptor(io.TextIOBase):
             if "__CYBER_EVENT__" in data:
                 # Pass through structured events unchanged
                 return self.original_stream.write(data)
-            
+
             # During tool execution, pass through raw output without creating events
             # The tool result handler will emit the proper event
             if is_in_tool_execution():

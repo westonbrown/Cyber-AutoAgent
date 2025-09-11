@@ -8,6 +8,11 @@ services:
     # Run in service mode for full-stack deployment
     # The container stays alive and waits for external requests via React UI
     command: ["--service-mode"]
+    # Add capabilities for network tools without full root access
+    cap_add:
+      - NET_RAW      # For packet crafting (nmap SYN scans, tcpdump)
+      - NET_ADMIN    # For network administration
+      - SYS_PTRACE   # For process tracing (some exploitation tools)
     environment:
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}

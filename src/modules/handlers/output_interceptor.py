@@ -19,6 +19,7 @@ _in_tool_execution = False
 _tool_execution_lock = threading.Lock()
 _tool_output_buffer: List[str] = []
 
+
 def set_tool_execution_state(is_executing: bool):
     """Set the global tool execution state and manage output buffer."""
     global _in_tool_execution, _tool_output_buffer
@@ -29,10 +30,12 @@ def set_tool_execution_state(is_executing: bool):
             _tool_output_buffer = []
         # When ending tool execution, buffer is returned by get_buffered_output()
 
+
 def is_in_tool_execution() -> bool:
     """Check if we're currently executing a tool."""
     with _tool_execution_lock:
         return _in_tool_execution
+
 
 def get_buffered_output() -> str:
     """Get and clear the buffered tool output."""
@@ -67,7 +70,7 @@ class OutputInterceptor(io.TextIOBase):
             if "__CYBER_EVENT__" in data:
                 # Pass through structured events unchanged and flush immediately
                 result = self.original_stream.write(data)
-                if hasattr(self.original_stream, 'flush'):
+                if hasattr(self.original_stream, "flush"):
                     self.original_stream.flush()
                 return result
 
@@ -93,13 +96,13 @@ class OutputInterceptor(io.TextIOBase):
     def _emit_output_event(self, content: str):
         """Emit output as a structured event or buffer during tool execution."""
         global _tool_output_buffer
-        
+
         # During tool execution, buffer the output instead of emitting line by line
         if is_in_tool_execution():
             with _tool_execution_lock:
                 _tool_output_buffer.append(content)
             return  # Don't emit individual lines during tool execution
-        
+
         try:
             self._in_event_emission = True
 
@@ -118,7 +121,7 @@ class OutputInterceptor(io.TextIOBase):
             if is_in_tool_execution():
                 metadata["fromToolBuffer"] = True
                 metadata["tool"] = "shell"  # Most tool outputs are from shell
-            
+
             event = CyberEvent(type=event_type, content=content, metadata=metadata)
 
             # Write the structured event to the original stream

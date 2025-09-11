@@ -19,16 +19,16 @@
   - Use to iterate quickly; once stable, migrate PoCs into a proper tool via `editor` + `load_tool`.
   - Store important snippets and results in memory as `artifact` with reproduction notes.
 - **mem0_memory**: Central knowledge base for planning, reflection, evidence, and findings (see `modules/tools/memory.py`).
-  - **MANDATORY Step 0-1 (single step for ALL memory ops)**: 
-    * With existing memories: Use ONE comprehensive `retrieve` query like:
-      `retrieve("plan strategy findings vulnerabilities critical high", user_id="cyber_agent")`
-      Then `get_plan()` → review → decide → ALL within Step 1 (no step increment)
-    * Without existing memories: Use `store_plan` to create initial strategy BEFORE any other tool
+  - **Step 0-1**: Follow the directive in PLANNING section (either RETRIEVE or CREATE)
   - **MANDATORY Every 20 steps**: Use `get_plan` to retrieve and validate current strategy alignment
   - **When phase completes**: Use `get_plan` early to update phase status and transition
   - Use `store_reflection`/`reflect` for periodic reasoning checkpoints (every 20-25 steps)
   - Use `store` with `metadata` (e.g., `category: finding|signal|decision|artifact|observation`, plus `severity`, `confidence`, etc.).
   - Use `retrieve` to surface prior context and guide next actions.
+  - **Finding Storage Requirements**:
+    * Include full evidence: request/response pairs, commands/outputs
+    * Structure: `[VULNERABILITY] title [WHERE] location [IMPACT] impact [EVIDENCE] proof [STEPS] reproduction [REMEDIATION] fix or "Not determined" [CONFIDENCE] percentage`
+    * Set confidence based on evidence quality: 90%+ (exploited), 70-89% (confirmed), 50-69% (anomaly), <50% (unverified)
 - **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API). Each agent should have a clear specialization
   - Define clear objectives and success criteria. Each agent writes outcomes to `mem0_memory`.
   - Task Format (Max 100 words) with STATE: [Current access/findings], GOAL: [ONE specific objective], AVOID: [What not to repeat] and FOCUS: [Specific technique]
@@ -46,9 +46,7 @@
   - Use when: All plan phases complete, objective met with evidence, or 80%+ steps used with diminishing returns.
 
 Interrelation and flow:
-- **Step 0-1 ONLY**: Complete ALL memory operations in single step:
-  * If existing memories: Batch operations - `retrieve` (comprehensive query) → `get_plan` → decision → ALL IN STEP 1
-  * If no memories: `store_plan` with JSON plan before ANY other tool
+- **Step 0-1**: Execute the directive from PLANNING section (RETRIEVE or CREATE) - single step
 - **Every 20 steps OR phase completion**: MUST use `mem0_memory(action="get_plan")` to check strategy alignment  
 - Signals → store as `signal` in memory → design probe with `shell`/`http_request` → store `observation`.
 - Craft PoC in `python_repl` → if stable, convert to tool via `editor` + `load_tool` → execute deterministically.
@@ -87,8 +85,10 @@ result = custom_exploit(target="example.com")
 
 **Protocol: Findings Storage - Memory Only**
 - All discoveries, vulnerabilities, and analysis results go to mem0_memory
-- Use category="finding" for report generation
+- Use category="finding" for individual findings ONLY
 - Never create report files - use structured memory storage
+- PROHIBITED: Storing "EXECUTIVE SUMMARY", "FINAL REPORT", or comprehensive summaries
+- Store atomic findings only - aggregation happens at report generation time
 
 ```python
 # Correct findings storage (auto-enhances with validation tracking)

@@ -5,7 +5,6 @@ This module contains specialized event emitters for different tool types,
 converting tool inputs and outputs into structured events for the React UI.
 """
 
-import json
 from typing import Any, Dict, Callable
 
 
@@ -136,22 +135,21 @@ class ToolEventEmitter:
             if not agents and not task:
                 return
 
-
             # Get agent specifications
             agent_details = []
             for i, agent in enumerate(agents):
                 if isinstance(agent, dict):
                     # Get name or generate default
                     name = agent.get("name", f"agent_{i + 1}")
-                    
+
                     # Get full system prompt without parsing
                     system_prompt = agent.get("system_prompt", "")
-                    
+
                     # Get tools list
                     tools = agent.get("tools", [])
                     if not isinstance(tools, list):
                         tools = []
-                    
+
                     # Get model info with defaults
                     model_provider = agent.get("model_provider", "default")
                     model_settings = agent.get("model_settings", {})
@@ -159,30 +157,32 @@ class ToolEventEmitter:
                         model_id = model_settings.get("model_id", "default")
                     else:
                         model_id = "default"
-                    
+
                     detail = {
                         "name": str(name),
                         "system_prompt": str(system_prompt),
                         "tools": [str(t) for t in tools],
                         "model_provider": str(model_provider),
-                        "model_id": str(model_id)
+                        "model_id": str(model_id),
                     }
                     agent_details.append(detail)
                 elif isinstance(agent, str):
                     # Handle simple string agent definitions
-                    agent_details.append({
-                        "name": agent,
-                        "system_prompt": "",
-                        "tools": [],
-                        "model_provider": "default",
-                        "model_id": "default"
-                    })
+                    agent_details.append(
+                        {
+                            "name": agent,
+                            "system_prompt": "",
+                            "tools": [],
+                            "model_provider": "default",
+                            "model_id": "default",
+                        }
+                    )
 
             # Only emit swarm start event if we have valid data
             if len(agent_details) > 0 or task:
                 # Extract agent names for backward compatibility
                 agent_names = [agent.get("name", f"agent_{i}") for i, agent in enumerate(agent_details)]
-                
+
                 # Emit rich swarm_start event with both names and full details
                 self.emit_ui_event(
                     {

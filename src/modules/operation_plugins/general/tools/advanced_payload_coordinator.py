@@ -184,7 +184,7 @@ def _setup_payload_tools() -> Dict[str, Any]:
                         tools_status["tools"].append(tool_name)
                     else:
                         tools_status["failed"].append(tool_name)
-        except:
+        except Exception:
             tools_status["failed"].append(tool_name)
             if tools_status["failed"]:
                 tools_status["success"] = False
@@ -217,7 +217,7 @@ def _advanced_parameter_discovery(target_url: str, provided_params: str = None) 
                         param = parts[1].strip().split()[0]
                         if param and param.isalnum():
                             discovered_params.add(param)
-    except:
+    except Exception:
         pass
 
     # Method 2: ParamSpider (if available)
@@ -242,9 +242,9 @@ def _advanced_parameter_discovery(target_url: str, provided_params: str = None) 
                                 parsed = urlparse(line.strip())
                                 params = parse_qs(parsed.query)
                                 discovered_params.update(params.keys())
-                            except:
+                            except Exception:
                                 continue
-    except:
+    except Exception:
         pass
 
     # Method 3: Common parameter wordlist
@@ -295,7 +295,7 @@ def _advanced_parameter_discovery(target_url: str, provided_params: str = None) 
         if parsed_url.query:
             url_params = parse_qs(parsed_url.query)
             discovered_params.update(url_params.keys())
-    except:
+    except Exception:
         pass
 
     return sorted(list(discovered_params))
@@ -398,7 +398,7 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
                         )
                         break  # Found vulnerability, no need to test more payloads
 
-            except:
+            except Exception:
                 continue
 
         # If no vulnerability found, add negative result
@@ -440,7 +440,7 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
                         "tool": "corsy",
                     }
                 )
-    except:
+    except Exception:
         pass
 
     # Method 2: Manual CORS testing
@@ -474,7 +474,7 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
                                 }
                             )
                             break
-            except:
+            except Exception:
                 continue
 
         # Add negative result if no issues found
@@ -575,7 +575,7 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
                             )
                             break  # Found vulnerability, test next parameter
 
-                except:
+                except Exception:
                     continue
 
     # Add summary for tested parameters without vulnerabilities

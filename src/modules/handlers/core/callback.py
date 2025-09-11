@@ -240,7 +240,6 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Default validation
             return bool(tool_input)
 
-
     def _handle_text_block(self, text: str) -> None:
         """Handle text blocks (reasoning/thinking) with proper formatting"""
         if text and not text.isspace():

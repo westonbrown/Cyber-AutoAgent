@@ -33,6 +33,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     perl \
     gnupg2 \
     wget \
+    # Perl SSL/TLS modules for Nikto HTTPS support
+    libnet-ssleay-perl \
+    libio-socket-ssl-perl \
+    libcrypt-ssleay-perl \
+    libssl-dev \
     # Network tools
     iputils-ping \
     dnsutils \

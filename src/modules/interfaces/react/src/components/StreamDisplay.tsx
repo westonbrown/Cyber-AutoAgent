@@ -269,82 +269,123 @@ export const EventLine: React.FC<{
           // Show tool header with command(s) if available
           const agentContext = ('swarm_agent' in event && event.swarm_agent) 
             ? ` (${event.swarm_agent})` : '';
-          const command = latestInput?.command || latestInput?.cmd || '';
           
-          // Unified command parser that handles all formats
+          // Get the raw command input
+          let commandInput = latestInput?.command || latestInput?.cmd || '';
+          
+          // Handle both JSON strings AND already-parsed arrays from backend
+          // The backend now parses JSON before sending, so we get:
+          // 1. Already parsed arrays of objects: [{"command": "cmd", "timeout": 300}, ...]
+          // 2. Already parsed arrays of strings: ["cmd1", "cmd2"]
+          // 3. JSON strings (legacy): "[{\"command\": \"cmd\", \"timeout\": 300}, ...]"
+          // 4. Single strings: "single command"
+          
+          // Handle already-parsed arrays (NEW - backend now sends these)
+          if (Array.isArray(commandInput)) {
+            // Extract command strings from array of objects or strings
+            commandInput = commandInput.map((item: any) => {
+              if (typeof item === 'string') return item;
+              if (typeof item === 'object' && item && item.command) return item.command;
+              if (typeof item === 'object' && item && item.cmd) return item.cmd;
+              return String(item); // Convert to string as fallback
+            }).filter(Boolean);
+          }
+          // Handle JSON strings (LEGACY - for backwards compatibility)
+          else if (typeof commandInput === 'string' && commandInput.trim().startsWith('[')) {
+            try {
+              // Parse the JSON string - it has real newlines, not \n escapes
+              const parsed = JSON.parse(commandInput);
+              if (Array.isArray(parsed)) {
+                // Extract command strings from whatever format we get
+                commandInput = parsed.map((item: any) => {
+                  if (typeof item === 'string') return item;
+                  if (typeof item === 'object' && item && item.command) return item.command;
+                  if (typeof item === 'object' && item && item.cmd) return item.cmd;
+                  return '';
+                }).filter(Boolean);
+              }
+            } catch (e) {
+              // Fallback: try to extract commands using regex
+              const matches = commandInput.match(/"command"\s*:\s*"([^"]+)"/g);
+              if (matches) {
+                commandInput = matches.map(m => {
+                  const match = m.match(/"command"\s*:\s*"([^"]+)"/);
+                  return match ? match[1] : '';
+                }).filter(Boolean);
+              } else {
+                // Last resort: try to find any quoted strings
+                const quotedStrings = commandInput.match(/"([^"]+)"/g);
+                if (quotedStrings && quotedStrings.length > 0) {
+                  // Filter out JSON keys and keep only command-like strings
+                  commandInput = quotedStrings
+                    .map(s => s.slice(1, -1))
+                    .filter(s => !s.match(/^(command|timeout|parallel)$/))
+                    .filter(s => s.includes(' ') || s.includes('/'));
+                }
+              }
+            }
+          }
+          
+          // Simplified command parser - commandInput is already pre-processed above
           const parseCommands = (cmd: any): string[] => {
             if (!cmd) return [];
             
-            // Handle string inputs
-            if (typeof cmd === 'string') {
-              const trimmed = cmd.trim();
-              // Check if it's a JSON array or object
-              if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
-                  (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-                try {
-                  // Handle JSON strings with escaped newlines
-                  const normalized = trimmed.replace(/\\n/g, '\n');
-                  const parsed = JSON.parse(normalized);
-                  // Recurse with parsed value
-                  return parseCommands(parsed);
-                } catch {
-                  // Not valid JSON, treat as single command
-                  return [cmd];
-                }
-              }
-              // Single command string
-              return [cmd];
+            // If it's already an array (from pre-processing), ensure all items are strings
+            if (Array.isArray(cmd)) {
+              return cmd.map((item: any) => {
+                // Convert everything to string
+                if (typeof item === 'string') return item;
+                if (typeof item === 'object' && item && item.command) return String(item.command);
+                if (typeof item === 'object' && item && item.cmd) return String(item.cmd);
+                return String(item);
+              }).filter(Boolean);
             }
             
-            // Handle arrays
-            if (Array.isArray(cmd)) {
-              const results: string[] = [];
-              for (const item of cmd) {
-                if (typeof item === 'string') {
-                  results.push(item);
-                } else if (typeof item === 'object' && item && item.command) {
-                  results.push(item.command);
-                } else if (typeof item === 'object' && item && item.cmd) {
-                  results.push(item.cmd);
-                }
-              }
-              return results;
+            // Handle string that wasn't caught by pre-processing
+            if (typeof cmd === 'string') {
+              return [cmd];
             }
             
             // Handle single command object
             if (typeof cmd === 'object' && cmd) {
-              if (cmd.command) return [cmd.command];
-              if (cmd.cmd) return [cmd.cmd];
+              if (cmd.command) return [String(cmd.command)];
+              if (cmd.cmd) return [String(cmd.cmd)];
             }
             
             return [];
           };
           
-          const commands = parseCommands(command);
+          const commands = parseCommands(commandInput);
           
           // Display commands with timeout info if available
+          const hasTimeout = latestInput?.timeout;
+          const hasParallel = latestInput?.parallel;
+          const extraParams = [];
+          if (hasTimeout) extraParams.push(`timeout: ${latestInput.timeout}s`);
+          if (hasParallel) extraParams.push('parallel execution');
+          
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell{agentContext}</Text>
               {commands.length > 0 ? (
-                commands.map((cmd, index) => (
-                  <Box key={index} marginLeft={2}>
-                    <Text dimColor>⎿ {cmd}</Text>
-                  </Box>
-                ))
+                commands.map((cmd, index) => {
+                  // Commands should already be strings from parseCommands
+                  // But add a safety check just in case
+                  const cmdStr = typeof cmd === 'string' ? cmd : String(cmd);
+                  return (
+                    <Box key={index} marginLeft={2}>
+                      <Text dimColor>⎿ {cmdStr}</Text>
+                    </Box>
+                  );
+                })
               ) : (
                 <Box marginLeft={2}>
                   <Text dimColor>⎿ (no command)</Text>
                 </Box>
               )}
-              {latestInput?.timeout && (
+              {extraParams.length > 0 && (
                 <Box marginLeft={2}>
-                  <Text dimColor>└─ timeout: {latestInput.timeout}s</Text>
-                </Box>
-              )}
-              {latestInput?.parallel && (
-                <Box marginLeft={2}>
-                  <Text dimColor>└─ parallel execution</Text>
+                  <Text dimColor>└─ {extraParams.join(' | ')}</Text>
                 </Box>
               )}
             </Box>

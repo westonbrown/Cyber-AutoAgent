@@ -248,7 +248,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Set up stdout and stderr redirection to capture ALL terminal output
     sys.stdout = TeeOutput(sys.stdout, log_file)
     sys.stderr = TeeOutput(sys.stderr, log_file)
-    
+
     # Register cleanup handler to ensure log files are properly closed
     def cleanup_tee_outputs():
         if isinstance(sys.stdout, TeeOutput):
@@ -257,6 +257,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
         if isinstance(sys.stderr, TeeOutput):
             sys.stderr.close()
             sys.stderr = sys.__stderr__
+
     atexit.register(cleanup_tee_outputs)
 
     # Traditional logger setup for structured logging
@@ -291,10 +292,10 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     root_file_handler.setLevel(logging.INFO)
     root_file_handler.setFormatter(formatter)
     root_logger.addHandler(root_file_handler)
-    
+
     # Suppress verbose AWS credential detection messages
-    logging.getLogger('boto3').setLevel(logging.WARNING)
-    logging.getLogger('botocore').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     return cyber_logger

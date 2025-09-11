@@ -268,6 +268,16 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           tool_input: event.tool_input || event.args || {}
         } as DisplayStreamEvent);
         break;
+        
+      case 'tool_input_corrected':
+        // Handle corrected tool input from backend (e.g., parsed shell commands)
+        // This fixes the [object Object] display issue for shell commands
+        results.push({
+          type: 'tool_input_update',
+          tool_id: event.tool_id || event.toolId,
+          tool_input: event.tool_input || {}
+        } as DisplayStreamEvent);
+        break;
 
       case 'tool_invocation_start':
         // Skip this event - the backend emits both tool_start and tool_invocation_start

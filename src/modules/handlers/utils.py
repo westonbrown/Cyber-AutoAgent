@@ -338,7 +338,6 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
     return False, "", {}
 
 
-
 @dataclass
 class CyberEvent:
     """Structured event for terminal output."""

@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
 
+
 # Configure SDK logging for debugging swarm operations
 def configure_sdk_logging(enable_debug: bool = False):
     """Configure logging for Strands SDK components."""
@@ -40,17 +41,18 @@ def configure_sdk_logging(enable_debug: bool = False):
         logging.getLogger("strands.event_loop").setLevel(log_level)
         logging.getLogger("strands_tools").setLevel(log_level)
         logging.getLogger("strands_tools.swarm").setLevel(log_level)
-        
+
         # Also set our own modules to INFO level
         logging.getLogger("modules.handlers").setLevel(log_level)
         logging.getLogger("modules.handlers.react").setLevel(log_level)
-        
+
         logger.info("SDK verbose logging enabled")
 
 
 @dataclass
 class AgentConfig:
     """Configuration object for agent creation."""
+
     target: str
     objective: str
     max_steps: int = 100
@@ -89,20 +91,26 @@ def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
 
         else:
             # FAISS - check if local store exists with actual memory content
-            # Create unified output structure path
-            memory_base_path = os.path.join("outputs", target_name, "memory")
+            # Get output directory from environment or use default
+            output_dir = os.environ.get("CYBER_AGENT_OUTPUT_DIR", "outputs")
+            # Make it absolute to avoid working directory issues
+            if not os.path.isabs(output_dir):
+                output_dir = os.path.abspath(output_dir)
+            
+            memory_base_path = os.path.join(output_dir, target_name, "memory")
 
             # Check if memory directory exists and has FAISS index files
             if os.path.exists(memory_base_path):
                 faiss_file = os.path.join(memory_base_path, "mem0.faiss")
                 pkl_file = os.path.join(memory_base_path, "mem0.pkl")
 
-                # Verify both FAISS index files exist and have non-zero size
+                # Verify both FAISS index files exist with meaningful size
+                # Empty FAISS file is ~100 bytes, meaningful content is >1KB
                 if (
                     os.path.exists(faiss_file)
-                    and os.path.getsize(faiss_file) > 0
+                    and os.path.getsize(faiss_file) > 1000  # Changed from > 0 to > 1000
                     and os.path.exists(pkl_file)
-                    and os.path.getsize(pkl_file) > 0
+                    and os.path.getsize(pkl_file) > 100  # Changed from > 0 to > 100
                 ):
                     return True
 
@@ -119,9 +127,20 @@ def _create_remote_model(
     provider: str = "bedrock",
 ) -> BedrockModel:
     """Create AWS Bedrock model instance using centralized configuration."""
+    from botocore.config import Config as BotocoreConfig
 
     # Get centralized configuration
     config_manager = get_config_manager()
+
+    # Configure boto3 client with robust retry and timeout settings
+    # This prevents ReadTimeoutError during long-running operations
+    boto_config = BotocoreConfig(
+        region_name=region_name,
+        retries={"max_attempts": 3, "mode": "adaptive"},  # Adaptive retry mode with exponential backoff
+        read_timeout=300,  # 5 minutes read timeout (was 60s default)
+        connect_timeout=60,  # 1 minute connection timeout
+        max_pool_connections=50,  # Increase connection pool for parallel operations
+    )
 
     if config_manager.is_thinking_model(model_id):
         # Use thinking model configuration
@@ -132,6 +151,7 @@ def _create_remote_model(
             temperature=config["temperature"],
             max_tokens=config["max_tokens"],
             additional_request_fields=config["additional_request_fields"],
+            boto_client_config=boto_config,
         )
     # Standard model configuration
     config = config_manager.get_standard_model_config(model_id, region_name, provider)
@@ -141,6 +161,7 @@ def _create_remote_model(
         temperature=config["temperature"],
         max_tokens=config["max_tokens"],
         top_p=config["top_p"],
+        boto_client_config=boto_config,
     )
 
 
@@ -231,7 +252,7 @@ def create_agent(
 
     # Enable comprehensive SDK logging for debugging
     configure_sdk_logging(enable_debug=True)
-    
+
     # Use provided config or create default
     if config is None:
         config = AgentConfig(target=target, objective=objective)
@@ -250,13 +271,13 @@ def create_agent(
     # Get configuration from ConfigManager
     config_manager = get_config_manager()
     config_manager.validate_requirements(config.provider)
-    
+
     # Prepare overrides if user specified a model
     overrides = {}
     if config.model_id:
         # Override both LLM and memory LLM with the user-specified model
-        overrides['model_id'] = config.model_id
-    
+        overrides["model_id"] = config.model_id
+
     server_config = config_manager.get_server_config(config.provider, **overrides)
 
     # Get centralized region configuration
@@ -295,6 +316,11 @@ def create_agent(
         print_status("Using fresh memory mode - ignoring any existing memories", "WARNING")
     else:
         has_existing_memories = check_existing_memories(config.target, config.provider)
+        # Log the result for debugging container vs local issues
+        if has_existing_memories:
+            print_status(f"Previous memories detected for {config.target} - will be loaded", "SUCCESS")
+        else:
+            print_status(f"No previous memories found for {config.target} - will create new", "INFO")
 
     # Initialize memory system
     target_name = sanitize_target_name(config.target)
@@ -350,7 +376,8 @@ def create_agent(
 
             if tool_names:
                 print_status(
-                    f"Loaded {len(tool_names)} module-specific tools for '{config.module}': {', '.join(tool_names)}", "SUCCESS"
+                    f"Loaded {len(tool_names)} module-specific tools for '{config.module}': {', '.join(tool_names)}",
+                    "SUCCESS",
                 )
             else:
                 # Fallback to just showing discovered tools
@@ -416,17 +443,23 @@ Leverage these tools directly via shell.
     system_prompt = prompts.get_system_prompt(
         target=config.target,
         objective=config.objective,
+        operation_id=operation_id,
+        current_step=0,  # Starting at step 0
+        max_steps=config.max_steps,
         remaining_steps=config.max_steps,  # The new prompt uses remaining_steps
+        has_existing_memories=has_existing_memories,
+        memory_overview=memory_overview,
     )
 
     # Always use the React bridge handler as it has all the functionality we need
     # It works in both CLI and React modes
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
-    
+
     # Set up output interception to prevent duplicate output
     # This must be done before creating the handler to ensure all stdout is captured
     if os.environ.get("__REACT_INK__"):
         from modules.handlers.output_interceptor import setup_output_interception
+
         setup_output_interception()
 
     callback_handler = ReactBridgeHandler(
@@ -445,9 +478,17 @@ Leverage these tools directly via shell.
             "memory": {
                 "mode": config.memory_mode,
                 "path": config.memory_path or None,
-                "has_existing": has_existing_memories if 'has_existing_memories' in locals() else False,
-                "reused": (has_existing_memories and config.memory_mode != "fresh") if 'has_existing_memories' in locals() else False,
-                "backend": "mem0_cloud" if os.getenv("MEM0_API_KEY") else ("opensearch" if os.getenv("OPENSEARCH_HOST") else "faiss"),
+                "has_existing": has_existing_memories if "has_existing_memories" in locals() else False,
+                "reused": (
+                    (has_existing_memories and config.memory_mode != "fresh")
+                    if "has_existing_memories" in locals()
+                    else False
+                ),
+                "backend": (
+                    "mem0_cloud"
+                    if os.getenv("MEM0_API_KEY")
+                    else ("opensearch" if os.getenv("OPENSEARCH_HOST") else "faiss")
+                ),
                 **(memory_overview if memory_overview and isinstance(memory_overview, dict) else {}),
             },
             "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
@@ -458,12 +499,9 @@ Leverage these tools directly via shell.
     # Create hooks for SDK lifecycle events (tool invocations, etc.)
     # These work alongside the callback handler to capture all events
     from modules.handlers.react.hooks import ReactHooks
-    
+
     # Use the same emitter as the callback handler for consistency
-    react_hooks = ReactHooks(
-        emitter=callback_handler.emitter,
-        operation_id=operation_id
-    )
+    react_hooks = ReactHooks(emitter=callback_handler.emitter, operation_id=operation_id)
     hooks = [react_hooks]
 
     # Create model based on provider type

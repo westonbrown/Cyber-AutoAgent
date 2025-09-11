@@ -178,7 +178,7 @@ def _setup_specialized_tools() -> Dict[str, Any]:
             else:
                 tools_status["failed"].append(tool_name)
                 tools_status["success"] = False
-        except:
+        except Exception:
             tools_status["failed"].append(tool_name)
             tools_status["success"] = False
 
@@ -196,7 +196,7 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
         if result.returncode == 0:
             subdomains = [line.strip() for line in result.stdout.split("\\n") if line.strip()]
             all_subdomains.update(subdomains)
-    except:
+    except Exception:
         pass
 
     # Method 2: assetfinder (if available)
@@ -206,7 +206,7 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
         if result.returncode == 0:
             subdomains = [line.strip() for line in result.stdout.split("\\n") if line.strip()]
             all_subdomains.update(subdomains)
-    except:
+    except Exception:
         pass
 
     # Method 3: waybackurls for historical subdomains (if available)
@@ -223,9 +223,9 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
                         parsed = urlparse(line.strip())
                         if parsed.netloc and target in parsed.netloc:
                             all_subdomains.add(parsed.netloc)
-                    except:
+                    except Exception:
                         continue
-    except:
+    except Exception:
         pass
 
     # Method 4: Certificate transparency fallback using curl
@@ -242,9 +242,9 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
                             name = name.strip()
                             if name.endswith(target) and "*" not in name:
                                 all_subdomains.add(name)
-            except:
+            except Exception:
                 pass
-    except:
+    except Exception:
         pass
 
     return sorted(list(all_subdomains))
@@ -305,7 +305,7 @@ def _analyze_live_hosts(hosts: List[str]) -> Dict[str, Any]:
                                 server_info = line.strip()
                                 live_analysis["technologies"].append(server_info)
                         break
-            except:
+            except Exception:
                 continue
 
     return live_analysis
@@ -349,7 +349,7 @@ def _deep_web_intelligence(live_hosts: List[str]) -> Dict[str, Any]:
                             parsed = urlparse(url)
                             params = parse_qs(parsed.query)
                             web_intel["parameters"].extend(list(params.keys()))
-                        except:
+                        except Exception:
                             pass
 
         os.unlink(hosts_file)
@@ -389,7 +389,7 @@ def _deep_web_intelligence(live_hosts: List[str]) -> Dict[str, Any]:
                             endpoint = host.rstrip("/") + link
                             web_intel["endpoints"].append(endpoint)
 
-            except:
+            except Exception:
                 continue
 
     # Deduplicate results

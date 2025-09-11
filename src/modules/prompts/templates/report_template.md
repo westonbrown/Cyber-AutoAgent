@@ -25,8 +25,17 @@ graph TD
 {findings_table}
 
 ## DETAILED VULNERABILITY ANALYSIS
-{analysis_details}
 
+### Critical Findings
+{critical_findings}
+
+### High Risk Findings  
+{high_findings}
+
+### Additional Findings Summary
+{summary_table}
+
+## EVIDENCE COLLECTION
 {evidence_text}
 
 ## RISK ASSESSMENT

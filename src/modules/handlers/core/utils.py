@@ -250,7 +250,6 @@ def print_status(message, status="INFO"):
     )
 
 
-
 @dataclass
 class CyberEvent:
     """Structured event for terminal output."""

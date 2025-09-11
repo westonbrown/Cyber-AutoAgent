@@ -7,7 +7,6 @@ report generation prompts, and module-specific prompts.
 """
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -104,12 +103,30 @@ def _generate_findings_table(evidence_text: str) -> str:
     return table
 
 
+def _indent_text(text: str, spaces: int) -> str:
+    """
+    Indent text by specified number of spaces.
+
+    Helper function for formatting multi-line evidence in reports.
+    """
+    if not text:
+        return ""
+    indent = " " * spaces
+    return "\n".join(indent + line for line in text.split("\n"))
+
+
 def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 400) -> str:
-    """Format evidence list into structured text for the report."""
+    """
+    Format evidence list into structured text for the report.
+
+    Processes full evidence content including parsed components for detailed reporting.
+    """
     if not evidence:
         return "<no_evidence>No specific evidence collected during assessment.</no_evidence>"
+
     evidence_text = "<evidence_collection>\n"
     severity_groups = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": [], "INFO": []}
+
     for item in evidence[:max_items]:
         if item.get("category") == "finding":
             severity = item.get("severity", "INFO").upper()
@@ -119,23 +136,42 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                 severity_groups["INFO"].append(item)
         else:
             severity_groups["INFO"].append(item)
+
     finding_number = 1
     for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
         if severity_groups[severity]:
             evidence_text += f"\n<{severity.lower()}_findings>\n"
             for item in severity_groups[severity]:
                 category = item.get("category", "unknown").upper()
-                content = item.get("content", "")[:4000]
                 confidence = item.get("confidence", "unknown")
-                if item.get("category") == "finding":
-                    if confidence != "unknown":
-                        evidence_text += f"{finding_number}. [{category} | {severity} | {confidence}] {content}"
-                    else:
-                        evidence_text += f"{finding_number}. [{category} | {severity}] {content}"
+
+                # Format the finding with parsed evidence if available
+                if "parsed" in item and item["parsed"]:
+                    parsed = item["parsed"]
+                    evidence_text += f"{finding_number}. [{category} | {severity} | {confidence}]\n"
+
+                    if parsed.get("vulnerability"):
+                        evidence_text += f"   VULNERABILITY: {parsed['vulnerability']}\n"
+                    if parsed.get("where"):
+                        evidence_text += f"   LOCATION: {parsed['where']}\n"
+                    if parsed.get("impact"):
+                        evidence_text += f"   IMPACT: {parsed['impact']}\n"
+                    if parsed.get("evidence"):
+                        # Include full evidence, not truncated
+                        evidence_text += f"   EVIDENCE:\n{_indent_text(parsed['evidence'], 6)}\n"
+                    if parsed.get("steps"):
+                        evidence_text += f"   REPRODUCTION:\n{_indent_text(parsed['steps'], 6)}\n"
                 else:
-                    evidence_text += f"{finding_number}. [{category}] {content}"
-                if len(item.get("content", "")) > 4000:
-                    evidence_text += "..."
+                    # Use full content without truncation
+                    content = item.get("content", "")
+                    if item.get("category") == "finding":
+                        if confidence != "unknown":
+                            evidence_text += f"{finding_number}. [{category} | {severity} | {confidence}]\n   {content}"
+                        else:
+                            evidence_text += f"{finding_number}. [{category} | {severity}]\n   {content}"
+                    else:
+                        evidence_text += f"{finding_number}. [{category}]\n   {content}"
+
                 evidence_text += "\n"
                 finding_number += 1
             evidence_text += f"</{severity.lower()}_findings>\n"
@@ -158,43 +194,39 @@ def format_tools_summary(tools_used: List[str]) -> str:
 
 
 def _transform_evidence_to_content(
-    evidence: List[Dict[str, Any]], 
-    domain_lens: Dict[str, str],
-    target: str,
-    objective: str
+    evidence: List[Dict[str, Any]], domain_lens: Dict[str, str], target: str, objective: str
 ) -> Dict[str, str]:
     """
     Transform evidence into report content guided by domain lens.
-    
+
     This function bridges the semantic gap between raw evidence and report sections
     by using the domain lens as a transformation guide. It maintains the structure
     and meaning of evidence while preparing content for the report template.
-    
+
     Args:
         evidence: List of evidence dictionaries with severity, category, content
         domain_lens: Module-specific guidance for report sections
         target: Assessment target
         objective: Assessment objective
-        
+
     Returns:
         Dictionary with keys matching report template placeholders
     """
     # Group evidence by severity for structured analysis
     severity_groups = {"critical": [], "high": [], "medium": [], "low": [], "info": []}
-    
+
     for item in evidence:
         severity = item.get("severity", "info").lower()
         if severity in severity_groups:
             severity_groups[severity].append(item)
-    
+
     # Count findings for overview context
     total_findings = len(evidence)
     critical_count = len(severity_groups["critical"])
-    high_count = len(severity_groups["high"])
-    
+
     # Initialize content with domain lens defaults or evidence-based summaries
     content = {}
-    
+
     # Overview: Combine assessment context with domain guidance
     if domain_lens.get("overview"):
         # Use domain lens overview as foundation
@@ -202,36 +234,51 @@ def _transform_evidence_to_content(
     else:
         # Build from evidence if no domain guidance
         content["overview"] = (
-            f"Security assessment of {target} identified {total_findings} findings. "
-            f"Objective: {objective}. "
+            f"Security assessment of {target} identified {total_findings} findings. " f"Objective: {objective}. "
         )
         if critical_count > 0:
-            content["overview"] += f"Critical vulnerabilities require immediate attention. "
-    
+            content["overview"] += "Critical vulnerabilities require immediate attention. "
+
     # Analysis: Structure findings with domain perspective
     if domain_lens.get("analysis"):
         # Prepend domain analysis framework
         content["analysis"] = f"{domain_lens['analysis']}\n\n"
     else:
         content["analysis"] = ""
-    
-    # Add evidence summary to analysis
+
+    # Build concise analysis summary
     for severity in ["critical", "high", "medium"]:
         if severity_groups[severity]:
             content["analysis"] += f"\n### {severity.upper()} Severity Findings\n"
-            # Include top findings per category
-            for finding in severity_groups[severity][:3]:
-                finding_content = finding.get("content", "")[:150]
-                content["analysis"] += f"- {finding_content}\n"
-    
+            # Show top 5 findings per severity with brief summary
+            for finding in severity_groups[severity][:5]:
+                if isinstance(finding, dict) and "parsed" in finding:
+                    parsed = finding["parsed"]
+                    vuln = parsed.get("vulnerability", "")
+                    where = parsed.get("where", "")
+                    impact = parsed.get("impact", "")
+
+                    # Concise one-line summary
+                    if vuln:
+                        summary = f"- **{vuln[:50]}**"
+                        if where:
+                            summary += f" at {where[:30]}"
+                        if impact:
+                            summary += f" - {impact[:100]}"
+                        content["analysis"] += summary + "\n"
+                else:
+                    # Extract key info from content
+                    content_str = finding.get("content", "")[:150]
+                    content["analysis"] += f"- {content_str}\n"
+
     # Recommendations: Use domain lens with evidence context
     # Map domain lens keys to recommendation timeframes
     recommendation_map = {
         "immediate": (severity_groups["critical"] + severity_groups["high"][:2]),
         "short_term": (severity_groups["high"][2:] + severity_groups["medium"]),
-        "long_term": (severity_groups["low"] + severity_groups["info"])
+        "long_term": (severity_groups["low"] + severity_groups["info"]),
     }
-    
+
     for timeframe, relevant_evidence in recommendation_map.items():
         if domain_lens.get(timeframe):
             # Use domain lens recommendation as base
@@ -240,13 +287,12 @@ def _transform_evidence_to_content(
             # Generate basic recommendation from evidence
             severity_label = timeframe.replace("_", " ").title()
             content[timeframe] = (
-                f"{severity_label} actions needed to address "
-                f"{len(relevant_evidence)} identified issues"
+                f"{severity_label} actions needed to address " f"{len(relevant_evidence)} identified issues"
             )
         else:
             # Default when no evidence or guidance
             content[timeframe] = ""
-    
+
     return content
 
 
@@ -267,18 +313,15 @@ def get_report_generation_prompt(
     high_count = evidence_text.count("[HIGH]") + evidence_text.count("| HIGH")
     medium_count = evidence_text.count("[MEDIUM]") + evidence_text.count("| MEDIUM")
     low_count = evidence_text.count("[LOW]") + evidence_text.count("| LOW")
-    
+
     # Extract domain lens to guide content generation
     domain_lens = _extract_domain_lens(module_prompt) if module_prompt else {}
-    
+
     # Transform evidence into structured content using domain lens
     report_content = _transform_evidence_to_content(
-        evidence=evidence,
-        domain_lens=domain_lens,
-        target=target,
-        objective=objective
+        evidence=evidence, domain_lens=domain_lens, target=target, objective=objective
     )
-    
+
     template = load_prompt_template("report_template.md")
     report_body = template.format(
         target=target,
@@ -351,15 +394,12 @@ def get_system_prompt(
                 out = out.replace(f"{{{{ {k} }}}}", str(v))
             return out
 
-        # Build memory context string for the prompt
-        memory_context = ""
-        if has_existing_memories and memory_overview:
-            categories = memory_overview.get("categories", {})
-            total = memory_overview.get("total_count", 0)
-            if total > 0:
-                cat_str = ", ".join([f"{k}:{v}" for k, v in categories.items()])
-                memory_context = f"EXISTING MEMORIES DETECTED: {total} total ({cat_str})"
-        
+        # Build memory context string for the prompt - BINARY decision
+        if has_existing_memories:
+            memory_context = "RETRIEVE EXISTING MEMORIES FIRST"
+        else:
+            memory_context = "CREATE NEW PLAN"
+
         rendered = _subst(
             base,
             {
