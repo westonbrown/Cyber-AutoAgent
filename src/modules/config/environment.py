@@ -66,7 +66,22 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
     # Create necessary directories in proper locations
-    Path("tools").mkdir(exist_ok=True)  # Local tools directory for custom tools
+    try:
+        tools_path = Path("tools")
+        if tools_path.exists():
+            if not tools_path.is_dir():
+                # If 'tools' exists but is not a directory, remove it and create directory
+                print_status("Removing existing 'tools' file to create directory", "WARNING")
+                tools_path.unlink()
+                tools_path.mkdir(exist_ok=True)
+        else:
+            tools_path.mkdir(exist_ok=True)  # Local tools directory for custom tools
+    except PermissionError:
+        # If we can't access or create the tools directory, continue without it
+        print_status("Cannot create/access 'tools' directory - continuing without custom tools", "WARNING")
+    except Exception as e:
+        # Log any other issues but continue
+        print_status(f"Issue with tools directory: {e} - continuing", "WARNING")
 
     # Each operation uses its own isolated memory path: /tmp/mem0_{operation_id}
     if skip_mem0_cleanup:

@@ -308,12 +308,20 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # 6. Completion events
         if complete or kwargs.get("is_final"):
             self._handle_completion()
+        
+        # 7. Check for max tokens error
+        if kwargs.get("error") and "MaxTokensReached" in str(kwargs.get("error")):
+            self._emit_ui_event({
+                "type": "error",
+                "content": "⚠️ Token limit reached - Agent cannot continue due to context size. Consider reducing memory retrieval or breaking into smaller operations.",
+                "metadata": {"error_type": "max_tokens"}
+            })
 
-        # 7. SDK metrics events
+        # 8. SDK metrics events
         if event_loop_metrics:
             self._process_metrics(event_loop_metrics)
 
-        # 8. Try to get metrics from agent if available
+        # 9. Try to get metrics from agent if available
         agent = kwargs.get("agent")
         if agent:
             # Store agent reference for periodic metrics updates

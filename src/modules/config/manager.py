@@ -57,7 +57,7 @@ class LLMConfig(ModelConfig):
     """Configuration for LLM models."""
 
     temperature: float = 0.95
-    max_tokens: int = 4096
+    max_tokens: int = 8096
     top_p: float = 0.95
 
     def __post_init__(self):
@@ -287,10 +287,10 @@ class ConfigManager:
             "model_id": model_id,
             "region_name": region_name,
             "temperature": 1.0,
-            "max_tokens": 4096,
+            "max_tokens": 8096,
             "additional_request_fields": {
                 "anthropic_beta": ["interleaved-thinking-2025-05-14"],
-                "thinking": {"type": "enabled", "budget_tokens": 8000},
+                "thinking": {"type": "enabled", "budget_tokens": 10000},
             },
         }
 
@@ -327,7 +327,7 @@ class ConfigManager:
                     provider=ModelProvider.OLLAMA,
                     model_id="qwen3:1.7b",
                     temperature=0.95,
-                    max_tokens=4096,
+                    max_tokens=8096,
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.OLLAMA,
@@ -361,7 +361,7 @@ class ConfigManager:
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
                     temperature=0.95,
-                    max_tokens=4096,
+                    max_tokens=8096,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -396,7 +396,7 @@ class ConfigManager:
                     provider=ModelProvider.LITELLM,
                     model_id="bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=4096,
+                    max_tokens=8096,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
