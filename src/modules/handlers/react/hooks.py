@@ -179,25 +179,10 @@ class ReactHooks(HookProvider):
             # Emit thinking_end to stop animations
             self.emitter.emit({"type": "thinking_end", "tool_name": tool_name, "tool_id": tool_id})
 
-            # Emit completion events
-            self.emitter.emit(
-                {
-                    "type": "tool_end",
-                    "tool_name": tool_name,
-                    "tool_id": tool_id,
-                    "success": success,
-                    "duration": f"{duration:.2f}s",
-                }
-            )
+            # ReactBridgeHandler handles tool_end emission with full context
+            if tool_id and duration > 0:
+                logger.debug(f"Tool {tool_name} (id={tool_id}) completed in {duration:.2f}s")
 
-            # Don't emit tool_invocation_end here - ReactBridgeHandler handles this
-            # This prevents duplicate tool_invocation_end events in the logs
-            # ReactHooks focuses on tool lifecycle (tool_start/tool_end with timing)
-            # ReactBridgeHandler handles invocation flow (tool_invocation_start/end)
-
-            # Don't emit output here - ReactBridgeHandler will handle tool output
-            # This prevents duplicate output events for the same tool result
-            # The ReactBridgeHandler processes tool results and emits appropriate output
 
         except Exception as e:
             logger.error("Error processing after tool event: %s", e, exc_info=True)

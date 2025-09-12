@@ -18,6 +18,7 @@
 - **python_repl**: Rapid payload/PoC prototyping and validators.
   - Use to iterate quickly; once stable, migrate PoCs into a proper tool via `editor` + `load_tool`.
   - Store important snippets and results in memory as `artifact` with reproduction notes.
+  - **CRITICAL**: No execution timeout - avoid long-running operations (network requests, infinite loops, blocking I/O) that may exceed 600s.
 - **mem0_memory**: Central knowledge base for planning, reflection, evidence, and findings (see `modules/tools/memory.py`).
   - **Step 0-1**: Follow the directive in PLANNING section (either RETRIEVE or CREATE)
   - **MANDATORY Every 20 steps**: Use `get_plan` to retrieve and validate current strategy alignment
@@ -41,7 +42,6 @@
 - **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing.
   - Specify method, URL, headers, body, and auth explicitly. Store request/response pairs to memory.
   - Use for validation: Query CVE databases, check vendor docs, verify if findings are standard practice.
-- **handoff_to_user**: Escalate only for privileged/destructive steps or policy decisions; include options and a recommendation.
 - **stop**: Cleanly terminate when objective achieved or guardrails require halt.
   - Use when: All plan phases complete, objective met with evidence, or 80%+ steps used with diminishing returns.
 

@@ -34,7 +34,6 @@ class ToolEventEmitter:
             "http_request": self._emit_http_request,
             "file_write": self._emit_file_write,
             "editor": self._emit_editor_operation,
-            "handoff_to_user": self._emit_user_handoff,
             "swarm": self._emit_swarm_operation,
             "python_repl": self._emit_python_repl,
             "load_tool": self._emit_load_tool,
@@ -104,17 +103,6 @@ class ToolEventEmitter:
                     metadata["size"] = f"{lines} lines"
 
             self.emit_ui_event({"type": "metadata", "content": metadata})
-
-    def _emit_user_handoff(self, tool_input: Any) -> None:
-        """Emit user handoff event."""
-        if isinstance(tool_input, dict):
-            message = tool_input.get("message", "")
-            breakout = tool_input.get("breakout_of_loop", False)
-        else:
-            message = str(tool_input) if tool_input else ""
-            breakout = False
-
-        self.emit_ui_event({"type": "user_handoff", "message": message, "breakout": breakout})
 
     def _emit_generic_tool_params(self, tool_name: str, tool_input: Any) -> None:  # pylint: disable=unused-argument
         """Emit generic tool parameters for tools without specialized handlers."""

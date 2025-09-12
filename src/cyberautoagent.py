@@ -184,6 +184,8 @@ def signal_handler(signum, frame):  # pylint: disable=unused-argument
         signal_name = "SIGINT (Ctrl+C)"
     elif signum == signal.SIGTSTP:
         signal_name = "SIGTSTP (Ctrl+Z)"
+    elif signum == signal.SIGTERM:
+        signal_name = "SIGTERM (ESC Kill Switch)"
     else:
         signal_name = f"Signal {signum}"
 
@@ -218,9 +220,10 @@ def main():
     # Initialize telemetry variable for use in finally block
     telemetry = None
 
-    # Set up signal handlers for both Ctrl+C and Ctrl+Z
+    # Set up signal handlers for Ctrl+C, Ctrl+Z, and SIGTERM (ESC in UI)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTSTP, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     # Check for service mode before normal argument parsing to avoid validation issues
     is_service_mode = "--service-mode" in sys.argv
@@ -550,6 +553,9 @@ def main():
                     if callback_handler and callback_handler.should_stop():
                         if callback_handler.stop_tool_used:
                             print_status("Stop tool used - terminating", "SUCCESS")
+                            # Generate report immediately when stop tool is used
+                            logger.info("Stop tool detected - generating report before termination")
+                            callback_handler.ensure_report_generated(agent, args.target, args.objective, args.module)
                         elif callback_handler.has_reached_limit():
                             print_status("Step limit reached - terminating", "SUCCESS")
                         break

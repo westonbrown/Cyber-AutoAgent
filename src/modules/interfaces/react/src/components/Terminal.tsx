@@ -35,6 +35,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   animationsEnabled = true
 }) => {
   // Direct event rendering without Static component
+  // No buffer limit - events are already persisted to disk in log files
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
   const [metrics, setMetrics] = useState({
@@ -153,6 +154,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           }
           seenThinkingThisPhaseRef.current = true;
           
+          // Update swarm agent if present in event
+          if (event.swarm_agent && swarmActive) {
+            setCurrentSwarmAgent(event.swarm_agent);
+          }
+          
           // Start reasoning session
           setActiveReasoning(true);
           
@@ -221,6 +227,23 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           toolId = `${name}-${bucket}`;
         }
         
+        // Update swarm agent if present in event
+        if (event.swarm_agent && swarmActive) {
+          setCurrentSwarmAgent(event.swarm_agent);
+        }
+        
+        // Check if this is a handoff_to_agent tool and update swarm agent
+        const toolName = event.toolName || event.tool_name || '';
+        if (toolName === 'handoff_to_agent' && swarmActive) {
+          // Extract target agent from tool_input
+          const toolInput = event.args || event.tool_input || {};
+          // Check both 'agent' and 'agent_name' fields (backend uses agent_name)
+          const targetAgent = toolInput.agent || toolInput.agent_name;
+          if (targetAgent) {
+            setCurrentSwarmAgent(targetAgent);
+          }
+        }
+        
         // Always render the tool header now that we have a deterministic id
         
         // Reset phase flags
@@ -235,7 +258,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         // Always emit the tool event
         results.push({
           type: 'tool_start',
-          tool_name: event.toolName || event.tool_name || '',
+          tool_name: toolName,
           tool_input: event.args || event.tool_input || {},
           toolId: toolId,
           toolName: event.toolName,
@@ -321,6 +344,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       case 'output':
         // Handle tool output or general output with deduplication
         if (event.content) {
+          // Update swarm agent if present in event
+          if (event.swarm_agent && swarmActive) {
+            setCurrentSwarmAgent(event.swarm_agent);
+          }
+          
           // Suppress verbose termination block lines after ESC
           if (suppressTerminationBannerRef.current) {
             const line = String(event.content).trim();
@@ -374,6 +402,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'tool_end':
+        // Update swarm agent if present in event
+        if (event.swarm_agent && swarmActive) {
+          setCurrentSwarmAgent(event.swarm_agent);
+        }
+        
         // Clear any active thinking when tool ends
         if (activeThinking) {
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
@@ -424,18 +457,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'swarm_handoff':
-        // Handle swarm handoff events
-        // If the event has empty data, skip it (will be replaced by tool-based handoff)
-        if (!event.to_agent || !event.message) {
-          break;
-        }
-        
-        // Update current agent
+        // This event type doesn't exist in actual SDK - keeping for backwards compatibility
+        // Actual handoffs use handoff_to_agent tool
         if (event.to_agent) {
           setCurrentSwarmAgent(event.to_agent);
         }
-        
-        // Pass through the handoff event
         results.push(event as DisplayStreamEvent);
         break;
         

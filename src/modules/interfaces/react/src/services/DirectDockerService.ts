@@ -340,7 +340,7 @@ export class DirectDockerService extends EventEmitter {
         AttachStdout: true,
         AttachStderr: true,
         AttachStdin: true,
-        Tty: true,  // Enable TTY for interactive tools like handoff_to_user
+        Tty: true,  // Enable TTY for interactive tools
         OpenStdin: true,
         StdinOnce: false,
         HostConfig: {
@@ -564,8 +564,10 @@ export class DirectDockerService extends EventEmitter {
   private parseEvents(data: string) {
     // Tool discovery is now handled via structured events in parseEvents
     
-    // Filter out binary/control characters that corrupt the output
-    const cleanedData = data.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFD]/g, '');
+    // Filter out binary/control characters but preserve ANSI escape codes
+    // ANSI codes use ESC (0x1B) followed by [ so we need to preserve those
+    // Only remove: NUL, SOH-BS, VT, FF, SO-SUB (except ESC), FS-US, DEL, and other control chars
+    const cleanedData = data.replace(/[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F\x7F-\x9F\uFFFD]/g, '');
     
     this.streamEventBuffer += cleanedData;
 
@@ -759,7 +761,7 @@ export class DirectDockerService extends EventEmitter {
   }
 
   /**
-   * Send user input to the container (for handoff_to_user tool)
+   * Send user input to the container
    */
   async sendUserInput(input: string): Promise<void> {
     if (!this.containerStream || !this.isExecutionActive) {

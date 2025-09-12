@@ -324,7 +324,9 @@ class Mem0ServiceClient:
             target_name = merged_config.get("target_name", "default_target")
 
             # Use unified output structure for memory - per-target, not per-operation
-            memory_base_path = os.path.join("outputs", target_name, "memory")
+            # Get output directory from environment or config
+            output_dir = os.environ.get("CYBER_AGENT_OUTPUT_DIR") or merged_config.get("output_dir", "outputs")
+            memory_base_path = os.path.join(output_dir, target_name, "memory")
             faiss_path = memory_base_path
 
             # Check if store existed before we create directories

@@ -138,13 +138,6 @@ tool: report_generator
 ```
 **Parameters:** `target`, `report_type`/`type`
 
-#### `handoff_to_user` - User Interaction
-```
-tool: handoff_to_user
-└─ message: Please provide additional information about...
-```
-**Parameters:** `message`
-
 #### `file_write` - File Operations
 ```
 tool: file_write
@@ -341,7 +334,7 @@ The ThinkingIndicator component shows different contexts:
 
 ### Core Tools (Hardcoded Formatters)
 - `mem0_memory`, `shell`, `http_request`, `swarm`, `python_repl`
-- `report_generator`, `handoff_to_user`, `file_write`, `editor`
+- `report_generator`, `file_write`, `editor`
 - `think`, `load_tool`, `stop`, `handoff_to_agent`
 
 ### Security Tools (Generic Display)

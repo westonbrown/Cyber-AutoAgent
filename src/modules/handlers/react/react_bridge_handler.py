@@ -77,6 +77,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Tool tracking
         self.last_tool_name = None
         self.last_tool_id = None
+        self.tool_start_times = {}  # Track start times for duration calculation
         self.announced_tools = set()
         self.tool_input_buffer = {}
         self.tools_used = set()
@@ -467,6 +468,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Suppress OutputInterceptor during tool execution
                 set_tool_execution_state(True)
 
+                # Record start time for duration calculation
+                if tool_id:
+                    self.tool_start_times[tool_id] = time.time()
+                
                 # Build tool_start event with all necessary information
                 tool_event = {
                     "type": "tool_start",
@@ -751,6 +756,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Emit tool completion event with swarm context
         success = status != "error"
 
+        # Calculate duration if we have start time
+        duration = None
+        if tool_use_id and tool_use_id in self.tool_start_times:
+            duration = time.time() - self.tool_start_times[tool_use_id]
+            del self.tool_start_times[tool_use_id]  # Clean up
+
         # Emit tool_end with swarm agent context if applicable
         tool_end_event = {
             "type": "tool_end",
@@ -758,6 +769,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             "tool_id": tool_use_id or self.last_tool_id,
             "success": success,
         }
+        if duration is not None:
+            tool_end_event["duration"] = f"{duration:.2f}s"
         if self.in_swarm_operation and self.current_swarm_agent:
             tool_end_event["swarm_agent"] = self.current_swarm_agent
         self._emit_ui_event(tool_end_event)
@@ -888,6 +901,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Clean/parse known tool outputs
         if self.last_tool_name == "shell":
             output_text = self._parse_shell_tool_output(output_text)
+        elif self.last_tool_name == "swarm" and "Status.FAILED" in output_text:
+            # Override SDK's incorrect timeout metrics with cached actual metrics
+            if hasattr(self, 'last_swarm_metrics'):
+                metrics = self.last_swarm_metrics
+                output_text = f"""🎯 **Swarm Execution Timed Out**
+📊 **Status:** Partial Success (Timeout after {metrics['duration']})
+🤖 **Agents Run:** {len(metrics['completed_agents'])}/{metrics['total_agents']} agents
+🔄 **Iterations Completed:** {metrics['total_iterations']}
+📈 **Tokens Used:** {metrics['total_tokens']:,}
+
+**Agent Activity:**"""
+                for agent, activity in metrics.get('agent_activity', {}).items():
+                    if activity['active']:
+                        output_text += f"\n• {agent}: {activity['steps']} steps ✓"
+                    else:
+                        output_text += f"\n• {agent}: Not started"
 
         if not output_text.strip():
             # Only emit generic completion if no prior meaningful output for this invocation
@@ -1790,18 +1819,24 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         "active": agent in completed_agents,
                     }
 
+            # Cache swarm metrics for potential timeout override
+            self.last_swarm_metrics = {
+                "final_agent": final_agent,
+                "execution_count": self.swarm_handoff_count + 1,
+                "handoff_count": self.swarm_handoff_count,
+                "duration": f"{duration:.1f}s",
+                "total_tokens": self.sdk_input_tokens + self.sdk_output_tokens,
+                "completed_agents": completed_agents,
+                "total_agents": len(self.swarm_agents),
+                "agent_activity": agent_activity,
+                "total_iterations": self.swarm_iteration_count,
+                "total_steps": sum(self.swarm_agent_steps.values())
+            }
+            
             self._emit_ui_event(
                 {
                     "type": "swarm_complete",
-                    "final_agent": final_agent,
-                    "execution_count": self.swarm_handoff_count + 1,  # Number of agents that executed
-                    "handoff_count": self.swarm_handoff_count,  # Actual handoffs between agents
-                    "duration": f"{duration:.1f}s",
-                    "total_tokens": self.sdk_input_tokens + self.sdk_output_tokens,
-                    "completed_agents": completed_agents,
-                    "total_agents": len(self.swarm_agents),
-                    "agent_activity": agent_activity,
-                    "total_iterations": self.swarm_iteration_count,  # Total steps taken by all agents
+                    **self.last_swarm_metrics,
                     "total_steps": (
                         sum(self.swarm_agent_steps.values()) if self.swarm_agent_steps else 0
                     ),  # Sum of all agent steps

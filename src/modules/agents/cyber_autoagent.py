@@ -14,7 +14,7 @@ from strands.models import BedrockModel
 from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands_tools import shell, editor, load_tool, stop, http_request, swarm, python_repl, handoff_to_user
+from strands_tools import shell, editor, load_tool, stop, http_request, swarm, python_repl
 
 from modules import prompts
 from modules.config.manager import get_config_manager
@@ -535,7 +535,6 @@ Leverage these tools directly via shell.
         stop,
         http_request,
         python_repl,
-        handoff_to_user,
     ]
 
     # Inject module-specific tools if available
@@ -605,7 +604,6 @@ Leverage these tools directly via shell.
                 "stop",
                 "http_request",
                 "python_repl",
-                "handoff_to_user",
             ],
             "tools.parallel_limit": 8,
             # Memory configuration

@@ -219,7 +219,10 @@ export const EventLine: React.FC<{
       
     case 'tool_start': {
       // Get the latest tool input (may have been updated via tool_input_update)
-      const latestInput = ('tool_id' in event && event.tool_id && toolInputs?.get(event.tool_id)) || event.tool_input || {};
+      // First check if we have updated input in the toolInputs Map, otherwise use the event's tool_input
+      const latestInput = ('tool_id' in event && event.tool_id && toolInputs?.get(event.tool_id)) || 
+                         ('tool_input' in event && event.tool_input) || 
+                         {};
       
       // Always show tool header even if args are not yet available.
       // Individual tool renderers will gracefully handle missing fields.
@@ -285,9 +288,13 @@ export const EventLine: React.FC<{
             // Extract command strings from array of objects or strings
             commandInput = commandInput.map((item: any) => {
               if (typeof item === 'string') return item;
-              if (typeof item === 'object' && item && item.command) return item.command;
+              if (typeof item === 'object' && item && item.command) {
+                // Just extract the command, ignore work_dir for display
+                return item.command;
+              }
               if (typeof item === 'object' && item && item.cmd) return item.cmd;
-              return String(item); // Convert to string as fallback
+              // Don't convert objects to string - return empty string instead
+              return '';
             }).filter(Boolean);
           }
           // Handle JSON strings (LEGACY - for backwards compatibility)
@@ -333,11 +340,15 @@ export const EventLine: React.FC<{
             // If it's already an array (from pre-processing), ensure all items are strings
             if (Array.isArray(cmd)) {
               return cmd.map((item: any) => {
-                // Convert everything to string
+                // Extract command from objects, don't convert objects to string
                 if (typeof item === 'string') return item;
-                if (typeof item === 'object' && item && item.command) return String(item.command);
+                if (typeof item === 'object' && item && item.command) {
+                  // Just extract the command string
+                  return String(item.command);
+                }
                 if (typeof item === 'object' && item && item.cmd) return String(item.cmd);
-                return String(item);
+                // Don't convert unknown objects to string - return empty
+                return '';
               }).filter(Boolean);
             }
             
@@ -517,23 +528,6 @@ export const EventLine: React.FC<{
           );
         }
           
-        case 'handoff_to_user': {
-          // Message will be shown in the special user handoff display
-          const userMessage = latestInput.message || '';
-          
-          // Still show tool call with tree format even though there's a special display
-          return (
-            <Box flexDirection="column">
-              <Text color="green" bold>tool: handoff_to_user</Text>
-              {userMessage && (
-                <Box marginLeft={2}>
-                  <Text dimColor>└─ message: {userMessage.length > 80 ? userMessage.substring(0, 80) + '...' : userMessage}</Text>
-                </Box>
-              )}
-            </Box>
-          );
-        }
-          
         case 'handoff_to_agent': {
           const targetAgent = latestInput.agent || latestInput.target_agent || 'unknown';
           const handoffMsg = latestInput.message || '';
@@ -695,11 +689,19 @@ export const EventLine: React.FC<{
       // Backend now sends clean content without ANSI codes
       const plain = normalized;
 
-      // Skip placeholder tokens
+      // Skip only exact placeholder tokens (not content that starts with them)
       const plainTrimmed = plain.trim();
       if (plainTrimmed === 'output' || plainTrimmed === 'reasoning') {
         return null;
       }
+      
+      // Intelligent detection: If content looks like structured data (JSON array/object),
+      // it's likely tool output that should be displayed even without metadata
+      const looksLikeToolOutput = plainTrimmed.startsWith('[') || plainTrimmed.startsWith('{');
+      
+      // Check if this output is from a tool buffer (either explicit metadata or inferred)
+      const eventMetadata = (event as any).metadata || {};
+      const fromToolBuffer = eventMetadata.fromToolBuffer || looksLikeToolOutput;
 
       // Suppress React application operational logs (timestamps + app status lines)
       const appLogPatterns: RegExp[] = [
@@ -713,11 +715,20 @@ export const EventLine: React.FC<{
       // We'll apply per-line filtering below to catch bundled events too
 
       // Apply per-line filtering to handle events containing multiple lines
+      // But preserve JSON content for tool outputs
       const filteredLinesPre = plain.split('\n').filter(line => {
         const l = line.trim();
         if (l.length === 0) return true; // keep blank spacers
-        // Drop placeholder lines that some backends emit as control tokens
+        // Drop only standalone placeholder lines (not JSON content)
         if (l === 'output' || l === 'reasoning') return false;
+        // For tool outputs (JSON), keep all content
+        if (fromToolBuffer) {
+          // Only drop CYBER_EVENT and timestamp logs for tool outputs
+          if (l.startsWith('__CYBER_EVENT__') || l.endsWith('__CYBER_EVENT_END__')) return false;
+          if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+(INFO|DEBUG|WARNING|ERROR)\s+-\s+/.test(l)) return false;
+          return true;
+        }
+        // For non-tool outputs, apply normal filtering
         // Drop raw CYBER_EVENT payload lines
         if (l.startsWith('__CYBER_EVENT__') || l.endsWith('__CYBER_EVENT_END__')) return false;
         // Drop ISO timestamped app logs: 2025-08-16 16:59:17 - INFO - ...
@@ -799,17 +810,15 @@ export const EventLine: React.FC<{
                       contentStr.includes('KEY FINDINGS') ||
                       contentStr.includes('REMEDIATION ROADMAP');
       
-      // Check if this contains file paths or operation completion info
-      const isOperationSummary = contentStr.includes('Outputs stored in:') ||
+      // Simple and elegant: Only show operation summary for actual completion messages
+      // These messages come from the main agent flow, not from tools
+      const isOperationSummary = !fromToolBuffer && (
+                                 contentStr.includes('Outputs stored in:') ||
                                  contentStr.includes('Memory stored in:') ||
                                  contentStr.includes('Report saved to:') ||
                                  contentStr.includes('Operation ID:') ||
-                                 contentStr.includes('ASSESSMENT COMPLETE') ||
-                                 contentStr.includes('logs stored in:') ||
-                                 contentStr.includes('evidence stored in:');
-      
-      // Use constants for display limits
-      const fromToolBuffer = (event as any).metadata && (event as any).metadata.fromToolBuffer;
+                                 contentStr.includes('REPORT ALSO SAVED TO:') ||
+                                 contentStr.includes('OPERATION LOGS:'));
       
       const collapseThreshold = isReport ? DISPLAY_LIMITS.REPORT_MAX_LINES : 
                                (isOperationSummary ? DISPLAY_LIMITS.OPERATION_SUMMARY_LINES : 
@@ -817,7 +826,7 @@ export const EventLine: React.FC<{
                                  DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES));
       const shouldCollapse = dedupedLines.length > collapseThreshold;
       
-      let displayLines;
+      let displayLines: string[];
       if (shouldCollapse && !isReport && !isOperationSummary && !fromToolBuffer) {
         // For normal output only (not tool output), show first 5 and last 3 lines
         displayLines = [...dedupedLines.slice(0, 5), '...', ...dedupedLines.slice(-3)];
@@ -850,7 +859,7 @@ export const EventLine: React.FC<{
               {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
             </Box>
             <Box marginLeft={2} flexDirection="column">
-              {displayLines.map((line, index) => (
+              {displayLines.map((line: string, index: number) => (
                 <Text key={index}>{line}</Text>
               ))}
             </Box>
@@ -866,7 +875,7 @@ export const EventLine: React.FC<{
               {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
             </Box>
             <Box marginLeft={2} flexDirection="column">
-              {displayLines.map((line, index) => {
+              {displayLines.map((line: string, index: number) => {
                 // Highlight path lines
                 if (line.includes('Outputs stored in:') || line.includes('Memory stored in:') || 
                     line.includes('Host:') || line.includes('Container:')) {
@@ -889,7 +898,7 @@ export const EventLine: React.FC<{
               {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
             </Box>
             <Box marginLeft={2} flexDirection="column">
-              {displayLines.map((line, index) => (
+              {displayLines.map((line: string, index: number) => (
                 <Text key={index} dimColor>{line}</Text>
               ))}
             </Box>
@@ -1304,8 +1313,6 @@ export const computeDisplayGroups = (events: DisplayStreamEvent[]): DisplayGroup
 export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events, animationsEnabled = true }) => {
   // Track active swarm operations
   const [swarmStates, setSwarmStates] = React.useState<Map<string, SwarmState>>(new Map());
-  const [currentActiveAgent, setCurrentActiveAgent] = React.useState<string | null>(null);
-  
   // Process swarm events to build state with a stable ID to avoid remount flicker
   React.useEffect(() => {
     // Derive a stable signature from the latest swarm_start event
