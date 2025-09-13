@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { MemoizedEventLine } from '../../src/components/StreamDisplay.js';
+import { EventLine as MemoizedEventLine } from '../../src/components/StreamDisplay.tsx';
 
 /**
  * EventRenderer - Test wrapper for event display

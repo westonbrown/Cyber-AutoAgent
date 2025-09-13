@@ -156,7 +156,7 @@ export class DirectDockerService extends EventEmitter {
       env.push(
         'PYTHONUNBUFFERED=1', // Disable Python output buffering for real-time streaming
         `BYPASS_TOOL_CONSENT=${config.confirmations ? 'false' : 'true'}`,
-        '__REACT_INK__=true',
+        'CYBER_UI_MODE=react',
         'CYBERAGENT_NO_BANNER=false',
         `DEV=${config.verbose ? 'true' : 'false'}`,
       );

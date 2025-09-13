@@ -16,18 +16,18 @@ Author: Aaron Brown
 License: MIT
 """
 
-import warnings
-import os
-import sys
-import signal
 import argparse
-import time
 import atexit
-import re
 import base64
-import threading
+import os
+import re
+import signal
 import socket
+import sys
+import threading
+import time
 import traceback
+import warnings
 from datetime import datetime
 
 # Third-party imports
@@ -39,22 +39,27 @@ from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
 
 # Local imports
-from modules.agents.cyber_autoagent import create_agent, AgentConfig
-from modules.prompts.factory import get_system_prompt
+from modules.agents.cyber_autoagent import AgentConfig, create_agent
+from modules.config.environment import auto_setup, clean_operation_memory, setup_logging
 from modules.config.manager import get_config_manager
+from modules.handlers.base import StepLimitReached
 from modules.handlers.utils import (
     Colors,
+    get_output_path,
+    get_terminal_width,
     print_banner,
     print_section,
     print_status,
-    get_output_path,
     sanitize_target_name,
-    get_terminal_width,
 )
-from modules.handlers.base import StepLimitReached
-from modules.config.environment import auto_setup, setup_logging, clean_operation_memory
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# Backward-compatibility: provide a placeholder symbol so tests can patch it
+# The real value is set later during runtime execution.
+def get_initial_prompt():  # noqa: D401
+    """Placeholder function; patched in tests and set at runtime."""
+    return ""
 
 
 def detect_deployment_mode():
@@ -347,6 +352,12 @@ def main():
 
     os.environ["DEV"] = "true"
 
+    # Provide a safer default for shell command timeouts unless user overrides
+    if not os.environ.get("SHELL_DEFAULT_TIMEOUT"):
+        # Many external tools (e.g., nmap, curl to slow hosts) may exceed very low defaults
+        # Set a moderate default to reduce spurious timeouts while keeping responsiveness
+        os.environ["SHELL_DEFAULT_TIMEOUT"] = "120"
+
     # Get centralized region configuration if not provided
     if args.region is None:
         config_manager = get_config_manager()
@@ -373,6 +384,9 @@ def main():
     operation_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     local_operation_id = f"OP_{operation_timestamp}"
 
+    # Expose operation ID to tools via environment for consistent evidence tagging
+    os.environ["CYBER_OPERATION_ID"] = local_operation_id
+
     # Initialize logger using unified output system
     log_path = get_output_path(
         sanitize_target_name(args.target),
@@ -383,7 +397,8 @@ def main():
     log_file = os.path.join(log_path, "cyber_operations.log")
 
     # Enable verbose logging in React mode to capture debug information
-    verbose_mode = args.verbose or os.environ.get("__REACT_INK__")
+    ui_mode = os.environ.get("CYBER_UI_MODE", "cli").lower()
+    verbose_mode = bool(args.verbose or ui_mode == "react")
     logger = setup_logging(log_file=log_file, verbose=verbose_mode)
 
     # Setup telemetry (always enabled for token counting) and observability (deployment-aware)
@@ -401,7 +416,7 @@ def main():
         """Ensure log files are properly closed on exit"""
         try:
             # Write session end marker before closing (skip in React mode)
-            if not os.environ.get("__REACT_INK__"):
+            if os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
                 width = get_terminal_width()
                 print("\n" + "=" * width)
                 print(f"CYBER-AUTOAGENT SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -423,8 +438,9 @@ def main():
     atexit.register(cleanup_logging)
 
     # Display banner (unless disabled by environment variable or in React mode)
-    if os.environ.get("CYBERAGENT_NO_BANNER", "").lower() not in ("1", "true", "yes") and not os.environ.get(
-        "__REACT_INK__"
+    if (
+        os.environ.get("CYBERAGENT_NO_BANNER", "").lower() not in ("1", "true", "yes")
+        and os.environ.get("CYBER_UI_MODE", "cli").lower() != "react"
     ):
         print_banner()
 
@@ -509,12 +525,15 @@ def main():
         )
         print_status("Cyber-AutoAgent online and starting", "SUCCESS")
 
-        # Construct the dynamic tools context for the prompt
-        # available_tools is a list of tool names (strings) from auto_setup
-        tools_context = "\n".join([f"- {tool}: Available for security assessment" for tool in available_tools])
-
         # Initial user message to start the agent
         initial_prompt = f"Begin security assessment of {args.target} for: {args.objective}"
+
+        # Backward-compat helper for tests expecting get_initial_prompt to exist
+        def _initial_prompt_accessor():
+            return initial_prompt
+
+        # Expose at module level for tests patching cyberautoagent.get_initial_prompt
+        globals()["get_initial_prompt"] = _initial_prompt_accessor
 
         print(f"\n{Colors.DIM}{'─' * 80}{Colors.RESET}\n")
 
@@ -590,7 +609,7 @@ def main():
                 except StopIteration as error:
                     # Strands agent completed normally - continue if we have steps left
                     logger.debug("Agent iteration completed: %s", str(error))
-                    if callback_handler and callback_handler.current_step >= callback_handler.max_steps:
+                    if callback_handler and callback_handler.current_step > callback_handler.max_steps:
                         print_status("Step limit reached", "SUCCESS")
                         break
                     # Continue to next iteration
@@ -624,7 +643,7 @@ def main():
             raise
 
         # Display operation results (suppressed in React mode where handler emits UI events)
-        if not os.environ.get("__REACT_INK__"):
+        if os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
             print(f"\n{'=' * 80}")
             print(f"{Colors.BOLD}OPERATION SUMMARY{Colors.RESET}")
             print(f"{'=' * 80}")
@@ -637,7 +656,7 @@ def main():
             seconds = int(elapsed_time % 60)
 
             # Display summary in terminal mode only
-            if not os.environ.get("__REACT_INK__"):
+            if os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
                 print(f"{Colors.BOLD}Operation ID:{Colors.RESET}      {local_operation_id}")
 
                 # Determine status based on completion
@@ -663,7 +682,7 @@ def main():
                         print(f"  • {Colors.GREEN}{tool}{Colors.RESET}")
 
             # Display evidence summary in terminal mode
-            if callback_handler and not os.environ.get("__REACT_INK__"):
+            if callback_handler and os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
                 evidence_summary = callback_handler.get_evidence_summary()
                 if isinstance(evidence_summary, list) and evidence_summary:
                     print(f"\n{Colors.BOLD}Key Evidence:{Colors.RESET}")
@@ -694,7 +713,7 @@ def main():
             )
 
             # Display output paths in terminal mode
-            if not os.environ.get("__REACT_INK__"):
+            if os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
                 is_docker = os.path.exists("/.dockerenv") or os.environ.get("CONTAINER") == "docker"
 
                 if is_docker:

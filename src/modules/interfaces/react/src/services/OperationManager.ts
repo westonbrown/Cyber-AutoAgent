@@ -333,6 +333,39 @@ export class OperationManager {
     return Array.from(this.operations.values());
   }
 
+  // Rename an operation ID to align with backend-provided ID
+  // Moves the entry in the map and updates the operation object
+  renameOperationId(oldId: string, newId: string): Operation | null {
+    if (!oldId || !newId || oldId === newId) return this.operations.get(oldId) || this.operations.get(newId) || null;
+    const op = this.operations.get(oldId);
+    if (!op) return this.operations.get(newId) || null;
+    // Avoid clobbering if newId already exists
+    if (this.operations.has(newId)) {
+      // If the target ID exists, prefer its object but carry over important fields from the old op
+      const target = this.operations.get(newId)!;
+      // Merge minimal fields (keep target's identity)
+      target.module = op.module || target.module;
+      target.target = op.target || target.target;
+      target.objective = op.objective || target.objective;
+      target.startTime = op.startTime || target.startTime;
+      target.currentStep = op.currentStep || target.currentStep;
+      target.totalSteps = op.totalSteps || target.totalSteps;
+      target.status = op.status || target.status;
+      target.description = op.description || target.description;
+      target.findings = Math.max(op.findings, target.findings);
+      target.logs = op.logs.length > target.logs.length ? op.logs : target.logs;
+      this.operations.delete(oldId);
+      if (this.currentOperation?.id === oldId) this.currentOperation = target;
+      return target;
+    }
+    // Move op under new key and update id
+    this.operations.delete(oldId);
+    op.id = newId;
+    this.operations.set(newId, op);
+    if (this.currentOperation?.id === oldId) this.currentOperation = op;
+    return op;
+  }
+
   // Get session cost
   getSessionCost(): CostInfo {
     return { ...this.sessionCost };

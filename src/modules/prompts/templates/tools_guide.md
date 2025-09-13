@@ -33,9 +33,11 @@
 - **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API). Each agent should have a clear specialization
   - Define clear objectives and success criteria. Each agent writes outcomes to `mem0_memory`.
   - Task Format (Max 100 words) with STATE: [Current access/findings], GOAL: [ONE specific objective], AVOID: [What not to repeat] and FOCUS: [Specific technique]
-  - Set max_iterations based on team size: 4 agents = 60 iterations (15 per agent), 6 agents = 90 iterations, etc.
-  - Set node_timeout=600 for complex operations (nmap, sqlmap) or node_timeout=300 for faster operations
+  - Set max_iterations based on team size: ~15 per agent (e.g., 4 agents = 60)
+  - Use node_timeout≈600s for heavy tools (nmap, sqlmap) and execution_timeout≈900–1200s for the swarm
+  - Bounds (hard caps): agents ≤ 6, max_iterations ≤ 200, max_handoffs ≤ 200, execution_timeout ≤ 3000s
   - Include explicit handoff triggers in agent prompts: "After finding 3-5 novel findings, handoff to next agent"
+  - Completion semantics: The swarm ends when the current agent completes without handing off. There is no `complete_swarm_task`; to continue collaboration, explicitly call `handoff_to_agent(agent_name, message, context)`
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
   - Only for Python tool files under `tools/`; do not use for reports or general notes.
 - **load_tool**: Dynamically register editor-created tools for immediate use.

@@ -10,21 +10,23 @@ Evaluates agent performance on cybersecurity assessment tasks.
 import logging
 import os
 import time
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
-from langchain_aws import ChatBedrock, BedrockEmbeddings
+from langchain_aws import BedrockEmbeddings, ChatBedrock
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langfuse import Langfuse
-from ragas.dataset_schema import SingleTurnSample, MultiTurnSample
+from ragas.dataset_schema import MultiTurnSample, SingleTurnSample
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import (
-    AspectCritic,
     AgentGoalAccuracyWithoutReference,
+    AspectCritic,
     TopicAdherenceScore,
 )
 from ragas.run_config import RunConfig
+
 from modules.config.manager import get_config_manager
+
 from .trace_parser import TraceParser
 
 logger = logging.getLogger(__name__)

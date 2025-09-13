@@ -1,11 +1,11 @@
 """Event emitters for different transport mechanisms."""
 
+import hashlib
 import json
 import os
-from typing import Dict, Any, Protocol, Optional
-from datetime import datetime
 from collections import deque
-import hashlib
+from datetime import datetime
+from typing import Any, Dict, Optional, Protocol
 
 
 class EventEmitter(Protocol):
@@ -82,11 +82,23 @@ class StdoutEventEmitter:
             "metrics_update",
         ):
             if signature in self._recent_signatures:
-                return  # Silent skip - prevents duplicate emission
+                return  # Skip duplicate emission
 
         # Emit the event
         # Include newline to ensure TeeOutput writes to log file immediately
         try:
+            # Ensure output content is stringified to avoid "[object Object]" in UI
+            if event.get("type") == "output":
+                content = event.get("content")
+                if not isinstance(content, str):
+                    try:
+                        if isinstance(content, (dict, list)):
+                            event["content"] = json.dumps(content, ensure_ascii=False)
+                        else:
+                            event["content"] = str(content)
+                    except Exception:
+                        event["content"] = str(content)
+
             # Use ensure_ascii=True to properly escape control characters
             # This ensures that newlines in shell commands are properly escaped
             json_str = json.dumps(event, ensure_ascii=True)

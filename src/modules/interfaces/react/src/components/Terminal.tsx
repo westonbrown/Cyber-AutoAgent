@@ -12,6 +12,7 @@ import { Box, Text } from 'ink';
 import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
+import { loggingService } from '../services/LoggingService.js';
 import { useEventBatcher } from '../utils/useBatchedState.js';
 import { normalizeEvent } from '../services/events/normalize.js';
 
@@ -107,9 +108,19 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   // Event processing function - replaces EventAggregator.processEvent
   const processEvent = (event: any): DisplayStreamEvent[] => {
     const results: DisplayStreamEvent[] = [];
+
+    // Test markers for integration tests
+    const testMode = process.env.CYBER_TEST_MODE === 'true';
+    const emitTestMarker = (summary: string) => {
+      if (testMode) {
+        try { loggingService.info(`[TEST_EVENT] ${summary}`); } catch {}
+        try { console.log(`[TEST_EVENT] ${summary}`); } catch {}
+      }
+    };
     
     switch (event.type) {
       case 'step_header':
+        emitTestMarker(`step_header step=${event.step} max=${event.maxSteps}`);
         // End any active reasoning session
         setActiveReasoning(false);
         // Reset output suppression for next operation phase
@@ -140,6 +151,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'reasoning':
+        emitTestMarker('reasoning');
         // Python backend sends complete reasoning blocks
         if (event.content && event.content.trim()) {
           // Clear any active thinking animations when reasoning is shown
@@ -218,6 +230,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'tool_start':
+        emitTestMarker(`tool_start tool=${event.toolName || event.tool_name}`);
         // Get the tool ID from the event (support both camel/snake)
         let toolId: string | undefined = event.toolId || event.tool_id;
         // Some tools (e.g., orchestrators) don't emit IDs; use a stable fallback so headers render.
@@ -342,6 +355,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'output':
+        emitTestMarker('output');
         // Handle tool output or general output with deduplication
         if (event.content) {
           // Update swarm agent if present in event
@@ -509,6 +523,14 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           memoryOps: event.metrics.memoryOps !== undefined ? event.metrics.memoryOps : metrics.memoryOps,
           evidence: event.metrics.evidence !== undefined ? event.metrics.evidence : metrics.evidence
         };
+        // Emit a test marker for metrics updates to aid PTY-based assertions
+        try {
+          if (process.env.CYBER_TEST_MODE === 'true') {
+            const marker = `[TEST_EVENT] metrics_update tokens=${newMetrics.tokens ?? ''} cost=${newMetrics.cost ?? ''} duration=${newMetrics.duration} memoryOps=${newMetrics.memoryOps} evidence=${newMetrics.evidence}`;
+            loggingService.info(marker);
+            console.log(marker);
+          }
+        } catch {}
         setMetrics(newMetrics);
         if (onMetricsUpdate) {
           const now = Date.now();

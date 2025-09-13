@@ -1,10 +1,9 @@
-const React = require('react');
+import React from 'react';
 
-// Generic mock for all ink-* components that returns proper React elements
+// Generic mock for all ink-* components; provide ESM default export
 const MockComponent = ({ children, ...props }) => {
   const content = children || props.text || props.placeholder || '';
   return React.createElement('MockComponent', props, content);
 };
 
-module.exports = MockComponent;
-module.exports.default = MockComponent;
+export default MockComponent;

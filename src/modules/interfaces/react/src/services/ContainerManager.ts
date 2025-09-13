@@ -405,7 +405,9 @@ export class ContainerManager extends EventEmitter {
         const serviceList = config.services.join(' ');
         const stopCommand = `docker-compose -f "${composePath}" stop ${serviceList}`;
         this.logger.info(`Stopping services: ${stopCommand}`);
-        await execAsync(stopCommand);
+        await execAsync(stopCommand, {
+          maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+        });
       } else {
         // Fallback: stop containers individually
         for (const service of config.services) {
@@ -478,18 +480,21 @@ export class ContainerManager extends EventEmitter {
         // based on user config, not hardcoded here
         // Use --no-recreate to avoid rebuilding/recreating existing containers
         upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --no-deps ${serviceList}`;
-        buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
+        buildCommand = `docker-compose -f "${composePath}" build cyber-autoagent`;
       } else {
         // Full stack mode: start all services with full dependency management
         // Use --no-recreate to prefer container reuse; still remove orphans to keep project clean
         upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --remove-orphans ${serviceList}`;
-        buildCommand = `docker-compose -f "${composePath}" build ${serviceList}`;
+        // Only build cyber-autoagent - other services are pulled from Docker Hub
+        buildCommand = `docker-compose -f "${composePath}" build cyber-autoagent`;
       }
       
       try {
         // Start containers with docker-compose (only specified services)
         this.logger.info(`Running: ${upCommand}`);
-        const { stdout, stderr } = await execAsync(upCommand);
+        const { stdout, stderr } = await execAsync(upCommand, {
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer for docker-compose output
+        });
         
         if (stderr && !stderr.includes('Creating') && !stderr.includes('Starting') && !stderr.includes('Building')) {
           this.logger.warn(`Docker compose stderr output: ${stderr}`);
@@ -503,8 +508,12 @@ export class ContainerManager extends EventEmitter {
           
           try {
             this.logger.info(`Running build: ${buildCommand}`);
-            await execAsync(buildCommand);
-            const { stdout, stderr } = await execAsync(upCommand);
+            await execAsync(buildCommand, {
+              maxBuffer: 50 * 1024 * 1024 // 50MB buffer for build output
+            });
+            const { stdout, stderr } = await execAsync(upCommand, {
+          maxBuffer: 50 * 1024 * 1024 // 50MB buffer for docker-compose output
+        });
             this.logger.debug(`Docker compose output after build - stdout: ${stdout}, stderr: ${stderr}`);
           } catch (buildError) {
             this.logger.error('Failed to build and start containers', buildError as Error);

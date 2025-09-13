@@ -19,6 +19,8 @@ import { ExecutionService } from '../services/ExecutionService.js';
 export interface ApplicationState {
   // Core application state
   isInitialized: boolean;
+  // Transient UI notices
+  exitNotice?: boolean;
   isConfigLoaded: boolean;
   sessionId: string;
   sessionErrorCount: number;
@@ -222,6 +224,7 @@ function getInitialState(): ApplicationState {
     staticKey: 0,
     staticNeedsRefresh: false,
     hasCompletedOperation: false,
+    exitNotice: false,
     activeOperation: null,
     userHandoffActive: false,
     contextUsage: 0,

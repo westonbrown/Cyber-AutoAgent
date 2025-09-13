@@ -12,14 +12,13 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from strands.handlers import PrintingCallbackHandler
 
+from ..handlers.events import get_emitter
 from .base import HandlerState, StepLimitReached
 from .utils import emit_event
-from ..handlers.events import get_emitter
-
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 

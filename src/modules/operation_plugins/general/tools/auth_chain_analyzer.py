@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Authentication Chain Analyzer - Intelligent analysis of complex authentication flows"""
 
-from strands import tool
-import subprocess
 import json
 import re
+import subprocess
+from typing import Any, Dict, List
 from urllib.parse import urlparse
-from typing import Dict, List, Any
+
+from strands import tool
 
 
 @tool
@@ -263,7 +264,6 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
 def _classify_auth_endpoint(path: str, headers: str) -> str:
     """Classify authentication endpoint type"""
     path_lower = path.lower()
-    headers_lower = headers.lower()
 
     # JWT-related
     if any(keyword in path_lower for keyword in ["jwt", "jwks", "token"]):

@@ -4,7 +4,7 @@
  * Provides intelligent autocomplete and suggestions based on current flow state
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import { themeManager } from '../themes/theme-manager.js';
 import { useModule } from '../contexts/ModuleContext.js';
@@ -42,6 +42,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   recentTargets = []
 }) => {
   const theme = themeManager.getCurrentTheme();
+  const { exit } = useApp();
   const { currentModule, availableModules: contextModules } = useModule();
   
   // Use modules from context if not provided as prop
@@ -53,6 +54,11 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const previousStep = useRef(flowState.step);
+
+  // Command history
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const draftBeforeHistoryRef = useRef<string>('');
   
   // Track a key to force TextInput re-mount when needed
   const [inputKey, setInputKey] = useState(0);
@@ -240,6 +246,12 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   useInput((input, key) => {
     if (disabled) return;
 
+    // Let App-level global ESC handler manage exit and logging for consistent placement in UI
+    if (!disabled && !showSuggestions && (key.escape || input === '\u001b' || input === '\x1b')) {
+      return;
+    }
+
+    // Suggestion navigation takes precedence
     if (showSuggestions && filteredSuggestions.length > 0) {
       if (key.upArrow) {
         setSelectedSuggestionIndex(prev => 
@@ -262,13 +274,48 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         }
       }
       if (key.escape) {
-        // Only handle ESC for hiding suggestions if we're not disabled
-        // When disabled (e.g., during assessment), let ESC bubble up to stop the operation
         if (!disabled && showSuggestions) {
           setShowSuggestions(false);
           return;
         }
-        // Don't consume the ESC key if disabled - let it bubble up for kill switch
+      }
+    } else {
+      // Command history navigation when suggestions not visible
+      if (key.upArrow) {
+        setHistoryIndex(prev => {
+          const hasHistory = history.length > 0;
+          if (!hasHistory) return prev;
+          let nextIndex: number;
+          if (prev === null) {
+            draftBeforeHistoryRef.current = value;
+            nextIndex = history.length - 1;
+          } else {
+            nextIndex = Math.max(0, prev - 1);
+          }
+          setValue(history[nextIndex]);
+          return nextIndex;
+        });
+        return;
+      }
+      if (key.downArrow) {
+        setHistoryIndex(prev => {
+          if (prev === null) return prev;
+          const next = prev + 1;
+          if (next < history.length) {
+            setValue(history[next]);
+            return next;
+          }
+          // Restore draft after exiting history browsing
+          setValue(draftBeforeHistoryRef.current);
+          return null;
+        });
+        return;
+      }
+
+      // Insert newline with Ctrl+O (open line)
+      if (key.ctrl && (input?.toLowerCase?.() === 'o')) {
+        setValue(prev => prev + '\n');
+        return;
       }
     }
 
@@ -278,6 +325,13 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   const handleSubmit = (submittedValue: string) => {
     // Allow submission during user handoff even if otherwise disabled
     if (!disabled || userHandoffActive) {
+      const trimmed = submittedValue.trim();
+      if (trimmed.length > 0) {
+        setHistory(prev => (prev.length === 0 || prev[prev.length - 1] !== submittedValue) ? [...prev, submittedValue] : prev);
+      }
+      setHistoryIndex(null);
+      draftBeforeHistoryRef.current = '';
+
       // Clear state and force re-mount of TextInput to ensure clean state
       setValue('');
       setShowSuggestions(false);
@@ -290,8 +344,14 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
   };
 
-  const handleChange = (newValue: string) => {
-    setValue(newValue);
+  const handleChange = (newLineValue: string) => {
+    // Replace only the last line with the new input value
+    setValue(prev => {
+      const parts = prev.split('\n');
+      if (parts.length === 0) return newLineValue;
+      parts[parts.length - 1] = newLineValue;
+      return parts.join('\n');
+    });
   };
 
   return (
@@ -302,20 +362,33 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         borderColor={disabled ? theme.muted : theme.accent} 
         paddingX={1}
         width="100%"
+        flexDirection="row"
       >
         <Text color={disabled ? theme.muted : theme.accent}>
           {getPromptIndicator()} 
         </Text>
-        <Box marginLeft={1} flexGrow={1}>
-          <TextInput
-            key={inputKey}
-            value={value}
-            onChange={handleChange}
-            onSubmit={handleSubmit}
-            placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
-            showCursor={!disabled || userHandoffActive}
-            focus={!disabled || userHandoffActive}
-          />
+        <Box marginLeft={1} flexGrow={1} flexDirection="column">
+          {(() => {
+            const parts = value.split('\n');
+            const head = parts.slice(0, -1);
+            const tail = parts[parts.length - 1] ?? '';
+            return (
+              <>
+                {head.map((line, idx) => (
+                  <Text key={`ml-${idx}`} color={theme.foreground}>{line || ' '}</Text>
+                ))}
+                <TextInput
+                  key={inputKey}
+                  value={tail}
+                  onChange={handleChange}
+                  onSubmit={handleSubmit}
+                  placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
+                  showCursor={!disabled || userHandoffActive}
+                  focus={!disabled || userHandoffActive}
+                />
+              </>
+            );
+          })()}
         </Box>
       </Box>
 
@@ -337,21 +410,26 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       )}
 
       {/* Helpful hints - more subtle */}
-      {!showSuggestions && value.length === 0 && !userHandoffActive && (
-        <Box marginTop={1} marginBottom={2}>
-          <Text color={theme.muted}>
-            {(() => {
-              if (currentModule && flowState.step === 'target') {
-                return `Set your target: target https://your-authorized-target.com`;
-              } else if (flowState.step === 'objective') {
-                return `Type 'execute' to start with default objective, or 'execute <your objective>' for custom`;
-              } else if (flowState.step === 'ready') {
-                return `Press Enter or type "execute" to start assessment`;
-              } else {
-                return `Quick start: target <url> or use /help for all commands`;
-              }
-            })()}
-          </Text>
+      {!showSuggestions && !userHandoffActive && (
+        <Box marginTop={1} marginBottom={2} flexDirection="column">
+          {value.includes('\n') ? (
+            <Text color={theme.muted}>Hint: Press Ctrl+O to insert a new line. Press Enter to submit.</Text>
+          ) : (
+            <Text color={theme.muted}>
+              {(() => {
+                if (value.length === 0 && currentModule && flowState.step === 'target') {
+                  return `Set your target: target https://your-authorized-target.com`;
+                } else if (value.length === 0 && flowState.step === 'objective') {
+                  return `Type 'execute' to start with default objective, or 'execute <your objective>' for custom`;
+                } else if (value.length === 0 && flowState.step === 'ready') {
+                  return `Press Enter or type \"execute\" to start assessment`;
+                } else if (value.length === 0) {
+                  return `Quick start: target <url> or use /help for all commands`;
+                }
+                return '';
+              })()}
+            </Text>
+          )}
         </Box>
       )}
     </Box>

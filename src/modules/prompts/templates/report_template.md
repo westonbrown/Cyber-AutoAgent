@@ -1,25 +1,37 @@
 # SECURITY ASSESSMENT REPORT
 
+## TABLE OF CONTENTS
+- [Executive Summary](#executive-summary)
+- [Module Report Context](#module-report-context)
+- [Operation Plan & Execution](#operation-plan--execution)
+- [Visual Summary](#visual-summary)
+- [Key Findings](#key-findings)
+- [Detailed Vulnerability Analysis](#detailed-vulnerability-analysis)
+- [Evidence Collection](#evidence-collection)
+- [Risk Assessment](#risk-assessment)
+- [Remediation Roadmap](#remediation-roadmap)
+- [Attack Path Analysis](#attack-path-analysis)
+- [MITRE ATT&CK Mapping](#mitre-attck-mapping)
+- [Technical Appendix](#technical-appendix)
+- [Assessment Methodology](#assessment-methodology)
+
+## REPORTING NOTES
+- Use only evidence-backed claims; avoid speculation.
+- For financial-impact statements, label as "Potential impact (estimated)" and include a brief assumptions footnote.
+- When remediation is unknown, state: "TBD — requires protocol review".
+- Normalize severity to CRITICAL/HIGH/MEDIUM/LOW and confidence to one decimal percent (e.g., 95.0%).
+
 ## EXECUTIVE SUMMARY
 {overview}
 
 ## MODULE REPORT CONTEXT
 {module_report}
+
+## OPERATION PLAN & EXECUTION
+{operation_plan}
  
 ## VISUAL SUMMARY
-```mermaid
-graph TD
-    A[Target: {target}] --> B[Attack Surface Analysis]
-    B --> C[{critical_count} Critical Vulnerabilities]
-    B --> D[{high_count} High Risk Issues]
-    B --> E[{medium_count} Medium Concerns]
-    B --> F[{low_count} Low Priority Items]
-    
-    C --> G[Immediate Action Required]
-    D --> G
-    E --> H[Scheduled Remediation]
-    F --> H
-```
+{visual_summary}
 
 ## KEY FINDINGS
 {findings_table}
@@ -49,55 +61,36 @@ pie title Vulnerability Distribution by Severity
 
 ## REMEDIATION ROADMAP
 
-### Immediate Actions (0-48 hours)
+### Immediate Actions
 {immediate_recommendations}
 
-### Short-term Improvements (1-4 weeks)
+### Short-term Improvements
 {short_term_recommendations}
 
-### Strategic Security Enhancements (1-3 months)
+### Strategic Security Enhancements
 {long_term_recommendations}
 
 ## ATTACK PATH ANALYSIS
-### Primary Attack Vectors
-Detailed mapping of how an attacker could chain discovered vulnerabilities:
+{attack_path_analysis}
 
-```mermaid
-graph LR
-    A[External Attacker] --> B[Initial Access]
-    B --> C[Privilege Escalation]
-    C --> D[Lateral Movement]
-    D --> E[Data Exfiltration]
-    
-    B --> F[SQL Injection]
-    F --> G[Database Access]
-    
-    B --> H[XSS Vulnerability]
-    H --> I[Session Hijacking]
-    
-    G --> J[Sensitive Data]
-    I --> J
-```
-
-### Kill Chain Mapping
-Map findings to MITRE ATT&CK framework stages and provide detection opportunities.
+## MITRE ATT&CK MAPPING
+{mitre_attck_mapping}
 
 ## TECHNICAL APPENDIX
-### Proof of Concept Code
-Include sanitized PoC code demonstrating key vulnerabilities (without weaponization).
-
-### Configuration Examples
-Provide secure configuration templates for identified misconfigurations.
-
-### Detection Rules
-Supply SIEM rules, IDS signatures, or monitoring queries to detect exploitation attempts.
+{technical_appendix}
 
 ## ASSESSMENT METHODOLOGY
 Tools Utilized:
 {tools_summary}
 
+Execution Metrics:
+- Input Tokens: {input_tokens}
+- Output Tokens: {output_tokens}
+- Total Tokens: {total_tokens}
+- Total Duration: {total_duration}
+- Estimated Cost: {estimated_cost}
+
 Total Steps Executed: {steps_executed}
-Evidence Collection: Automated via Cyber-AutoAgent
 Analysis Framework: {analysis_framework}
 
 ----

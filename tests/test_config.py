@@ -4,29 +4,30 @@ Unit tests for the centralized model configuration system.
 """
 
 import os
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 # Import the modules we're testing
 from modules.config.manager import (
-    ModelProvider,
-    ModelConfig,
-    LLMConfig,
+    ConfigManager,
     EmbeddingConfig,
-    MemoryConfig,
-    MemoryLLMConfig,
-    MemoryEmbeddingConfig,
-    MemoryVectorStoreConfig,
     EvaluationConfig,
-    SwarmConfig,
+    LLMConfig,
+    MemoryConfig,
+    MemoryEmbeddingConfig,
+    MemoryLLMConfig,
+    MemoryVectorStoreConfig,
+    ModelConfig,
+    ModelProvider,
     OutputConfig,
     ServerConfig,
-    ConfigManager,
+    SwarmConfig,
     get_config_manager,
-    get_model_config,
-    get_default_model_configs,
-    get_ollama_host,
     get_default_base_dir,
+    get_default_model_configs,
+    get_model_config,
+    get_ollama_host,
 )
 
 
@@ -351,7 +352,7 @@ class TestConfigManager:
         assert "claude" in llm_config["config"]["model"]
         assert llm_config["config"]["temperature"] == 0.1
         assert llm_config["config"]["max_tokens"] == 2000
-        assert llm_config["config"]["aws_region"] == "us-east-1"
+        # aws_region is no longer passed to LLM config; Mem0 infers region from environment
 
     @patch.dict(os.environ, {"OPENSEARCH_HOST": "test-opensearch.com"})
     def test_get_mem0_service_config_with_opensearch(self):
@@ -748,7 +749,7 @@ class TestEnvironmentIntegration:
 
             # Test mem0 service config uses centralized region
             mem0_config = config_manager.get_mem0_service_config("bedrock")
-            assert mem0_config["llm"]["config"]["aws_region"] == "eu-west-1"
+            # LLM no longer includes aws_region; region is inferred from environment
             assert mem0_config["embedder"]["config"]["aws_region"] == "eu-west-1"
 
         # Test without environment variable (should use default)
@@ -826,10 +827,10 @@ class TestEnvironmentIntegration:
         assert "aws_region" not in local_config["embedder"]["config"]
         assert "aws_region" not in local_config["llm"]["config"]
 
-        # Test remote config has aws_region
+        # Test remote config region handling
         remote_config = config_manager.get_mem0_service_config("bedrock")
         assert "aws_region" in remote_config["embedder"]["config"]
-        assert "aws_region" in remote_config["llm"]["config"]
+        assert "aws_region" not in remote_config["llm"]["config"]
         assert "ollama_base_url" not in remote_config["embedder"]["config"]
         assert "ollama_base_url" not in remote_config["llm"]["config"]
 

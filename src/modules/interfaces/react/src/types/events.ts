@@ -418,6 +418,22 @@ export interface ReportContentEvent {
 }
 
 /**
+ * Termination Reason Event Interface
+ * 
+ * Event emitted when an operation terminates, indicating the reason
+ * (e.g., step limit reached, stop tool invoked)
+ */
+export interface TerminationReasonEvent {
+  type: 'termination_reason';
+  reason: 'step_limit' | 'stop_tool';
+  message: string;
+  current_step?: number;
+  max_steps?: number;
+  id?: string;
+  timestamp?: string;
+}
+
+/**
  * StreamEvent Union Type - Discriminated Union of All Event Types
  * 
  * Comprehensive union type providing type-safe access to all possible
@@ -442,7 +458,11 @@ export type StreamEvent =
   | ConnectionEvent
   | AgentEvent
   | PythonSystemEvent
-  | ReportContentEvent;
+  | ReportContentEvent
+  | TerminationReasonEvent
+  | { type: 'error'; error?: string; message?: string; [key: string]: any }
+  | { type: 'output'; content?: string; [key: string]: any }
+  | { type: 'metadata'; [key: string]: any };
 
 /**
  * Event Handler Function Type

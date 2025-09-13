@@ -6,7 +6,7 @@
  * completion and main application screen.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Text, Static, useInput, useApp } from 'ink';
 import { createLogger } from '../utils/logger.js';
 import { themeManager } from '../themes/theme-manager.js';
@@ -50,8 +50,8 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
   const [totalSteps, setTotalSteps] = useState(5);
   const [startTime] = useState<Date>(new Date());
   const [elapsed, setElapsed] = useState<string>('0:00');
-  const [showCursor, setShowCursor] = useState(true);
   const autoContinuedRef = React.useRef(false);
+  const isStableProfile = process.env.CYBER_PREPULL === 'true' || process.env.CYBER_SETUP_PROFILE === 'stable';
 
   // Determine steps based on deployment mode
   useEffect(() => {
@@ -105,16 +105,6 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
     }
   }, [setupLogs, deploymentMode]);
 
-  // Animate cursor for active setup
-  useEffect(() => {
-    if (isComplete || hasFailed) return;
-
-    const interval = setInterval(() => {
-      setShowCursor(prev => !prev);
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [isComplete, hasFailed]);
 
   // Auto-continue to configuration after successful setup
   useEffect(() => {
@@ -139,32 +129,53 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
 
   // Header is rendered by main App.tsx - no duplicate needed
 
+  // Subtle progress subtext derived from latest setup log
+  const progressSubtext = useMemo(() => {
+    if (isComplete || hasFailed) return '';
+    if (!setupLogs || setupLogs.length === 0) return '';
+    for (let i = setupLogs.length - 1; i >= 0; i--) {
+      const msg = (setupLogs[i]?.message || '').trim();
+      if (!msg) continue;
+      // Skip overly generic messages
+      if (/^setup (failed|complete)/i.test(msg)) continue;
+      let s = msg.replace(/\s+/g, ' ').trim();
+      if (s.length > 120) s = s.slice(0, 120) + '…';
+      return s;
+    }
+    return '';
+  }, [setupLogs, isComplete, hasFailed]);
+
   const renderProgressSection = () => (
     <Box flexDirection="column" marginBottom={1}>
       {/* Compact header line */}
       <Box justifyContent="center" marginBottom={1}>
-        {/* Loading animation belongs with the headline when in progress */}
-        {!isComplete && !hasFailed && (
-          <>
-            <StatusIcons.Loading />
-            <Text> </Text>
-          </>
-        )}
         <Text color={theme.muted}>
           Setting up <Text color={theme.primary} bold>{getModeDisplayName()}</Text>
+          {'  '}•{'  '}Profile <Text color={isStableProfile ? theme.warning : theme.success}>
+            {isStableProfile ? 'Stability' : 'Speed'}
+          </Text>
           {'  '}•{'  '}Elapsed <Text color={theme.accent}>{elapsed}</Text>
           {'  '}•{'  '}Step {currentStep}/{totalSteps}
         </Text>
       </Box>
 
       {/* Progress Bar */}
-      <Box justifyContent="center" marginBottom={1}>
+      <Box justifyContent="center" marginBottom={0}>
         <ProgressIndicator 
           current={currentStep} 
           total={totalSteps} 
           width={50}
           showPercentage={true}
         />
+      </Box>
+
+      {/* Subtle progress subtext */}
+      <Box justifyContent="center" marginBottom={1}>
+        {!isComplete && !hasFailed && progressSubtext && (
+          <Text color={theme.muted} dimColor>
+            {progressSubtext}
+          </Text>
+        )}
       </Box>
 
       {/* Status */}
@@ -181,7 +192,9 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
           </Box>
         ) : (
           <Box>
-            <Text color="cyan">Configuring environment{showCursor ? '...' : '   '}</Text>
+            <StatusIcons.Loading />
+            <Text> </Text>
+            <Text color="cyan">Configuring environment</Text>
           </Box>
         )}
       </Box>

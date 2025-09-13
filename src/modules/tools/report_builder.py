@@ -8,19 +8,21 @@ security assessment reports from operation evidence.
 
 import json
 import logging
+import os
 import re
-from typing import Dict, Any, List
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from strands import tool
 
-from modules.tools.memory import get_memory_client
 from modules.prompts.factory import (
-    format_evidence_for_report,
-    format_tools_summary,
     _extract_domain_lens,
     _transform_evidence_to_content,
+    format_evidence_for_report,
+    format_tools_summary,
+    generate_findings_summary_table,
 )
+from modules.tools.memory import get_memory_client, Mem0ServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,15 @@ def sanitize_target_for_path(target: str) -> str:
     return clean or "unknown_target"
 
 
+def _clean_remediation_text(text: str) -> str:
+    if not text:
+        return ""
+    t = text.strip()
+    if t.lower() in {"not determined", "unknown", "n/a"}:
+        return "TBD — requires protocol review"
+    return t
+
+
 @tool
 def build_report_sections(
     operation_id: str,
@@ -72,7 +83,10 @@ def build_report_sections(
     tools_used: List[str] = None,
 ) -> Dict[str, Any]:
     """
-    Build all sections needed for a security assessment report.
+    Build structured sections for the security assessment report.
+
+    Retrieves operation-scoped evidence and plan, summarizes findings,
+    and returns preformatted sections for the final report template.
 
     This tool retrieves evidence from memory and transforms it into
     structured report sections that can be used to generate the final report.
@@ -99,111 +113,149 @@ def build_report_sections(
     try:
         logger.info("Building report sections for operation: %s", operation_id)
 
-        # Initialize memory client and retrieve evidence
+        # Initialize memory client and retrieve evidence and plans
         evidence = []
-        from modules.tools.memory import Mem0ServiceClient
+        operation_plan = None
 
-        # Configure memory client with target-specific path
-        config = Mem0ServiceClient.get_default_config()
-        if config and "vector_store" in config and "config" in config["vector_store"]:
-            safe_target_name = sanitize_target_for_path(target)
-            config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
-
+        # Prefer the existing global memory client to ensure identical backend/path
         try:
+            from modules.tools.memory import get_memory_client as _get_mem_client
+            memory_client = _get_memory_client(silent=True)  # type: ignore[name-defined]
+        except Exception:
+            memory_client = None
+
+        if not memory_client:
+            # Configure memory client with target-specific path as a fallback
+            config = Mem0ServiceClient.get_default_config()
+            if config and "vector_store" in config and "config" in config["vector_store"]:
+                safe_target_name = sanitize_target_for_path(target)
+                config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
             # Use silent mode to suppress initialization output during report generation
             memory_client = Mem0ServiceClient(config, silent=True)
-            logger.info("Initialized memory client for target: %s", target)
-        except Exception as e:
-            logger.warning("Could not initialize target-specific memory client: %s. Using default.", e)
-            # Fallback to global client with silent mode
-            memory_client = get_memory_client(silent=True)
+            logger.info("Initialized memory client (fallback) for target: %s", target)
+        else:
+            logger.info("Using existing memory client for report sections")
 
         if memory_client:
             try:
                 memories = memory_client.list_memories(user_id="cyber_agent")
-                if memories and "results" in memories:
-                    for memory_item in memories["results"]:
-                        memory_content = memory_item.get("memory", "")
-                        metadata = memory_item.get("metadata", {})
+                raw_memories = []
+                if isinstance(memories, dict):
+                    raw_memories = memories.get("results", []) or memories.get("memories", []) or []
+                elif isinstance(memories, list):
+                    raw_memories = memories
 
-                        # Check metadata for finding category first
-                        if metadata.get("category") == "finding":
-                            evidence.append(
-                                {
-                                    "category": "finding",
-                                    "severity": metadata.get("severity", "MEDIUM"),
-                                    "content": memory_content,
-                                    "confidence": metadata.get("confidence", "HIGH"),
-                                    "id": memory_item.get("id", ""),
-                                }
-                            )
-                        # Parse JSON memories
-                        elif memory_content.startswith("{"):
-                            try:
-                                parsed = json.loads(memory_content)
-                                if parsed.get("category") == "finding":
-                                    evidence.append(parsed)
-                            except json.JSONDecodeError:
-                                pass
-                        # Parse text-based findings with structured evidence
-                        elif any(
-                            marker in memory_content
-                            for marker in ["[FINDING]", "[SIGNAL]", "[VULNERABILITY]", "[DISCOVERY]"]
-                        ):
-                            # Extract severity from metadata or content
-                            severity = metadata.get("severity", "INFO")
-                            if severity == "INFO":  # Only check content if metadata doesn't have severity
-                                if "[CRITICAL]" in memory_content:
-                                    severity = "CRITICAL"
-                                elif "[HIGH]" in memory_content or metadata.get("severity") == "high":
-                                    severity = "HIGH"
-                                elif "[MEDIUM]" in memory_content or metadata.get("severity") == "medium":
-                                    severity = "MEDIUM"
-                                elif "[LOW]" in memory_content:
-                                    severity = "LOW"
+                # Do not filter by operation_id; include all relevant memories for the report
+                # Select an active plan if available; otherwise the first plan found
+                for memory_item in raw_memories:
+                    memory_content = memory_item.get("memory", "")
+                    metadata = memory_item.get("metadata", {})
 
-                            # Parse structured evidence from content
-                            parsed_evidence = _parse_structured_evidence(memory_content)
+                    # Operation plan selection
+                    if metadata and metadata.get("category") == "plan" and not operation_plan:
+                        if metadata.get("active", True):
+                            operation_plan = memory_content
+                            logger.info("Selected active operation plan from memory")
+                            continue
+                        # Defer non-active plans in case an active shows up later
 
-                            evidence.append(
-                                {
-                                    "category": "finding",
-                                    "severity": severity.upper(),
-                                    "content": memory_content,  # Full content, not truncated
-                                    "parsed": parsed_evidence,  # Structured evidence components
-                                    "confidence": metadata.get("confidence", "HIGH").upper(),
-                                    "id": memory_item.get("id", ""),
-                                }
-                            )
+                    # Always include original content in evidence for downstream filters/tests
+                    base_evidence = {
+                        "category": "finding",
+                        "content": memory_content,
+                        "id": memory_item.get("id", ""),
+                    }
+
+                    # Findings via metadata
+                    if metadata and metadata.get("category") == "finding":
+                        item = base_evidence.copy()
+                        sev = metadata.get("severity", "MEDIUM")
+                        conf = str(metadata.get("confidence", ""))
+                        item.update(
+                            {
+                                "severity": sev,
+                                "confidence": conf,
+                                "validation_status": str(metadata.get("validation_status", "")).strip() or None,
+                            }
+                        )
+                        evidence.append(item)
+                        continue
+
+                    # JSON-encoded finding
+                    if memory_content.startswith("{"):
+                        try:
+                            parsed = json.loads(memory_content)
+                            if parsed.get("category") == "finding":
+                                item = base_evidence.copy()
+                                item.update(parsed)
+                                evidence.append(item)
+                                continue
+                        except json.JSONDecodeError:
+                            pass
+
+                    # Text-based structured evidence (markers)
+                    if any(
+                        marker in memory_content
+                        for marker in ["[FINDING]", "[SIGNAL]", "[VULNERABILITY]", "[DISCOVERY]"]
+                    ):
+                        severity = str(metadata.get("severity", "INFO"))
+                        if severity == "INFO":
+                            if "[CRITICAL]" in memory_content:
+                                severity = "CRITICAL"
+                            elif "[HIGH]" in memory_content or metadata.get("severity") == "high":
+                                severity = "HIGH"
+                            elif "[MEDIUM]" in memory_content or metadata.get("severity") == "medium":
+                                severity = "MEDIUM"
+                            elif "[LOW]" in memory_content:
+                                severity = "LOW"
+
+                        parsed_evidence = _parse_structured_evidence(memory_content)
+
+                        # Confidence preference: parsed value if present else metadata (pass-through)
+                        parsed_conf = parsed_evidence.get("confidence") if isinstance(parsed_evidence, dict) else ""
+                        conf = parsed_conf or str(metadata.get("confidence", ""))
+
+                        item = base_evidence.copy()
+                        item.update(
+                            {
+                                "severity": severity,
+                                "parsed": parsed_evidence,
+                                "confidence": conf,
+                                "validation_status": str(metadata.get("validation_status", "")).strip() or None,
+                            }
+                        )
+                        evidence.append(item)
+
+                # If no active plan was found, pick the first plan present (if any)
+                if not operation_plan:
+                    for memory_item in raw_memories:
+                        meta = memory_item.get("metadata", {})
+                        if meta and meta.get("category") == "plan":
+                            operation_plan = memory_item.get("memory", "")
+                            logger.info("Selected first available plan from memory")
+                            break
 
                 logger.info("Retrieved %d pieces of evidence from memory", len(evidence))
             except Exception as e:
                 logger.error("Failed to retrieve evidence: %s", e)
 
-        # If no evidence, add a warning
+        # If no evidence, let LLM handle empty evidence
         if not evidence:
-            evidence = [
-                {
-                    "category": "system_warning",
-                    "severity": "INFO",
-                    "content": "No evidence collected during assessment - report may be incomplete",
-                    "confidence": "SYSTEM",
-                }
-            ]
+            evidence = []
 
         # Format evidence for report
         evidence_text = format_evidence_for_report(evidence)
 
         # Count severities from actual evidence, not just text
         severity_counts = {
-            "critical": sum(1 for e in evidence if e.get("severity", "").upper() == "CRITICAL"),
-            "high": sum(1 for e in evidence if e.get("severity", "").upper() == "HIGH"),
-            "medium": sum(1 for e in evidence if e.get("severity", "").upper() == "MEDIUM"),
-            "low": sum(1 for e in evidence if e.get("severity", "").upper() == "LOW"),
+            "critical": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "CRITICAL"),
+            "high": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "HIGH"),
+            "medium": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "MEDIUM"),
+            "low": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "LOW"),
         }
 
-        # Generate findings table
-        findings_table = _generate_findings_table(evidence_text, severity_counts)
+        # Generate findings table (structured, deterministic)
+        findings_table = generate_findings_summary_table(evidence)
 
         # Load module report prompt for domain lens
         domain_lens = {}
@@ -223,20 +275,93 @@ def build_report_sections(
             evidence=evidence, domain_lens=domain_lens, target=target, objective=objective
         )
 
-        # Format tools summary
-        tools_summary = format_tools_summary(tools_used or [])
+        # Format tools summary (accepts dict or list); prefer accurate counts if provided
+        tools_summary = ""
+        try:
+            # If caller passed repeated names, we’ll get counts automatically
+            # If caller passed a unique set, counts will be 1 each
+            tools_summary = format_tools_summary(tools_used or [])
+        except Exception:
+            tools_summary = format_tools_summary([])
 
         # Separate findings for detailed vs summary treatment
         critical_findings, high_findings, summary_findings = _prioritize_findings(evidence)
 
-        # Generate structured finding sections
+        # Generate structured finding sections - include ALL findings for comprehensive report
         critical_section = _format_detailed_findings(critical_findings, "CRITICAL")
-        high_section = _format_detailed_findings(high_findings[:5], "HIGH")  # Limit to 5 for token efficiency
-        summary_table = (
-            _format_summary_table(high_findings[5:] + summary_findings)
-            if len(high_findings) > 5 or summary_findings
-            else ""
-        )
+        high_section = _format_detailed_findings(high_findings, "HIGH")  # Include ALL high findings
+        summary_table = _format_summary_table(summary_findings) if summary_findings else ""
+
+        # Format the operation plan
+        operation_plan_formatted = _format_operation_plan(operation_plan)
+
+        # Prepare raw evidence for LLM to generate attack paths and technical content
+        raw_evidence = []
+        for finding in evidence:
+            if finding.get("category") == "finding":
+                parsed = finding.get("parsed", {}) if isinstance(finding.get("parsed"), dict) else {}
+                location = parsed.get("where", "")
+                if not location:
+                    # Fallback: try to extract [WHERE] from content text
+                    content_text = finding.get("content", "") or ""
+                    try:
+                        import re as _re
+                        m = _re.search(r"\[WHERE\]\s*([^\n\r]+)", content_text)
+                        if m:
+                            location = m.group(1).strip()
+                    except Exception:
+                        pass
+
+                raw_evidence.append(
+                    {
+                        "id": finding.get("id", ""),
+                        "severity": finding.get("severity"),
+                        "vulnerability": parsed.get("vulnerability", ""),
+                        "location": location,
+                        "impact": parsed.get("impact", ""),
+                        "evidence": parsed.get("evidence", ""),
+                        "steps": parsed.get("steps", ""),
+                        "remediation": _clean_remediation_text(parsed.get("remediation", "")),
+                        "confidence": finding.get("confidence", ""),
+                        "validation_status": finding.get("validation_status"),
+                        "content": finding.get("content", ""),
+                    }
+                )
+
+        # Extract token/duration/cost metrics from the operation log (best-effort)
+        metrics_input = 0
+        metrics_output = 0
+        metrics_total = 0
+        metrics_duration = ""
+        metrics_cost = None
+        try:
+            safe_target_name = sanitize_target_for_path(target)
+            log_path = os.path.join("outputs", safe_target_name, operation_id, "cyber_operations.log")
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        if "__CYBER_EVENT__" in line and '"type": "metrics_update"' in line:
+                            # Extract JSON between markers
+                            try:
+                                start = line.index("__CYBER_EVENT__") + len("__CYBER_EVENT__")
+                                end = line.index("__CYBER_EVENT_END__")
+                                payload = json.loads(line[start:end])
+                                m = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+                                # Prefer the most recent values (overwrite as we go)
+                                metrics_input = int(m.get("inputTokens", metrics_input) or 0)
+                                metrics_output = int(m.get("outputTokens", metrics_output) or 0)
+                                metrics_total = int(m.get("totalTokens", m.get("tokens", metrics_total) or 0))
+                                metrics_duration = str(m.get("duration", metrics_duration) or metrics_duration)
+                                if "cost" in m:
+                                    try:
+                                        metrics_cost = float(m.get("cost"))
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                continue
+        except Exception:
+            # Ignore metrics extraction failures silently
+            pass
 
         # Build complete sections dictionary
         sections = {
@@ -246,7 +371,14 @@ def build_report_sections(
             "date": datetime.now().strftime("%Y-%m-%d"),
             "steps_executed": steps_executed,
             "severity_counts": severity_counts,
-            "overview": report_content.get("overview", f"Security assessment of {target}"),
+            "critical_count": severity_counts["critical"],
+            "high_count": severity_counts["high"],
+            "medium_count": severity_counts["medium"],
+            "low_count": severity_counts["low"],
+            "module_report": "",  # LLM generates from context
+            "visual_summary": "",  # LLM generates mermaid diagram
+            "overview": report_content.get("overview", ""),
+            "operation_plan": operation_plan_formatted,
             "evidence_text": evidence_text,
             "findings_table": findings_table,
             "critical_findings": critical_section,
@@ -256,10 +388,19 @@ def build_report_sections(
             "immediate_recommendations": report_content.get("immediate", ""),
             "short_term_recommendations": report_content.get("short_term", ""),
             "long_term_recommendations": report_content.get("long_term", ""),
+            "raw_evidence": raw_evidence,  # For LLM to generate attack paths and technical content
             "tools_summary": tools_summary,
-            "analysis_framework": domain_lens.get("framework", "OWASP Top 10 2021"),
+            "analysis_framework": domain_lens.get("framework", ""),
             "module": module,
             "evidence_count": len(evidence),
+            # Execution metrics for direct insertion into the template
+            "input_tokens": metrics_input,
+            "output_tokens": metrics_output,
+            "total_tokens": metrics_total or (metrics_input + metrics_output),
+            "total_duration": metrics_duration,
+            "estimated_cost": (
+                f"${metrics_cost:.4f}" if isinstance(metrics_cost, (int, float)) and metrics_cost > 0 else "N/A"
+            ),
         }
 
         logger.info(
@@ -315,10 +456,14 @@ def _parse_structured_evidence(content: str) -> Dict[str, str]:
 
     for marker, key in markers.items():
         # Extract content between markers using regex
-        pattern = rf"\[{marker}\]\s*(.*?)(?=\[|$)"
+        # Updated pattern to better handle multi-line content
+        pattern = rf"\[{marker}\]\s*(.*?)(?=\[(?:VULNERABILITY|FINDING|WHERE|IMPACT|EVIDENCE|STEPS|REMEDIATION|CONFIDENCE|DISCOVERY|SIGNAL)|$)"
         match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
         if match and not components[key]:  # Don't override if already found
-            components[key] = match.group(1).strip()
+            extracted = match.group(1).strip()
+            # Clean up the extracted content
+            if extracted:
+                components[key] = extracted
 
     return components
 
@@ -335,7 +480,7 @@ def _prioritize_findings(evidence: List[Dict[str, Any]]) -> tuple:
     other = []
 
     for finding in evidence:
-        severity = finding.get("severity", "").upper()
+        severity = str(finding.get("severity", "")).upper()
         if severity == "CRITICAL":
             critical.append(finding)
         elif severity == "HIGH":
@@ -362,50 +507,78 @@ def _format_detailed_findings(findings: List[Dict[str, Any]], severity: str) -> 
         impact = ""
         remediation = ""
         confidence = ""
+        status = str(finding.get("validation_status") or "").strip()
 
         # Extract from parsed structure if available
         if "parsed" in finding and finding["parsed"]:
             parsed = finding["parsed"]
-            title = parsed.get("vulnerability", f"{severity} Finding #{i}")
+            title = parsed.get("vulnerability", "")
             location = parsed.get("where", "")
             if location:
                 title += f" - {location}"
             evidence = parsed.get("evidence", "")
             impact = parsed.get("impact", "")
             remediation = parsed.get("remediation", "")
-            confidence = parsed.get("confidence", finding.get("confidence", ""))
+            confidence = parsed.get("confidence", "")
         else:
-            # Fallback to content parsing
+            # Use raw content if no parsed structure
             content = finding.get("content", "")
-            title = f"{severity} Finding #{i}"
+            title = ""
             evidence = content
-            impact = "Requires further investigation"
+            impact = ""
+            remediation = ""
             confidence = finding.get("confidence", "")
+
+        # Normalize fields (only remediation cleanup; display confidence as-is)
+        confidence = confidence or finding.get("confidence", "")
+        remediation = _clean_remediation_text(remediation)
+
+        # If impact missing, attempt to parse from original content
+        if not impact:
+            parsed_fallback = _parse_structured_evidence(finding.get("content", "") or "")
+            impact = parsed_fallback.get("impact", "") if isinstance(parsed_fallback, dict) else ""
 
         # Build structured finding
         output.append(f"#### {i}. {title}")
 
-        # Show confidence if available
+        # Status badge and confidence
+        if status:
+            status_norm = "Verified" if status.lower() == "verified" else ("Unverified" if status else "")
+            if status_norm:
+                output.append(f"**Status:** {status_norm}")
         if confidence:
             output.append(f"**Confidence:** {confidence}")
 
         # Evidence first (full for critical/high)
         if evidence:
+            # For critical/high, show full evidence
             if severity in ["CRITICAL", "HIGH"]:
-                output.append(f"**Evidence:**\n```\n{evidence}\n```")
+                # If evidence is the full content with markers, format it better
+                if "[VULNERABILITY]" in evidence and "[WHERE]" in evidence:
+                    # Parse inline for display
+                    formatted_evidence = evidence
+                    for marker in [
+                        "[VULNERABILITY]",
+                        "[WHERE]",
+                        "[IMPACT]",
+                        "[EVIDENCE]",
+                        "[STEPS]",
+                        "[REMEDIATION]",
+                        "[CONFIDENCE]",
+                    ]:
+                        formatted_evidence = formatted_evidence.replace(marker, f"\n{marker}")
+                    output.append(f"**Evidence:**\n```\n{formatted_evidence.strip()}\n```")
+                else:
+                    output.append(f"**Evidence:**\n```\n{evidence}\n```")
             else:
                 if len(evidence) > 500:
                     evidence = evidence[:500] + "\n[Truncated - see appendix]"
                 output.append(f"**Evidence:**\n```\n{evidence}\n```")
 
-        # Impact and remediation
-        if impact:
-            output.append(f"**Impact:** {impact[:200]}")
-
-        if remediation and remediation.lower() != "not determined":
-            output.append(f"**Remediation:**\n{remediation}")
-        elif not remediation or remediation.lower() == "not determined":
-            output.append("**Remediation:** Investigation required to determine appropriate fix")
+        # Impact and remediation - always show them
+        impact_text = impact if impact else "N/A"
+        output.append(f"**Impact:** {impact_text}")
+        output.append(f"**Remediation:** {remediation if remediation else 'TBD — requires protocol review'}")
 
         output.append("")  # Blank line between findings
 
@@ -423,7 +596,7 @@ def _format_summary_table(findings: List[Dict[str, Any]]) -> str:
 
     table = ["| # | Severity | Finding | Location | Confidence |", "|---|----------|---------|----------|------------|"]
 
-    for i, finding in enumerate(findings[:20], 1):  # Limit to 20 for space
+    for i, finding in enumerate(findings[:50], 1):  # Include up to 50 findings in summary
         severity = finding.get("severity", "MEDIUM")
         confidence = finding.get("confidence", "N/A")
 
@@ -439,29 +612,108 @@ def _format_summary_table(findings: List[Dict[str, Any]]) -> str:
 
         table.append(f"| {i} | {severity} | {title} | {location} | {confidence} |")
 
-    if len(findings) > 20:
-        table.append(f"\n*Additional {len(findings) - 20} findings documented in appendix*")
+    # Include all findings count if more than shown
+    if len(findings) > 50:
+        table.append(f"\n*Total findings: {len(findings)}*")
 
     return "\n".join(table)
 
 
+def _format_operation_plan(plan_content: str) -> str:
+    """Format the operation plan for inclusion in the report."""
+    if not plan_content:
+        return ""
+
+    # Try to parse JSON plan
+    if plan_content.startswith("[PLAN]"):
+        plan_content = plan_content.replace("[PLAN]", "").strip()
+
+    try:
+        import json
+
+        plan_data = json.loads(plan_content)
+
+        # Return raw plan data as JSON for LLM to format
+        return json.dumps(plan_data, indent=2)
+    except (json.JSONDecodeError, TypeError):
+        # Return raw plan if not JSON
+        return plan_content
+
+
 def _generate_findings_table(evidence_text: str, severity_counts: Dict[str, int]) -> str:
-    """Generate a formatted findings table."""
-    table = "| Severity | Count | Key Findings |\n"
-    table += "|----------|-------|--------------|\n"
+    """Generate the Key Findings table with richer context.
 
-    if severity_counts["critical"] > 0:
-        table += (
-            f"| CRITICAL | {severity_counts['critical']} | Immediate action required - exploitable vulnerabilities |\n"
-        )
-    if severity_counts["high"] > 0:
-        table += f"| HIGH | {severity_counts['high']} | Significant risk requiring urgent attention |\n"
-    if severity_counts["medium"] > 0:
-        table += f"| MEDIUM | {severity_counts['medium']} | Notable issues to address in remediation |\n"
-    if severity_counts["low"] > 0:
-        table += f"| LOW | {severity_counts['low']} | Minor issues for security hardening |\n"
+    Columns:
+    - Severity
+    - Count
+    - Top Finding (from evidence)
+    - Typical Location (if available)
+    - Confidence (if available)
+    """
 
-    if sum(severity_counts.values()) == 0:
-        table += "| INFO | 0 | No security findings identified |\n"
+    # Derive a simple top-finding and location per severity from evidence_text using heuristics.
+    # evidence_text is grouped by headings and includes structured blocks.
+    def _extract_top_finding_and_location(block: str) -> tuple[str, str, str]:
+        title = ""
+        location = ""
+        confidence = ""
+        # Try to parse VULNERABILITY and WHERE markers
+        import re
 
+        m_v = re.search(r"\[VULNERABILITY\]\s*(.+)", block)
+        if m_v:
+            title = m_v.group(1).strip()
+        m_w = re.search(r"\[WHERE\]\s*(.+)", block)
+        if m_w:
+            location = m_w.group(1).strip()
+        m_c = re.search(r"\[CONFIDENCE\]\s*([0-9]{1,3}%)(?:\s*-.*)?", block)
+        if m_c:
+            confidence = m_c.group(1).strip()
+        # Fall back to first header-like line if no marker
+        if not title:
+            m_h = re.search(r"^####\s*\d+\.\s*(.+)$", block, re.MULTILINE)
+            if m_h:
+                title = m_h.group(1).strip()
+        return title, location, confidence
+
+    # Segment evidence_text per severity group and pick first finding
+    def _first_finding_for(sev_label: str) -> tuple[str, str, str]:
+        if not evidence_text:
+            return "", "", ""
+        import re
+
+        # Find the section starting with the severity heading
+        pattern = rf"###\s*{sev_label}\s*Findings(.*?)(?:\n###\s*[A-Z][a-z]+\s*Findings|\Z)"
+        m = re.search(pattern, evidence_text, flags=re.DOTALL)
+        if not m:
+            return "", "", ""
+        block = m.group(1)
+        # Split by '#### N. ' blocks
+        parts = re.split(r"\n####\s*\d+\.\s*", block)
+        if len(parts) < 2:
+            return "", "", ""
+        # The first element before the split header is preamble; take next non-empty
+        for p in parts[1:]:
+            if p.strip():
+                return _extract_top_finding_and_location(p)
+        return "", "", ""
+
+    rows = []
+    for sev_display, key in [("CRITICAL", "critical"), ("HIGH", "high"), ("MEDIUM", "medium"), ("LOW", "low")]:
+        count = int(severity_counts.get(key, 0) or 0)
+        if count > 0:
+            title, location, confidence = _first_finding_for(sev_display)
+            # Truncate for table cleanliness
+            if len(title) > 60:
+                title = title[:57] + "..."
+            if len(location) > 40:
+                location = location[:37] + "..."
+            rows.append((sev_display, count, title, location, confidence))
+
+    # Build markdown table (no extra leading pipes)
+    header = "| Severity | Count | Top Finding | Location | Confidence |\n"
+    header += "|----------|-------|-------------|----------|------------|\n"
+    table = header
+    for sev, cnt, title, loc, conf in rows:
+        table += f"| {sev} | {cnt} | {title or '-'} | {loc or '-'} | {conf or '-'} |\n"
     return table

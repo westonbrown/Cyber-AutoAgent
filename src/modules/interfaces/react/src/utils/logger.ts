@@ -97,8 +97,9 @@ export class Logger {
     // In React Ink environment, suppress all non-error logs unless explicitly debugging
     const isReactInk = process.env.REACT_INK === 'true' || process.stdout.isTTY;
     const isDebugMode = process.env.DEBUG === 'true' || process.env.CYBER_DEBUG === 'true';
+    const isTestMode = process.env.NODE_ENV === 'test' || process.env.CYBER_TEST_MODE === 'true';
     
-    if (isReactInk && level !== 'error' && !isDebugMode) {
+    if (isReactInk && level !== 'error' && !isDebugMode && !isTestMode) {
       // Completely suppress info/debug logs in production UI
       return;
     }

@@ -44,6 +44,8 @@ export class PythonExecutionService extends EventEmitter {
   private startTime?: number;
   // Track whether backend emitted consolidated tool output to avoid duplication
   private sawBackendToolOutput = false;
+  // Track whether a user-initiated stop() was requested to treat exits as intentional
+  private userStopRequested = false;
   
   // Paths
   private readonly projectRoot: string;
@@ -280,6 +282,8 @@ export class PythonExecutionService extends EventEmitter {
    * Stop current execution
    */
   async stop(): Promise<void> {
+    // Mark as user-initiated stop so exit handler treats non-zero exit as intentional
+    this.userStopRequested = true;
     if (this.activeProcess) {
       this.logger.info('Stopping Python process', { pid: this.activeProcess.pid });
       
@@ -575,6 +579,8 @@ export class PythonExecutionService extends EventEmitter {
     this.isExecutionActive = true;
     this.abortController = new AbortController();
     this.startTime = Date.now();
+    // Reset stop flag at the beginning of a new execution
+    this.userStopRequested = false;
     
     return new Promise<void>((resolve, reject) => {
       try {
@@ -602,9 +608,13 @@ export class PythonExecutionService extends EventEmitter {
       if (config.modelId) {
         args.push('--model', config.modelId);
       }
+      // Always pass region via CLI when provided to avoid relying solely on env
+      if (config.awsRegion) {
+        args.push('--region', config.awsRegion);
+      }
       
       // Set up environment variables
-      const env: Record<string, string> = {
+        const env: Record<string, string> = {
         ...process.env,
         PYTHONPATH: this.srcPath,
         PYTHONUNBUFFERED: '1',
@@ -613,56 +623,49 @@ export class PythonExecutionService extends EventEmitter {
         CYBER_OBJECTIVE: objective,
         // React UI integration - critical for event emission
         BYPASS_TOOL_CONSENT: config.confirmations ? 'false' : 'true',
-        __REACT_INK__: 'true',
-        CYBERAGENT_NO_BANNER: 'false', // Show banner in React stream (OLD behavior)
+        CYBER_UI_MODE: 'react',
+        CYBERAGENT_NO_BANNER: 'false', // React UI mode suppresses banner server-side
         DEV: config.verbose ? 'true' : 'false',
-        // AWS Configuration (original simple approach)
-        AWS_ACCESS_KEY_ID: config.awsAccessKeyId || '',
-        AWS_SECRET_ACCESS_KEY: config.awsSecretAccessKey || '',
-        AWS_BEARER_TOKEN_BEDROCK: config.awsBearerToken || '',
-        AWS_REGION: config.awsRegion || 'us-east-1',
+        // Set AWS region
+        AWS_REGION: config.awsRegion || process.env.AWS_REGION || 'us-east-1',
         // Ollama Configuration
-        OLLAMA_HOST: config.ollamaHost || '',
-        // LiteLLM Configuration
-        OPENAI_API_KEY: config.openaiApiKey || '',
-        ANTHROPIC_API_KEY: config.anthropicApiKey || '',
-        COHERE_API_KEY: config.cohereApiKey || '',
+        ...(config.ollamaHost ? { OLLAMA_HOST: config.ollamaHost } : {}),
+        // LiteLLM Configuration (only set if provided)
+        ...(config.openaiApiKey ? { OPENAI_API_KEY: config.openaiApiKey } : {}),
+        ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
+        ...(config.cohereApiKey ? { COHERE_API_KEY: config.cohereApiKey } : {}),
         // Model Configuration - pass separate models from config
-        CYBER_AGENT_SWARM_MODEL: config.swarmModel || '',
-        CYBER_AGENT_EVALUATION_MODEL: config.evaluationModel || '',
+        ...(config.swarmModel ? { CYBER_AGENT_SWARM_MODEL: config.swarmModel } : {}),
+        ...(config.evaluationModel ? { CYBER_AGENT_EVALUATION_MODEL: config.evaluationModel } : {}),
         // Observability settings from config (matching Docker service behavior)
         ENABLE_OBSERVABILITY: config.observability ? 'true' : 'false',
         ENABLE_AUTO_EVALUATION: config.autoEvaluation ? 'true' : 'false',
         ENABLE_LANGFUSE_PROMPTS: config.enableLangfusePrompts ? 'true' : 'false',
         // Langfuse configuration when observability is enabled
         ...(config.observability && {
-          LANGFUSE_HOST: config.langfuseHost,
-          LANGFUSE_PUBLIC_KEY: config.langfusePublicKey,
-          LANGFUSE_SECRET_KEY: config.langfuseSecretKey,
-          LANGFUSE_PROMPT_LABEL: config.langfusePromptLabel,
-          LANGFUSE_PROMPT_CACHE_TTL: String(config.langfusePromptCacheTTL)
+          LANGFUSE_HOST: config.langfuseHost || '',
+          LANGFUSE_PUBLIC_KEY: config.langfusePublicKey || '',
+          LANGFUSE_SECRET_KEY: config.langfuseSecretKey || '',
+          LANGFUSE_PROMPT_LABEL: config.langfusePromptLabel || '',
+          LANGFUSE_PROMPT_CACHE_TTL: String(config.langfusePromptCacheTTL || '')
         }),
         // Evaluation settings when auto-evaluation is enabled
         ...(config.autoEvaluation && {
-          RAGAS_EVALUATOR_MODEL: config.evaluationModel,
-          EVALUATION_BATCH_SIZE: String(config.evaluationBatchSize)
+          RAGAS_EVALUATOR_MODEL: config.evaluationModel || '',
+          EVALUATION_BATCH_SIZE: String(config.evaluationBatchSize || '')
         })
       };
+      // Only set AWS credentials/bearer if provided in config; do not overwrite existing env with empty strings
+      if (config.awsAccessKeyId) env.AWS_ACCESS_KEY_ID = config.awsAccessKeyId;
+      if (config.awsSecretAccessKey) env.AWS_SECRET_ACCESS_KEY = config.awsSecretAccessKey;
+      if (config.awsBearerToken) env.AWS_BEARER_TOKEN_BEDROCK = config.awsBearerToken;
+      if (config.awsSessionToken) env.AWS_SESSION_TOKEN = config.awsSessionToken;
       
       this.logger.info('Starting Python assessment', { 
         args, 
         cwd: this.projectRoot,
-        config: {
-          iterations: config.iterations,
-          modelProvider: config.modelProvider,
-          modelId: config.modelId,
-          swarmModel: config.swarmModel || 'NOT_SET',
-          evaluationModel: config.evaluationModel || 'NOT_SET',
-          observability: config.observability,
-          autoEvaluation: config.autoEvaluation,
-          awsBearerToken: config.awsBearerToken ? 'CONFIGURED' : 'NOT_SET',
-          awsAccessKeyId: config.awsAccessKeyId ? `${config.awsAccessKeyId.substring(0, 10)}...` : 'NOT_SET'
-        }
+        provider: config.modelProvider,
+        model: config.modelId
       });
       
       
@@ -727,6 +730,7 @@ export class PythonExecutionService extends EventEmitter {
         // Target and provider/model
         this.emit('event', { type: 'output', content: `✓ Target: ${params.target}`, timestamp: Date.now() });
         this.emit('event', { type: 'output', content: `✓ Provider: ${config.modelProvider || 'unknown'} (${config.modelId || 'default-model'})`, timestamp: Date.now() });
+        this.emit('event', { type: 'output', content: `✓ Region: ${env.AWS_REGION || 'unknown'}` , timestamp: Date.now() });
         // Memory presence
         const sanitizedTarget = params.target
           .replace(/^https?:\/\//, '')  // Remove protocol
@@ -792,9 +796,12 @@ export class PythonExecutionService extends EventEmitter {
       this.activeProcess.on('exit', (code, signal) => {
         this.isExecutionActive = false;
         
-        if (signal === 'SIGTERM' || signal === 'SIGINT') {
+        const intentionalStop = this.userStopRequested || signal === 'SIGTERM' || signal === 'SIGINT' || signal === 'SIGKILL';
+        if (intentionalStop) {
+          // Treat any exit following a user stop (or termination signals) as a clean stop
           this.emit('stopped');
-          resolve(); // Process was stopped intentionally
+          this.userStopRequested = false; // reset flag
+          resolve();
         } else if (code === 0) {
           // Compute human-readable duration
           const end = Date.now();

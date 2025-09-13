@@ -158,38 +158,79 @@ export const toolFormatters: Record<string, ToolFormatter> = {
   },
   
   shell: (input) => {
-    const commands = input.command || input.commands || input.cmd || input.input || '';
-    
-    // Format commands properly based on type
-    let commandsDisplay: string;
-    if (Array.isArray(commands)) {
-      // If array of command objects, extract the command strings
-      const cmdStrings = commands.map((cmd: any) => {
-        if (typeof cmd === 'string') return cmd;
-        if (typeof cmd === 'object' && cmd.command) return cmd.command;
-        return String(cmd);
-      });
-      commandsDisplay = cmdStrings.join(' | ');
-    } else if (typeof commands === 'object' && commands.command) {
-      // Single command object
-      commandsDisplay = commands.command;
-    } else {
-      // String or other type
-      commandsDisplay = String(commands);
+    const rawInput = input || {};
+    // Prefer the most common fields in order of likelihood
+    let raw = rawInput.commands ?? rawInput.command ?? rawInput.cmd ?? rawInput.input ?? '';
+
+    // Helper to stringify any command entry into a single shell line
+    const stringifyCommandEntry = (entry: any): string => {
+      if (entry === null || entry === undefined) return '';
+      if (typeof entry === 'string') return entry;
+      if (Array.isArray(entry)) {
+        const parts = entry.map((p) => stringifyCommandEntry(p)).filter(Boolean);
+        return parts.join(' ');
+      }
+      if (typeof entry === 'object') {
+        // Prefer well-known keys in order
+        if ('command' in entry) return stringifyCommandEntry((entry as any).command);
+        if ('cmd' in entry) return stringifyCommandEntry((entry as any).cmd);
+        if ('value' in entry) return stringifyCommandEntry((entry as any).value);
+        if ('args' in entry) return stringifyCommandEntry((entry as any).args);
+        try {
+          return JSON.stringify(entry);
+        } catch {
+          return toSafeString(entry);
+        }
+      }
+      return toSafeString(entry);
+    };
+
+    // Normalize into an array of displayable command strings
+    let cmdList: string[] = [];
+    try {
+      if (Array.isArray(raw)) {
+        cmdList = raw.map((e: any) => stringifyCommandEntry(e)).filter(Boolean);
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              cmdList = parsed.map((e: any) => stringifyCommandEntry(e)).filter(Boolean);
+            } else {
+              const s = stringifyCommandEntry(parsed);
+              if (s) cmdList = [s];
+            }
+          } catch {
+            if (trimmed) cmdList = [trimmed];
+          }
+        } else {
+          if (trimmed) cmdList = [trimmed];
+        }
+      } else if (typeof raw === 'object' && raw) {
+        const s = stringifyCommandEntry(raw);
+        if (s) cmdList = [s];
+      }
+    } catch {
+      // Fallback: best-effort conversion
+      cmdList = Array.isArray(raw) ? raw.map((e: any) => toSafeString(e)).filter(Boolean) : [];
     }
-    
-    const parts: string[] = [
-      `Commands: ${commandsDisplay}`
-    ];
+
+    // Build suffix flags and extras
     const flags: string[] = [];
-    if (input.parallel === true) flags.push('parallel');
-    if (input.ignore_errors === true) flags.push('ignore_errors');
-    if (input.non_interactive === true) flags.push('non_interactive');
+    if (rawInput.parallel === true) flags.push('parallel');
+    if (rawInput.ignore_errors === true) flags.push('ignore_errors');
+    if (rawInput.non_interactive === true) flags.push('non_interactive');
+
     const extras: string[] = [];
-    if (typeof input.timeout === 'number') extras.push(`timeout: ${input.timeout}s`);
-    const workDir = input.work_dir || input.cwd;
+    if (typeof rawInput.timeout === 'number') extras.push(`timeout: ${rawInput.timeout}s`);
+    const workDir = rawInput.work_dir || rawInput.cwd;
     if (typeof workDir === 'string' && workDir.length > 0) extras.push(`cwd: ${workDir}`);
 
+    const commandsDisplay = cmdList.join(' | ');
+    const parts: string[] = [
+      `Commands: ${commandsDisplay || '(none)'}`
+    ];
     const suffix = [flags.join(', '), extras.join(' | ')].filter(Boolean).join(' | ');
     return suffix ? `${parts.join(' | ')} | ${suffix}` : parts.join(' | ');
   },

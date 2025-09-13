@@ -5,7 +5,7 @@ This module contains specialized event emitters for different tool types,
 converting tool inputs and outputs into structured events for the React UI.
 """
 
-from typing import Any, Dict, Callable
+from typing import Any, Callable, Dict
 
 
 class ToolEventEmitter:

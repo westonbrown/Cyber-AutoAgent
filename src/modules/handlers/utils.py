@@ -10,9 +10,9 @@ import json
 import os
 import re
 import shutil
-from dataclasses import dataclass, asdict, field
-from typing import List, Dict, Tuple, Optional, Any, Union
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 def get_terminal_width(default=80):
@@ -163,8 +163,11 @@ def print_banner():
     # Check if banner is disabled by environment variables
     import os
 
-    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes") or os.getenv("__REACT_INK__") == "true":
-        # Banner disabled - return early
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Banner disabled - return early (React UI mode suppresses banner)
         return
 
     banner_lines = [
@@ -204,8 +207,11 @@ def print_section(title, content, color=Colors.BLUE, emoji=""):
     # Check if output is disabled by environment variables
     import os
 
-    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes") or os.getenv("__REACT_INK__") == "true":
-        # Output disabled - return early
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Output disabled - return early (React UI mode suppresses CLI sections)
         return
 
     # Print section for CLI mode
@@ -220,8 +226,11 @@ def print_status(message, status="INFO"):
     # Check if output is disabled by environment variables
     import os
 
-    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes") or os.getenv("__REACT_INK__") == "true":
-        # Output disabled - return early
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Output disabled - return early (React UI mode suppresses CLI status lines)
         return
 
     # Print status for CLI mode

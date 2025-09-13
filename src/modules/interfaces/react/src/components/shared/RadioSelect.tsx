@@ -23,6 +23,7 @@ export interface RadioSelectProps<T> {
   onHighlight?: (value: T) => void;
   isFocused?: boolean;
   showNumbers?: boolean;
+  renderBadge?: (badge?: string) => React.ReactNode;
 }
 
 export function RadioSelect<T>({
@@ -32,6 +33,7 @@ export function RadioSelect<T>({
   onHighlight,
   isFocused = true,
   showNumbers = true,
+  renderBadge,
 }: RadioSelectProps<T>): React.JSX.Element {
   const theme = themeManager.getCurrentTheme();
   const [activeIndex, setActiveIndex] = useState(initialIndex);
@@ -146,6 +148,10 @@ export function RadioSelect<T>({
         const isSelected = activeIndex === index;
         const isDisabled = item.disabled || false;
         
+        // Professional rectangle with green highlight when selected
+        const borderColor = isSelected ? theme.success : theme.muted;
+        const borderStyle = 'single';
+        
         let textColor = theme.foreground;
         let bulletColor = theme.muted;
         
@@ -153,12 +159,12 @@ export function RadioSelect<T>({
           textColor = theme.muted;
           bulletColor = theme.muted;
         } else if (isSelected) {
-          textColor = theme.primary;
-          bulletColor = theme.primary;
+          textColor = theme.success;
+          bulletColor = theme.success;
         }
 
         return (
-          <Box key={index} marginBottom={1}>
+          <Box key={index} marginBottom={1} borderStyle={borderStyle as any} borderColor={borderColor} paddingX={1} paddingY={1}>
             {/* Radio bullet */}
             <Box minWidth={3} flexShrink={0}>
               <Text color={bulletColor}>
@@ -181,8 +187,10 @@ export function RadioSelect<T>({
                 <Text color={textColor} bold={isSelected}>
                   {item.label}
                 </Text>
-                {item.badge && (
-                  <Text color={isDisabled ? theme.muted : theme.success}> {item.badge}</Text>
+{item.badge && (
+                  <Text color={isDisabled ? theme.muted : theme.success}>
+                    {' '}{renderBadge ? renderBadge(item.badge) : item.badge}
+                  </Text>
                 )}
               </Box>
               {item.description && (

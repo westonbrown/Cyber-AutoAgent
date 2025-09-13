@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import pytest
 import os
 import sys
+
+import pytest
 
 # Disable prompt manager for tests to ensure consistent behavior
 os.environ["ENABLE_LANGFUSE_PROMPTS"] = "false"
@@ -12,17 +13,18 @@ os.environ["ENABLE_LANGFUSE_PROMPTS"] = "false"
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from modules.prompts.system import (
+from modules.prompts import (
+    get_memory_context_guidance,
     get_system_prompt,
-    _get_memory_context_guidance,
 )
+
 
 class TestMemoryContextGuidance:
     """Test memory context guidance generation"""
 
     def test_fresh_start_guidance(self):
         """Test memory context guidance for fresh start"""
-        result = _get_memory_context_guidance(has_memory_path=False, has_existing_memories=False, memory_overview=None)
+        result = get_memory_context_guidance(has_memory_path=False, has_existing_memories=False, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
@@ -32,7 +34,7 @@ class TestMemoryContextGuidance:
 
     def test_memory_path_guidance(self):
         """Test memory context guidance with explicit memory path"""
-        result = _get_memory_context_guidance(has_memory_path=True, has_existing_memories=False, memory_overview=None)
+        result = get_memory_context_guidance(has_memory_path=True, has_existing_memories=False, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
@@ -45,7 +47,7 @@ class TestMemoryContextGuidance:
 
     def test_existing_memories_guidance(self):
         """Test memory context guidance with existing memories"""
-        result = _get_memory_context_guidance(has_memory_path=False, has_existing_memories=True, memory_overview=None)
+        result = get_memory_context_guidance(has_memory_path=False, has_existing_memories=True, memory_overview=None)
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
@@ -74,7 +76,7 @@ class TestMemoryContextGuidance:
             ],
         }
 
-        result = _get_memory_context_guidance(
+        result = get_memory_context_guidance(
             has_memory_path=False,
             has_existing_memories=True,
             memory_overview=memory_overview,
@@ -99,7 +101,7 @@ class TestMemoryContextGuidance:
             "recent_findings": [],
         }
 
-        result = _get_memory_context_guidance(
+        result = get_memory_context_guidance(
             has_memory_path=False,
             has_existing_memories=True,
             memory_overview=memory_overview,
@@ -111,6 +113,7 @@ class TestMemoryContextGuidance:
             '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
             in result
         )
+
 
 class TestMemoryAwareSystemPrompts:
     """Test memory-aware system prompt generation"""
@@ -165,7 +168,7 @@ class TestMemoryAwareSystemPrompts:
             "categories": {"finding": 3, "general": 2},
             "recent_findings": [],
         }
-        
+
         result = get_system_prompt(
             target="test.com",
             objective="test objective",
@@ -351,6 +354,7 @@ Leverage these tools directly via shell.
         assert "Starting fresh assessment with no previous context" in result_fresh
         assert "Begin with reconnaissance and target information gathering" in result_fresh
 
+
 class TestMemoryAwarePromptIntegration:
     """Test integration of memory-aware prompts with system components"""
 
@@ -391,6 +395,7 @@ class TestMemoryAwarePromptIntegration:
         assert "Analyze retrieved memories before taking any actions" in result
         assert "Avoid repeating work already completed" in result
         assert "Build upon previous discoveries" in result
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import pytest
 import os
 import sys
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add src to path for imports
 
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from modules.handlers import ReasoningHandler
 from modules.tools import report_generator
 from modules.tools.report_generator import _get_memory_client_for_report, _retrieve_evidence
+
 
 class TestReasoningHandlerMemoryConfig:
     """Test the ReasoningHandler memory configuration handling"""

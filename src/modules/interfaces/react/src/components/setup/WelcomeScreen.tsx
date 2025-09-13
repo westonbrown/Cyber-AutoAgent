@@ -25,7 +25,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   const width = terminalWidth || process.stdout.columns || 100;
   const divider = useMemo(() => '─'.repeat(Math.max(20, Math.min(width - 4, 120))), [width]);
   const subtitle = useMemo(
-    () => 'Let\'s set up your security assessment environment.',
+    () => 'Initialize your environment for secure, reliable assessments.',
     []
   );
 
@@ -47,25 +47,30 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         <Text color={theme.muted}>{divider}</Text>
 
         <Box flexDirection="column" marginTop={1} marginBottom={2}>
-          <Text color={theme.info}>Setup will:</Text>
+          <Text color={theme.info}>This setup will:</Text>
           <Box marginLeft={2} marginTop={1} flexDirection="column">
             <Text color={theme.muted}>• Detect your system configuration</Text>
-            <Text color={theme.muted}>• Configure deployment mode</Text>
-            <Text color={theme.muted}>• Install required components</Text>
-            <Text color={theme.muted}>• Validate everything is working</Text>
+            <Text color={theme.muted}>• Select a deployment mode (Local CLI, Single Container, Full Stack)</Text>
+            <Text color={theme.muted}>• Install or pull required components</Text>
+            <Text color={theme.muted}>• Verify the environment is ready</Text>
           </Box>
         </Box>
 
         <Box marginTop={1}>
           <Text color={theme.muted}>
-            Tip: You can revisit this setup later from the configuration menu.
+            Tip: You can re-run setup anytime from Configuration.
           </Text>
         </Box>
 
-        <Box marginTop={1}>
-          <Text color={theme.info}>
-            Press <Text bold color={theme.primary}>Enter</Text> to begin • <Text bold>Esc</Text> to skip
-          </Text>
+        <Box marginTop={1} width={width} flexDirection="column">
+          <Box>
+            <Text color={theme.muted}>{divider}</Text>
+          </Box>
+          <Box justifyContent="flex-start">
+            <Text color={theme.info}>
+              Press <Text bold color={theme.primary}>Enter</Text> to begin • <Text bold>Esc</Text> to skip
+            </Text>
+          </Box>
         </Box>
       </Box>
     </Box>

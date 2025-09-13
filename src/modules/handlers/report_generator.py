@@ -14,7 +14,7 @@ This is NOT a Strands tool - it's a handler utility function.
 
 import json
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from modules.agents.report_agent import ReportGenerator
 from modules.tools.memory import get_memory_client
@@ -111,17 +111,18 @@ def generate_security_report(
         )
 
         # Create comprehensive prompt with template structure and module guidance
-        agent_prompt = f"""<operation_context>
+        # Using string concatenation/format to avoid f-string issues with template placeholders
+        agent_prompt = """<operation_context>
 Target: {target}
 Objective: {objective}
 Operation ID: {operation_id}
-Module: {module or 'general'}
+Module: {module}
 Steps Executed: {steps_executed}
-Tools Used Count: {len(tools_used) if tools_used else 0}
+Tools Used Count: {tools_count}
 </operation_context>
 
 <module_guidance>
-{module_report_prompt if module_report_prompt else 'Apply general security assessment best practices focusing on OWASP Top 10 and common vulnerability patterns.'}
+{module_guidance}
 </module_guidance>
 
 <report_template_instructions>
@@ -135,23 +136,101 @@ Use the following template structure for your report. Fill in each section with 
    - operation_id: "{operation_id}"
    - target: "{target}"
    - objective: "{objective}"
-   - module: "{module or 'general'}"
+   - module: "{module}"
    - steps_executed: {steps_executed}
-   - tools_used: {tools_used if tools_used else '[]'}
+   - tools_used: {tools_used}
 
 2. **Second Step**: Use the data returned by your tool to fill in the template above:
-   - The tool will return a dictionary with keys like: overview, findings_table, analysis, 
-     immediate_recommendations, short_term_recommendations, long_term_recommendations,
-     severity_counts, tools_summary, date, analysis_framework
-   - Replace each [bracketed instruction] with the corresponding data from your tool
-   - For severity counts, use severity_counts['critical'], severity_counts['high'], etc.
-   - Expand on the evidence with professional analysis where appropriate
+   - Most sections are pre-formatted and ready for direct insertion
+   - For {{attack_path_analysis}}, {{mitre_attck_mapping}}, and {{technical_appendix}}, generate from raw_evidence:
+            target=target,
+            objective=objective,
+            operation_id=operation_id,
+            module=module or "general",
+            steps_executed=steps_executed,
+            tools_count=len(tools_used) if tools_used else 0,
+            module_guidance=(
+                module_report_prompt
+                if module_report_prompt
+                else "Apply general security assessment best practices focusing on OWASP Top 10 and common vulnerability patterns."
+            ),
+            report_template=report_template,
+            tools_used=tools_used if tools_used else "[]",
+        )
+
+        # Add the rest of the prompt (continues after .format())
+        agent_prompt += """
+     
+     **Module Report Context**: Based on module and objective, briefly describe the assessment focus
+     
+     **Visual Summary**: Create a mermaid diagram visualizing the assessment findings.
+     Example structure (customize based on actual findings):
+     ```mermaid
+     graph TD
+         A[Target] --> B[Total Findings Count]
+         B --> C1[Critical: X]
+         B --> C2[High: Y]
+         B --> C3[Medium: Z]
+         
+         C1 --> D1[Actual vulnerability names from raw_evidence]
+         C2 --> D2[Actual vulnerability names from raw_evidence]
+         
+         D1 --> E[Impact/Exploitation paths]
+     ```
+     - Use the real target name and counts provided
+     - Replace example text with actual vulnerability names from raw_evidence
+     - Show actual affected systems from the location field
+     - Connect related vulnerabilities that could be chained together
+     
+    **Attack Path Analysis**: Based on raw_evidence list, create:
+     - Primary attack vectors showing how vulnerabilities chain together
+     - Mermaid diagram mapping findings to attack flow.
+       Example structure (build from actual evidence):
+       ```mermaid
+       graph LR
+           A[External Attacker] --> B[Initial Access]
+           B --> C[Vulnerability from raw_evidence (evidence id: <id>)]
+           C --> D[Next step based on evidence]
+           D --> E[Impact from evidence]
+       ```
+       * Replace generic terms with actual vulnerability names from raw_evidence
+       * When a node originates from a specific finding, append "(evidence id: <id>)" using the `id` field from raw_evidence for traceability
+       * Show the real attack progression based on your findings
+       * Include specific endpoints/systems from the location field
+       * Connect vulnerabilities based on their relationships in the evidence
+     - Detection opportunities specific to the discovered attack patterns
+
+    **MITRE ATT&CK Mapping**: Generate a mapping of tactics and techniques that are explicitly supported by the raw_evidence. Only include items that are clearly justified by the findings (no speculation). If uncertain, omit or mark as TBD. Group mappings by attack path nodes when possible.
+     
+     **Technical Appendix**: Based on raw_evidence and tools_used, create:
+     - Proof of concept code snippets (sanitized) from evidence field
+     - Configuration examples to remediate the findings
+     - SIEM/IDS detection rules specific to the vulnerabilities found
+     - Include actual payloads/commands from evidence where relevant
+   
+   - Use raw_evidence array which contains all parsed finding details
+   - Generate content specific to the actual vulnerabilities found, not generic
 
 3. **Final Step**: Output the complete report following the template structure exactly
    - Start IMMEDIATELY with "# SECURITY ASSESSMENT REPORT"
    - Do NOT include any preamble text like "Now I'll generate..." or "Let me create..."
    - Do NOT explain what you're doing - just output the report directly
    - Output ONLY the markdown report content - nothing else
+   
+   **CRITICAL REQUIREMENTS**:
+   - Generate a comprehensive, detailed report within the model's token limits
+   - NEVER truncate findings with text like "[Additional findings truncated for length]"
+   - Include ALL critical findings from the build_report_sections tool
+   - Include ALL high findings from the build_report_sections tool
+   - If you have space, include medium and low findings as well
+   - The report should be detailed and complete - do NOT abbreviate or truncate
+
+   **CONSERVATIVE CLAIMS & NORMALIZATION**:
+   - Use only claims grounded in raw_evidence; do NOT fabricate or speculate
+   - Normalize severity to CRITICAL/HIGH/MEDIUM/LOW in all sections
+   - Normalize confidence values to one decimal percent (e.g., 95.0%)
+   - When financial impact is stated, label it as "Potential impact (estimated)" and add a brief assumptions note
+   - If a remediation is unknown, write "TBD — requires protocol review"
 
 Remember: You MUST use your build_report_sections tool first to get the evidence and analysis data.
 </generation_instructions>"""
@@ -169,36 +248,11 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
                     if isinstance(block, dict) and "text" in block:
                         report_text += block["text"]
 
-                # Simple validation - trust the structured prompt system
+                # Minimal sanity check only
                 if not report_text.strip().startswith("# SECURITY ASSESSMENT REPORT"):
-                    logger.warning("Report doesn't start with expected header, but proceeding with output")
+                    logger.warning("Report does not start with the expected header; continuing")
 
                 logger.info("Report generated successfully (%d characters)", len(report_text))
-
-                # Validate report structure and completeness
-                report_text_lower = report_text.lower()
-                required_sections = [
-                    "# security assessment report",
-                    "## executive summary",
-                    "## key findings",
-                    "## remediation",
-                ]
-
-                missing_sections = [section for section in required_sections if section not in report_text_lower]
-
-                if missing_sections:
-                    logger.warning("Generated report missing required sections: %s", ", ".join(missing_sections))
-                    warning = (
-                        f"⚠️ **REPORT WARNING**: The following sections may be incomplete: "
-                        f"{', '.join(missing_sections)}\n\n"
-                    )
-                    report_text = warning + report_text
-
-                # Validate minimum content length
-                if len(report_text.strip()) < 100:
-                    logger.error("Report is critically short - likely generation failure")
-                    return "Report generation failed: Insufficient content generated"
-
                 return report_text
 
         logger.error("Failed to generate report - no content in response")
@@ -258,7 +312,7 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
             memory_content = mem.get("memory", "")
             memory_id = mem.get("id", "")
 
-            # Only include findings and relevant memories
+            # Include items explicitly tagged as findings
             if metadata.get("category") == "finding":
                 evidence.append(
                     {
@@ -269,7 +323,23 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
                         "confidence": metadata.get("confidence", "unknown"),
                     }
                 )
-            elif "category" not in metadata and memory_content and len(memory_content.split()) < 100:
+                continue
+
+            # Heuristic: include structured evidence entries with markers as findings
+            if any(marker in str(memory_content) for marker in ["[VULNERABILITY]", "[FINDING]", "[DISCOVERY]", "[SIGNAL]"]):
+                evidence.append(
+                    {
+                        "category": "finding",
+                        "content": memory_content,
+                        "id": memory_id,
+                        "severity": metadata.get("severity", "unknown"),
+                        "confidence": metadata.get("confidence", "unknown"),
+                    }
+                )
+                continue
+
+            # Lightweight: include very short general notes (backward compat)
+            if "category" not in metadata and memory_content and len(memory_content.split()) < 100:
                 evidence.append(
                     {
                         "category": "general",

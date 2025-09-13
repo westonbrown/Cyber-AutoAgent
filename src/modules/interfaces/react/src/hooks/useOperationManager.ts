@@ -283,7 +283,8 @@ export function useOperationManager({
         config.deploymentMode === 'full-stack' ? 'Full Stack' : 'Auto';
       
       addOperationHistoryEntry('info', `Starting ${assessmentParams.module} assessment on ${assessmentParams.target}`);
-      addOperationHistoryEntry('info', `Operation ID: ${operation.id}`);
+      // Defer showing Operation ID until backend provides authoritative ID via operation_init
+      addOperationHistoryEntry('info', 'Initializing operation…');
       addOperationHistoryEntry('info', `Execution Mode: ${deploymentModeDisplay}`);
       
       // Select and validate execution service using the factory
@@ -340,6 +341,40 @@ export function useOperationManager({
       
       // Set up unified event handlers for all execution services
       const handleExecutionEvent = (event: any) => {
+        // Emit plain test markers for PTY-based integration tests as soon as events arrive
+        try {
+          if (process.env.CYBER_TEST_MODE === 'true') {
+            const t = event?.type || 'unknown';
+            // Include some details for key types
+            if (t === 'step_header') {
+              console.log(`[TEST_EVENT] step_header step=${event.step} max=${event.maxSteps || event.total_steps || ''}`);
+            } else if (t === 'tool_start') {
+              console.log(`[TEST_EVENT] tool_start tool=${event.toolName || event.tool_name || ''}`);
+            } else if (t === 'metrics_update') {
+              const m = event.metrics || {};
+              console.log(`[TEST_EVENT] metrics_update tokens=${m.tokens ?? m.inputTokens ?? ''} cost=${m.cost ?? ''}`);
+            } else if (t === 'output' || t === 'reasoning') {
+              console.log(`[TEST_EVENT] ${t}`);
+            }
+          }
+        } catch {}
+
+        // Align frontend operation ID with backend operation ID (operation_init)
+        if (event.type === 'operation_init' && (event as any).operation_id) {
+          const backendId = (event as any).operation_id as string;
+          if (backendId && backendId !== operation.id) {
+            const updated = operationManager.renameOperationId(operation.id, backendId);
+            if (updated) {
+              // Update active operation reference so downstream updates use the correct ID
+              actions.setActiveOperation(updated);
+              // Replace local reference id to keep closures using the updated id
+              (operation as any).id = backendId;
+              // Replace the initializing message with the authoritative Operation ID
+              addOperationHistoryEntry('info', `Operation ID: ${backendId}`);
+            }
+          }
+        }
+
         // Handle progress updates
         if (event.step && event.total_steps) {
           operationManager.updateOperation(operation.id, {

@@ -15,14 +15,16 @@ Key Components:
 - Validation and error handling
 """
 
-import os
 import logging
+import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Any, Optional, List
-import requests
-import ollama
+from typing import Any, Dict, List, Optional
+
 import boto3
+import ollama
+import requests
+
 from modules.handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ class LLMConfig(ModelConfig):
     """Configuration for LLM models."""
 
     temperature: float = 0.95
-    max_tokens: int = 8096
+    max_tokens: int = 4096
     top_p: float = 0.95
 
     def __post_init__(self):
@@ -257,7 +259,11 @@ class ServerConfig:
 
 
 class ConfigManager:
-    """Central configuration manager for all model configurations."""
+    """Central manager for model, memory, and SDK configuration.
+
+    Provides provider defaults with environment overrides and lightweight
+    validation helpers. Caches computed ServerConfig objects per provider.
+    """
 
     def __init__(self):
         """Initialize configuration manager."""
@@ -287,7 +293,7 @@ class ConfigManager:
             "model_id": model_id,
             "region_name": region_name,
             "temperature": 1.0,
-            "max_tokens": 8096,
+            "max_tokens": 4096,
             "additional_request_fields": {
                 "anthropic_beta": ["interleaved-thinking-2025-05-14"],
                 "thinking": {"type": "enabled", "budget_tokens": 10000},
@@ -325,9 +331,9 @@ class ConfigManager:
             "ollama": {
                 "llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="qwen3:1.7b",
+                    model_id="llama3.2:3b",
                     temperature=0.95,
-                    max_tokens=8096,
+                    max_tokens=4096,
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.OLLAMA,
@@ -336,20 +342,20 @@ class ConfigManager:
                 ),
                 "memory_llm": MemoryLLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="qwen3:1.7b",
+                    model_id="llama3.2:3b",
                     temperature=0.1,
                     max_tokens=2000,
                     aws_region="ollama",
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="qwen3:1.7b",
+                    model_id="llama3.2:3b",
                     temperature=0.1,
                     max_tokens=2000,
                 ),
                 "swarm_llm": LLMConfig(
                     provider=ModelProvider.OLLAMA,
-                    model_id="qwen3:1.7b",
+                    model_id="llama3.2:3b",
                     temperature=0.7,
                     max_tokens=500,
                 ),
@@ -361,7 +367,7 @@ class ConfigManager:
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
                     temperature=0.95,
-                    max_tokens=8096,
+                    max_tokens=4096,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -494,6 +500,7 @@ class ConfigManager:
         # Build output configuration
         output_config = self._get_output_config(provider, defaults, overrides)
 
+
         # Resolve host for ollama provider
         host = self.get_ollama_host() if provider == "ollama" else None
 
@@ -550,6 +557,7 @@ class ConfigManager:
         """Get output configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.output
+
 
     def get_sdk_config(self, server: str, **overrides) -> SDKConfig:
         """Get SDK configuration for the specified server."""
@@ -872,6 +880,7 @@ class ConfigManager:
             operation_id=operation_id,
         )
 
+
     def _validate_ollama_requirements(self) -> None:
         """Validate Ollama requirements."""
         ollama_host = self.get_ollama_host()
@@ -898,30 +907,25 @@ class ConfigManager:
             # Log available models for debugging
             logger.info(f"Available Ollama models: {available_models}")
 
-            # Only check for default models if no user override is expected
-            # This allows users to specify any model they have available
+            # Enforce presence of default models for predictable local dev unless user overrides
             server_config = self.get_server_config("ollama")
-            default_models = [
+            required_models = [
                 server_config.llm.model_id,
                 server_config.embedding.model_id,
             ]
 
-            # Check if at least one default model is available, or any model exists for override
-            has_default = any(
-                any(default_model in model for model in available_models) for default_model in default_models
+            # Require at least one required model to be available
+            has_required = any(
+                any(req in model for model in available_models) for req in required_models
             )
 
-            if not has_default and len(available_models) > 0:
-                # User has models but not the defaults - this is OK, they can override
-                logger.info(
-                    f"Default models {default_models} not found, but {len(available_models)} model(s) available. "
-                    f"User can specify --model parameter to use: {available_models[0]}"
+            if not has_required:
+                raise ValueError(
+                    "Required models not found. Ensure default models are pulled or override with --model."
                 )
-            elif not has_default and len(available_models) == 0:
-                raise ValueError("No models available. Pull a model with: ollama pull qwen3:1.7b")
 
         except Exception as e:
-            if "No Ollama models found" in str(e) or "No models available" in str(e):
+            if "No Ollama models found" in str(e) or "Required models not found" in str(e) or "No models available" in str(e):
                 raise e
             raise ConnectionError(f"Could not verify Ollama models: {e}") from e
 
@@ -948,21 +952,27 @@ class ConfigManager:
             # Model-specific errors will be handled by strands-agents during actual usage
 
     def _validate_aws_requirements(self) -> None:
-        """Validate AWS requirements including Bedrock model access."""
-        # Convert bearer token to session credentials for Strands SDK compatibility
-        bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
-        if bearer_token and not os.getenv("AWS_ACCESS_KEY_ID"):
-            os.environ["AWS_ACCESS_KEY_ID"] = "ASIABEARERTOKEN"
-            os.environ["AWS_SECRET_ACCESS_KEY"] = "bearer+token+placeholder"
-            os.environ["AWS_SESSION_TOKEN"] = bearer_token
+        """Validate AWS requirements including Bedrock model access.
 
-        # Verify AWS credentials are configured
-        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+        Supports either standard AWS credentials (ACCESS_KEY/SECRET or PROFILE)
+        or Bedrock bearer token via AWS_BEARER_TOKEN_BEDROCK without mutating
+        credential environment variables.
+        """
+        bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+
+        # Verify AWS credentials are configured (standard creds OR bearer token)
+        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE") or bearer_token):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
                 "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, configure AWS_PROFILE, "
                 "or set AWS_BEARER_TOKEN_BEDROCK for API key authentication"
             )
+
+        # Bearer token should be used directly by boto3
+        if bearer_token:
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer_token
+
+        # Optionally validate region and client construction; ignore client errors here.
         self._validate_bedrock_model_access()
 
     def _validate_litellm_requirements(self) -> None:

@@ -119,11 +119,11 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
   │ │ AGENT │ │
   │ └───────┘ │
   └───────────┘`,
-      requirements: ['~2GB disk', '4GB RAM', 'Docker Desktop', 'Container runtime']
+      requirements: ['Disk: ~2GB', 'Memory: 4GB', 'CPU: 2 vCPU', 'Containers: 1', 'Dependencies: Docker Desktop']
     },
     {
       id: 'full-stack' as DeploymentMode,
-      name: 'Enterprise',
+      name: 'Full Stack',
       description: 'Complete platform - All services with observability and evaluation',
       icon: `
   ┌─────────────┐
@@ -134,7 +134,7 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
   │ │ │ │ │ │ │ │
   │ └─┘ └─┘ └─┘ │
   └─────────────┘`,
-      requirements: ['~5GB disk', '8GB RAM', 'Docker Compose', 'Full service stack']
+      requirements: ['Disk: ~5GB', 'Memory: 8GB', 'CPU: 4 vCPU', 'Containers: 7', 'Dependencies: Docker Compose']
     }
   ];
 

@@ -10,6 +10,17 @@ import {App} from './App.js';
 import { Config } from './contexts/ConfigContext.js';
 import { loggingService } from './services/LoggingService.js';
 
+// Set project root if not already set (helps ContainerManager find docker-compose.yml)
+if (!process.env.CYBER_PROJECT_ROOT) {
+  // Navigate up from src/modules/interfaces/react/dist to project root
+  const currentFileUrl = import.meta.url;
+  const currentDir = path.dirname(currentFileUrl.replace('file://', ''));
+  const projectRoot = path.resolve(currentDir, '..', '..', '..', '..', '..');
+  if (fs.existsSync(path.join(projectRoot, 'docker', 'docker-compose.yml'))) {
+    process.env.CYBER_PROJECT_ROOT = projectRoot;
+  }
+}
+
 // Earliest possible test hint to ensure PTY capture sees a welcome line
 try {
   if (process.env.CYBER_TEST_MODE === 'true') {
@@ -106,13 +117,14 @@ const cli = meow(`
 });
 
 // Emit an immediate welcome line in headless test mode to aid terminal capture timing
-try {
+  try {
   if (process.env.CYBER_TEST_MODE === 'true' && cli.flags.headless && !cli.flags.autoRun) {
     const configDir = path.join(os.homedir(), '.cyber-autoagent');
     const configPath = path.join(configDir, 'config.json');
     const firstLaunch = !fs.existsSync(configPath);
     if (firstLaunch) {
       loggingService.info('Welcome to Cyber-AutoAgent');
+      try { console.log('[TEST_EVENT] welcome'); } catch {}
     }
   }
 } catch {}
@@ -276,15 +288,19 @@ function renderReactApp() {
           // Help the PTY-based journey test capture key screens as plain text markers
           setTimeout(() => {
             loggingService.info('Select Deployment Mode');
+            try { console.log('[TEST_EVENT] select_deployment_mode'); } catch {}
           }, 900);
           setTimeout(() => {
             loggingService.info('Setting up');
+            try { console.log('[TEST_EVENT] setting_up'); } catch {}
           }, 1600);
           setTimeout(() => {
             loggingService.info('setup completed successfully');
+            try { console.log('[TEST_EVENT] setup_complete'); } catch {}
           }, 3000);
           setTimeout(() => {
             loggingService.info('Configuration Editor');
+            try { console.log('[TEST_EVENT] config_editor'); } catch {}
           }, 3600);
         }
       }
@@ -294,10 +310,6 @@ function renderReactApp() {
     // Don't exit - let the app run to handle setup wizard if needed
   }
 
-  // Log headless mode if applicable
-  if (cli.flags.headless) {
-    loggingService.info('🔧 Running in headless mode');
-  }
 
   // Always render the app to ensure keyboard handlers are active
   // Even in headless mode, we need the React app running for proper event handling

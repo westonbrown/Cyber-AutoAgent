@@ -15,7 +15,12 @@ const __dirname = path.dirname(__filename);
 jest.setTimeout(30000);
 
 const capturesDir = path.join(__dirname, '..', '..', 'fixtures', 'captures', 'journeys');
-const appDist = path.join(__dirname, '..', '..', '..', 'dist', 'index.js');
+// Resolve app dist path relative to tests/unit/journeys -> tests -> react -> dist
+const appDistCandidates = [
+  path.join(__dirname, '..', '..', '..', '..', 'dist', 'index.js'), // ../../../../dist
+  path.join(__dirname, '..', '..', '..', 'dist', 'index.js'),       // fallback: ../../../dist
+];
+const appDist = appDistCandidates.find(p => fs.existsSync(p)) || appDistCandidates[0];
 
 function ensureDir(p: string) {
   fs.mkdirSync(p, { recursive: true });

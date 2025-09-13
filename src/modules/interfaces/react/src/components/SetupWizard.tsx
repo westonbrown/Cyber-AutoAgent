@@ -54,7 +54,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
         const modeDisplayName = 
           state.selectedMode === 'local-cli' ? 'Local CLI' :
           state.selectedMode === 'single-container' ? 'Agent Container' :
-          'Enterprise Stack';
+          'Full Stack';
         
         // Clear the setup flag
         delete process.env.CYBER_SHOW_SETUP;
@@ -99,7 +99,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
             const modeDisplayName = 
               mode === 'local-cli' ? 'Local CLI' :
               mode === 'single-container' ? 'Agent Container' :
-              'Enterprise Stack';
+              'Full Stack';
 
             updateConfig({ 
               deploymentMode: mode,
@@ -152,7 +152,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
         return (
           <WelcomeScreen
             onContinue={actions.nextStep}
-            onSkip={() => onComplete('Setup skipped')}
+            onSkip={() => {
+              // User chose to skip the setup wizard from the welcome screen
+              // Clear any forced setup flag so detection does not immediately re-open the wizard
+              try {
+                delete (process as any).env?.CYBER_SHOW_SETUP;
+              } catch {}
+              setIsExiting(true);
+              // Defer onComplete to allow the UI to paint the state change cleanly
+              setTimeout(() => onComplete('Setup skipped'), 0);
+            }}
             terminalWidth={terminalWidth}
           />
         );

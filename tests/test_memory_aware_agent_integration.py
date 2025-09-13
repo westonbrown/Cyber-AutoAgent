@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import pytest
 import os
 import sys
 from unittest.mock import Mock, patch
+
+import pytest
 
 # Add src to path for imports
 
@@ -11,6 +12,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.agents.cyber_autoagent import create_agent
+
 
 class TestMemoryAwareAgentIntegration:
     """Test memory-aware system prompt integration with agent creation"""
@@ -345,6 +347,7 @@ class TestMemoryAwareAgentIntegration:
         assert "Continuing assessment with 1 existing memories" in system_prompt
         assert "Load all memories with mem0_memory" in system_prompt
         assert 'model_provider: "ollama"' in system_prompt
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

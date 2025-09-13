@@ -5,14 +5,26 @@ Comprehensive testing infrastructure for the Cyber-AutoAgent React terminal inte
 ## Quick Start
 
 ```bash
+# Install dependencies (first time)
+npm install
+
 # Run all tests
 ./run-all-comprehensive-tests.sh
 
-# Run specific test types  
+# Run specific test types
 node run-enhanced-tests.js --skip-visual --skip-performance
 
 # Run only Jest unit tests
 cd .. && npm test
+
+# Run terminal stream rendering tests (uses tsx)
+node integration/terminal-stream-tests.js --verbose
+
+# Headless UI smoke test
+node integration/headless-auto-run.js
+
+# End-to-end operation stream simulation (mock execution)
+node integration/operation-stream-simulation.js
 ```
 
 ## Test Suite Overview
@@ -40,9 +52,40 @@ cd .. && npm test
 - **`interactive-component-tests.js`** - Component interaction testing
 - **`automated-test-suite.js`** - Full application testing
 - **`journey-validation-tests.js`** - User journey validation
+- **`terminal-stream-tests.js`** - Terminal stream rendering tests (uses a JSX harness with `tsx` and `EventRenderer.jsx`)
+- **`operation-stream-simulation.js`** - PTY-driven mock execution flow with stream assertions
+- **`headless-auto-run.js`** - Headless UI smoke test (opens config, checks responsiveness)
 - **`comprehensive-capture.js`** - Screen capture generation
 - **`validate-captures.js`** - Visual regression validation
 - **`frame-analyzer.js`** - Terminal frame analysis utilities
+- **`EventRenderer.jsx`** - Lightweight JSX wrapper that renders `EventLine` directly for integration tests
+
+### Terminal Stream Tests
+
+- Purpose: Validate the real terminal UI rendering pipeline for streamed events (same code paths used in production: `Terminal` → `normalizeEvent` → `StreamDisplay` → `EventLine`).
+- Execution:
+  - `node integration/terminal-stream-tests.js --verbose`
+- Under the hood:
+  - Spawns a tiny JSX app via `npx tsx` that renders `EventRenderer.jsx`, which uses the real `EventLine` from `src/components/StreamDisplay.tsx`.
+  - Saves a JSON report to `tests/fixtures/test-results/`.
+- Environment:
+  - No special env needed; runner ensures the results directory exists.
+
+### Mock Operation Stream Tests
+
+- Purpose: Exercise a realistic end-to-end mock run of the UI, including safety modal, guided flow, and streaming events.
+- Execution:
+  - `node integration/operation-stream-simulation.js`
+- Environment used by the script:
+  - `NODE_ENV=test`, `CYBER_TEST_MODE=true`, `CYBER_TEST_EXECUTION=mock` (ensures `TestExecutionService` is selected and UI emits test markers).
+- Notes:
+  - In test mode, the UI auto-confirms the safety prompt and auto-drives the guided flow to start streaming.
+
+### Headless UI Smoke Test
+
+- Purpose: Ensure the app mounts in headless mode and the config editor opens without fatal errors.
+- Execution:
+  - `node integration/headless-auto-run.js`
 
 ## Current Test Results
 
@@ -91,35 +134,39 @@ tests/
 ├── jest.config.js                      # Jest test configuration
 ├── mock-config.js                      # Shared mock configurations
 ├── run-all-comprehensive-tests.sh      # Main test runner script
-├── run-enhanced-tests.js              # Enhanced test orchestrator
+├── run-enhanced-tests.js               # Enhanced test orchestrator
 │
-├── unit/                              # Jest unit tests
-│   ├── components/                    # Component-specific tests
+├── unit/                               # Jest unit tests
+│   ├── components/                     # Component-specific tests
 │   │   ├── ConfigEditor-simple.test.tsx
 │   │   ├── ModuleSelector-simple.test.tsx
 │   │   └── SafetyWarning-simple.test.tsx
-│   ├── mocks/                         # Jest mocks
-│   │   ├── ink.js                     # Ink framework mock
-│   │   ├── ink-components.js          # Ink components mock
-│   │   └── ink-testing-library.js     # Testing library mock
-│   ├── simple.test.ts                 # Basic Jest validation
-│   ├── setup.ts                       # Test environment setup
-│   └── test-utils.js                  # Shared testing utilities
+│   ├── mocks/                          # Jest mocks
+│   │   ├── ink.js                      # Ink framework mock
+│   │   ├── ink-components.js           # Ink components mock
+│   │   └── ink-testing-library.js      # Testing library mock
+│   ├── simple.test.ts                  # Basic Jest validation
+│   ├── setup.ts                        # Test environment setup
+│   └── test-utils.js                   # Shared testing utilities
 │
-├── integration/                       # Integration tests
-│   ├── interactive-component-tests.js # PTY-based interaction tests
-│   ├── automated-test-suite.js        # Full application testing
-│   └── journey-validation-tests.js    # End-to-end user journeys
+├── integration/                        # Integration tests
+│   ├── interactive-component-tests.js  # PTY-based interaction tests
+│   ├── automated-test-suite.js         # Full application testing
+│   ├── journey-validation-tests.js     # End-to-end user journeys
+│   ├── terminal-stream-tests.js        # Terminal stream rendering tests (uses tsx + EventRenderer)
+│   ├── operation-stream-simulation.js  # PTY-driven mock execution stream
+│   ├── headless-auto-run.js            # Headless UI smoke test
+│   └── EventRenderer.jsx               # JSX harness for rendering EventLine
 │
-├── visual/                            # Visual regression tests
-│   ├── comprehensive-capture.js       # Screen capture generation
-│   ├── validate-captures.js          # Visual regression validation
-│   └── frame-analyzer.js             # Terminal frame analysis
+├── visual/                             # Visual regression tests
+│   ├── comprehensive-capture.js        # Screen capture generation
+│   ├── validate-captures.js            # Visual regression validation
+│   └── frame-analyzer.js               # Terminal frame analysis
 │
-├── fixtures/                          # Test data and fixtures
-│   ├── captures/                      # Screen captures for visual testing
-│   ├── coverage/                      # Jest coverage reports
-│   └── test-results/                  # Test execution reports
+├── fixtures/                           # Test data and fixtures
+│   ├── captures/                       # Screen captures for visual testing
+│   ├── coverage/                       # Jest coverage reports
+│   └── test-results/                   # Test execution reports (auto-created)
 ```
 
 ## TEST-VALIDATION-SPECIFICATION.md Alignment
@@ -154,8 +201,17 @@ cd .. && npm test
 # Interactive component tests
 node integration/interactive-component-tests.js
 
-# User journey validation  
+# User journey validation
 node integration/journey-validation-tests.js
+
+# Terminal stream rendering tests
+node integration/terminal-stream-tests.js --verbose
+
+# Headless UI smoke test
+node integration/headless-auto-run.js
+
+# Operation stream simulation
+node integration/operation-stream-simulation.js
 
 # Performance benchmarks
 node run-enhanced-tests.js --skip-unit --skip-interactive --skip-journey --skip-automated --skip-visual
@@ -171,6 +227,19 @@ cd .. && npm run test:coverage
 ```
 
 ## Test Development
+
+### Test Mode and Mock Execution
+
+Some integration tests rely on a controlled test mode:
+- `CYBER_TEST_MODE=true`: Enables PTY-visible markers and safe auto-flows in the UI.
+- `CYBER_TEST_EXECUTION=mock`: Selects the `TestExecutionService` so tests do not require Python/Docker.
+
+In test mode the UI will:
+- Auto-open and auto-confirm the safety prompt.
+- Auto-drive the guided flow (target → objective → execute) for mock runs.
+- Emit `[TEST_EVENT]` markers (e.g., step headers, tool starts, metrics updates) to stdout for robust assertions.
+
+These behaviors are gated to test mode and do not affect production.
 
 ### Adding New Unit Tests
 1. Create test file in `unit/components/`

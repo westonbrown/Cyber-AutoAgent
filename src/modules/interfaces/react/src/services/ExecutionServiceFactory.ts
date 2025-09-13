@@ -51,8 +51,15 @@ export class ExecutionServiceFactory {
   private static async initialize(): Promise<void> {
     if (this.initialized) return;
 
+    // In test mode, optionally override Python service with mock
+    const testMode = process.env.CYBER_TEST_MODE === 'true' && process.env.CYBER_TEST_EXECUTION === 'mock';
+
     // Register Python execution service
     this.services.set(ExecutionMode.PYTHON_CLI, async () => {
+      if (testMode) {
+        const { TestExecutionService } = await import('./TestExecutionService.js');
+        return new TestExecutionService();
+      }
       const { PythonExecutionServiceAdapter } = await import('./PythonExecutionServiceAdapter.js');
       return new PythonExecutionServiceAdapter();
     });

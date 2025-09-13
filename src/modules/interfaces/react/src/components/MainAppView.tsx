@@ -161,8 +161,8 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         />
       )}
 
-      {/* HEADER: When a stream is running, render inside Static so it always stays above Static output */}
-      {!hideHeader && activeModal === ModalType.NONE && !hasAnyOperationEnded && (
+      {/* HEADER: When a stream is running, render inside Static so it stays above streaming output. */}
+      {!hideHeader && activeModal === ModalType.NONE && (
         showOperationStream ? (
           <Static items={[`app-header-${staticKey}`]}>
             {(item) => (
@@ -172,6 +172,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
                   version="0.1.3" 
                   terminalWidth={appState.terminalDisplayWidth}
                   nightly={false}
+                  exitNotice={Boolean((appState as any).exitNotice)}
                 />
               </Box>
             )}
@@ -183,6 +184,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               version="0.1.3" 
               terminalWidth={appState.terminalDisplayWidth}
               nightly={false}
+              exitNotice={Boolean((appState as any).exitNotice)}
             />
           </Box>
         )

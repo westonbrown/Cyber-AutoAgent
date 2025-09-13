@@ -51,8 +51,12 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
           // Call the completion handler first to dismiss initialization
           onInitializationComplete(completionMessage);
           
-          // Only show config editor if model configuration is incomplete
-          if (!applicationConfig.modelId || !applicationConfig.modelProvider) {
+          // If the user explicitly skipped the setup (e.g., pressed Esc on the welcome screen),
+          // return to the main screen without auto-opening the config editor.
+          const skipped = (completionMessage || '').toLowerCase().includes('skip');
+          
+          // Only show config editor if model configuration is incomplete AND the flow was not skipped
+          if (!skipped && (!applicationConfig.modelId || !applicationConfig.modelProvider)) {
             setTimeout(() => {
               onConfigOpen();
             }, 100);

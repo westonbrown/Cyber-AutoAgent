@@ -22,6 +22,7 @@ export type AdditionalStreamEvent =
   | { type: 'delayed_thinking_start'; context?: string; startTime?: number; delay?: number; [key: string]: any }
   | { type: 'tool_start'; tool_name: string; tool_input: any; [key: string]: any }
   | { type: 'tool_input_update'; tool_id: string; tool_input: any; [key: string]: any }
+  | { type: 'tool_input_corrected'; tool_id: string; tool_input: any; [key: string]: any }
   | { type: 'command'; content: string; [key: string]: any }
   | { type: 'output'; content: string; exitCode?: number; duration?: number; [key: string]: any }
   | { type: 'error'; content: string; [key: string]: any }
@@ -199,6 +200,18 @@ export const EventLine: React.FC<{
       // Don't render anything - this is handled by the terminal component
       return null;
       
+    case 'termination_reason':
+      // Display termination notification (no extra step counters to avoid confusion)
+      const reasonLabel = event.reason === 'stop_tool' ? 'STOP TOOL' : 'STEP LIMIT';
+      const reasonColor = event.reason === 'stop_tool' ? 'green' : 'yellow';
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Box borderStyle="round" borderColor={reasonColor} paddingX={1}>
+            <Text color={reasonColor} bold>{reasonLabel}: {event.message}</Text>
+          </Box>
+        </Box>
+      );
+      
     case 'reasoning':
       // This case should not be reached anymore as reasoning is handled in StreamDisplay
       // But keep it as fallback
@@ -220,9 +233,9 @@ export const EventLine: React.FC<{
     case 'tool_start': {
       // Get the latest tool input (may have been updated via tool_input_update)
       // First check if we have updated input in the toolInputs Map, otherwise use the event's tool_input
-      const latestInput = ('tool_id' in event && event.tool_id && toolInputs?.get(event.tool_id)) || 
-                         ('tool_input' in event && event.tool_input) || 
-                         {};
+      const toolId = (event as any).toolId ?? (event as any).tool_id;
+      const latestInput = (toolId && toolInputs?.get(toolId)) ||
+                         ((('tool_input' in event) && (event as any).tool_input) || {}) ;
       
       // Always show tool header even if args are not yet available.
       // Individual tool renderers will gracefully handle missing fields.
@@ -272,123 +285,92 @@ export const EventLine: React.FC<{
           // Show tool header with command(s) if available
           const agentContext = ('swarm_agent' in event && event.swarm_agent) 
             ? ` (${event.swarm_agent})` : '';
-          
-          // Get the raw command input
-          let commandInput = latestInput?.command || latestInput?.cmd || '';
-          
-          // Handle both JSON strings AND already-parsed arrays from backend
-          // The backend now parses JSON before sending, so we get:
-          // 1. Already parsed arrays of objects: [{"command": "cmd", "timeout": 300}, ...]
-          // 2. Already parsed arrays of strings: ["cmd1", "cmd2"]
-          // 3. JSON strings (legacy): "[{\"command\": \"cmd\", \"timeout\": 300}, ...]"
-          // 4. Single strings: "single command"
-          
-          // Handle already-parsed arrays (NEW - backend now sends these)
-          if (Array.isArray(commandInput)) {
-            // Extract command strings from array of objects or strings
-            commandInput = commandInput.map((item: any) => {
-              if (typeof item === 'string') return item;
-              if (typeof item === 'object' && item && item.command) {
-                // Just extract the command, ignore work_dir for display
-                return item.command;
-              }
-              if (typeof item === 'object' && item && item.cmd) return item.cmd;
-              // Don't convert objects to string - return empty string instead
-              return '';
-            }).filter(Boolean);
-          }
-          // Handle JSON strings (LEGACY - for backwards compatibility)
-          else if (typeof commandInput === 'string' && commandInput.trim().startsWith('[')) {
-            try {
-              // Parse the JSON string - it has real newlines, not \n escapes
-              const parsed = JSON.parse(commandInput);
-              if (Array.isArray(parsed)) {
-                // Extract command strings from whatever format we get
-                commandInput = parsed.map((item: any) => {
-                  if (typeof item === 'string') return item;
-                  if (typeof item === 'object' && item && item.command) return item.command;
-                  if (typeof item === 'object' && item && item.cmd) return item.cmd;
-                  return '';
-                }).filter(Boolean);
-              }
-            } catch (e) {
-              // Fallback: try to extract commands using regex
-              const matches = commandInput.match(/"command"\s*:\s*"([^"]+)"/g);
-              if (matches) {
-                commandInput = matches.map(m => {
-                  const match = m.match(/"command"\s*:\s*"([^"]+)"/);
-                  return match ? match[1] : '';
-                }).filter(Boolean);
-              } else {
-                // Last resort: try to find any quoted strings
-                const quotedStrings = commandInput.match(/"([^"]+)"/g);
-                if (quotedStrings && quotedStrings.length > 0) {
-                  // Filter out JSON keys and keep only command-like strings
-                  commandInput = quotedStrings
-                    .map(s => s.slice(1, -1))
-                    .filter(s => !s.match(/^(command|timeout|parallel)$/))
-                    .filter(s => s.includes(' ') || s.includes('/'));
-                }
+
+          // Pull raw commands from the most permissive set of fields
+          const rawInput: any = (latestInput as any) || {};
+          let raw = rawInput.commands ?? rawInput.command ?? rawInput.cmd ?? rawInput.input ?? '';
+
+          // Helper to stringify any command entry into a single shell line
+          const stringifyCommandEntry = (entry: any): string => {
+            if (entry === null || entry === undefined) return '';
+            if (typeof entry === 'string') return entry;
+            if (Array.isArray(entry)) {
+              // Join parts (args arrays)
+              const parts = entry.map((p) => stringifyCommandEntry(p)).filter(Boolean);
+              return parts.join(' ');
+            }
+            if (typeof entry === 'object') {
+              // Prefer well-known keys in order
+              if ('command' in entry) return stringifyCommandEntry((entry as any).command);
+              if ('cmd' in entry) return stringifyCommandEntry((entry as any).cmd);
+              if ('value' in entry) return stringifyCommandEntry((entry as any).value);
+              if ('args' in entry) return stringifyCommandEntry((entry as any).args);
+              // Last resort - structured but unknown: JSON.stringify to avoid [object Object]
+              try {
+                return JSON.stringify(entry);
+              } catch {
+                return String(entry);
               }
             }
-          }
-          
-          // Simplified command parser - commandInput is already pre-processed above
-          const parseCommands = (cmd: any): string[] => {
-            if (!cmd) return [];
-            
-            // If it's already an array (from pre-processing), ensure all items are strings
-            if (Array.isArray(cmd)) {
-              return cmd.map((item: any) => {
-                // Extract command from objects, don't convert objects to string
-                if (typeof item === 'string') return item;
-                if (typeof item === 'object' && item && item.command) {
-                  // Just extract the command string
-                  return String(item.command);
-                }
-                if (typeof item === 'object' && item && item.cmd) return String(item.cmd);
-                // Don't convert unknown objects to string - return empty
-                return '';
-              }).filter(Boolean);
-            }
-            
-            // Handle string that wasn't caught by pre-processing
-            if (typeof cmd === 'string') {
-              return [cmd];
-            }
-            
-            // Handle single command object
-            if (typeof cmd === 'object' && cmd) {
-              if (cmd.command) return [String(cmd.command)];
-              if (cmd.cmd) return [String(cmd.cmd)];
-            }
-            
-            return [];
+            return String(entry);
           };
-          
-          const commands = parseCommands(commandInput);
-          
-          // Display commands with timeout info if available
-          const hasTimeout = latestInput?.timeout;
-          const hasParallel = latestInput?.parallel;
-          const extraParams = [];
-          if (hasTimeout) extraParams.push(`timeout: ${latestInput.timeout}s`);
+
+          // Normalize raw into a string[] of commands
+          let commands: any[] = [];
+          try {
+            if (Array.isArray(raw)) {
+              commands = raw.map((e: any) => stringifyCommandEntry(e)).filter(Boolean);
+            } else if (typeof raw === 'string') {
+              const trimmed = raw.trim();
+              if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+                // JSON-looking string: try to parse
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (Array.isArray(parsed)) {
+                    commands = parsed.map((e: any) => stringifyCommandEntry(e)).filter(Boolean);
+                  } else {
+                    const s = stringifyCommandEntry(parsed);
+                    if (s) commands = [s];
+                  }
+                } catch {
+                  // Fallback: keep as single command line
+                  if (trimmed) commands = [trimmed];
+                }
+              } else {
+                if (trimmed) commands = [trimmed];
+              }
+            } else if (typeof raw === 'object' && raw) {
+              const s = stringifyCommandEntry(raw);
+              if (s) commands = [s];
+            }
+          } catch {
+            // If anything fails, ensure commands is at least empty array
+            commands = Array.isArray(raw) ? raw.map((e: any) => String(e)).filter(Boolean) : [];
+          }
+
+          // Final safety: ensure all commands are strings to avoid "[object Object]"
+          const toDisplayString = (x: any): string => {
+            if (typeof x === 'string') return x;
+            try { return JSON.stringify(x); } catch { return String(x); }
+          };
+          const displayCommands: string[] = commands.map(toDisplayString).filter(Boolean);
+
+          // Display commands with timeout/parallel info if available
+          const hasTimeout = rawInput?.timeout;
+          const hasParallel = rawInput?.parallel;
+          const extraParams = [] as string[];
+          if (hasTimeout) extraParams.push(`timeout: ${rawInput.timeout}s`);
           if (hasParallel) extraParams.push('parallel execution');
-          
+
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell{agentContext}</Text>
-              {commands.length > 0 ? (
-                commands.map((cmd, index) => {
-                  // Commands should already be strings from parseCommands
-                  // But add a safety check just in case
-                  const cmdStr = typeof cmd === 'string' ? cmd : String(cmd);
-                  return (
-                    <Box key={index} marginLeft={2}>
-                      <Text dimColor>⎿ {cmdStr}</Text>
-                    </Box>
-                  );
-                })
+              {displayCommands.length > 0 ? (
+                displayCommands.map((cmd, index) => (
+                  <Box key={index} marginLeft={2}>
+                    <Text dimColor>⎿ {cmd}</Text>
+                  </Box>
+                ))
               ) : (
                 <Box marginLeft={2}>
                   <Text dimColor>⎿ (no command)</Text>
@@ -650,17 +632,33 @@ export const EventLine: React.FC<{
     }
 
     case 'command':
-          // Parse command if it's a JSON object
-          let commandText = event.content;
-          if (typeof event.content === 'string' && event.content.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(event.content);
-              if (parsed.command) {
-                commandText = parsed.command;
+          // Robustly derive a displayable command string from event.content
+          let commandText: string = '';
+          try {
+            if (typeof event.content === 'string') {
+              const raw = event.content.trim();
+              if (raw.startsWith('{')) {
+                try {
+                  const parsed = JSON.parse(raw);
+                  commandText = parsed && parsed.command ? String(parsed.command) : raw;
+                } catch {
+                  commandText = raw; // Keep as-is if JSON parse fails
+                }
+              } else {
+                commandText = raw;
               }
-            } catch (e) {
-              // If parsing fails, use original content
+            } else if (event.content && typeof event.content === 'object') {
+              // Avoid [object Object] by JSON stringifying unknown structures
+              try {
+                commandText = JSON.stringify(event.content);
+              } catch {
+                commandText = String(event.content);
+              }
+            } else {
+              commandText = String(event.content ?? '');
             }
+          } catch {
+            commandText = String((event as any).content ?? '');
           }
           
           return (
@@ -675,9 +673,16 @@ export const EventLine: React.FC<{
         return null;
       }
 
-      const contentStr = typeof (event as any).content === 'string'
-        ? ((event as any).content as string)
-        : String((event as any).content);
+      let contentStr: string;
+      if (typeof (event as any).content === 'string') {
+        contentStr = (event as any).content as string;
+      } else {
+        try {
+          contentStr = JSON.stringify((event as any).content, null, 2);
+        } catch {
+          contentStr = String((event as any).content);
+        }
+      }
 
       // Normalize line endings and fix occasionally inlined tokens
       const normalized = contentStr
@@ -721,6 +726,8 @@ export const EventLine: React.FC<{
         if (l.length === 0) return true; // keep blank spacers
         // Drop only standalone placeholder lines (not JSON content)
         if (l === 'output' || l === 'reasoning') return false;
+        // Drop empty Error: labels
+        if (/^Error:\s*$/.test(l)) return false;
         // For tool outputs (JSON), keep all content
         if (fromToolBuffer) {
           // Only drop CYBER_EVENT and timestamp logs for tool outputs
@@ -1407,8 +1414,8 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         if ('tool_id' in event && event.tool_id) {
           newToolInputs.set(event.tool_id, event.tool_input || {});
         }
-      } else if (event.type === 'tool_input_update') {
-        // Update tool input with complete data
+      } else if (event.type === 'tool_input_update' || event.type === 'tool_input_corrected') {
+        // Update tool input with complete/corrected data
         if ('tool_id' in event && event.tool_id && 'tool_input' in event) {
           newToolInputs.set(event.tool_id, event.tool_input);
         }

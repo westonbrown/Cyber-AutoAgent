@@ -75,8 +75,8 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 import boto3
 from mem0 import Memory as Mem0Memory
@@ -87,6 +87,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from strands import tool
+
 from modules.config.manager import get_config_manager
 
 # Set up logging
@@ -176,7 +177,10 @@ TOOL_SPEC = {
 
 
 class Mem0ServiceClient:
-    """Client for interacting with Mem0 service."""
+    """Lightweight client for Mem0 operations (store, search, list).
+
+    Supports FAISS, OpenSearch, or Mem0 Platform based on environment.
+    """
 
     @staticmethod
     def get_default_config(server: str = "bedrock") -> Dict:
@@ -573,6 +577,10 @@ class Mem0ServiceClient:
                 "active": True,
             }
         )
+        # Tag with current operation ID when available
+        op_id = os.getenv("CYBER_OPERATION_ID")
+        if op_id and "operation_id" not in plan_metadata:
+            plan_metadata["operation_id"] = op_id
 
         # Deactivate previous plans
         try:
@@ -613,6 +621,10 @@ class Mem0ServiceClient:
         reflection_metadata.update(
             {"category": "reflection", "created_at": datetime.now().isoformat(), "type": "plan_reflection"}
         )
+        # Tag with current operation ID when available
+        op_id = os.getenv("CYBER_OPERATION_ID")
+        if op_id and "operation_id" not in reflection_metadata:
+            reflection_metadata["operation_id"] = op_id
 
         if plan_id:
             reflection_metadata["related_plan_id"] = plan_id
@@ -667,7 +679,7 @@ class Mem0ServiceClient:
         for finding in recent_findings[:5]:  # Last 5 findings
             content = finding.get("memory", finding.get("content", ""))[:100]
             metadata = finding.get("metadata", {})
-            severity = metadata.get("severity", "unknown")
+            severity = str(metadata.get("severity", "unknown"))
             findings_summary.append(f"- [{severity.upper()}] {content}")
 
         reflection_prompt = f"""
@@ -1208,6 +1220,13 @@ def mem0_memory(
                     else:
                         cleaned_metadata[key] = value
                 metadata = cleaned_metadata
+            else:
+                metadata = {}
+
+            # Tag with current operation ID when available
+            op_id = os.getenv("CYBER_OPERATION_ID")
+            if op_id and "operation_id" not in metadata:
+                metadata["operation_id"] = op_id
 
                 # Enhanced metadata for findings with validation tracking
                 if metadata.get("category") == "finding":
@@ -1215,7 +1234,9 @@ def mem0_memory(
                     valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
                     severity = metadata.get("severity", "MEDIUM").upper()
                     if severity not in valid_severities:
-                        logger.warning(f"Invalid severity '{severity}', defaulting to MEDIUM")
+                        logging.getLogger(__name__).warning(
+                            f"Invalid severity '{severity}', defaulting to MEDIUM"
+                        )
                         metadata["severity"] = "MEDIUM"
                     else:
                         metadata["severity"] = severity
@@ -1244,7 +1265,9 @@ def mem0_memory(
 
                     # Validate findings include evidence
                     if "[EVIDENCE]" not in cleaned_content and "evidence" not in cleaned_content.lower():
-                        logger.warning("Finding stored without [EVIDENCE] section - may lack validation")
+                        logging.getLogger(__name__).warning(
+                            "Finding stored without [EVIDENCE] section - may lack validation"
+                        )
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")

@@ -1,5 +1,5 @@
-// Simple mock for ink-testing-library
-const React = require('react');
+// Simple mock for ink-testing-library (ESM)
+import React from 'react';
 
 const extractTextContent = (element) => {
   if (typeof element === 'string') return element;
@@ -12,6 +12,16 @@ const extractTextContent = (element) => {
   
   // Handle React elements
   if (React.isValidElement(element)) {
+    // If this is a React.memo wrapper, render inner component
+    try {
+      const maybeMemo = element.type;
+      if (maybeMemo && typeof maybeMemo === 'object' && 'type' in maybeMemo && typeof maybeMemo.type === 'function') {
+        const inner = maybeMemo.type;
+        const rendered = inner(element.props || {});
+        return extractTextContent(rendered);
+      }
+    } catch {}
+
     // Extract children first
     if (element.props && element.props.children) {
       return extractTextContent(element.props.children);
@@ -30,9 +40,9 @@ const extractTextContent = (element) => {
       const typeName = typeof element.type === 'string' ? element.type : 
                        element.type.name || element.type.displayName || '';
       
-      // Return type name as fallback for components without text
+      // Return children or type name as fallback for components without explicit text
       if (['Text', 'Box', 'MockComponent'].includes(typeName)) {
-        return element.props?.children ? extractTextContent(element.props.children) : typeName;
+        return element.props?.children ? extractTextContent(element.props.children) : '';
       }
     }
     
@@ -100,8 +110,8 @@ const render = (component) => {
     lastFrame: () => lastFrameContent,
     frames,
     stdin,
-    unmount: jest.fn(),
-    rerender: jest.fn((newComponent) => {
+    unmount: () => {},
+    rerender: (newComponent) => {
       try {
         if (React.isValidElement(newComponent)) {
           lastFrameContent = extractTextContent(newComponent);
@@ -115,8 +125,9 @@ const render = (component) => {
       } catch (error) {
         console.warn('Mock rerender error:', error);
       }
-    })
+    }
   };
 };
 
-module.exports = { render };
+export { render };
+export default { render };

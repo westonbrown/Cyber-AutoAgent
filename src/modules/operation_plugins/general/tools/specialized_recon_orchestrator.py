@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Specialized Reconnaissance Orchestrator - Coordinates advanced subdomain and web recon tools"""
 
-from strands import tool
+import json
+import os
 import subprocess
 import tempfile
-import os
-import json
-from typing import Dict, List, Any
+from typing import Any, Dict, List
+
+from strands import tool
 
 
 @tool
@@ -343,7 +344,7 @@ def _deep_web_intelligence(live_hosts: List[str]) -> Dict[str, Any]:
 
                     # Extract parameters from URLs
                     if "?" in url:
-                        from urllib.parse import urlparse, parse_qs
+                        from urllib.parse import parse_qs, urlparse
 
                         try:
                             parsed = urlparse(url)

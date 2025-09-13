@@ -2,7 +2,8 @@
 
 import threading
 import time
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
+
 from .emitters import EventEmitter
 
 

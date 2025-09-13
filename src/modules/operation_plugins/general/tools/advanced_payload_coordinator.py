@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Advanced Payload Coordinator - Intelligent coordination of specialized vulnerability testing tools"""
 
-from strands import tool
-import subprocess
 import os
-from typing import Dict, List, Any
+import subprocess
+from typing import Any, Dict, List
+
+from strands import tool
 
 
 @tool
@@ -288,7 +289,7 @@ def _advanced_parameter_discovery(target_url: str, provided_params: str = None) 
     discovered_params.update(common_params)
 
     # Method 4: Extract from URL if it has parameters
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import parse_qs, urlparse
 
     try:
         parsed_url = urlparse(target_url)
@@ -455,7 +456,6 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
 
         for origin in cors_test_origins[:2]:  # Test first 2 origins
             try:
-                headers = {"Origin": origin}
                 cmd = ["curl", "-s", "-I", "--max-time", "10"] + ["-H", f"Origin: {origin}"] + [target_url]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 

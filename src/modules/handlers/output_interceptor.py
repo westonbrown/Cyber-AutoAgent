@@ -1,16 +1,19 @@
 """
-Output interceptor to capture all Python print statements and convert them to structured events.
+Unified output interceptor.
 
-This module ensures that only React Ink renders to the terminal by intercepting all
-stdout/stderr writes and converting them to structured events.
+Intercepts stdout/stderr lines and emits structured __CYBER_EVENT__ messages.
+Supports two modes via environment variable CYBER_UI_MODE:
+- react: buffer tool output, emit once, tag metadata to avoid truncation.
+- cli: minimal interception (pass-through for performance) unless a structured
+  event is detected.
 """
 
-import sys
 import io
 import os
+import sys
 import threading
-from typing import TextIO, List
 from contextlib import contextmanager
+from typing import List, TextIO
 
 from .utils import CyberEvent
 
@@ -21,7 +24,7 @@ _tool_output_buffer: List[str] = []
 
 
 def set_tool_execution_state(is_executing: bool):
-    """Set the global tool execution state and manage output buffer."""
+    """Set global tool execution state and manage buffer when tool starts/ends."""
     global _in_tool_execution, _tool_output_buffer
     with _tool_execution_lock:
         _in_tool_execution = is_executing
@@ -47,7 +50,11 @@ def get_buffered_output() -> str:
 
 
 class OutputInterceptor(io.TextIOBase):
-    """Intercepts stdout/stderr and converts to structured events."""
+    """Intercept stdout/stderr and convert lines to structured events.
+
+    In React mode, tool output is buffered and emitted once as a single event.
+    In CLI mode, this acts as a conservative pass-through.
+    """
 
     def __init__(self, original_stream: TextIO, event_type: str = "output"):
         self.original_stream = original_stream
@@ -66,7 +73,7 @@ class OutputInterceptor(io.TextIOBase):
             return self.original_stream.write(data)
 
         with self.lock:
-            # Check if this is already a structured event
+            # Structured events pass through unchanged
             if "__CYBER_EVENT__" in data:
                 # Pass through structured events unchanged and flush immediately
                 result = self.original_stream.write(data)
@@ -106,7 +113,7 @@ class OutputInterceptor(io.TextIOBase):
         try:
             self._in_event_emission = True
 
-            # Detect special output types
+            # Detect special output types (best-effort)
             if "MISSION PARAMETERS" in content:
                 event_type = "initialization"
             elif "─" * 20 in content:
@@ -160,13 +167,15 @@ class OutputInterceptor(io.TextIOBase):
 
 @contextmanager
 def intercept_output():
-    """Context manager to intercept all Python output."""
+    """Context manager to intercept stdout/stderr in React mode."""
     # Save original streams
     original_stdout = sys.stdout
     original_stderr = sys.stderr
 
-    # Check if we're in a React environment (has __REACT_INK__ env var)
-    if not sys.stdout.isatty() or not os.environ.get("__REACT_INK__"):
+    # Determine UI mode from environment
+    ui_mode = os.environ.get("CYBER_UI_MODE", "cli").lower()
+    # Only intercept in React UI mode
+    if ui_mode != "react":
         # Not in React environment, don't intercept
         yield
         return
@@ -191,11 +200,11 @@ def intercept_output():
 
 
 def setup_output_interception():
-    """Set up output interception for the entire application."""
+    """Install interceptors globally when running in React mode."""
     import os
 
     # Only intercept if running in React environment
-    if os.environ.get("__REACT_INK__"):
+    if os.environ.get("CYBER_UI_MODE", "cli").lower() == "react":
         sys.stdout = OutputInterceptor(sys.stdout, "output")
         sys.stderr = OutputInterceptor(sys.stderr, "error")
 

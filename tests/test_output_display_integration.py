@@ -7,11 +7,12 @@ after the recent refactoring.
 
 import os
 import tempfile
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from modules.handlers.utils import sanitize_target_name, get_output_path
+import pytest
+
 from modules.config.environment import clean_operation_memory
+from modules.handlers.utils import get_output_path, sanitize_target_name
 
 
 class TestOutputDisplayIntegration:

@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useStdout, useApp, Text, Box } from 'ink';
+import { useStdout, useApp, Text, Box, useInput } from 'ink';
 import ansiEscapes from 'ansi-escapes';
 
 // State Management
@@ -71,7 +71,7 @@ const AppContent: React.FC<AppProps> = ({
     return id;
   }, []);
   
-  // Suppress global ESC briefly after modal close to avoid buffered ESC exiting the app
+  // Suppress global ESC (e.g., after modal close or when cancelling an active operation)
   const escSuppressUntilRef = React.useRef<number>(0);
   
   // Configuration and theme management
@@ -144,29 +144,100 @@ const AppContent: React.FC<AppProps> = ({
   const escSuppressed = Date.now() < escSuppressUntilRef.current;
   const allowGlobalEscape = activeModal === ModalType.NONE && !appState.userHandoffActive && !appState.isInitializationFlowActive && !escSuppressed;
   
+  // Wrap cancel to suppress fallback ESC exit briefly to avoid race where activeOperation is cleared before fallback handler runs
+  const cancelAndSuppress = useCallback(async () => {
+    escSuppressUntilRef.current = Date.now() + 1500; // Suppress for 1.5s
+    try { await operationManager.handleAssessmentCancel(); } catch {}
+  }, [operationManager]);
+  
   const handleEscapeExit = useCallback(() => {
-    // Show exit notification in operation history
-    operationManager.addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    operationManager.addOperationHistoryEntry('info', '🔴 ESC Key Pressed - Exiting Cyber-AutoAgent...');
-    operationManager.addOperationHistoryEntry('info', '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    operationManager.addOperationHistoryEntry('info', 'Thank you for using Cyber-AutoAgent. Goodbye!');
-    
-    // Delay exit slightly to show the message
-    registerTimeout(() => {
-      exit();
-    }, 1000);
-  }, [operationManager, exit, registerTimeout]);
+    // Immediate exit at main screen (no operation running, no modal, not in setup)
+    // Avoid logging or delays to honor user expectation of instant exit
+    exit();
+  }, [exit]);
   
   useKeyboardHandlers({
     activeOperation: appState.activeOperation,
     isTerminalInteractive: isTerminalInteractive,
     onAssessmentPause: operationManager.handleAssessmentPause,
-    onAssessmentCancel: operationManager.handleAssessmentCancel, // Kill switch with notification
+    onAssessmentCancel: cancelAndSuppress, // Kill switch with notification + ESC suppression
     onScreenClear: handleScreenClear,
     onEscapeExit: handleEscapeExit,
     allowGlobalEscape: allowGlobalEscape // Only allow ESC to exit when no modals are open
   });
   
+  // Request-exit helper: add notification to application log area, then exit
+  const escExitTriggeredRef = React.useRef(false);
+  const requestExitWithLog = React.useCallback(() => {
+    if (escExitTriggeredRef.current) return;
+    escExitTriggeredRef.current = true;
+    try {
+      // Set a transient exitNotice on appState so Header renders the message in the right place
+      // Toggle exitNotice in app state and force repaint via static refresh
+      (appState as any).exitNotice = true;
+      actions.refreshStatic?.();
+      modalManager.refreshStatic();
+    } catch {}
+    setTimeout(() => {
+      try { (process as any).exit?.(0); } catch { exit(); }
+    }, 300);
+  }, [actions, appState, exit, modalManager]);
+
+  // Global ESC safety net: exit immediately at main screen even if another handler misses ESC
+  useInput((input, key) => {
+    // Do not allow the global ESC fallback to fire during the setup wizard
+    const atMainScreen = activeModal === ModalType.NONE && !appState.activeOperation && !appState.isInitializationFlowActive;
+    if ((key?.escape || input === '\u001b' || input === '\x1b') && atMainScreen) {
+      // Respect ESC suppression to avoid exiting right after cancelling an operation
+      if (Date.now() < escSuppressUntilRef.current) {
+        return;
+      }
+      requestExitWithLog();
+    }
+  }, { isActive: true });
+
+  // Extra low-level fallback: capture raw ESC byte if any handler above misses it
+  React.useEffect(() => {
+    const onData = (chunk: Buffer) => {
+      // ESC is 0x1B
+      if (chunk && chunk.length > 0) {
+        // Detect ESC byte (0x1B) anywhere in the buffer
+        const hasEsc = typeof (chunk as any).includes === 'function' ? (chunk as any).includes(0x1b) : (chunk.toString('binary').indexOf('\x1b') >= 0);
+        if (hasEsc) {
+          // Do not allow the raw ESC fallback to fire during the setup wizard
+          const atMain = activeModal === ModalType.NONE && !appState.activeOperation && !appState.isInitializationFlowActive;
+          const suppressed = Date.now() < escSuppressUntilRef.current;
+          if (atMain && !suppressed) {
+            requestExitWithLog();
+          }
+        }
+      }
+    };
+    try {
+      const stdin: any = (process as any).stdin;
+      if (stdin && typeof stdin.on === 'function') {
+        stdin.on('data', onData);
+        return () => {
+          try { stdin.off?.('data', onData); } catch {}
+        };
+      }
+    } catch {}
+  }, [activeModal, appState.activeOperation, exit]);
+
+  // Enforce raw mode on stdin to ensure ESC and other control keys are captured reliably
+  React.useEffect(() => {
+    try {
+      const stdin: any = (process as any).stdin;
+      if (stdin && stdin.isTTY && typeof stdin.setRawMode === 'function') {
+        stdin.setRawMode(true);
+        stdin.resume();
+        return () => {
+          try { stdin.setRawMode(false); } catch {}
+        };
+      }
+    } catch {}
+  }, []);
+
   // Command handler
   const { handleUnifiedInput } = useCommandHandler({
     commandParser,
@@ -293,6 +364,27 @@ const AppContent: React.FC<AppProps> = ({
     operationManager,
     registerTimeout
   });
+
+  // Test mode: auto-drive guided flow to start mock execution without manual typing
+  const testAutoStartedRef = React.useRef(false);
+  useEffect(() => {
+    if (testAutoStartedRef.current) return;
+    const isTest = process.env.CYBER_TEST_MODE === 'true' && process.env.CYBER_TEST_EXECUTION === 'mock';
+    if (!isTest) return;
+    if (appState.activeOperation) return; // already running
+    if (activeModal !== ModalType.NONE) return; // wait for modals to close
+    if (!appState.isConfigLoaded) return; // wait until config loaded
+
+    testAutoStartedRef.current = true;
+    // Drive the guided flow via command handler
+    try {
+      handleUnifiedInput(`target https://testphp.vulnweb.com`);
+      setTimeout(() => handleUnifiedInput(`objective focus on OWASP Top 10`), 60);
+      setTimeout(() => handleUnifiedInput(`execute`), 120);
+    } catch {
+      // ignore
+    }
+  }, [appState.activeOperation, activeModal, appState.isConfigLoaded, handleUnifiedInput]);
   
   // If forcing a remount, render a minimal placeholder to prevent black screen
   // This ensures there's always something in the render tree
@@ -317,6 +409,8 @@ const AppContent: React.FC<AppProps> = ({
         actions.refreshStatic();
         // 4) Perform a single terminal refresh via modal manager
         modalManager.refreshStatic();
+        // 5) Suppress any buffered ESC for a short window to prevent accidental app exit
+        escSuppressUntilRef.current = Date.now() + 1200;
         // Avoid adding setup completion messages to operation history
       }}
       onConfigOpen={() => openConfig()}

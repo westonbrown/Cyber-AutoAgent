@@ -11,17 +11,30 @@ import logging
 from typing import Optional
 
 from strands import Agent
+from strands.handlers import PrintingCallbackHandler
 from strands.models import BedrockModel
-from strands.models.ollama import OllamaModel
 from strands.models.litellm import LiteLLMModel
+from strands.models.ollama import OllamaModel
 
+from modules.config.manager import get_config_manager
 from modules.prompts.factory import get_report_agent_system_prompt
 
 logger = logging.getLogger(__name__)
 
 
+class NoOpCallbackHandler(PrintingCallbackHandler):
+    """Minimal callback handler that suppresses SDK output during report generation."""
+
+    def __call__(self, **kwargs):  # type: ignore[override]
+        return
+
+
 class ReportGenerator:
-    """Utility class for report generation with clean agent creation."""
+    """Factory for a report-generation Agent with a single builder tool.
+
+    The agent is configured with a concise system prompt and the
+    build_report_sections tool. Output is returned to the caller.
+    """
 
     @staticmethod
     def create_report_agent(
@@ -46,21 +59,33 @@ class ReportGenerator:
         Returns:
             Configured Agent instance for report generation
         """
-        # Get appropriate model based on provider
-        if provider == "bedrock":
-            model = BedrockModel(
-                model_id=model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                max_tokens=8192,  # Increased for comprehensive reports
-            )
-        elif provider == "ollama":
-            # Get Ollama host from environment or use default
-            from modules.config.manager import get_config_manager
-
-            config_manager = get_config_manager()
-            host = config_manager.get_ollama_host()
-            model = OllamaModel(host=host, model_id=model_id or "qwen3-coder:30b-a3b-q4_K_M")
+        # Select model via central configuration, with sensible defaults
+        cfg = get_config_manager()
+        prov = (provider or "bedrock").lower()
+        if prov == "bedrock":
+            # Always use the primary bedrock model from config
+            llm_cfg = cfg.get_llm_config("bedrock")
+            # Only override if explicitly provided, otherwise use config
+            mid = model_id if model_id else llm_cfg.model_id
+            # Set appropriate token limits based on the model
+            if "claude-3-5-sonnet" in mid or "claude-3-5-haiku" in mid:
+                # Claude 3.5 models have 8192 token limit
+                max_tokens = 8000
+            else:
+                # All other models support higher limits
+                max_tokens = 31000
+            model = BedrockModel(model_id=mid, max_tokens=max_tokens, temperature=0.3)
+        elif prov == "ollama":
+            host = cfg.get_ollama_host()
+            llm_cfg = cfg.get_llm_config("ollama")
+            # Only override if explicitly provided, otherwise use config
+            mid = model_id if model_id else llm_cfg.model_id
+            model = OllamaModel(host=host, model_id=mid)
         else:  # litellm
-            model = LiteLLMModel(model_id=model_id or "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+            llm_cfg = cfg.get_llm_config("litellm")
+            # Only override if explicitly provided, otherwise use config
+            mid = model_id if model_id else llm_cfg.model_id
+            model = LiteLLMModel(model_id=mid)
 
         # Import the report builder tool
         from modules.tools.report_builder import build_report_sections
@@ -85,24 +110,13 @@ class ReportGenerator:
 
         # Create a silent callback handler to prevent duplicate output
         # The report will be returned and handled by the caller
-        class SilentCallbackHandler:
-            """Completely silent callback handler that prevents all output and interactions."""
-
-            def __call__(self, **kwargs):
-                # Suppress all callbacks
-                pass
-
-            def __getattr__(self, name):
-                # Return no-op for any method call to ensure complete silence
-                return lambda *args, **kwargs: None
-
         return Agent(
             model=model,
             name="Cyber-ReportGenerator",
             system_prompt=get_report_agent_system_prompt(),
             tools=[build_report_sections],
             trace_attributes=trace_attrs if operation_id else None,
-            callback_handler=SilentCallbackHandler(),
+            callback_handler=NoOpCallbackHandler(),
         )
 
 

@@ -25,6 +25,18 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({
   const theme = themeManager.getCurrentTheme();
   const [acknowledged, setAcknowledged] = useState(false);
 
+  // In test mode, auto-acknowledge and auto-confirm to bypass manual input
+  React.useEffect(() => {
+    if (process.env.CYBER_TEST_MODE === 'true') {
+      try { console.log('[TEST_EVENT] safety_auto'); } catch {}
+      setAcknowledged(true);
+      setTimeout(() => {
+        try { console.log('[TEST_EVENT] safety_confirmed'); } catch {}
+        onConfirm();
+      }, 50);
+    }
+  }, []);
+
   useInput((input, key) => {
     if (key.escape) {
       onCancel();
@@ -33,9 +45,11 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({
     
     if (input === 'y' || input === 'Y') {
       if (acknowledged) {
+        try { if (process.env.CYBER_TEST_MODE === 'true') { console.log('[TEST_EVENT] safety_confirmed'); } } catch {}
         onConfirm();
       } else {
         setAcknowledged(true);
+        try { if (process.env.CYBER_TEST_MODE === 'true') { console.log('[TEST_EVENT] safety_acknowledged'); } } catch {}
       }
       return;
     }

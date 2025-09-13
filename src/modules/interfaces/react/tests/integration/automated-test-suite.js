@@ -25,7 +25,12 @@ import chalk from 'chalk';
 import stripAnsi from 'strip-ansi';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const appPath = join(__dirname, '..', 'dist', 'index.js');
+// Resolve app dist path: tests/integration -> tests -> react -> dist/index.js
+const appPathCandidates = [
+  join(__dirname, '..', '..', 'dist', 'index.js'),
+  join(__dirname, '..', 'dist', 'index.js'), // fallback if dist is colocated
+];
+const appPath = appPathCandidates.find(p => fs.existsSync(p)) || appPathCandidates[0];
 const testResultsDir = join(__dirname, 'test-results');
 
 // Test configuration

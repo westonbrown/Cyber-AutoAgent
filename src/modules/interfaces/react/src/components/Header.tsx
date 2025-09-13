@@ -13,6 +13,7 @@ interface HeaderProps {
   version?: string;
   terminalWidth?: number;
   nightly?: boolean;
+  exitNotice?: boolean;
 }
 
 // ASCII art logos for terminal display
@@ -31,7 +32,8 @@ const ultraCompactLogo = `🔐 CAA`;
 export const Header: React.FC<HeaderProps> = React.memo(({ 
   version = '0.1.3', 
   terminalWidth = 80,
-  nightly = false
+  nightly = false,
+  exitNotice = false
 }) => {
   const theme = themeManager.getCurrentTheme();
   const useGradient = themeManager.shouldUseGradient();
@@ -100,6 +102,13 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         </Box>
       )}
       
+      {/* Optional exit notice under the header */}
+      {exitNotice && (
+        <Box key="exit-notice" width="100%">
+          <Text color={theme.danger}>🔴 ESC — Exiting Cyber-AutoAgent</Text>
+        </Box>
+      )}
+
       {/* Add spacing after header */}
       <Box key="header-spacing" marginBottom={1} />
     </Box>

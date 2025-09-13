@@ -6,16 +6,16 @@ capturing tool lifecycle events and emitting them as structured events for
 the React UI and logging infrastructure.
 """
 
-import time
 import json
 import logging
-from typing import Optional, Dict, Any
+import time
+from typing import Any, Dict, Optional
 
-from strands.hooks import HookProvider, HookRegistry
 from strands.experimental.hooks.events import (
-    BeforeToolInvocationEvent,
     AfterToolInvocationEvent,
+    BeforeToolInvocationEvent,
 )
+from strands.hooks import HookProvider, HookRegistry
 
 from ..events import EventEmitter, get_emitter
 
@@ -182,7 +182,6 @@ class ReactHooks(HookProvider):
             # ReactBridgeHandler handles tool_end emission with full context
             if tool_id and duration > 0:
                 logger.debug(f"Tool {tool_name} (id={tool_id}) completed in {duration:.2f}s")
-
 
         except Exception as e:
             logger.error("Error processing after tool event: %s", e, exc_info=True)

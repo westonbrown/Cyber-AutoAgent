@@ -8,13 +8,14 @@ prompts, and dynamic prompts for different operational modules.
 """
 
 from .factory import (
-    get_system_prompt,
-    get_report_generation_prompt,
-    get_report_agent_system_prompt,
+    ModulePromptLoader,
     format_evidence_for_report,
     format_tools_summary,
+    get_memory_context_guidance,
     get_module_loader,
-    ModulePromptLoader,
+    get_report_agent_system_prompt,
+    get_report_generation_prompt,
+    get_system_prompt,
     load_prompt_template,
 )
 
@@ -27,4 +28,5 @@ __all__ = [
     "get_module_loader",
     "ModulePromptLoader",
     "load_prompt_template",
+    "get_memory_context_guidance",
 ]

@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
+import { createLogger } from '../../utils/logger.js';
 import { themeManager } from '../../themes/theme-manager.js';
 import { DeploymentMode, SetupService } from '../../services/SetupService.js';
 import { DeploymentDetector, DeploymentStatus } from '../../services/DeploymentDetector.js';
@@ -30,6 +31,7 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
   const [isDetecting, setIsDetecting] = useState(true);
   const width = terminalWidth || process.stdout.columns || 100;
   const divider = useMemo(() => '─'.repeat(Math.max(20, Math.min(width - 4, 120))), [width]);
+  const logger = useMemo(() => createLogger('DeploymentSelectionScreen'), []);
 
   useEffect(() => {
     const detectActive = async () => {
@@ -72,11 +74,18 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
     }
 
     // Multi-line description with icon and bullet list of requirements
+    // Professional, emoji-free description with clear capability and requirement sections
+    const capabilityLine = (() => {
+      if (mode === 'local-cli') return 'Capabilities: Direct Python CLI, local execution, minimal dependencies';
+      if (mode === 'single-container') return 'Capabilities: Isolated container execution of the agent';
+      return 'Capabilities: Full observability (Langfuse), background worker, databases, cache, and storage';
+    })();
+
     const fullDescription = [
-      modeInfo.icon.trim(),
       `${modeInfo.description}`,
-      `Requirements:`,
-      ...modeInfo.requirements.map(r => `• ${r}`)
+      capabilityLine,
+      'Requirements:',
+      ...modeInfo.requirements.map(r => `- ${r}`)
     ].join('\n');
 
     return {
@@ -98,7 +107,7 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
       <Box width={width} flexDirection="column">
         {/* Header */}
         <Box marginBottom={1}>
-          <Text color={theme.primary} bold>Select deployment mode</Text>
+          <Text color={theme.primary} bold>Deployment options</Text>
           <Text>  </Text>
           {isDetecting && (
             <Box>
@@ -107,20 +116,20 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
             </Box>
           )}
         </Box>
-        <Text color={theme.muted}>Choose the environment to run Cyber-AutoAgent.</Text>
+        <Text color={theme.muted}>Select the environment profile. The current selection is highlighted.</Text>
         <Text color={theme.muted}>{divider}</Text>
 
         {/* Active deployments notification */}
         {!isDetecting && activeDeployments.length > 0 && (
           <Box marginBottom={1}>
             <Text color={theme.info}>
-              Active: {activeDeployments.map(d => 
+              Active deployments detected: {activeDeployments.map(d => 
                 SetupService.getDeploymentModeInfo(d.mode).name
               ).join(', ')}
             </Text>
             <Text>  </Text>
             <Text color={theme.muted}>
-              Select an active mode to keep using it, or choose another to switch.
+              Select one to continue using it, or choose another to switch.
             </Text>
           </Box>
         )}
@@ -133,15 +142,24 @@ export const DeploymentSelectionScreen: React.FC<DeploymentSelectionScreenProps>
             onSelect={handleSelect}
             isFocused={true}
             showNumbers={true}
+            // Professional styling hints: no emojis; show badge text plainly; emphasize selection border
+            renderBadge={(badge) => badge ? `[${badge}]` : ''}
           />
         </Box>
 
         {/* Instructions */}
-        <Box marginTop={0}>
+        <Box marginTop={0} flexDirection="column" width={width}>
           <Text color={theme.muted}>{divider}</Text>
-          <Text color={theme.muted}>
-            <Text bold>↑↓</Text> navigate • <Text bold>1-3</Text> select • <Text bold color={theme.primary}>Enter</Text> confirm • <Text bold>Esc</Text> back
-          </Text>
+          <Box justifyContent="flex-start">
+            <Text color={theme.muted} wrap="truncate-end">
+              <Text bold>↑↓</Text> navigate • <Text bold>1-3</Text> select • <Text bold color={theme.primary}>Enter</Text> confirm • <Text bold>Esc</Text> back
+            </Text>
+          </Box>
+          <Box justifyContent="flex-start">
+            <Text color={theme.muted} wrap="truncate-end">
+              Local CLI: Python only • Single Container: isolated agent • Full Stack: full observability stack
+            </Text>
+          </Box>
         </Box>
       </Box>
     </Box>

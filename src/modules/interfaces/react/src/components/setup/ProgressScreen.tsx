@@ -108,6 +108,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   const width = terminalWidth || process.stdout.columns || 100;
   const divider = useMemo(() => '─'.repeat(Math.max(20, Math.min(width - 4, 120))), [width]);
 
+
   useEffect(() => {
     // Update timer every second for responsive display
     const interval = setInterval(() => {
@@ -135,6 +136,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   const steps = SETUP_STEPS[deploymentMode];
   const currentStepIndex = progress ? 
     steps.findIndex(s => s.name === progress.stepName) : -1;
+  const effectiveStepIndex = currentStepIndex >= 0 ? currentStepIndex : 0;
   const currentStep = currentStepIndex >= 0 ? steps[currentStepIndex] : null;
   const installInfo = INSTALLATION_INFO[deploymentMode];
 
@@ -154,7 +156,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
         <Box flexDirection="row" justifyContent="space-between" marginBottom={2}>
           <Text color={theme.muted}>Elapsed: {formatTime(elapsedTime)}</Text>
           {progress && (
-            <Text color={theme.muted}>Step {currentStepIndex + 1}/{steps.length}</Text>
+            <Text color={theme.muted}>Step {(currentStepIndex >= 0 ? currentStepIndex : 0) + 1}/{steps.length}</Text>
           )}
         </Box>
 
@@ -171,16 +173,25 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
         {/* Progress steps */}
         <Box flexDirection="column" marginBottom={2}>
           <Text color={theme.info} bold>Progress</Text>
+          {/* Show an initializing spinner before first step kicks in */}
+          {progress?.stepName === 'initializing' && (
+            <Box marginTop={1} alignItems="center">
+              <Box marginRight={2}>
+                <Spinner type="dots" />
+              </Box>
+              <Text color={theme.muted}>Initializing setup…</Text>
+            </Box>
+          )}
           <Box flexDirection="column" marginTop={1}>
             {steps.map((step, index) => {
-            const isActive = index === currentStepIndex;
-            const isCompleted = currentStepIndex > index || isComplete;
+            const isActive = index === effectiveStepIndex && progress?.stepName !== 'initializing';
+            const isCompleted = effectiveStepIndex > index || isComplete;
             const isPending = currentStepIndex < index && !isComplete;
             const hasError = error && index === currentStepIndex;
             
             return (
               <Box key={step.name} flexDirection="row" alignItems="flex-start">
-                <Box width={3}>
+                <Box width={4} marginRight={1}>
                   {isCompleted && <Text color={theme.success}>✓</Text>}
                   {isActive && !hasError && <Spinner type="dots" />}
                   {isPending && <Text color={theme.muted}>○</Text>}
