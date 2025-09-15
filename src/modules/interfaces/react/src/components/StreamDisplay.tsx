@@ -366,14 +366,18 @@ export const EventLine: React.FC<{
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: shell{agentContext}</Text>
               {displayCommands.length > 0 ? (
-                displayCommands.map((cmd, index) => (
-                  <Box key={index} marginLeft={2}>
-                    <Text dimColor>⎿ {cmd}</Text>
-                  </Box>
-                ))
+                displayCommands.map((cmd, index) => {
+                  const isLastCommand = index === displayCommands.length - 1 && extraParams.length === 0;
+                  const prefix = isLastCommand ? '└─' : '├─';
+                  return (
+                    <Box key={index} marginLeft={2}>
+                      <Text dimColor>{prefix} {cmd}</Text>
+                    </Box>
+                  );
+                })
               ) : (
                 <Box marginLeft={2}>
-                  <Text dimColor>⎿ (no command)</Text>
+                  <Text dimColor>└─ (no command)</Text>
                 </Box>
               )}
               {extraParams.length > 0 && (
@@ -663,7 +667,7 @@ export const EventLine: React.FC<{
           
           return (
             <Box flexDirection="column" marginLeft={2}>
-              <Text><Text dimColor>⎿</Text> {commandText}</Text>
+              <Text><Text dimColor>├─</Text> {commandText}</Text>
             </Box>
           );
 
