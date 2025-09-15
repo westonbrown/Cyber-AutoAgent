@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pathlib
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -38,7 +39,11 @@ def test_module_prompt_loader_load_module_report_prompt(tmp_path, monkeypatch):
 
 
 @patch("modules.prompts.factory.load_prompt_template")
-def test_module_prompt_loader_execution_prompt_candidates(mock_loader):
+@patch("pathlib.Path.exists")
+def test_module_prompt_loader_execution_prompt_candidates(mock_exists, mock_loader):
+    # Mock that the file doesn't exist in operation_plugins so it falls back to templates
+    mock_exists.return_value = False
+
     # Simulate template availability only for the second candidate
     def fake_load(name: str) -> str:
         if name == "general_execution_prompt.md":
