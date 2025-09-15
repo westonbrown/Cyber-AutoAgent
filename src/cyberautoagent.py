@@ -354,9 +354,9 @@ def main():
 
     # Provide a safer default for shell command timeouts unless user overrides
     if not os.environ.get("SHELL_DEFAULT_TIMEOUT"):
-        # Many external tools (e.g., nmap, curl to slow hosts) may exceed very low defaults
-        # Set a moderate default to reduce spurious timeouts while keeping responsiveness
-        os.environ["SHELL_DEFAULT_TIMEOUT"] = "120"
+        # Many external tools (e.g., nmap, curl to slow hosts) can exceed low defaults
+        # Use a safer default to reduce spurious timeouts while keeping responsiveness
+        os.environ["SHELL_DEFAULT_TIMEOUT"] = "300"
 
     # Get centralized region configuration if not provided
     if args.region is None:

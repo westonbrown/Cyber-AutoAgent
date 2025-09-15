@@ -44,6 +44,8 @@ For each CRITICAL/HIGH finding (up to 10 detailed):
 3. **Impact**: 1-2 sentences on business risk
 4. **Remediation**: Specific commands/configurations
 
+Canonical links in tables: Use the parsed vulnerability title only (no marker tags like [VULNERABILITY] or [FINDING], no truncation).
+
 For remaining findings (11+):
 - Present in summary table format
 - Include reference to full evidence in appendix
@@ -68,11 +70,12 @@ For remaining findings (11+):
 - Follow the template structure provided in instructions
 - Include all Mermaid diagram visualizations
 - Insert the findings table and any pre-formatted sections exactly as provided (do not change markdown table syntax)
-- The findings table will be provided by your tool as a complete markdown table (columns: Severity | Count | Top Finding | Location | Confidence). Insert it verbatim under the '## KEY FINDINGS' section without modification.
+- The findings table will be provided by your tool as a complete markdown table. Insert it verbatim under the '## KEY FINDINGS' section without modification (do not change its columns or content). Do not add extra leading pipes or any characters; do not re-render the table.
 - End with operation metadata and timestamp
 - Do NOT add any XML/HTML-like tags (< >) to the output
 - Generate pure markdown format only
 - Output ONLY the report content - no explanatory text before or after
+- IMPORTANT: Omit the '## REPORTING NOTES' section from the final output. Treat any reporting notes as internal guidance, not report content.
 </output_requirements>
 
 <quality_standards>

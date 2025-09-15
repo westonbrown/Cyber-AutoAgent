@@ -164,6 +164,8 @@ def build_report_sections(
                         "category": "finding",
                         "content": memory_content,
                         "id": memory_item.get("id", ""),
+                        "anchor_id": ("finding-" + str(memory_item.get("id", ""))) if memory_item.get("id") else "",
+                        "anchor": ("#finding-" + str(memory_item.get("id", ""))) if memory_item.get("id") else "",
                     }
 
                     # Findings via metadata
@@ -171,10 +173,13 @@ def build_report_sections(
                         item = base_evidence.copy()
                         sev = metadata.get("severity", "MEDIUM")
                         conf = str(metadata.get("confidence", ""))
+                        # Parse structured markers from the content so downstream sections have clean fields
+                        parsed_evidence = _parse_structured_evidence(memory_content)
                         item.update(
                             {
                                 "severity": sev,
                                 "confidence": conf,
+                                "parsed": parsed_evidence if isinstance(parsed_evidence, dict) else {},
                                 "validation_status": str(metadata.get("validation_status", "")).strip() or None,
                             }
                         )
@@ -363,6 +368,24 @@ def build_report_sections(
             # Ignore metrics extraction failures silently
             pass
 
+        # Build canonical findings (first per severity) with stable anchors
+        canonical_findings: Dict[str, Dict[str, Any]] = {}
+        for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+            sev_items = [e for e in evidence if str(e.get("severity", "")).upper() == sev]
+            if not sev_items:
+                continue
+            top = sev_items[0]
+            p = top.get("parsed", {}) if isinstance(top.get("parsed"), dict) else {}
+            anchor_link = str(top.get("anchor") or "").strip()
+            if not anchor_link and str(top.get("id") or "").strip():
+                anchor_link = f"#finding-{top['id']}"
+            canonical_findings[sev] = {
+                "id": top.get("id", ""),
+                "title": (p.get("vulnerability") or _safe_truncate(str(top.get("content", "")), 60)).strip(),
+                "where": (p.get("where") or "").strip(),
+                "anchor": anchor_link,
+            }
+
         # Build complete sections dictionary
         sections = {
             "operation_id": operation_id,
@@ -393,6 +416,7 @@ def build_report_sections(
             "analysis_framework": domain_lens.get("framework", ""),
             "module": module,
             "evidence_count": len(evidence),
+            "canonical_findings": canonical_findings,
             # Execution metrics for direct insertion into the template
             "input_tokens": metrics_input,
             "output_tokens": metrics_output,
@@ -539,6 +563,9 @@ def _format_detailed_findings(findings: List[Dict[str, Any]], severity: str) -> 
             impact = parsed_fallback.get("impact", "") if isinstance(parsed_fallback, dict) else ""
 
         # Build structured finding
+        anchor_id = str(finding.get("anchor_id") or "").strip()
+        if anchor_id:
+            output.append(f"<a id=\"{anchor_id}\"></a>")
         output.append(f"#### {i}. {title}")
 
         # Status badge and confidence

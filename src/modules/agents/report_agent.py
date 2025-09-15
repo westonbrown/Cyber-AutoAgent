@@ -69,12 +69,14 @@ class ReportGenerator:
             mid = model_id if model_id else llm_cfg.model_id
             # Set appropriate token limits based on the model
             if "claude-3-5-sonnet" in mid or "claude-3-5-haiku" in mid:
-                # Claude 3.5 models have 8192 token limit
+                # Claude 3.5 models have ~8k token output limits
                 max_tokens = 8000
             else:
-                # All other models support higher limits
+                # Bedrock models commonly cap at 32k; stay safely below the limit
                 max_tokens = 31000
-            model = BedrockModel(model_id=mid, max_tokens=max_tokens, temperature=0.3)
+            # Ensure explicit region to avoid environment inconsistencies
+            region = cfg.get_server_config("bedrock").region
+            model = BedrockModel(model_id=mid, region_name=region, max_tokens=max_tokens, temperature=0.3)
         elif prov == "ollama":
             host = cfg.get_ollama_host()
             llm_cfg = cfg.get_llm_config("ollama")
