@@ -111,6 +111,13 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         "tcpdump": "Network packet capture",
         "iproute2": "Provides modern networking tools (ip, ss, tc, etc.)",
         "net-tools": "Provides classic networking utilities (netstat, ifconfig, route, etc.)",
+        # ProjectDiscovery ecosystem
+        "nuclei": "Templated vulnerability scanner",
+        "naabu": "Fast TCP port scanner (SYN/CONNECT)",
+        "httpx": "HTTP service probing and fingerprinting",
+        "subfinder": "Passive subdomain discovery",
+        # Active Directory / auth tooling
+        "bloodhound": "AD data collector (bloodhound-python)",
     }
 
     available_tools = []
@@ -121,6 +128,7 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
             "metasploit": "msfconsole",
             "iproute2": "ip",
             "net-tools": "netstat",
+            "bloodhound": "bloodhound-python",
         }
         check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
         try:

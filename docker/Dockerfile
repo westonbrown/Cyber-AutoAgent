@@ -21,7 +21,7 @@ RUN uv sync --no-dev
 FROM python:3.11-slim-bullseye
 
 # Install system dependencies and security tools in single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends \
     nmap \
     sqlmap \
     gobuster \
@@ -38,6 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libio-socket-ssl-perl \
     libcrypt-ssleay-perl \
     libssl-dev \
+    libffi-dev \
+    python3-dev \
+    build-essential \
+    krb5-user \
+    ldap-utils \
+    ca-certificates \
     # Network tools
     iputils-ping \
     dnsutils \
@@ -61,22 +67,24 @@ RUN git clone https://github.com/sullo/nikto.git /opt/nikto && \
     ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto && \
     chmod +x /opt/nikto/program/nikto.pl
 
-# Install metasploit framework
-RUN wget -q -O - https://apt.metasploit.com/metasploit-framework.gpg.key | apt-key add - && \
-    echo "deb https://apt.metasploit.com/ lucid main" > /etc/apt/sources.list.d/metasploit-framework.list && \
+# Install Metasploit Framework (signed repo for Debian bullseye)
+RUN wget -qO /usr/share/keyrings/metasploit.gpg https://apt.metasploit.com/metasploit-framework.gpg.key && \
+    echo "deb [signed-by=/usr/share/keyrings/metasploit.gpg] https://apt.metasploit.com/ lucid main" > /etc/apt/sources.list.d/metasploit-framework.list && \
     apt-get update && \
-    apt-get install -y metasploit-framework && \
+    apt-get install -y --no-install-recommends metasploit-framework && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /var/cache/apt/archives/*
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Fetch Nuclei templates for vulnerability scanning
+RUN git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates /opt/nuclei-templates || true
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 # Create non-root user for security and add to sudo group
 RUN useradd --create-home --shell /bin/bash cyberagent && \
     usermod -aG sudo cyberagent && \
-    echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+    echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
+    chown -R cyberagent:cyberagent /opt/nuclei-templates || true
 
 # Set working directory
 WORKDIR /app
@@ -104,8 +112,26 @@ ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
 
-# Set Python path
+# Set Python path and Nuclei templates path
 ENV PYTHONPATH="/app/src"
+ENV NUCLEI_TEMPLATES="/opt/nuclei-templates"
+
+# Install additional security tools for the cyberagent user
+# - ProjectDiscovery: nuclei, naabu, httpx, subfinder
+# - Python-based collectors: bloodhound (AD), impacket, certipy-ad
+RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
+    && go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
+    && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
+    && go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+# Install Python-based security tools into the app virtualenv
+RUN pip install --no-cache-dir --upgrade \
+    bloodhound \
+    impacket \
+    certipy-ad
+
+# Update Nuclei templates to latest at build-time (best-effort)
+RUN nuclei -ut -ud /opt/nuclei-templates || true
 
 # Create volume for evidence persistence
 VOLUME ["/app/evidence", "/app/logs"]
