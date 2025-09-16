@@ -221,7 +221,7 @@ class SDKConfig:
     stream_buffer_ms: int = 0  # No buffering for real-time streaming
 
     # Conversation management
-    conversation_window_size: int = 120
+    conversation_window_size: int = 100
 
     # Telemetry configuration
     enable_telemetry: bool = True
@@ -293,7 +293,7 @@ class ConfigManager:
             "model_id": model_id,
             "region_name": region_name,
             "temperature": 1.0,
-            "max_tokens": 4096,
+            "max_tokens": 32000,
             "additional_request_fields": {
                 "anthropic_beta": ["interleaved-thinking-2025-05-14"],
                 "thinking": {"type": "enabled", "budget_tokens": 10000},
@@ -333,7 +333,7 @@ class ConfigManager:
                     provider=ModelProvider.OLLAMA,
                     model_id="llama3.2:3b",
                     temperature=0.95,
-                    max_tokens=4096,
+                    max_tokens=65000,
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.OLLAMA,
@@ -367,7 +367,7 @@ class ConfigManager:
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
                     temperature=0.95,
-                    max_tokens=4096,
+                    max_tokens=32000,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -402,7 +402,7 @@ class ConfigManager:
                     provider=ModelProvider.LITELLM,
                     model_id="bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=8096,
+                    max_tokens=32000,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -508,7 +508,7 @@ class ConfigManager:
         sdk_config = SDKConfig(
             enable_hooks=overrides.get("enable_hooks", True),
             enable_streaming=overrides.get("enable_streaming", True),
-            conversation_window_size=overrides.get("conversation_window_size", 120),
+            conversation_window_size=overrides.get("conversation_window_size", 100),
             enable_telemetry=os.getenv("ENABLE_SDK_TELEMETRY", "true").lower() == "true",
         )
 
