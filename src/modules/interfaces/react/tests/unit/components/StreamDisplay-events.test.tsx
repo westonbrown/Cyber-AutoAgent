@@ -63,6 +63,16 @@ describe('Event formatting minimal tests (no Ink render)', () => {
     expect(event.message).not.toMatch(/\(Step\s+\d+\/\d+\)/);
   });
 
+  it('does not append (Step X/Y) in termination_reason network_timeout messages (raw)', () => {
+    const event = {
+      type: 'termination_reason' as const,
+      reason: 'network_timeout',
+      message: 'Network timeout reached after 60s while contacting provider.'
+    };
+    expect(event.message).toContain('Network timeout');
+    expect(event.message).not.toMatch(/\(Step\s+\d+\/\d+\)/);
+  });
+
   it('formats generic non-string output content', () => {
     const obj = { foo: 'bar', nested: { x: 1 } };
     const s = formatGenericToolInput(obj);

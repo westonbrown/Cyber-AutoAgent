@@ -49,24 +49,30 @@ function normalizeToolInput(toolName: string, input: any): any {
   // Shell: support command/cmd/commands and correct JSON-string arrays
   if (name === 'shell') {
     const raw = toolInput.command ?? toolInput.commands ?? toolInput.cmd ?? toolInput.input;
-    let commands: string[] | undefined;
-    if (Array.isArray(raw)) {
-      commands = raw.map(String);
-    } else if (typeof raw === 'string') {
-      const trimmed = raw.trim();
-      if ((trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-        try {
-          const normalized = trimmed.replace(/\\n/g, '\n');
-          const arr = JSON.parse(normalized);
-          commands = Array.isArray(arr) ? arr.map(String) : [trimmed];
-        } catch {
-          commands = [raw];
+
+    const toCommands = (value: any): any[] | undefined => {
+      if (value == null) return undefined;
+      if (Array.isArray(value)) return value; // preserve array elements (strings or objects)
+      if (typeof value === 'string') {
+        const s = value.trim();
+        if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
+          try {
+            const normalized = s.replace(/\\n/g, '\n');
+            const parsed = JSON.parse(normalized);
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed && typeof parsed === 'object') return [parsed];
+          } catch {
+            /* keep as raw string below */
+          }
         }
-      } else {
-        commands = [raw];
+        return [value];
       }
-    }
-    return { ...toolInput, command: commands ?? (raw != null ? String(raw) : undefined) };
+      if (typeof value === 'object') return [value];
+      return [String(value)];
+    };
+
+    const commands = toCommands(raw);
+    return { ...toolInput, command: commands };
   }
 
   // http_request: make method upper-case and ensure url string
@@ -81,6 +87,45 @@ function normalizeToolInput(toolName: string, input: any): any {
     const path = toolInput.path != null ? String(toolInput.path) : undefined;
     const content = toolInput.content != null ? String(toolInput.content) : undefined;
     return { ...toolInput, path, content };
+  }
+
+  // editor: avoid flooding UI with large file_text payloads; provide preview + stats instead
+  if (name === 'editor') {
+    const cloneInput: any = { ...toolInput };
+    const path = cloneInput.path != null ? String(cloneInput.path) : undefined;
+    const command = cloneInput.command != null ? String(cloneInput.command) : undefined;
+    const fileText: any = cloneInput.file_text;
+    let file_text_preview: string | undefined;
+    let file_text_length: number | undefined;
+    let file_text_lines: number | undefined;
+    if (typeof fileText === 'string') {
+      file_text_length = fileText.length;
+      file_text_lines = fileText.split('\n').length;
+      // Keep a small preview to help debugging without breaking the UI
+      file_text_preview = fileText.slice(0, 1000);
+    }
+    // Remove heavy field from normalized input to prevent UI crashes
+    delete cloneInput.file_text;
+    return {
+      ...cloneInput,
+      ...(path ? { path } : {}),
+      ...(command ? { command } : {}),
+      ...(file_text_length != null ? { file_text_length } : {}),
+      ...(file_text_lines != null ? { file_text_lines } : {}),
+      ...(file_text_preview ? { file_text_preview, file_text_omitted: true } : {}),
+    };
+  }
+
+  // python_repl: trim overly large code payloads to a preview to keep render stable
+  if (name === 'python_repl') {
+    const cloneInput: any = { ...toolInput };
+    const code: any = cloneInput.code;
+    if (typeof code === 'string' && code.length > 2000) {
+      cloneInput.code_preview = code.slice(0, 1000);
+      cloneInput.code_length = code.length;
+      delete cloneInput.code; // omit full code; preview is sufficient for display
+    }
+    return cloneInput;
   }
 
   // editor/python_repl/etc.: leave as-is except shallow clone done above

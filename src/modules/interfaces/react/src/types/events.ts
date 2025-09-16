@@ -421,11 +421,20 @@ export interface ReportContentEvent {
  * Termination Reason Event Interface
  * 
  * Event emitted when an operation terminates, indicating the reason
- * (e.g., step limit reached, stop tool invoked)
+ * (e.g., step limit reached, stop tool invoked, network timeout, token limit)
  */
 export interface TerminationReasonEvent {
   type: 'termination_reason';
-  reason: 'step_limit' | 'stop_tool';
+  // Known reasons from backend + forward-compatible string type
+  reason:
+    | 'step_limit'
+    | 'stop_tool'
+    | 'network_timeout'
+    | 'network_error'
+    | 'timeout'
+    | 'max_tokens'
+    | 'rate_limited'
+    | 'model_error';
   message: string;
   current_step?: number;
   max_steps?: number;

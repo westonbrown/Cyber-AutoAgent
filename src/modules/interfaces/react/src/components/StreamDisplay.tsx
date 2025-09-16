@@ -200,10 +200,42 @@ export const EventLine: React.FC<{
       // Don't render anything - this is handled by the terminal component
       return null;
       
-    case 'termination_reason':
+    case 'termination_reason': {
       // Display termination notification (no extra step counters to avoid confusion)
-      const reasonLabel = event.reason === 'stop_tool' ? 'STOP TOOL' : 'STEP LIMIT';
-      const reasonColor = event.reason === 'stop_tool' ? 'green' : 'yellow';
+      const reason = (event as any).reason as string | undefined;
+      let reasonLabel = 'TERMINATED';
+      let reasonColor: any = 'yellow';
+      switch (reason) {
+        case 'stop_tool':
+          reasonLabel = 'STOP TOOL';
+          reasonColor = 'green';
+          break;
+        case 'step_limit':
+          reasonLabel = 'STEP LIMIT';
+          reasonColor = 'yellow';
+          break;
+        case 'network_timeout':
+        case 'network_error':
+        case 'timeout':
+          reasonLabel = 'NETWORK TIMEOUT';
+          reasonColor = 'red';
+          break;
+        case 'max_tokens':
+          reasonLabel = 'TOKEN LIMIT';
+          reasonColor = 'yellow';
+          break;
+        case 'rate_limited':
+          reasonLabel = 'RATE LIMITED';
+          reasonColor = 'yellow';
+          break;
+        case 'model_error':
+          reasonLabel = 'MODEL ERROR';
+          reasonColor = 'red';
+          break;
+        default:
+          reasonLabel = 'TERMINATED';
+          reasonColor = 'yellow';
+      }
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box borderStyle="round" borderColor={reasonColor} paddingX={1}>
@@ -211,6 +243,7 @@ export const EventLine: React.FC<{
           </Box>
         </Box>
       );
+    }
       
     case 'reasoning':
       // This case should not be reached anymore as reasoning is handled in StreamDisplay
@@ -234,8 +267,43 @@ export const EventLine: React.FC<{
       // Get the latest tool input (may have been updated via tool_input_update)
       // First check if we have updated input in the toolInputs Map, otherwise use the event's tool_input
       const toolId = (event as any).toolId ?? (event as any).tool_id;
-      const latestInput = (toolId && toolInputs?.get(toolId)) ||
-                         ((('tool_input' in event) && (event as any).tool_input) || {}) ;
+      // Prefer the richer input from the current event; fall back to stored map only if event input is absent/empty
+      const eventInput = (("tool_input" in event) ? (event as any).tool_input : undefined) as any;
+      const hasEventInput = (() => {
+        if (eventInput == null) return false;
+        if (typeof eventInput === 'string') return eventInput.trim().length > 0;
+        if (Array.isArray(eventInput)) return eventInput.length > 0;
+        if (typeof eventInput === 'object') return Object.keys(eventInput).length > 0;
+        return !!eventInput;
+      })();
+      const mapInput = (toolId && toolInputs?.get(toolId)) as any;
+      const hasMapInput = (() => {
+        if (mapInput == null) return false;
+        if (typeof mapInput === 'string') return mapInput.trim().length > 0;
+        if (Array.isArray(mapInput)) return mapInput.length > 0;
+        if (typeof mapInput === 'object') return Object.keys(mapInput).length > 0;
+        return !!mapInput;
+      })();
+      // Choose the input that actually contains the fields needed for rendering.
+      // In particular, python_repl often arrives with a trimmed eventInput (code omitted by normalizer),
+      // while a subsequent tool_input_update holds the full code. Prefer the map input in that case.
+      const getPyCode = (inp: any): string => {
+        if (!inp) return '';
+        const v = inp.code ?? inp.source ?? inp.input ?? inp.code_preview;
+        return typeof v === 'string' ? v : (v != null ? (() => { try { return JSON.stringify(v); } catch { return String(v); } })() : '');
+      };
+      let latestInput: any = eventInput;
+      if (event.tool_name === 'python_repl') {
+        const evCode = getPyCode(eventInput);
+        const mapCode = getPyCode(mapInput);
+        if ((!evCode || evCode.trim().length === 0) && (mapCode && mapCode.trim().length > 0)) {
+          latestInput = mapInput;
+        } else if (!hasEventInput && hasMapInput) {
+          latestInput = mapInput;
+        }
+      } else {
+        latestInput = hasEventInput ? eventInput : (hasMapInput ? mapInput : {});
+      }
       
       // Always show tool header even if args are not yet available.
       // Individual tool renderers will gracefully handle missing fields.
@@ -426,7 +494,11 @@ export const EventLine: React.FC<{
         case 'editor': {
           const editorCmd = latestInput.command || 'edit';
           const editorPath = latestInput.path || '';
-          const editorContent = latestInput.content || '';
+          // Support multiple possible input fields for content
+          const editorContent = latestInput.content ?? latestInput.file_text ?? latestInput.text ?? '';
+          // Compute size in lines if we have text content
+          const contentStr = typeof editorContent === 'string' ? editorContent : (() => { try { return JSON.stringify(editorContent, null, 2); } catch { return String(editorContent ?? ''); } })();
+          const lineCount = contentStr ? (contentStr.split('\n').length) : 0;
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: editor</Text>
@@ -434,11 +506,11 @@ export const EventLine: React.FC<{
                 <Text dimColor>├─ command: {editorCmd}</Text>
               </Box>
               <Box marginLeft={2}>
-                <Text dimColor>{editorContent ? '├─' : '└─'} path: {editorPath}</Text>
+                <Text dimColor>{(contentStr && contentStr.length > 0) ? '├─' : '└─'} path: {editorPath}</Text>
               </Box>
-              {editorContent && (
+              {(contentStr && contentStr.length > 0) && (
                 <Box marginLeft={2}>
-                  <Text dimColor>└─ size: {editorContent.length} chars</Text>
+                  <Text dimColor>└─ size: {lineCount} {lineCount === 1 ? 'line' : 'lines'}</Text>
                 </Box>
               )}
             </Box>
@@ -463,11 +535,14 @@ export const EventLine: React.FC<{
         }
           
         case 'python_repl': {
-          const code = latestInput.code || '';
-          const codeLines = code.split('\n');
+          const code = (latestInput && (latestInput.code ?? latestInput.source ?? latestInput.input ?? latestInput.code_preview)) || '';
+          const codeStr = typeof code === 'string' ? code : (() => { try { return JSON.stringify(code, null, 2); } catch { return String(code ?? ''); } })();
+          const codeLines = codeStr.split('\n');
           const previewLines = 8; // Increased from 5 to show more context
           let codeDisplayLines: string[];
-          if (codeLines.length <= previewLines) {
+          if (!codeStr || codeStr.trim().length === 0) {
+            codeDisplayLines = [];
+          } else if (codeLines.length <= previewLines) {
             codeDisplayLines = codeLines;
           } else {
             // Show first 6 lines and last 2 lines for better context
@@ -484,15 +559,19 @@ export const EventLine: React.FC<{
               <Text color="green" bold>tool: python_repl</Text>
               <Box marginLeft={2} flexDirection="column">
                 <Text dimColor>└─ code:</Text>
-                <Box marginLeft={5} flexDirection="column">
-                  {codeDisplayLines.map((line, index) => {
-                    // Don't show tree characters for code content
-                    if (line.startsWith('...')) {
-                      return <Text key={index} dimColor italic>    {line}</Text>;
-                    }
-                    return <Text key={index} dimColor>    {line || ' '}</Text>;
-                  })}
-                </Box>
+                {codeDisplayLines.length === 0 ? (
+                  <Box marginLeft={5}><Text dimColor>(waiting for code input)</Text></Box>
+                ) : (
+                  <Box marginLeft={5} flexDirection="column">
+                    {codeDisplayLines.map((line, index) => {
+                      // Don't show tree characters for code content
+                      if (line.startsWith('...')) {
+                        return <Text key={index} dimColor italic>    {line}</Text>;
+                      }
+                      return <Text key={index} dimColor>    {line || ' '}</Text>;
+                    })}
+                  </Box>
+                )}
               </Box>
             </Box>
           );
@@ -1414,9 +1493,19 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           status: 'executing',
           startTime: Date.now()
         });
-        // Store initial tool input (may be empty for swarm agents)
+        // Store initial tool input only if it has meaningful content
         if ('tool_id' in event && event.tool_id) {
-          newToolInputs.set(event.tool_id, event.tool_input || {});
+          const ti: any = (event as any).tool_input;
+          const hasMeaningful = (() => {
+            if (ti == null) return false;
+            if (typeof ti === 'string') return ti.trim().length > 0;
+            if (Array.isArray(ti)) return ti.length > 0;
+            if (typeof ti === 'object') return Object.keys(ti).length > 0;
+            return !!ti;
+          })();
+          if (hasMeaningful) {
+            newToolInputs.set(event.tool_id, ti);
+          }
         }
       } else if (event.type === 'tool_input_update' || event.type === 'tool_input_corrected') {
         // Update tool input with complete/corrected data
@@ -1465,8 +1554,13 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         if (group.type === 'reasoning_group') {
           // Display reasoning group with single label - memoize content combination
           const combinedContent = group.events.reduce((acc, e) => {
-            if ('content' in e && e.content) {
-              return acc + e.content;
+            // Prefer full reasoning content when present
+            if ('content' in e && (e as any).content) {
+              return acc + (e as any).content;
+            }
+            // Also accumulate streaming deltas so we don't lose interim reasoning
+            if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
+              return acc + (e as any).delta;
             }
             return acc;
           }, '');
@@ -1523,8 +1617,13 @@ export const StaticStreamDisplay: React.FC<{
       if (group.type === 'reasoning_group') {
         // Use reduce for better performance with large arrays
         const combinedContent = group.events.reduce((acc, e) => {
+          // Prefer full reasoning content when present
           if ('content' in e && (e as any).content) {
             return acc + (e as any).content;
+          }
+          // Also accumulate streaming deltas so we don't lose interim reasoning
+          if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
+            return acc + (e as any).delta;
           }
           return acc;
         }, '');
