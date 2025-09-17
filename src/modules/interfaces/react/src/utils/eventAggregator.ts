@@ -77,7 +77,7 @@ export class EventAggregator {
         
       case 'reasoning':
         // Python backend now sends complete reasoning blocks - no buffering needed
-        if (event.content && event.content.trim()) {
+        if (event.content && typeof event.content === 'string' && event.content.trim()) {
           // Clear any active thinking animations when reasoning is shown
           if (this.activeThinking) {
             results.push({ type: 'thinking_end' } as DisplayStreamEvent);
@@ -87,11 +87,18 @@ export class EventAggregator {
           // Start reasoning session
           this.activeReasoningSession = true;
           
-          // Emit the complete reasoning block directly
-          results.push({
+          // Emit the complete reasoning block directly, preserving swarm context if present
+          const reasoningEvent: any = {
             type: 'reasoning',
-            content: event.content.trim()
-          } as DisplayStreamEvent);
+            content: (event.content as string).trim(),
+          };
+          // Preserve or infer swarm agent context for consistent UI labeling
+          const incomingAgent = ('swarm_agent' in event && event.swarm_agent) ? event.swarm_agent : undefined;
+          reasoningEvent.swarm_agent = incomingAgent || this.currentSwarmAgent || undefined;
+          if ('is_swarm_operation' in event && event.is_swarm_operation) {
+            reasoningEvent.is_swarm_operation = event.is_swarm_operation;
+          }
+          results.push(reasoningEvent as DisplayStreamEvent);
         }
         break;
         

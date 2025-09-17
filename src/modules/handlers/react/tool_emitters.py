@@ -96,11 +96,30 @@ class ToolEventEmitter:
                 view_range = tool_input.get("view_range", [])
                 if view_range:
                     metadata["lines"] = f"{view_range[0]}-{view_range[1]}" if len(view_range) == 2 else str(view_range)
-            elif command == "create":
-                content = tool_input.get("file_text", "")
-                if content:
-                    lines = content.count("\n") + 1
+
+            # Determine content text and compute basic size metrics for create operations
+            content_text = ""
+            if command == "create":
+                content_text = tool_input.get("file_text") or tool_input.get("content") or ""
+                if isinstance(content_text, str) and content_text:
+                    lines = content_text.count("\n") + 1
                     metadata["size"] = f"{lines} lines"
+
+            # Compose minimal tool_config for UI consumers that expect it
+            try:
+                tool_config = {
+                    "command": command,
+                    "path": path,
+                }
+                if isinstance(content_text, str) and content_text:
+                    tool_config["size_lines"] = content_text.count("\n") + 1
+                    tool_config["size_chars"] = len(content_text)
+                if isinstance(path, str) and path.endswith(".py"):
+                    tool_config["language"] = "python"
+                metadata["tool_config"] = tool_config
+            except Exception:
+                # Never fail emission due to tool_config computation
+                pass
 
             self.emit_ui_event({"type": "metadata", "content": metadata})
 

@@ -21,17 +21,19 @@ from .utils import CyberEvent
 _in_tool_execution = False
 _tool_execution_lock = threading.Lock()
 _tool_output_buffer: List[str] = []
+_tool_error_buffer: List[str] = []
 
 
 def set_tool_execution_state(is_executing: bool):
     """Set global tool execution state and manage buffer when tool starts/ends."""
-    global _in_tool_execution, _tool_output_buffer
+    global _in_tool_execution, _tool_output_buffer, _tool_error_buffer
     with _tool_execution_lock:
         _in_tool_execution = is_executing
         if is_executing:
-            # Starting tool execution - clear buffer
+            # Starting tool execution - clear buffers
             _tool_output_buffer = []
-        # When ending tool execution, buffer is returned by get_buffered_output()
+            _tool_error_buffer = []
+        # When ending tool execution, buffers are returned by getters
 
 
 def is_in_tool_execution() -> bool:
@@ -41,11 +43,20 @@ def is_in_tool_execution() -> bool:
 
 
 def get_buffered_output() -> str:
-    """Get and clear the buffered tool output."""
+    """Get and clear the buffered tool stdout."""
     global _tool_output_buffer
     with _tool_execution_lock:
         output = "\n".join(_tool_output_buffer)
         _tool_output_buffer = []
+        return output
+
+
+def get_buffered_error_output() -> str:
+    """Get and clear the buffered tool stderr."""
+    global _tool_error_buffer
+    with _tool_execution_lock:
+        output = "\n".join(_tool_error_buffer)
+        _tool_error_buffer = []
         return output
 
 
@@ -107,7 +118,10 @@ class OutputInterceptor(io.TextIOBase):
         # During tool execution, buffer the output instead of emitting line by line
         if is_in_tool_execution():
             with _tool_execution_lock:
-                _tool_output_buffer.append(content)
+                if self.event_type == "error":
+                    _tool_error_buffer.append(content)
+                else:
+                    _tool_output_buffer.append(content)
             return  # Don't emit individual lines during tool execution
 
         try:
