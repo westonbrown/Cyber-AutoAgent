@@ -113,7 +113,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Create non-root user for security and add to sudo group
 RUN useradd --create-home --shell /bin/bash cyberagent && \
     usermod -aG sudo cyberagent && \
     echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
@@ -124,16 +123,13 @@ WORKDIR /app
 # Copy dependency descriptors and source
 COPY pyproject.toml ./
 COPY uv.lock* ./
-COPY --chown=cyberagent:cyberagent src/ ./src/
+COPY src/ ./src/
 
 # Install Python dependencies into a local venv
 RUN uv sync --no-dev && \
     mkdir -p /app/evidence /app/logs /home/cyberagent/go && \
     chmod 755 /app/evidence /app/logs && \
-    chown -R cyberagent:cyberagent /app /home/cyberagent/go
-
-# Switch to non-root user
-USER cyberagent
+    chown -R cyberagent:cyberagent /home/cyberagent/go
 
 # Environment
 ENV GOPATH="/home/cyberagent/go"
