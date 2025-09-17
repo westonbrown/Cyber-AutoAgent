@@ -40,35 +40,36 @@ Key Features:
    • LLM (AWS Bedrock, Ollama, OpenAI)
    • Vector Store (FAISS, OpenSearch, Mem0 Platform)
 
-Usage Examples:
---------------
-```python
-from strands import Agent
-from modules.tools.memory import mem0_memory
+Plan & Reflection:
+- TurnStart: get_plan; if absent, store_plan (compact JSON with status/criteria). Align next action to SubObjective and test Criteria.
+- Cadence: get_plan every ~20 steps or at phase boundaries; store_reflection after High/Critical findings or pivots.
+- Update: when Criteria met, set phase.status=done, advance current_phase, and store_plan with updated statuses/criteria.
 
-agent = Agent(tools=[mem0_memory])
+Plan JSON (compact):
+{ "objective": "...", "current_phase": 1, "total_phases": 3,
+  "phases": [
+    { "id": 1, "title": "Reconnaissance", "status": "active", "criteria": "services mapped, versions identified" },
+    { "id": 2, "title": "Vulnerability Analysis", "status": "pending", "criteria": "vulns verified with artifacts" },
+    { "id": 3, "title": "Exploitation & Impact", "status": "pending", "criteria": "impact demonstrated or definitively blocked" }
+  ] }
 
-# Store finding with structured evidence format
-agent.tool.mem0_memory(
-    action="store",
-    content="[VULNERABILITY] SQL Injection [WHERE] /api/users [IMPACT] Data breach [EVIDENCE] id=1' OR '1'='1 [STEPS] Send crafted parameter [REMEDIATION] Use prepared statements [CONFIDENCE] 85%",
-    user_id="cyber_agent",
-    metadata={"category": "finding", "severity": "CRITICAL"}
-)
+LLM Proof Pack policy:
+- For any HIGH/CRITICAL finding stored via mem0_memory, include a short Proof Pack authored by the LLM:
+  • 2–4 sentences that reference at least one concrete artifact (evidence/<...> path, HTTP transcript, RPC JSON, or screenshot)
+  • One-line rationale linking the artifact to the claim
+- If no artifact exists, set metadata.validation_status="hypothesis" (not "verified") and include next steps to obtain proof.
+- Recommended metadata keys: severity, confidence, validation_status.
 
-# Retrieve content using semantic search
-agent.tool.mem0_memory(
-    action="retrieve",
-    query="meeting information",
-    user_id="alex"  # or agent_id="agent1"
-)
+Capability gaps (Ask-Enable-Retry):
+- If a missing capability blocks progress (e.g., web3), the LLM should:
+  1) Ask: state why it is required and the minimal package(s)
+  2) Enable: propose a minimal, temporary, non-interactive enablement (e.g., ephemeral venv under outputs/<target>/<op>/venv)
+  3) Retry: re-run once and store resulting artifacts
+- If enablement is not permitted, store the next steps instead of escalating severity.
 
-# List all memories
-agent.tool.mem0_memory(
-    action="list",
-    user_id="alex"  # or agent_id="agent1"
-)
-```
+Usage:
+- Keep entries concise. For large artifacts (HTML/JS/logs), save files to outputs/<target>/OP_<id>/artifacts and store only the file path in memory.
+- See tool schema below.
 """
 
 import json
@@ -104,26 +105,13 @@ _MEMORY_CLIENT = None
 TOOL_SPEC = {
     "name": "mem0_memory",
     "description": (
-        "Memory management tool for storing, retrieving, and managing memories in Mem0.\n\n"
-        "Features:\n"
-        "1. Store memories with metadata (requires user_id or agent_id)\n"
-        "2. Retrieve memories by ID or semantic search (requires user_id or agent_id)\n"
-        "3. List all memories for a user/agent (requires user_id or agent_id)\n"
-        "4. Delete memories\n"
-        "5. Get memory history\n\n"
-        "Actions:\n"
-        "- store: Store new memory with structured evidence format\n"
-        "- store_plan: Store strategic plan (phase-based JSON format)\n"
-        "- store_reflection: Store reflection on findings/plan progress\n"
-        "- get_plan: Get current active plan\n"
-        "- reflect: Generate reflection prompt from recent findings\n"
-        "- get: Get memory by ID\n"
-        "- list: List all memories (requires user_id or agent_id)\n"
-        "- retrieve: Semantic search (requires user_id or agent_id)\n"
-        "- delete: Delete memory\n"
-        "- history: Get memory history\n\n"
-        "Finding Format: [VULNERABILITY] title [WHERE] location [IMPACT] impact [EVIDENCE] proof [STEPS] steps [REMEDIATION] fix [CONFIDENCE] %\n\n"
-        "Note: Defaults to user_id='cyber_agent' if not specified."
+        "Memory management: store/retrieve/list/get/delete/history.\n"
+        "Actions: store, store_plan, store_reflection, get_plan, reflect, get, list, retrieve, delete, history.\n"
+        "Plan (compact JSON): objective, current_phase, phases[id|title|status|criteria]; update status as criteria are met.\n"
+        "TurnStart: get_plan; if none store_plan. Every ~20 steps or after High/Critical: get_plan or store_reflection.\n"
+        "Finding Format: [VULNERABILITY][WHERE][IMPACT][EVIDENCE][STEPS][REMEDIATION][CONFIDENCE].\n"
+        "Proof Pack (High/Critical): artifact path + one-line rationale; else validation_status='hypothesis' with next steps.\n"
+        "Capability gaps: Ask-Enable-Retry; store artifacts or precise next steps. Default user_id='cyber_agent' if unspecified.\n"
     ),
     "inputSchema": {
         "json": {

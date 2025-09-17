@@ -29,7 +29,7 @@ class TestGetSystemPrompt:
         assert "test objective" in prompt
         assert "100" in prompt
         assert "OP_20240101_120000" in prompt
-        assert "Begin with reconnaissance" in prompt
+        assert "CRITICAL FIRST ACTION" in prompt
 
     def test_get_system_prompt_with_memory_path(self):
         """Test system prompt with explicit memory path"""
@@ -85,7 +85,7 @@ class TestGetSystemPrompt:
             has_existing_memories=False,
         )
 
-        assert "Begin with reconnaissance" in prompt
+        assert "CRITICAL FIRST ACTION" in prompt
         assert "Starting fresh assessment with no previous context" in prompt
         assert "Do NOT check memory on fresh operations" in prompt
 
@@ -190,7 +190,7 @@ class TestMemoryInstructions:
             has_existing_memories=False,
         )
 
-        assert "Begin with reconnaissance" in prompt
+        assert "CRITICAL FIRST ACTION" in prompt
         assert "Starting fresh assessment with no previous context" in prompt
 
 

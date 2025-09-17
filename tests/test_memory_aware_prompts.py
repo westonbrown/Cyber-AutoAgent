@@ -29,7 +29,7 @@ class TestMemoryContextGuidance:
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
         assert "Do NOT check memory on fresh operations" in result
-        assert "Begin with reconnaissance and target information gathering" in result
+        assert "Then begin reconnaissance and target information gathering guided by the plan" in result
         assert 'Store all findings immediately with category="finding"' in result
 
     def test_memory_path_guidance(self):
@@ -134,7 +134,7 @@ class TestMemoryAwareSystemPrompts:
 
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
-        assert "Begin with reconnaissance and target information gathering" in result
+        assert "Then begin reconnaissance and target information gathering guided by the plan" in result
         assert "Target: test.com" in result
         assert "Operation: OP_20240101_120000" in result
         assert "Budget: 50 steps" in result

@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from textwrap import dedent
 
 try:
     import yaml  # type: ignore
@@ -73,6 +74,30 @@ def _extract_domain_lens(module_prompt: str) -> Dict[str, str]:
 # --- Memory Context Guidance (centralized) ---
 
 
+def _plan_first_directive(has_existing_memories: bool) -> str:
+    """Return the plan-first directive block used in memory context.
+
+    This centralizes wording so tests and UX remain stable.
+    """
+    if has_existing_memories:
+        return dedent(
+            """
+            **CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")
+            NEXT: Retrieve the active plan with mem0_memory(action="get_plan"); if none, create one via mem0_memory(action="store_plan") before other tools
+            """
+        ).strip()
+    else:
+        return dedent(
+            """
+            Starting fresh assessment with no previous context
+            Do NOT check memory on fresh operations (no retrieval of prior data)
+            CRITICAL FIRST ACTION: Create a minimal strategic plan in memory via mem0_memory(action="store_plan", content="<objective + 3 phases>")
+            Then begin reconnaissance and target information gathering guided by the plan
+            Store all findings immediately with category="finding"
+            """
+        ).strip()
+
+
 def get_memory_context_guidance(
     *,
     has_memory_path: bool,
@@ -95,23 +120,14 @@ def get_memory_context_guidance(
                 total_count = 0
 
     if not has_memory_path and not has_existing_memories:
-        # Fresh operation guidance
-        lines.extend(
-            [
-                "Starting fresh assessment with no previous context",
-                "Do NOT check memory on fresh operations",
-                "Begin with reconnaissance and target information gathering",
-                'Store all findings immediately with category="finding"',
-            ]
-        )
+        # Fresh operation guidance (centralized)
+        lines.append(_plan_first_directive(False))
     else:
         # Continuing assessment guidance
         count_str = str(total_count) if total_count else "0"
         lines.append(f"Continuing assessment with {count_str} existing memories")
-        # Critical directive expected by tests
-        lines.append(
-            '**CRITICAL FIRST ACTION**: Load all memories with mem0_memory(action="list", user_id="cyber_agent")'
-        )
+        # Centralized plan-first directive for existing memory case
+        lines.append(_plan_first_directive(True))
         lines.append("Analyze retrieved memories before taking any actions")
         lines.append("Avoid repeating work already completed")
         lines.append("Build upon previous discoveries")
@@ -136,6 +152,8 @@ def get_system_prompt(
     has_memory_path: bool = False,
     tools_context: Optional[str] = None,
     output_config: Optional[Dict[str, Any]] = None,
+    plan_snapshot: Optional[str] = None,
+    plan_current_phase: Optional[int] = None,
 ) -> str:
     """Build the system prompt used by the main agent (centralized).
 
@@ -178,9 +196,33 @@ def get_system_prompt(
         parts.append(f"Target organization: {base_dir.rstrip('/')}/{target_name}/")
         parts.append("Evidence and logs will be stored under a unified operation path.")
 
-    # Fresh operation hint (tests expect this phrase when fresh)
-    if not has_memory_path and not has_existing_memories:
-        parts.append("Begin with reconnaissance")
+
+    # Inject a concise plan snapshot if provided
+    if plan_snapshot:
+        parts.append("## PLAN SNAPSHOT")
+        parts.append(str(plan_snapshot).strip())
+
+    # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
+    try:
+        _interval = 20
+        # Next reflection at the next multiple of interval (1-based: 20,40,60,...)
+        if current_step <= 0:
+            _next_reflection = _interval
+        else:
+            _next_reflection = ((current_step + _interval - 1) // _interval) * _interval
+        if remaining_steps is not None and isinstance(remaining_steps, int):
+            # Bound by max steps
+            _next_reflection = min(_next_reflection, max_steps)
+        _steps_until = max(0, _next_reflection - current_step)
+        parts.append("## REFLECTION SNAPSHOT")
+        parts.append(
+            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} | NextReflectionDueAt: step {_next_reflection} (in {_steps_until} steps)"
+        )
+        parts.append(
+            "Reflection triggers: High/Critical finding; two attempts without new artifact; repeated timeouts on same command; plan–evidence mismatch."
+        )
+    except Exception:
+        pass
 
     # Append explicit planning and reflection block from template if available
     try:
