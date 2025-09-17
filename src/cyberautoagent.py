@@ -37,12 +37,19 @@ except ImportError:
     requests = None  # Handle optional dependency
 from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
+from requests.exceptions import ReadTimeout as RequestsReadTimeout, ConnectionError as RequestsConnectionError
+from botocore.exceptions import (
+    ReadTimeoutError as BotoReadTimeoutError,
+    EndpointConnectionError as BotoEndpointConnectionError,
+    ConnectTimeoutError as BotoConnectTimeoutError,
+)
 
 # Local imports
 from modules.agents.cyber_autoagent import AgentConfig, create_agent
 from modules.config.environment import auto_setup, clean_operation_memory, setup_logging
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
+from strands.types.exceptions import MaxTokensReachedException
 from modules.handlers.utils import (
     Colors,
     get_output_path,
@@ -318,6 +325,11 @@ def main():
         type=str,
         help="Base directory for output artifacts (default: ./outputs)",
     )
+    parser.add_argument(
+        "--eval-rubric",
+        action="store_true",
+        help="Enable rubric-based evaluation in addition to Ragas metrics",
+    )
 
     args = parser.parse_args()
 
@@ -328,21 +340,31 @@ def main():
 
     # Handle service mode
     if args.service_mode:
-        print("Starting Cyber-AutoAgent in service mode...")
-        print("Container will stay alive and wait for external requests.")
-        print("Use the React UI to submit assessment requests.")
+        # If full parameters are provided (common when the app execs into the service
+        # container with explicit args/env), auto-run a one-shot assessment instead of idling.
+        has_params = bool(args.target and args.objective)
+        ui_mode_env = os.environ.get("CYBER_UI_MODE", "").lower()
+        auto_run = has_params and ui_mode_env == "react"
 
-        # Keep the container alive
-        try:
-            while True:
-                time.sleep(30)  # Check every 30 seconds
-                # Health check endpoint implementation pending
-        except KeyboardInterrupt:
-            print("Service mode interrupted. Shutting down...")
-            return
-        except Exception as e:
-            print(f"Service mode error: {e}")
-            return
+        if auto_run:
+            print("Service mode detected with parameters - running one-shot assessment.")
+            # Fall through to normal execution path below
+        else:
+            print("Starting Cyber-AutoAgent in service mode...")
+            print("Container will stay alive and wait for external requests.")
+            print("Use the React UI to submit assessment requests.")
+
+            # Keep the container alive
+            try:
+                while True:
+                    time.sleep(30)  # Check every 30 seconds
+                    # Health check endpoint implementation pending
+            except KeyboardInterrupt:
+                print("Service mode interrupted. Shutting down...")
+                return
+            except Exception as e:
+                print(f"Service mode error: {e}")
+                return
 
     if not args.confirmations:
         os.environ["BYPASS_TOOL_CONSENT"] = "true"
@@ -372,6 +394,13 @@ def main():
         config_overrides["output_dir"] = args.output_dir
     # Always enable unified output system
     config_overrides["enable_unified_output"] = True
+
+    # Toggle rubric evaluation via CLI flag
+    if args.eval_rubric:
+        os.environ["EVAL_RUBRIC_ENABLED"] = "true"
+
+    # Ensure PROVIDER env reflects CLI for downstream modules (evaluator)
+    os.environ["PROVIDER"] = args.provider
 
     server_config = config_manager.get_server_config(args.provider, **config_overrides)
 
@@ -579,10 +608,16 @@ def main():
                             print_status("Step limit reached - terminating", "SUCCESS")
                         break
 
-                    # If agent hasn't done anything substantial, break to avoid infinite loop
+                    # If agent hasn't done anything substantial for a while, break to avoid infinite loop
+                    # Allow at least one assistant turn to emit reasoning before concluding no action
                     if callback_handler.current_step == 0:
-                        print_status("No actions taken - completing", "SUCCESS")
-                        break
+                        # If we've seen any reasoning emitted, give the agent one more cycle
+                        # This prevents premature termination when the first turn is pure reasoning
+                        if getattr(callback_handler, "_emitted_any_reasoning", False):
+                            logger.debug("Initial reasoning observed with no tools yet; continuing one more cycle")
+                        else:
+                            print_status("No actions taken - completing", "SUCCESS")
+                            break
 
                     # Generate continuation prompt
                     remaining_steps = (
@@ -614,9 +649,72 @@ def main():
                         break
                     # Continue to next iteration
 
+                except MaxTokensReachedException as error:
+                    # Emit explicit termination event for UI and generate final report
+                    print_status("Token limit reached - generating final report", "WARNING")
+                    try:
+                        if callback_handler:
+                            # Emit a single termination_reason event for clarity in the UI
+                            termination_event = {
+                                "type": "termination_reason",
+                                "reason": "max_tokens",
+                                "message": "Model token limit reached. Switching to final report.",
+                                "current_step": getattr(callback_handler, "current_step", 0),
+                                "max_steps": getattr(callback_handler, "max_steps", args.iterations),
+                            }
+                            # Use handler's emitter directly
+                            callback_handler._emit_ui_event(termination_event)  # noqa: SLF001 (internal method okay for UI)
+                            # Generate the report immediately
+                            callback_handler.ensure_report_generated(agent, args.target, args.objective, args.module)
+                    except Exception:
+                        logger.debug("Failed to emit termination event for max_tokens")
+                    break
+
+                except (
+                    RequestsReadTimeout,
+                    RequestsConnectionError,
+                    BotoReadTimeoutError,
+                    BotoEndpointConnectionError,
+                    BotoConnectTimeoutError,
+                ) as error:
+                    # Network/provider timeout: emit termination_reason and pivot to report
+                    print_status("Network/provider timeout - generating final report", "WARNING")
+                    try:
+                        if callback_handler:
+                            termination_event = {
+                                "type": "termination_reason",
+                                "reason": "network_timeout",
+                                "message": "Provider/network timeout detected. Switching to final report.",
+                                "current_step": getattr(callback_handler, "current_step", 0),
+                                "max_steps": getattr(callback_handler, "max_steps", args.iterations),
+                            }
+                            callback_handler._emit_ui_event(termination_event)  # noqa: SLF001
+                            callback_handler.ensure_report_generated(agent, args.target, args.objective, args.module)
+                    except Exception:
+                        logger.debug("Failed to emit termination event for network timeout")
+                    break
+
                 except Exception as error:
                     # Handle other termination scenarios
                     error_str = str(error).lower()
+                    if "maxtokensreached" in error_str or "max_tokens" in error_str:
+                        # Fallback path if the specific exception type wasn't available
+                        print_status("Token limit reached - generating final report", "WARNING")
+                        try:
+                            if callback_handler:
+                                termination_event = {
+                                    "type": "termination_reason",
+                                    "reason": "max_tokens",
+                                    "message": "Model token limit reached. Switching to final report.",
+                                    "current_step": getattr(callback_handler, "current_step", 0),
+                                    "max_steps": getattr(callback_handler, "max_steps", args.iterations),
+                                }
+                                callback_handler._emit_ui_event(termination_event)  # noqa: SLF001
+                                callback_handler.ensure_report_generated(agent, args.target, args.objective, args.module)
+                        except Exception:
+                            logger.debug("Failed to emit termination event for max_tokens (fallback)")
+                        break
+
                     if "event loop cycle stop requested" in error_str:
                         # Extract the reason from the error message
                         reason_match = re.search(r"Reason: (.+?)(?:\\n|$)", str(error))

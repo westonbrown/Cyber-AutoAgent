@@ -67,16 +67,33 @@ class ReportGenerator:
             llm_cfg = cfg.get_llm_config("bedrock")
             # Only override if explicitly provided, otherwise use config
             mid = model_id if model_id else llm_cfg.model_id
+
+            # Harden Bedrock client similar to main agent to avoid timeouts
+            from botocore.config import Config as BotocoreConfig
+            boto_config = BotocoreConfig(
+                region_name=cfg.get_server_config("bedrock").region,
+                retries={"max_attempts": 5, "mode": "adaptive"},
+                read_timeout=420,
+                connect_timeout=60,
+                max_pool_connections=100,
+            )
+
             # Set appropriate token limits based on the model
             if "claude-3-5-sonnet" in mid or "claude-3-5-haiku" in mid:
                 # Claude 3.5 models have ~8k token output limits
                 max_tokens = 8000
             else:
-                # Bedrock models commonly cap at 32k; stay safely below the limit
-                max_tokens = 31000
+                # Default to 32k for non-3.5 models to satisfy provider limits
+                max_tokens = 32000
             # Ensure explicit region to avoid environment inconsistencies
             region = cfg.get_server_config("bedrock").region
-            model = BedrockModel(model_id=mid, region_name=region, max_tokens=max_tokens, temperature=0.3)
+            model = BedrockModel(
+                model_id=mid,
+                region_name=region,
+                max_tokens=max_tokens,
+                temperature=0.3,
+                boto_client_config=boto_config,
+            )
         elif prov == "ollama":
             host = cfg.get_ollama_host()
             llm_cfg = cfg.get_llm_config("ollama")

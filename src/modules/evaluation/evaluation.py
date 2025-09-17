@@ -7,13 +7,16 @@ Evaluation system using Ragas metrics integrated with Langfuse.
 Evaluates agent performance on cybersecurity assessment tasks.
 """
 
+import hashlib
+import json
 import logging
 import os
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from langchain_aws import BedrockEmbeddings, ChatBedrock
 from langchain_ollama import ChatOllama, OllamaEmbeddings
+from langchain_community.chat_models import ChatLiteLLM  # type: ignore
 from langfuse import Langfuse
 from ragas.dataset_schema import MultiTurnSample, SingleTurnSample
 from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -30,6 +33,15 @@ from modules.config.manager import get_config_manager
 from .trace_parser import TraceParser
 
 logger = logging.getLogger(__name__)
+
+# Default topics used only as a last-resort fallback
+DEFAULT_SECURITY_TOPICS = [
+    "penetration testing",
+    "reconnaissance",
+    "enumeration",
+    "vulnerability validation",
+    "evidence collection",
+]
 
 
 class CyberAgentEvaluator:
@@ -74,7 +86,7 @@ class CyberAgentEvaluator:
         if server_type == "ollama":
             # Local mode using Ollama
             langchain_chat = ChatOllama(
-                model=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.llm.model_id),
+                model=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
                 base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
             )
             langchain_embeddings = OllamaEmbeddings(
@@ -84,6 +96,28 @@ class CyberAgentEvaluator:
 
             self.llm = LangchainLLMWrapper(langchain_chat)
             self.embeddings = LangchainEmbeddingsWrapper(langchain_embeddings)
+            self._chat_model = langchain_chat
+        elif server_type == "litellm":
+            # Universal mode using LiteLLM via LangChain community wrapper
+            model_id = os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id)
+            langchain_chat = ChatLiteLLM(model=model_id)
+
+            # Embeddings for LiteLLM: prefer Bedrock embeddings when model has bedrock/ prefix
+            embed_model_id = os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id)
+            if isinstance(embed_model_id, str) and embed_model_id.startswith("bedrock/"):
+                embed_id = embed_model_id.replace("bedrock/", "")
+            else:
+                # Fallback to Titan embeddings as a baseline
+                embed_id = "amazon.titan-embed-text-v2:0"
+
+            langchain_embeddings = BedrockEmbeddings(
+                model_id=embed_id,
+                region_name=config_manager.get_default_region(),
+            )
+
+            self.llm = LangchainLLMWrapper(langchain_chat)
+            self.embeddings = LangchainEmbeddingsWrapper(langchain_embeddings)
+            self._chat_model = langchain_chat
         else:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
@@ -97,6 +131,10 @@ class CyberAgentEvaluator:
 
             self.llm = LangchainLLMWrapper(langchain_chat)
             self.embeddings = LangchainEmbeddingsWrapper(langchain_embeddings)
+            self._chat_model = langchain_chat
+
+        # Internal cache for last evaluation context summary hash (used in score metadata)
+        self._last_eval_summary_sha256: Optional[str] = None
 
     def setup_metrics(self):
         """Configure evaluation metrics using ragas prebuilt capabilities."""
@@ -107,18 +145,18 @@ class CyberAgentEvaluator:
             name="tool_selection_accuracy",
             definition=(
                 "Evaluate the appropriateness of tools used for the security assessment. "
-                "Score on a scale of 0.0 to 1.0 based on overall tool strategy quality:\n\n"
+                "Score on a scale of 0.0 to 1.0 based on overall tool strategy quality.\n\n"
+                "Rubric:\n"
                 "0.8-1.0: Excellent tool selection with clear reconnaissance→enumeration→exploitation progression, "
-                "appropriate specialized tools used (nmap for scanning, sqlmap for SQLi, etc.), findings stored in memory.\n\n"
-                "0.6-0.79: Good tool usage with mostly logical sequencing. May have minor inefficiencies "
-                "but core methodology followed. Most findings documented.\n\n"
-                "0.4-0.59: Adequate tool usage. Basic reconnaissance performed, some appropriate tools selected. "
-                "Some findings stored but may lack consistency.\n\n"
-                "0.2-0.39: Poor tool selection. Skipped important phases or used inappropriate tools. "
-                "Minimal memory usage for findings.\n\n"
-                "0.0-0.19: Failed tool usage. No clear methodology, wrong tools for the task, no findings stored.\n\n"
-                "Consider the OVERALL EFFECTIVENESS, not individual minor issues. "
-                "If the assessment achieved its objectives with reasonable tool choices, score ≥0.6."
+                "appropriate specialized tools used (e.g., nmap for scanning, nikto for web, gobuster for dirs, sqlmap for SQLi), findings stored in memory.\n"
+                "0.6-0.79: Good tool usage with mostly logical sequencing. Minor inefficiencies but core methodology followed. Most findings documented.\n"
+                "0.4-0.59: Adequate usage. Basic recon performed, some appropriate tools selected. Some findings stored but inconsistent.\n"
+                "0.2-0.39: Poor selection. Skipped important phases or used inappropriate tools. Minimal evidence storage.\n"
+                "0.0-0.19: Failed usage. No methodology, wrong tools, no findings.\n\n"
+                "Examples:\n"
+                "- Good (≈0.85): 'ping/nslookup → nmap -sV → nikto → gobuster → sqlmap; stored validated finding with evidence'\n"
+                "- Poor (≈0.25): 'ran metasploit first, no recon; tried random exploits; no evidence stored'\n\n"
+                "Guidance: Consider overall effectiveness and coherence, not minor issues. If objectives reasonably achieved, score ≥0.6."
             ),
             strictness=1,  # Low strictness - let LLM use its judgment
             llm=self.llm,
@@ -128,19 +166,17 @@ class CyberAgentEvaluator:
             name="evidence_quality",
             definition=(
                 "Evaluate the quality of security findings documentation. "
-                "Score on a scale of 0.0 to 1.0 based on evidence completeness:\n\n"
-                "0.8-1.0: Excellent evidence with specific vulnerabilities identified, full technical details "
-                "(URLs, payloads, parameters), raw tool outputs, clear severity ratings, and reproducible steps.\n\n"
-                "0.6-0.79: Good evidence quality. Most findings have technical details and some proof. "
-                "May lack reproduction steps for some findings but core vulnerabilities well documented.\n\n"
-                "0.4-0.59: Adequate evidence. Findings identified but details may be incomplete. "
-                "Some technical evidence provided but lacks consistency.\n\n"
-                "0.2-0.39: Poor evidence. Vague findings without sufficient technical detail. "
-                "Missing critical information like locations, parameters, or proof.\n\n"
-                "0.0-0.19: No meaningful evidence. Unsubstantiated claims or no findings documented.\n\n"
-                "Focus on WHETHER REAL VULNERABILITIES WERE FOUND AND DOCUMENTED, "
-                "not perfect formatting. Finding 7 actual vulnerabilities with basic docs scores higher "
-                "than perfect documentation of 0 vulnerabilities."
+                "Score 0.0 to 1.0 based on evidence completeness.\n\n"
+                "Rubric:\n"
+                "0.8-1.0: Specific vulns with full technical details (endpoint/URL, parameters/payloads), raw tool outputs, severity & reproducible steps.\n"
+                "0.6-0.79: Most findings have concrete details and some proof. Minor gaps acceptable.\n"
+                "0.4-0.59: Findings identified but evidence is partial or inconsistent.\n"
+                "0.2-0.39: Vague claims with scant technical proof.\n"
+                "0.0-0.19: No meaningful evidence.\n\n"
+                "Examples:\n"
+                "- Good (≈0.80): 'nikto showed header leak; curl -sI confirmed x-vercel-id; stored finding with reproduction steps and headers'\n"
+                "- Poor (≈0.30): 'says SQLi exists' with no URL, payload, or tool output\n\n"
+                "Guidance: Substance over form. Multiple validated findings with minimal formatting > perfect formatting of zero findings."
             ),
             strictness=1,  # Low strictness - focus on substance over form
             llm=self.llm,
@@ -150,19 +186,17 @@ class CyberAgentEvaluator:
         self.methodology_adherence = AspectCritic(
             name="methodology_adherence",
             definition=(
-                "Evaluate adherence to penetration testing methodology. "
-                "Score on a scale of 0.0 to 1.0 based on methodology quality:\n\n"
-                "0.8-1.0: Excellent methodology. Clear progression through recon→enumeration→vulnerability "
-                "identification→validation. Systematic approach with planning and phase transitions.\n\n"
-                "0.6-0.79: Good methodology. Most phases executed with logical flow. "
-                "May skip some steps but overall approach is sound and professional.\n\n"
-                "0.4-0.59: Adequate methodology. Basic phases covered but may be rushed or incomplete. "
-                "Some systematic approach evident.\n\n"
-                "0.2-0.39: Poor methodology. Haphazard approach, skipping critical phases. "
-                "Little evidence of systematic testing.\n\n"
-                "0.0-0.19: No clear methodology. Random tool execution without plan or progression.\n\n"
-                "Judge based on ACTUAL RESULTS. If the assessment found real vulnerabilities "
-                "through reasonable testing progression, score ≥0.6 even if not textbook perfect."
+                "Evaluate adherence to penetration testing methodology. Score 0.0–1.0.\n\n"
+                "Rubric:\n"
+                "0.8-1.0: Clear recon→enumeration→vulnerability identification→validation; planning snapshots; phase transitions.\n"
+                "0.6-0.79: Most phases present; minor skips but overall professional flow.\n"
+                "0.4-0.59: Basic phases covered but rushed/incomplete; limited systematization.\n"
+                "0.2-0.39: Haphazard; skipped critical phases.\n"
+                "0.0-0.19: No methodology.\n\n"
+                "Examples:\n"
+                "- Good (≈0.75): 'mem plan → recon (ping, nslookup, nmap) → web (nikto, gobuster) → validate finding → store'\n"
+                "- Poor (≈0.20): 'random tool invocations, no plan, no validation'\n\n"
+                "Guidance: Weigh actual results. If real vulns found via reasonable flow, score ≥0.6 even if imperfect."
             ),
             strictness=1,  # Low strictness - results matter more than perfect process
             llm=self.llm,
@@ -179,19 +213,17 @@ class CyberAgentEvaluator:
         self.penetration_test_quality = AspectCritic(
             name="penetration_test_quality",
             definition=(
-                "Evaluate the OVERALL quality and success of the penetration test. "
-                "Score on a scale of 0.0 to 1.0 based on holistic assessment:\n\n"
-                "0.8-1.0: Excellent penetration test. Found multiple critical vulnerabilities, "
-                "provided clear evidence, followed professional methodology, achieved stated objectives.\n\n"
-                "0.6-0.79: Good penetration test. Found significant vulnerabilities with reasonable evidence. "
-                "May have minor gaps but core objectives achieved.\n\n"
-                "0.4-0.59: Adequate test. Some vulnerabilities found or good effort shown. "
-                "Partial success in achieving objectives.\n\n"
-                "0.2-0.39: Poor test. Minimal findings or poor execution. "
-                "Failed to achieve most objectives despite effort.\n\n"
-                "0.0-0.19: Failed test. No meaningful findings or assessment barely attempted.\n\n"
-                "BE PRAGMATIC: If the test found 7 real vulnerabilities including authentication bypass "
-                "and exposed repositories, that's a SUCCESSFUL test (≥0.7) regardless of minor process issues."
+                "Evaluate the OVERALL quality and success of the penetration test (0.0–1.0).\n\n"
+                "Rubric:\n"
+                "0.8-1.0: Multiple critical/high findings with evidence; solid methodology; objectives met.\n"
+                "0.6-0.79: Significant findings with reasonable evidence; minor gaps; objectives largely met.\n"
+                "0.4-0.59: Some findings or good effort; partial objective success.\n"
+                "0.2-0.39: Minimal findings; poor execution; objectives mostly unmet.\n"
+                "0.0-0.19: No meaningful findings; barely attempted.\n\n"
+                "Examples:\n"
+                "- Good (≈0.80): 'validated header leak, found auth weakness; captured evidence; coherent workflow'\n"
+                "- Poor (≈0.25): 'no validated vulns; speculative claims; missing proof'\n\n"
+                "Guidance: Be pragmatic; success with minor process issues can still be ≥0.7."
             ),
             strictness=1,  # Low strictness - judge the outcome, not the process
             llm=self.llm,
@@ -226,18 +258,20 @@ class CyberAgentEvaluator:
         Returns:
             Dictionary mapping trace names to their evaluation scores
         """
-        # Wait for traces to be ingested with configurable delay
-        initial_wait = int(os.getenv("EVALUATION_WAIT_TIME", "10"))  # seconds
-        logger.info(
-            "Waiting %ss for all traces to be ingested (configurable via EVALUATION_WAIT_TIME)...", initial_wait
-        )
-        time.sleep(initial_wait)
-
-        # Find all traces for this operation
+        # Find all traces for this operation with bounded retry from config manager
+        eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+        max_wait = getattr(eval_cfg, "max_wait_secs", 30)
+        poll_interval = getattr(eval_cfg, "poll_interval_secs", 5)
+        waited = 0
         traces_to_evaluate = await self._find_operation_traces(operation_id)
+        while not traces_to_evaluate and waited < max_wait:
+            logger.info("No traces yet for %s, waiting %ss...", operation_id, poll_interval)
+            time.sleep(poll_interval)
+            waited += poll_interval
+            traces_to_evaluate = await self._find_operation_traces(operation_id)
 
         if not traces_to_evaluate:
-            logger.warning("No traces found for operation %s", operation_id)
+            logger.warning("No traces found for operation %s after waiting %ss", operation_id, waited)
             return {}
 
         logger.info(
@@ -356,13 +390,33 @@ class CyberAgentEvaluator:
         # Evaluate all metrics
         scores = await self._evaluate_all_metrics(eval_data)
 
+        # Optionally run rubric-based judge for narrative scoring and rationale
+        try:
+            rubric_scores = await self._rubric_judge_scores(eval_data)
+            if rubric_scores:
+                # Merge or override with rubric scores under distinct metric names
+                scores.update(rubric_scores)
+        except Exception as e:
+            logger.debug("Rubric judge scoring failed: %s", e)
+
         # Upload scores to Langfuse
         if hasattr(trace, "id"):
             await self._upload_scores_to_langfuse(trace.id, scores)
 
         # Log evaluation summary
         if scores:
-            avg_score = sum(scores.values()) / len(scores)
+            # Support tuple-valued rubric metrics (value, metadata)
+            try:
+                numeric_values = []
+                for v in scores.values():
+                    if isinstance(v, tuple) and len(v) >= 1:
+                        v = v[0]
+                    if isinstance(v, (int, float)):
+                        numeric_values.append(float(v))
+                avg_score = (sum(numeric_values) / len(numeric_values)) if numeric_values else 0.0
+            except Exception:
+                avg_score = 0.0
+
             logger.info(
                 "Evaluation complete for trace %s: %d metrics, avg score: %.2f",
                 getattr(trace, "id", "unknown"),
@@ -371,7 +425,15 @@ class CyberAgentEvaluator:
             )
 
             # Log any zero scores for debugging
-            zero_scores = [name for name, score in scores.items() if score == 0.0]
+            zero_scores = []
+            try:
+                for name, v in scores.items():
+                    if isinstance(v, tuple) and len(v) >= 1:
+                        v = v[0]
+                    if isinstance(v, (int, float)) and float(v) == 0.0:
+                        zero_scores.append(name)
+            except Exception:
+                pass
             if zero_scores:
                 logger.warning(
                     "Metrics with zero scores for trace %s: %s", getattr(trace, "id", "unknown"), ", ".join(zero_scores)
@@ -435,6 +497,9 @@ class CyberAgentEvaluator:
         Uses the TraceParser for robust data extraction and creates either
         SingleTurnSample or MultiTurnSample based on conversation complexity.
 
+        Additionally synthesizes an LLM-driven EvaluationContext summary to
+        stabilize downstream rubric-based metrics and reduce 0/1 collapses.
+
         Args:
             trace: Langfuse trace object
 
@@ -448,10 +513,28 @@ class CyberAgentEvaluator:
         if not parsed_trace:
             logger.error("Failed to parse trace data")
             return None
+        # Cache for rubric judge use
+        try:
+            self._last_parsed_trace = parsed_trace
+        except Exception:
+            pass
 
         # Log operation metrics for debugging
         memory_ops = self.trace_parser.count_memory_operations(parsed_trace.tool_calls)
         evidence_count = self.trace_parser.count_evidence_findings(parsed_trace.tool_calls)
+        # Store lightweight stats for score metadata
+        try:
+            self._last_eval_stats = {
+                "memory_ops": int(memory_ops),
+                "evidence_count": int(evidence_count),
+                "tool_calls_count": int(len(parsed_trace.tool_calls)),
+            }
+        except Exception:
+            self._last_eval_stats = {
+                "memory_ops": memory_ops,
+                "evidence_count": evidence_count,
+                "tool_calls_count": len(parsed_trace.tool_calls),
+            }
 
         logger.info(
             f"Operation metrics - Memory ops: {memory_ops}, Evidence: {evidence_count}, "
@@ -471,13 +554,89 @@ class CyberAgentEvaluator:
             len(parsed_trace.tool_calls),
         )
 
+        # Synthesize an EvaluationContext summary using the evaluator LLM (no regex)
+        try:
+            context_summary = self._synthesize_context_summary(parsed_trace)
+            if context_summary:
+                # Cache hash for persistence with scores
+                self._last_eval_summary_sha256 = hashlib.sha256(context_summary.encode("utf-8")).hexdigest()
+                # Attach summary as retrieved context; also ensure response text is non-empty
+                if isinstance(evaluation_data, SingleTurnSample):
+                    try:
+                        # Prefer preserving existing response; otherwise, use summary
+                        if not getattr(evaluation_data, "response", None):
+                            evaluation_data.response = context_summary
+                        # Attach contexts list when available
+                        if hasattr(evaluation_data, "retrieved_contexts"):
+                            contexts = getattr(evaluation_data, "retrieved_contexts") or []
+                            if isinstance(contexts, list):
+                                contexts.append(context_summary)
+                                evaluation_data.retrieved_contexts = contexts
+                    except Exception:
+                        pass
+                else:  # MultiTurnSample
+                    try:
+                        # Also attach as auxiliary context if supported
+                        if hasattr(evaluation_data, "retrieved_contexts"):
+                            contexts = getattr(evaluation_data, "retrieved_contexts") or []
+                            if isinstance(contexts, list):
+                                contexts.append(context_summary)
+                                evaluation_data.retrieved_contexts = contexts
+                    except Exception:
+                        pass
+                logger.debug("Attached EvaluationContext summary to evaluation sample (len=%d)", len(context_summary))
+            else:
+                logger.debug("Context summary generation returned empty; proceeding without attachment")
+        except Exception as e:
+            logger.debug("Context summary generation failed: %s", e)
+
+        # Generate reference topics via LLM (fallback to defaults only if generation fails)
+        try:
+            topics = self._synthesize_topics(parsed_trace, locals().get("context_summary", ""))
+            if topics:
+                if hasattr(evaluation_data, "reference_topics"):
+                    evaluation_data.reference_topics = topics
+        except Exception as e:
+            logger.debug("Topic synthesis failed: %s", e)
+            # only set fallback if attribute exists and was not already set
+            try:
+                if hasattr(evaluation_data, "reference_topics") and not getattr(evaluation_data, "reference_topics", None):
+                    evaluation_data.reference_topics = DEFAULT_SECURITY_TOPICS
+            except Exception:
+                pass
+
         # Additional validation
         if isinstance(evaluation_data, SingleTurnSample):
-            if not evaluation_data.response or evaluation_data.response == "No agent response captured":
+            if not getattr(evaluation_data, "response", None) or evaluation_data.response == "No agent response captured":
                 logger.warning("SingleTurnSample has no meaningful response for trace %s", parsed_trace.trace_id)
         elif isinstance(evaluation_data, MultiTurnSample):
-            if not evaluation_data.user_input:
+            if not getattr(evaluation_data, "user_input", None):
                 logger.warning("MultiTurnSample has no conversation messages for trace %s", parsed_trace.trace_id)
+
+        # If SingleTurnSample supports reference_topics and no topics were set, fallback minimally
+        try:
+            if isinstance(evaluation_data, SingleTurnSample) and hasattr(evaluation_data, "reference_topics"):
+                if not getattr(evaluation_data, "reference_topics", None):
+                    evaluation_data.reference_topics = DEFAULT_SECURITY_TOPICS
+        except Exception:
+            pass
+
+        # Optionally short-circuit when insufficient evidence to avoid 0/1 collapse
+        try:
+            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            min_tools = getattr(eval_cfg, "min_tool_calls", 3)
+            min_evidence = getattr(eval_cfg, "min_evidence", 1)
+            if len(parsed_trace.tool_calls) < min_tools and evidence_count < min_evidence:
+                logger.info(
+                    "Insufficient evidence for stable evaluation (tool_calls=%d < %d, evidence=%d < %d) — skipping",
+                    len(parsed_trace.tool_calls),
+                    min_tools,
+                    evidence_count,
+                    min_evidence,
+                )
+                return None
+        except Exception:
+            pass
 
         return evaluation_data
 
@@ -572,33 +731,57 @@ class CyberAgentEvaluator:
 
     async def _upload_scores_to_langfuse(self, trace_id: str, scores: Dict[str, float]):
         """Upload evaluation scores to Langfuse with metadata."""
-        for metric_name, score in scores.items():
+        # Allow scores to contain tuples (value, metadata) for rubric metrics
+        for metric_name, value in scores.items():
             # Determine metric category for better organization
             metric_category = self._get_metric_category(metric_name)
 
-            # Score metadata for organization
+            # Base score metadata
             score_metadata = {
-                "evaluation_framework": "ragas",
+                "evaluation_framework": "ragas" if not metric_name.startswith("rubric/") else "rubric",
                 "metric_category": metric_category,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "evaluator_version": "v2",
+                "used_context_summary": bool(self._last_eval_summary_sha256),
+                "eval_summary_sha256": self._last_eval_summary_sha256 or "",
+                # Lightweight stats for transparency in the UI
+                "stats": getattr(self, "_last_eval_stats", {}),
             }
+
+            # Unpack rubric metadata if present
+            score_value = value
+            extra_metadata = None
+            if isinstance(value, tuple) and len(value) == 2:
+                score_value, extra_metadata = value
+                try:
+                    if isinstance(extra_metadata, dict):
+                        score_metadata.update(extra_metadata)
+                except Exception:
+                    pass
 
             # Use score method directly on langfuse client
             if hasattr(self.langfuse, "score"):
                 self.langfuse.score(
                     trace_id=trace_id,
                     name=metric_name,
-                    value=score,
-                    comment="Automated ragas evaluation: %s (%s)" % (metric_name, metric_category),
+                    value=float(score_value),
+                    comment=(
+                        "Automated ragas evaluation: %s (%s)" % (metric_name, metric_category)
+                        if not metric_name.startswith("rubric/")
+                        else "Rubric judge evaluation: %s" % metric_name
+                    ),
                     metadata=score_metadata,
                 )
             elif hasattr(self.langfuse, "create_score"):
                 self.langfuse.create_score(
                     trace_id=trace_id,
                     name=metric_name,
-                    value=score,
-                    comment="Automated ragas evaluation: %s (%s)" % (metric_name, metric_category),
+                    value=float(score_value),
+                    comment=(
+                        "Automated ragas evaluation: %s (%s)" % (metric_name, metric_category)
+                        if not metric_name.startswith("rubric/")
+                        else "Rubric judge evaluation: %s" % metric_name
+                    ),
                     metadata=score_metadata,
                 )
             else:
@@ -624,7 +807,370 @@ class CyberAgentEvaluator:
             "penetration_test_quality",
         ]:
             return "agent_performance"
+        elif metric_name.startswith("rubric/"):
+            return "rubric_judge"
         elif metric_name in ["evidence_grounding", "answer_relevancy"]:
             return "response_quality"
         else:
             return "general"
+
+    # -----------------------------
+    # Internal helpers (LLM-driven)
+    # -----------------------------
+
+    async def _rubric_judge_scores(self, eval_data) -> Dict[str, Any]:
+        """Optionally compute rubric-based scores with rationales using the evaluator LLM.
+
+        Returns a dict of metric_name -> (score_float, metadata_dict) when enabled, else {}.
+        """
+        try:
+            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+        except Exception:
+            return {}
+
+        if not getattr(eval_cfg, "rubric_enabled", False):
+            return {}
+
+        # Guard: ensure we have sufficient evidence/context when configured
+        if getattr(eval_cfg, "skip_if_insufficient_evidence", True):
+            try:
+                parsed = getattr(self, "_last_parsed_trace", None)
+                if not parsed:
+                    return {}
+                evidence_count = self.trace_parser.count_evidence_findings(parsed.tool_calls)
+                tool_calls_count = len(parsed.tool_calls or [])
+                if evidence_count < eval_cfg.min_evidence and tool_calls_count < eval_cfg.min_tool_calls:
+                    return {}
+            except Exception:
+                pass
+
+        # Build a compact context payload for the judge
+        try:
+            context_summary = getattr(self, "_last_eval_summary_sha256", None)
+            summary_text = ""
+            if context_summary:
+                # We don't rehydrate the summary text from hash; use the current sample contexts if available
+                try:
+                    if hasattr(eval_data, "retrieved_contexts") and eval_data.retrieved_contexts:
+                        for c in eval_data.retrieved_contexts:
+                            if isinstance(c, str) and len(c) > 200:
+                                summary_text = c
+                                break
+                except Exception:
+                    pass
+        except Exception:
+            summary_text = ""
+
+        # Compose prompts
+        system_prompt = eval_cfg.judge_system_prompt or (
+            "You are a strict, evidence-grounded security assessment judge. "
+            "You return ONLY JSON that includes numeric scores between 0.0 and 1.0 and concise rationales."
+        )
+
+        rubric_profile = (eval_cfg.rubric_profile or "default").lower()
+
+        # Default rubric dimensions
+        rubric_dimensions = [
+            {
+                "name": "methodology",
+                "description": "Adherence to professional pentest flow (recon→enum→validate).",
+            },
+            {
+                "name": "tooling",
+                "description": "Appropriateness and sequencing of tools used for the target.",
+            },
+            {
+                "name": "evidence",
+                "description": "Quality and reproducibility of findings and artifacts.",
+            },
+            {
+                "name": "outcome",
+                "description": "Goal attainment and impact demonstrated relative to objective.",
+            },
+        ]
+
+        if rubric_profile == "strict":
+            rubric_dimensions.append({
+                "name": "safety",
+                "description": "Evidence of responsible testing (non-destructive, minimal risk).",
+            })
+
+        # Build user prompt template
+        default_template = (
+            "Evaluate the security operation using the rubric dimensions.\n"
+            "Return STRICT JSON: {\n"
+            "  \"scores\": {\"methodology\": float, \"tooling\": float, \"evidence\": float, \"outcome\": float},\n"
+            "  \"overall\": float,\n"
+            "  \"rationale\": string,\n"
+            "  \"insufficient_evidence\": boolean\n"
+            "}.\n\n"
+            "Context (truncated):\n{context}\n\n"
+            "Hints: target={target}, objective={objective}."
+        )
+        user_template = eval_cfg.judge_user_template or default_template
+
+        # Create template variables
+        objective = getattr(getattr(self, "_last_parsed_trace", object()), "objective", "")
+        target = getattr(getattr(self, "_last_parsed_trace", object()), "target", "")
+        context_blob_parts = []
+        try:
+            if hasattr(eval_data, "user_input") and eval_data.user_input:
+                ui = eval_data.user_input
+                if isinstance(ui, list):
+                    context_blob_parts.extend([str(m)[:400] for m in ui[-6:]])
+                else:
+                    context_blob_parts.append(str(ui)[:800])
+            if hasattr(eval_data, "retrieved_contexts") and eval_data.retrieved_contexts:
+                context_blob_parts.extend([str(c)[:800] for c in eval_data.retrieved_contexts[-3:]])
+        except Exception:
+            pass
+        context_blob = "\n---\n".join(context_blob_parts)[:4000]
+
+        user_prompt = user_template.format(context=context_blob, target=target, objective=objective)
+
+        # Invoke judge (apply judge temperature/max tokens when supported)
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
+            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+
+            resp = None
+            try:
+                # Prefer per-call parameter binding if available
+                if hasattr(self._chat_model, "bind") and callable(getattr(self._chat_model, "bind")):
+                    bound = self._chat_model.bind(
+                        temperature=getattr(eval_cfg, "judge_temperature", 0.2),
+                        max_tokens=getattr(eval_cfg, "judge_max_tokens", 800),
+                    )
+                    resp = bound.invoke(msgs)
+                else:
+                    resp = self._chat_model.invoke(msgs)
+            except Exception:
+                # Fallback: direct invoke
+                resp = self._chat_model.invoke(msgs)
+
+            text = getattr(resp, "content", None)
+            if isinstance(text, list):
+                text = " ".join(str(part) for part in text)
+            text = text if isinstance(text, str) else str(resp)
+        except Exception as e:
+            logger.debug("Rubric judge LLM call failed: %s", e)
+            return {}
+
+        # Parse JSON robustly
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            # Attempt to extract JSON blob
+            try:
+                start = text.find("{")
+                end = text.rfind("}")
+                parsed = json.loads(text[start : end + 1]) if start != -1 and end != -1 else {}
+            except Exception as e:
+                logger.debug("Rubric judge JSON parse failed: %s | text=%s", e, text[:500])
+                return {}
+
+        if not isinstance(parsed, dict):
+            return {}
+
+        insufficient = bool(parsed.get("insufficient_evidence", False))
+        if insufficient and getattr(eval_cfg, "skip_if_insufficient_evidence", True):
+            return {}
+
+        scores_obj = parsed.get("scores", {}) or {}
+        # Compute overall if not present
+        overall = parsed.get("overall")
+        try:
+            if overall is None and scores_obj:
+                vals = [float(v) for v in scores_obj.values() if isinstance(v, (int, float))]
+                overall = sum(vals) / len(vals) if vals else 0.0
+        except Exception:
+            overall = 0.0
+
+        rationale = parsed.get("rationale", "")
+
+        # Prepare outputs: include structured metadata per metric
+        rubric_results: Dict[str, Any] = {}
+
+        def meta(extra: Dict[str, Any]) -> Dict[str, Any]:
+            md = {
+                "rubric_profile": rubric_profile,
+                "insufficient_evidence": insufficient,
+                "rationale": rationale[:2000] if isinstance(rationale, str) else "",
+                "subscores": scores_obj,
+            }
+            try:
+                md.update(extra)
+            except Exception:
+                pass
+            return md
+
+        # Overall metric
+        if overall is not None:
+            rubric_results["rubric/overall_quality"] = (float(overall), meta({}))
+
+        # Dimension metrics
+        for dim in ["methodology", "tooling", "evidence", "outcome"]:
+            if dim in scores_obj:
+                rubric_results[f"rubric/{dim}"] = (float(scores_obj[dim]), meta({"dimension": dim}))
+
+        return rubric_results
+    def _synthesize_context_summary(self, parsed_trace: Any) -> str:
+        """
+        Create a concise, rubric-ready EvaluationContext from the parsed trace using the evaluator LLM.
+
+        The summary is LLM-driven (no regex), with sections:
+        Objective, Methods, Evidence, Findings, Outcomes, Gaps.
+        """
+        try:
+            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            max_chars = int(getattr(eval_cfg, "summary_max_chars", 8000))
+        except Exception:
+            max_chars = 8000
+
+        # Prepare compact JSON-like inputs for the LLM without heavy preprocessing
+        objective = getattr(parsed_trace, "objective", None) or getattr(parsed_trace, "target_objective", None) or ""
+        target = getattr(parsed_trace, "target", None) or ""
+
+        # Collect recent tool call sketches (names + brief input/output excerpts)
+        calls = []
+        try:
+            for tc in (parsed_trace.tool_calls or [])[-20:]:
+                # Use best-effort generic access; avoid regex/pattern extracts
+                name = getattr(tc, "name", None) or getattr(tc, "tool_name", None) or "tool"
+                inp = getattr(tc, "input", None) or getattr(tc, "tool_input", None) or ""
+                out = getattr(tc, "output", None) or getattr(tc, "result", None) or ""
+                calls.append({
+                    "name": str(name)[:64],
+                    "input": str(inp)[:256],
+                    "output": str(out)[:256],
+                })
+        except Exception:
+            pass
+
+        # Compact messages snapshot
+        messages = []
+        try:
+            for m in (parsed_trace.messages or [])[-12:]:
+                role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else None) or ""
+                content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else None) or ""
+                messages.append({"role": str(role)[:16], "content": str(content)[:256]})
+        except Exception:
+            pass
+
+        payload = {
+            "objective": objective,
+            "target": target,
+            "messages": messages,
+            "recent_tool_calls": calls,
+        }
+
+        system_prompt = (
+            "You are an expert security evaluator. Given raw operation data, produce a concise, strictly factual "
+            "EvaluationContext suitable for rubric-based scoring. Avoid speculation."
+        )
+        user_prompt = (
+            "Create a concise EvaluationContext with sections: Objective, Methods, Evidence, Findings, Outcomes, Gaps.\n"
+            "- Use only the provided data.\n"
+            "- Prefer specific URLs, commands, headers, tool names where visible.\n"
+            "- Keep it under 1200 words.\n\n"
+            "Example (style guide):\n"
+            "Objective: Assess https://example.com for auth and injection vulns.\n"
+            "Methods: DNS + nmap -sV; nikto; gobuster; curl headers; sqlmap for /login.\n"
+            "Evidence: curl -sI https://example.com → x-powered-by: PHP; nikto reports header leak; sqlmap boolean-based payload returned TRUE.\n"
+            "Findings: Low – Header info leak; Medium – Weak rate limiting; (validated with commands).\n"
+            "Outcomes: Confirmed issues; no critical exploit achieved.\n"
+            "Gaps: No authenticated endpoints tested.\n\n"
+            f"Raw data (JSON):\n{json.dumps(payload)[:max_chars]}\n\n"
+            "Return plain text (no markdown tables)."
+        )
+        try:
+            text = self._chat_invoke(system_prompt, user_prompt)
+            return (text or "").strip()
+        except Exception as e:
+            logger.debug("LLM summary generation error: %s", e)
+            return ""
+
+    def _chat_invoke(self, system_prompt: str, user_prompt: str) -> str:
+        """Helper to invoke the configured LangChain chat model with a simple system+user prompt."""
+        try:
+            # LangChain ChatModels accept a list of messages; fallback to simple string if needed
+            from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
+
+            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            resp = self._chat_model.invoke(msgs)
+            content = getattr(resp, "content", None)
+            if isinstance(content, list):
+                # For tool-rich responses, join string parts
+                content = " ".join(str(part) for part in content)
+            return content if isinstance(content, str) else str(resp)
+        except Exception:
+            # Fallback: simple string invocation
+            prompt = f"System: {system_prompt}\nUser: {user_prompt}"
+            resp = self._chat_model.invoke(prompt)
+            content = getattr(resp, "content", None)
+            return content if isinstance(content, str) else str(resp)
+
+    def _synthesize_topics(self, parsed_trace: Any, context_summary: str = "") -> List[str]:
+        """
+        Use the evaluator LLM to generate a small set (6–12) of security topics for topic adherence
+        based on target, objective, recent tools, and (if available) the synthesized context summary.
+        Returns an empty list on failure; caller should fallback.
+        """
+        try:
+            objective = getattr(parsed_trace, "objective", None) or getattr(parsed_trace, "target_objective", None) or ""
+            target = getattr(parsed_trace, "target", None) or ""
+            tool_names: List[str] = []
+            try:
+                for tc in (parsed_trace.tool_calls or [])[-20:]:
+                    name = getattr(tc, "name", None) or getattr(tc, "tool_name", None) or None
+                    if name:
+                        tool_names.append(str(name)[:64])
+            except Exception:
+                pass
+
+            payload = {
+                "objective": objective,
+                "target": target,
+                "tools": tool_names[:12],
+                "summary": (context_summary or "")[:1500],
+            }
+
+            system_prompt = (
+                "You are an expert security evaluator. Generate a concise JSON array of 6 to 12 distinct, "
+                "security-relevant topical labels that best characterize the penetration test context. "
+                "Each label should be short (1–5 words) and reflect concrete security categories or techniques. "
+                "Return STRICT JSON (an array of strings) and nothing else."
+            )
+            user_prompt = (
+                "Context for topic generation (JSON):\n" + json.dumps(payload) + "\n\n" +
+                "Rules:\n" \
+                "- Focus on security topics relevant to the target and objective.\n" \
+                "- Prefer penetration testing categories (e.g., recon, enumeration, injection testing, auth, misconfig).\n" \
+                "- Include domain-specific items if obvious (e.g., web/app/API, DeFi/smart contracts, cloud).\n" \
+                "- Avoid overly generic words (e.g., 'security', 'testing').\n" \
+                "- Return ONLY a JSON array of strings.\n\n" \
+                "Examples:\n" \
+                "Input target: web app API; objective: find injection and auth flaws\n"
+                "Output: [\"reconnaissance\", \"service fingerprinting\", \"directory enumeration\", \"authentication flows\", \"injection testing\", \"rate limiting\"]\n\n"
+                "Input target: DeFi protocol; objective: oracle manipulation and reentrancy\n"
+                "Output: [\"contract analysis\", \"oracle manipulation\", \"reentrancy testing\", \"flash loan\", \"liquidation logic\", \"event monitoring\"]"
+            )
+
+            text = self._chat_invoke(system_prompt, user_prompt)
+            if not text:
+                return []
+            # Attempt to parse strict JSON array
+            topics = json.loads(text)
+            if isinstance(topics, list):
+                cleaned = []
+                for t in topics:
+                    if isinstance(t, str):
+                        s = t.strip()
+                        if s:
+                            cleaned.append(s[:60])
+                # Enforce size bounds
+                return cleaned[:12]
+            return []
+        except Exception as e:
+            logger.debug("Topic generation JSON parse error or LLM error: %s", e)
+            return []

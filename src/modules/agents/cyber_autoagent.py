@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
+import json
 
 from strands import Agent
 from strands.agent.conversation_manager import SlidingWindowConversationManager
@@ -145,10 +146,10 @@ def _create_remote_model(
     # This prevents ReadTimeoutError during long-running operations
     boto_config = BotocoreConfig(
         region_name=region_name,
-        retries={"max_attempts": 3, "mode": "adaptive"},  # Adaptive retry mode with exponential backoff
-        read_timeout=300,  # 5 minutes read timeout (was 60s default)
+        retries={"max_attempts": 5, "mode": "adaptive"},  # Slightly higher attempts for long sessions
+        read_timeout=420,  # 7 minutes read timeout
         connect_timeout=60,  # 1 minute connection timeout
-        max_pool_connections=50,  # Increase connection pool for parallel operations
+        max_pool_connections=100,  # Larger pool for long sessions with tools
     )
 
     if config_manager.is_thinking_model(model_id):
@@ -361,7 +362,6 @@ def create_agent(
     target_name = sanitize_target_name(config.target)
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
-    # memory_overview = None  # Reserved for future system prompt enhancement
 
     # Get memory overview for system prompt enhancement and UI display
     memory_overview = None
@@ -482,6 +482,71 @@ Leverage these tools directly via shell.
     except Exception as e:
         logger.warning("Error loading module execution prompt for '%s': %s", config.module, e)
 
+    # Optionally build a concise plan snapshot from memory (best-effort, no hard dependency)
+    plan_snapshot = None
+    plan_current_phase = None
+    try:
+        memory_client = get_memory_client(silent=True)
+        if memory_client:
+            active_plan = memory_client.get_active_plan(user_id="cyber_agent")
+            if active_plan:
+                raw = active_plan.get("memory") or active_plan.get("content", "")
+                if isinstance(raw, str) and raw:
+                    # Best-effort extraction: find first active/pending phase and any criteria line
+                    phase_line = None
+                    criteria_line = None
+                    for line in raw.split("\n"):
+                        ls = line.strip()
+                        if not phase_line and ls.lower().startswith("phase"):
+                            phase_line = ls
+                        if ("criteria:" in ls.lower() or "criterion:" in ls.lower()) and not criteria_line:
+                            criteria_line = ls
+                        if phase_line and criteria_line:
+                            break
+                    # Try JSON extraction first (plan stored as JSON or within [PLAN] {json})
+                    plan_json = None
+                    try:
+                        brace = raw.find("{")
+                        if brace != -1:
+                            plan_json = json.loads(raw[brace:])
+                    except Exception:
+                        plan_json = None
+                    if isinstance(plan_json, dict):
+                        try:
+                            cph = plan_json.get("current_phase")
+                            if isinstance(cph, int):
+                                plan_current_phase = cph
+                            else:
+                                phases = plan_json.get("phases") or []
+                                if isinstance(phases, list):
+                                    for ph in phases:
+                                        if isinstance(ph, dict) and ph.get("status") == "active":
+                                            pid = ph.get("id")
+                                            if isinstance(pid, int):
+                                                plan_current_phase = pid
+                                                break
+                        except Exception:
+                            pass
+                    # Compose snapshot with up to three lines
+                    snap_lines = []
+                    if phase_line:
+                        snap_lines.append(f"Phase: {phase_line}")
+                    # Derive sub-objective from phase goal portion if present
+                    sub_obj = None
+                    try:
+                        # Heuristic: text after ':' is goal
+                        if phase_line and ":" in phase_line:
+                            sub_obj = phase_line.split(":", 1)[1].strip()
+                    except Exception:
+                        sub_obj = None
+                    if sub_obj:
+                        snap_lines.append(f"SubObjective: {sub_obj}")
+                    if criteria_line:
+                        snap_lines.append(f"Criteria: {criteria_line.split(':',1)[1].strip() if ':' in criteria_line else criteria_line}")
+                    plan_snapshot = "\n".join(snap_lines[:3]).strip() or None
+    except Exception as e:
+        logger.debug("Plan snapshot not available: %s", e)
+
     # Build system prompt using centralized prompt factory (memory-aware)
     system_prompt = prompts.get_system_prompt(
         target=config.target,
@@ -494,6 +559,8 @@ Leverage these tools directly via shell.
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
         output_config={"base_dir": server_config.output.base_dir, "target_name": target_name},
+        plan_snapshot=plan_snapshot,
+        plan_current_phase=plan_current_phase,
     )
 
     # If a module-specific execution prompt exists, append it to the system prompt
@@ -504,7 +571,6 @@ Leverage these tools directly via shell.
             + module_execution_prompt.strip()
         )
 
-    # Always use the React bridge handler as it has all the functionality we need
     # It works in both CLI and React modes
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
 
@@ -605,7 +671,7 @@ Leverage these tools directly via shell.
 
     agent_logger.debug("Creating autonomous agent")
 
-    # Update conversation window size from SDK config
+    # Update conversation window size from SDK config (kept for reference)
     conversation_window = server_config.sdk.conversation_window_size
 
     # Create agent with telemetry for token tracking
@@ -616,7 +682,10 @@ Leverage these tools directly via shell.
         "system_prompt": system_prompt,
         "callback_handler": callback_handler,
         "hooks": hooks if hooks else None,  # Add hooks if available
-        "conversation_manager": SlidingWindowConversationManager(window_size=conversation_window),
+        # Use sliding-window conversation manager with fixed window size
+        "conversation_manager": SlidingWindowConversationManager(
+            window_size=100,
+        ),
         "load_tools_from_directory": True,
         "trace_attributes": {
             # Core identification - session_id is the key for Langfuse trace naming

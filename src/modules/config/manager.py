@@ -174,6 +174,21 @@ class EvaluationConfig:
 
     llm: ModelConfig
     embedding: ModelConfig
+    # LLM-driven evaluation tunables
+    min_tool_calls: int = 3
+    min_evidence: int = 1
+    max_wait_secs: int = 30
+    poll_interval_secs: int = 5
+    summary_max_chars: int = 8000
+    # Rubric judge controls
+    rubric_enabled: bool = False
+    judge_temperature: float = 0.2
+    judge_max_tokens: int = 800
+    rubric_profile: str = "default"
+    judge_system_prompt: Optional[str] = None
+    judge_user_template: Optional[str] = None
+    skip_if_insufficient_evidence: bool = True
+    rationale_persist_mode: str = "metadata"
 
 
 @dataclass
@@ -488,10 +503,23 @@ class ConfigManager:
             vector_store=MemoryVectorStoreConfig(),
         )
 
-        # Build evaluation configuration
+        # Build evaluation configuration (with env-aware defaults)
         evaluation_config = EvaluationConfig(
             llm=self._get_evaluation_llm_config(provider, defaults),
             embedding=self._get_evaluation_embedding_config(provider, defaults),
+            min_tool_calls=int(os.getenv("EVAL_MIN_TOOL_CALLS", "3")),
+            min_evidence=int(os.getenv("EVAL_MIN_EVIDENCE", "1")),
+            max_wait_secs=int(os.getenv("EVALUATION_MAX_WAIT_SECS", os.getenv("EVALUATION_WAIT_TIME", "30"))),
+            poll_interval_secs=int(os.getenv("EVALUATION_POLL_INTERVAL_SECS", "5")),
+            summary_max_chars=int(os.getenv("EVAL_SUMMARY_MAX_CHARS", "8000")),
+            rubric_enabled=os.getenv("EVAL_RUBRIC_ENABLED", "false").lower() == "true",
+            judge_temperature=float(os.getenv("EVAL_JUDGE_TEMPERATURE", "0.2")),
+            judge_max_tokens=int(os.getenv("EVAL_JUDGE_MAX_TOKENS", "800")),
+            rubric_profile=os.getenv("EVAL_RUBRIC_PROFILE", "default"),
+            judge_system_prompt=os.getenv("EVAL_JUDGE_SYSTEM_PROMPT"),
+            judge_user_template=os.getenv("EVAL_JUDGE_USER_TEMPLATE"),
+            skip_if_insufficient_evidence=os.getenv("EVAL_SKIP_IF_INSUFFICIENT_EVIDENCE", "true").lower() == "true",
+            rationale_persist_mode=os.getenv("EVAL_RATIONALE_PERSIST_MODE", "metadata"),
         )
 
         # Build swarm configuration
