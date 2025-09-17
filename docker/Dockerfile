@@ -1,34 +1,23 @@
-# Dockerfile for Cyber-AutoAgent
-# Multi-stage build for optimized container size
+# Dockerfile for Cyber-AutoAgent (Kali Rolling base)
+# Single-stage build on Kali to keep environment consistent with pentesting tools
 
-FROM python:3.11-bullseye AS builder
+FROM kalilinux/kali-rolling
 
-# Install uv for fast dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Set working directory
-WORKDIR /app
-
-# Copy only dependency files for installation
-COPY pyproject.toml ./
-# Copy uv.lock if it exists, otherwise uv will generate it
-COPY uv.lock* ./
-
-# Install dependencies with uv (need src for editable install)
-COPY src/ ./src/
-RUN uv sync --no-dev
-
-FROM python:3.11-slim-bullseye
-
-# Install system dependencies and security tools in single layer
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-install-recommends \
+# Install system packages, Python, and common security tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
+    python3-pip \
+    python-is-python3 \
+    # Security tools
     nmap \
     sqlmap \
     gobuster \
     curl \
     netcat-traditional \
     tcpdump \
-    # Tools needed for nikto and metasploit installation
     git \
     perl \
     gnupg2 \
@@ -38,113 +27,129 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-ins
     libio-socket-ssl-perl \
     libcrypt-ssleay-perl \
     libssl-dev \
-    libffi-dev \
-    python3-dev \
-    build-essential \
-    krb5-user \
-    ldap-utils \
     ca-certificates \
     # Network tools
     iputils-ping \
     dnsutils \
     iproute2 \
     net-tools \
+    traceroute \
     # Additional essential tools
     jq \
     unzip \
     tree \
-    # Sudo for privilege escalation
     sudo \
-    # Go runtime for installing specialized tools
-    golang-go \
-    # Clean up to reduce layer size
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/archives/*
+    # Web scanners
+    nikto \
+    whatweb \
+    wafw00f \
+    # Recon and DNS
+    amass \
+    subfinder \
+    dnsrecon \
+    dnsenum \
+    theharvester \
+    # Web fuzzing & directories
+    ffuf \
+    feroxbuster \
+    dirb \
+    arjun \
+    wapiti \
+    wfuzz \
+    wpscan \
+    # Network scanning
+    masscan \
+    naabu \
+    # SMB/NetBIOS
+    smbclient \
+    smbmap \
+    nbtscan \
+    python3-impacket \
+    # SNMP/Discovery
+    arp-scan \
+    ike-scan \
+    onesixtyone \
+    snmpcheck \
+    netdiscover \
+    # Utilities
+    hping3 \
+    socat \
+    proxychains4 \
+    sslscan \
+    seclists \
+    # Web app helpers
+    commix \
+    xsser \
+    hashid \
+    # ProjectDiscovery vuln scanner
+    nuclei \
+    # Auth/bruteforce
+    hydra \
+    medusa \
+    ncrack \
+    # Content and metadata
+    libimage-exiftool-perl \
+    cewl \
+    # WebDAV testing
+    cadaver \
+    davtest \
+    # SSL/TLS testing
+    sslyze \
+    testssl.sh \
+    # Extra recon/webapp scanners
+    gospider \
+    httprobe \
+    subjack \
+    knockpy \
+    joomscan \
+    wig \
+    uniscan \
+    dirsearch \
+    skipfish \
+    # Offensive frameworks
+    metasploit-framework \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
-# Install nikto from source
-RUN git clone https://github.com/sullo/nikto.git /opt/nikto && \
-    ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto && \
-    chmod +x /opt/nikto/program/nikto.pl
-
-# Install Metasploit Framework (signed repo for Debian bullseye)
-RUN wget -qO /usr/share/keyrings/metasploit.gpg https://apt.metasploit.com/metasploit-framework.gpg.key && \
-    echo "deb [signed-by=/usr/share/keyrings/metasploit.gpg] https://apt.metasploit.com/ lucid main" > /etc/apt/sources.list.d/metasploit-framework.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends metasploit-framework && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
-
-# Fetch Nuclei templates for vulnerability scanning
-RUN git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates /opt/nuclei-templates || true
-
-# Install uv
+# Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 # Create non-root user for security and add to sudo group
 RUN useradd --create-home --shell /bin/bash cyberagent && \
     usermod -aG sudo cyberagent && \
-    echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && \
-    chown -R cyberagent:cyberagent /opt/nuclei-templates || true
+    echo 'cyberagent ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
 # Set working directory
 WORKDIR /app
 
-# Copy uv environment from builder
-COPY --from=builder /app/.venv /app/.venv
-
-# Copy application code (specific files only)
+# Copy dependency descriptors and source
+COPY pyproject.toml ./
+COPY uv.lock* ./
 COPY --chown=cyberagent:cyberagent src/ ./src/
-COPY --chown=cyberagent:cyberagent pyproject.toml ./
 
-# Create directories for evidence storage and logs with proper permissions
-# Set up Go environment for cyberagent user
-RUN mkdir -p /app/evidence /app/logs && \
+# Install Python dependencies into a local venv
+RUN uv sync --no-dev && \
+    mkdir -p /app/evidence /app/logs /home/cyberagent/go && \
     chmod 755 /app/evidence /app/logs && \
-    chown -R cyberagent:cyberagent /app && \
-    mkdir -p /home/cyberagent/go && \
-    chown -R cyberagent:cyberagent /home/cyberagent/go
+    chown -R cyberagent:cyberagent /app /home/cyberagent/go
 
 # Switch to non-root user
 USER cyberagent
 
-# Add virtual environment and Go to PATH
-ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
+# Environment
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
-
-# Set Python path and Nuclei templates path
+ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
 ENV PYTHONPATH="/app/src"
-ENV NUCLEI_TEMPLATES="/opt/nuclei-templates"
 
-# Install additional security tools for the cyberagent user
-# - ProjectDiscovery: nuclei, naabu, httpx, subfinder
-# - Python-based collectors: bloodhound (AD), impacket, certipy-ad
-RUN go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
-    && go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest \
-    && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
-    && go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-
-# Install Python-based security tools into the app virtualenv
-RUN pip install --no-cache-dir --upgrade \
-    bloodhound \
-    impacket \
-    certipy-ad
-
-# Update Nuclei templates to latest at build-time (best-effort)
-RUN nuclei -ut -ud /opt/nuclei-templates || true
-
-# Create volume for evidence persistence
+# Persist important directories
 VOLUME ["/app/evidence", "/app/logs"]
 
 # Expose port for any web interfaces 
 EXPOSE 8080
 
-# Health check
+# Health check (always-healthy placeholder; app exposes no service port by default)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Default entrypoint
+# Default entrypoint; command provided in compose (e.g., --service-mode)
 ENTRYPOINT ["python", "/app/src/cyberautoagent.py"]
-
-# No default CMD - arguments must be provided when running container
-# This prevents accidental execution with --help only

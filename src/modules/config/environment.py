@@ -99,67 +99,110 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     }
     print(f"__CYBER_EVENT__{json.dumps(tool_discovery_event)}__CYBER_EVENT_END__")
 
-    # Just check which tools are available
+    # Check which tools are available and capture their binary paths
     cyber_tools = {
+        # Core scanners and recon
         "nmap": "Network discovery and security auditing",
         "nikto": "Web server scanner",
         "sqlmap": "SQL injection detection and exploitation",
         "gobuster": "Directory/file brute-forcer",
-        "netcat": "Network utility for reading/writing data",
-        "curl": "HTTP client for web requests",
-        "metasploit": "Penetration testing framework",
-        "tcpdump": "Network packet capture",
-        "iproute2": "Provides modern networking tools (ip, ss, tc, etc.)",
-        "net-tools": "Provides classic networking utilities (netstat, ifconfig, route, etc.)",
+        "whatweb": "Web technology fingerprinting",
+        "wafw00f": "WAF fingerprinting",
         # ProjectDiscovery ecosystem
         "nuclei": "Templated vulnerability scanner",
         "naabu": "Fast TCP port scanner (SYN/CONNECT)",
-        "httpx": "HTTP service probing and fingerprinting",
+        "amass": "In-depth DNS enumeration and attack surface mapping",
         "subfinder": "Passive subdomain discovery",
-        # Active Directory / auth tooling
-        "bloodhound": "AD data collector (bloodhound-python)",
+        # Web fuzzing & dirs
+        "ffuf": "Fast web fuzzer",
+        "feroxbuster": "Fast recursive content discovery",
+        "dirb": "HTTP(S) web content scanner",
+        "arjun": "HTTP parameter discovery suite",
+        "wapiti": "Web vulnerability scanner",
+        "wfuzz": "Web application bruteforcer",
+        "wpscan": "WordPress security scanner",
+        # Web recon helpers
+        "gospider": "Web spider for finding URLs and endpoints",
+        "httprobe": "Probes for working HTTP and HTTPS servers",
+        "subjack": "Subdomain takeover tool",
+        "knockpy": "DNS subdomain scanner",
+        # DNS/Recon
+        "dnsrecon": "DNS reconnaissance",
+        "dnsenum": "DNS enumeration",
+        "theharvester": "Emails, subdomains, IPs and URLs OSINT",
+        # Network scanning
+        "masscan": "Very fast port scanner",
+        # SMB/NetBIOS
+        "smbclient": "Samba SMB/CIFS client",
+        "smbmap": "Enumerate Samba share drives across domains",
+        "nbtscan": "NetBIOS name network scanner",
+        # SNMP/Discovery
+        "arp-scan": "ARP scanning and fingerprinting",
+        "ike-scan": "VPN IKE scanner",
+        "onesixtyone": "Fast SNMP scanner",
+        "snmpcheck": "SNMP enumerator",
+        "netdiscover": "Active/passive ARP reconnaissance",
+        # Utilities
+        "hping3": "TCP/IP packet assembler/analyzer",
+        "socat": "Multipurpose relay (SOcket CAT)",
+        "proxychains4": "Force any TCP connection through proxy",
+        "sslscan": "SSL/TLS scanner",
+        # Frameworks and cracking
+        "metasploit": "Penetration testing framework",
+        "msfvenom": "Payload generator for Metasploit",
+        "john": "John the Ripper password cracker",
+        # Networking suites
+        "iproute2": "Provides modern networking tools (ip, ss, tc, etc.)",
+        "net-tools": "Provides classic networking utilities (netstat, ifconfig, route, etc.)",
+        # Basics
+        "netcat": "Network utility for reading/writing data",
+        "curl": "HTTP client for web requests",
+        "tcpdump": "Network packet capture",
+    }
+
+    # Map tool names to their checkable binary names
+    tool_commands = {
+        "metasploit": "msfconsole",
+        "msfvenom": "msfvenom",
+        "iproute2": "ip",
+        "net-tools": "netstat",
     }
 
     available_tools = []
 
-    # Check existing tools using subprocess for security
+    # Check existing tools using shutil.which
     for tool_name, description in cyber_tools.items():
-        tool_commands = {
-            "metasploit": "msfconsole",
-            "iproute2": "ip",
-            "net-tools": "netstat",
-            "bloodhound": "bloodhound-python",
-        }
-        check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
-        try:
-            subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
+        binary = tool_commands.get(tool_name, tool_name)
+        tool_path = shutil.which(binary)
+        is_available = tool_path is not None
+
+        if is_available:
             available_tools.append(tool_name)
             print_status(f"✓ {tool_name:<12} - {description}", "SUCCESS")
 
-            # Emit structured event for React UI (print_status is disabled in React mode)
+            # Emit structured event for React UI
             tool_event = {
                 "type": "tool_available",
                 "timestamp": datetime.now().isoformat(),
                 "tool_name": tool_name,
                 "description": description,
                 "status": "available",
+                "binary": binary,
+                "path": tool_path,
             }
             print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
-
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-            FileNotFoundError,
-        ):
+        else:
             print_status(f"○ {tool_name:<12} - {description} (not available)", "WARNING")
 
-            # Emit structured event for React UI (print_status is disabled in React mode)
+            # Emit structured event for React UI
             tool_event = {
                 "type": "tool_unavailable",
                 "timestamp": datetime.now().isoformat(),
                 "tool_name": tool_name,
                 "description": description,
                 "status": "unavailable",
+                "binary": binary,
+                "path": None,
             }
             print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
 

@@ -92,7 +92,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "0.0.0.0:3000:3000"
     environment:
@@ -202,7 +202,7 @@ services:
       redis:
         condition: service_healthy
       minio:
-        condition: service_healthy
+        condition: service_started
     environment:
       # Database
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
@@ -299,10 +299,11 @@ services:
     restart: unless-stopped
     command: --requirepass myredissecret
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 3s
-      timeout: 10s
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 -a myredissecret ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
       retries: 10
+      start_period: 5s
 
   minio:
     image: docker.io/minio/minio
@@ -318,12 +319,6 @@ services:
       - "9091:9001"
     volumes:
       - langfuse_minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 1s
-      timeout: 5s
-      retries: 5
-      start_period: 1s
 
 # Named volumes for better control
 volumes:
