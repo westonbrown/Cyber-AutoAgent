@@ -214,6 +214,66 @@ export const ObservabilityConfig: React.FC<ObservabilityConfigProps> = ({
               Model used for scoring tool accuracy, evidence quality, methodology adherence, etc.
             </p>
           </div>
+
+          {/* Evaluation Tunables */}
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Min Tool Calls</label>
+              <input
+                type="number"
+                min={0}
+                value={config.minToolCalls ?? 3}
+                onChange={(e) => onConfigChange({ minToolCalls: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Minimum tool calls required before evaluation runs.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Min Evidence Items</label>
+              <input
+                type="number"
+                min={0}
+                value={config.minEvidence ?? 1}
+                onChange={(e) => onConfigChange({ minEvidence: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Minimum findings/evidence before evaluation runs.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Max Wait (secs)</label>
+              <input
+                type="number"
+                min={0}
+                value={config.evalMaxWaitSecs ?? 30}
+                onChange={(e) => onConfigChange({ evalMaxWaitSecs: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Time to wait for traces before evaluation.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Poll Interval (secs)</label>
+              <input
+                type="number"
+                min={1}
+                value={config.evalPollIntervalSecs ?? 5}
+                onChange={(e) => onConfigChange({ evalPollIntervalSecs: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Interval between trace fetch attempts.</p>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Summary Max Chars</label>
+              <input
+                type="number"
+                min={1000}
+                step={500}
+                value={config.evalSummaryMaxChars ?? 8000}
+                onChange={(e) => onConfigChange({ evalSummaryMaxChars: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">Max characters in synthesized EvaluationContext summary.</p>
+            </div>
+          </div>
         </div>
       )}
 

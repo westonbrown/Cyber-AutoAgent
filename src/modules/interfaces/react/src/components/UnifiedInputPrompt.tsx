@@ -127,7 +127,8 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
           suggestions.push(
             { text: 'execute', description: '▶ Start security assessment', type: 'command' },
             { text: '', description: '⏎ Press Enter to start assessment', type: 'command' },
-            { text: 'reset', description: 'Change configuration', type: 'command' }
+            { text: 'reset', description: 'Change configuration', type: 'command' },
+            { text: '/help', description: 'Show commands and tips', type: 'command' }
           );
           break;
       }

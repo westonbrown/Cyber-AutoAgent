@@ -4,12 +4,13 @@
  * Manages container lifecycle based on selected deployment configuration
  */
 
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
 import { createLogger } from '../utils/logger.js';
 import { RetryConfigs } from '../utils/retry.js';
+import { DockerProgressAggregator } from '../utils/docker-progress.js';
 import { EventEmitter } from 'events';
 
 const execAsync = promisify(exec);
@@ -469,60 +470,51 @@ export class ContainerManager extends EventEmitter {
       
       // Build the docker-compose command with specific services
       const serviceList = config.services.join(' ');
+
+      // Streamed compose runner helpers
+      const runCompose = async (args: string[], phaseLabel: string, services: string[]) => {
+        const { cmd, baseArgs } = await this.resolveComposeCmd();
+        const cwd = path.dirname(composePath);
+        const aggregator = new DockerProgressAggregator(services, (msg: string, meta?: any) => {
+          try {
+            if (phaseLabel) this.emit('progress', `${phaseLabel} ${msg}`);
+            if (meta && typeof meta.ratio === 'number') {
+              this.emit('progressMeta', { phaseRatio: meta.ratio, phase: meta.phase });
+            }
+          } catch {}
+        });
+        if (phaseLabel) aggregator.setLabel(phaseLabel);
+        return await new Promise<void>((resolve, reject) => {
+          const child = spawn(cmd, [...baseArgs, '-f', composePath, ...args], { cwd });
+          child.stdout.on('data', (buf) => aggregator.update(buf.toString()));
+          child.stderr.on('data', (buf) => aggregator.update(buf.toString()));
+          child.on('error', reject);
+          child.on('close', (code) => {
+            aggregator.finalize();
+            code === 0 ? resolve() : reject(new Error(`${cmd} ${args.join(' ')} exited with ${code}`));
+          });
+        });
+      };
+
+      // For single-container mode we can skip dependencies in up, but we still pull if needed
+      // Perform a streamed pull first for better progress visibility
+      const pullArgs = ['pull', ...config.services];
+      const upArgs = config.mode === 'single-container'
+        ? ['up', '-d', '--no-recreate', '--no-deps', ...config.services]
+        : ['up', '-d', '--no-recreate', '--remove-orphans', ...config.services];
       
-      // For single container mode, use --no-deps to skip dependencies
-      let upCommand: string;
-      let buildCommand: string;
-      
-      if (config.mode === 'single-container') {
-        // Single container mode: skip dependencies but respect user configuration
-        // Note: Observability settings will be handled by the DirectDockerService 
-        // based on user config, not hardcoded here
-        // Use --no-recreate to avoid rebuilding/recreating existing containers
-        upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --no-deps ${serviceList}`;
-        buildCommand = `docker-compose -f "${composePath}" build cyber-autoagent`;
-      } else {
-        // Full stack mode: start all services with full dependency management
-        // Use --no-recreate to prefer container reuse; still remove orphans to keep project clean
-        upCommand = `docker-compose -f "${composePath}" up -d --no-recreate --remove-orphans ${serviceList}`;
-        // Only build cyber-autoagent - other services are pulled from Docker Hub
-        buildCommand = `docker-compose -f "${composePath}" build cyber-autoagent`;
-      }
+      // upArgs and pullArgs prepared above are used for compose actions via runCompose
       
       try {
-        // Start containers with docker-compose (only specified services)
-        this.logger.info(`Running: ${upCommand}`);
-        const { stdout, stderr } = await execAsync(upCommand, {
-          maxBuffer: 50 * 1024 * 1024 // 50MB buffer for docker-compose output
-        });
-        
-        if (stderr && !stderr.includes('Creating') && !stderr.includes('Starting') && !stderr.includes('Building')) {
-          this.logger.warn(`Docker compose stderr output: ${stderr}`);
-        }
-        
-        this.logger.debug(`Docker compose output - stdout: ${stdout}, stderr: ${stderr}`);
-      } catch (composeError: any) {
-        // If docker-compose up fails, try building first
-        if (composeError.message.includes('No such image') || composeError.message.includes('pull access denied')) {
-          this.logger.info('Image not found, attempting to build...');
-          
-          try {
-            this.logger.info(`Running build: ${buildCommand}`);
-            await execAsync(buildCommand, {
-              maxBuffer: 50 * 1024 * 1024 // 50MB buffer for build output
-            });
-            const { stdout, stderr } = await execAsync(upCommand, {
-          maxBuffer: 50 * 1024 * 1024 // 50MB buffer for docker-compose output
-        });
-            this.logger.debug(`Docker compose output after build - stdout: ${stdout}, stderr: ${stderr}`);
-          } catch (buildError) {
-            this.logger.error('Failed to build and start containers', buildError as Error);
-            throw buildError;
-          }
-        } else {
-          throw composeError;
-        }
+        // Pull images with streaming progress
+        await runCompose(pullArgs, 'Downloading images…', config.services);
+      } catch (e) {
+        // Non-fatal; proceed to up which will build/pull as needed
+        this.logger.warn('Compose pull failed or skipped, continuing to up', e as Error);
       }
+
+      // Start containers with streaming progress
+      await runCompose(upArgs, 'Starting…', config.services);
       
       // Wait for containers to be ready
       await this.waitForContainers(config.services, this.config.containerStartupTimeout);
@@ -612,6 +604,17 @@ export class ContainerManager extends EventEmitter {
     return false;
   }
 
+  private async resolveComposeCmd(): Promise<{ cmd: string; baseArgs: string[] }> {
+    // Prefer Docker Compose v2 plugin
+    try {
+      await execAsync('docker compose version', { timeout: this.config.dockerCommandTimeout });
+      return { cmd: 'docker', baseArgs: ['compose'] };
+    } catch {}
+    // Fallback to legacy docker-compose
+    await execAsync('docker-compose version', { timeout: this.config.dockerCommandTimeout });
+    return { cmd: 'docker-compose', baseArgs: [] };
+  }
+
   /**
    * Get full path to docker-compose file using environment-based path resolution
    */
@@ -684,6 +687,21 @@ export class ContainerManager extends EventEmitter {
       running: runningCount,
       total: expectedContainers.length
     };
+  }
+
+  /**
+   * Count running containers for an explicit set of services, regardless of currentMode.
+   * Useful while switching modes so progress can reference the target mode's services.
+   */
+  async getRunningCountForServices(services: string[]): Promise<{ running: number; total: number }> {
+    if (!services || services.length === 0) {
+      return { running: 0, total: 0 };
+    }
+    const containers = await this.getRunningContainers();
+    const runningCount = services.filter(service =>
+      containers.some(c => this.isServiceContainerMatch(c.name, service) && c.status.includes('Up'))
+    ).length;
+    return { running: runningCount, total: services.length };
   }
   
   /**

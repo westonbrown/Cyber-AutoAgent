@@ -160,6 +160,12 @@ export interface Config {
   minEvidenceQualityScore?: number;
   minAnswerRelevancyScore?: number;
   minContextPrecisionScore?: number;
+  // LLM-driven evaluation tunables
+  minToolCalls?: number;
+  minEvidence?: number;
+  evalMaxWaitSecs?: number;
+  evalPollIntervalSecs?: number;
+  evalSummaryMaxChars?: number;
   
   // Setup Status
   isConfigured: boolean;
@@ -397,6 +403,12 @@ export const defaultConfig: Config = {
   minEvidenceQualityScore: 0.7,
   minAnswerRelevancyScore: 0.7,
   minContextPrecisionScore: 0.8,
+  // LLM-driven evaluation tunables (UI defaults)
+  minToolCalls: 3,
+  minEvidence: 1,
+  evalMaxWaitSecs: 30,
+  evalPollIntervalSecs: 5,
+  evalSummaryMaxChars: 8000,
   
   // Setup Status
   isConfigured: false,
@@ -448,6 +460,24 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setConfig(prevConfig => deepMerge(prevConfig, updates));
   }, []);
 
+  // Persist confirmations/autoApprove changes immediately to survive app restarts
+  useEffect(() => {
+    (async () => {
+      try {
+        // Only persist when confirmations or autoApprove change to avoid excessive writes
+        // Compare with ref to avoid writing on initial load
+        const prev = configRef.current;
+        if (prev.confirmations !== config.confirmations || prev.autoApprove !== config.autoApprove) {
+          await fs.mkdir(path.dirname(configFilePath), { recursive: true });
+          await fs.writeFile(configFilePath, JSON.stringify(config, null, 2));
+          loggingService.info('Persisted confirmations/autoApprove to:', configFilePath);
+        }
+      } catch (e) {
+        loggingService.warn?.('Non-fatal: failed to persist confirmations/autoApprove', e);
+      }
+    })();
+  }, [config.confirmations, config.autoApprove, configFilePath]);
+
   const saveConfig = useCallback(async () => {
     try {
       await fs.mkdir(path.dirname(configFilePath), { recursive: true });
@@ -465,6 +495,14 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     try {
       const data = await fs.readFile(configFilePath, 'utf-8');
       const loadedConfig = JSON.parse(data);
+
+      // Preserve saved confirmations/autoApprove exactly as-is
+      if (loadedConfig.confirmations !== undefined) {
+        // no-op, will be merged below
+      }
+      if (loadedConfig.autoApprove !== undefined) {
+        // no-op, will be merged below
+      }
       
       // Apply deployment-aware defaults for observability and evaluation
       const deploymentMode = loadedConfig.deploymentMode || 'local-cli';

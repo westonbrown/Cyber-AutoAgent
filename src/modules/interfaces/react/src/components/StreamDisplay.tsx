@@ -1067,30 +1067,37 @@ export const EventLine: React.FC<{
         </Box>
       );
       
-    case 'metadata':
-      // Render metadata events normally
-      // Generic tools no longer emit duplicate metadata
-      if (event.content && typeof event.content === 'object') {
-        const metadataEntries = Object.entries(event.content);
-        if (metadataEntries.length > 0) {
-          return (
-            <Box flexDirection="column" marginLeft={2}>
-              {metadataEntries.map(([key, value], index) => {
-                const isLast = index === metadataEntries.length - 1;
-                const displayValue = typeof value === 'string' && value.length > 50 
-                  ? value.substring(0, 50) + '...' 
-                  : String(value);
-                return (
-                  <Box key={index}>
-                    <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
-                  </Box>
-                );
-              })}
-            </Box>
-          );
-        }
+    case 'metadata': {
+      // Render metadata events normally, with special-case compact display for stop_tool
+      if (!event.content || typeof event.content !== 'object') return null;
+      const entries = Object.entries(event.content);
+      if (entries.length === 0) return null;
+
+      // Compact single-line display for stop notification metadata like { stopping: reason }
+      if (entries.length === 1 && entries[0][0] === 'stopping') {
+        const [, value] = entries[0];
+        const displayValue = typeof value === 'string' && value.length > 100 ? value.substring(0, 100) + '...' : String(value);
+        return (
+          <Box marginLeft={2}>
+            <Text dimColor>└─ stop reason: {displayValue}</Text>
+          </Box>
+        );
       }
-      return null;
+
+      return (
+        <Box flexDirection="column" marginLeft={2}>
+          {entries.map(([key, value], index) => {
+            const isLast = index === entries.length - 1;
+            const displayValue = typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : String(value);
+            return (
+              <Box key={index}>
+                <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      );
+    }
       
     case 'divider':
       return null;

@@ -9,7 +9,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { exec, spawn, ChildProcess } from 'child_process';
+import { exec, spawn, ChildProcess, execFileSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -652,7 +652,13 @@ export class PythonExecutionService extends EventEmitter {
         // Evaluation settings when auto-evaluation is enabled
         ...(config.autoEvaluation && {
           RAGAS_EVALUATOR_MODEL: config.evaluationModel || '',
-          EVALUATION_BATCH_SIZE: String(config.evaluationBatchSize || '')
+          EVALUATION_BATCH_SIZE: String(config.evaluationBatchSize || ''),
+          // LLM-driven evaluation tunables
+          ...(config.minToolCalls !== undefined ? { EVAL_MIN_TOOL_CALLS: String(config.minToolCalls) } : {}),
+          ...(config.minEvidence !== undefined ? { EVAL_MIN_EVIDENCE: String(config.minEvidence) } : {}),
+          ...(config.evalMaxWaitSecs !== undefined ? { EVALUATION_MAX_WAIT_SECS: String(config.evalMaxWaitSecs) } : {}),
+          ...(config.evalPollIntervalSecs !== undefined ? { EVALUATION_POLL_INTERVAL_SECS: String(config.evalPollIntervalSecs) } : {}),
+          ...(config.evalSummaryMaxChars !== undefined ? { EVAL_SUMMARY_MAX_CHARS: String(config.evalSummaryMaxChars) } : {}),
         })
       };
       // Only set AWS credentials/bearer if provided in config; do not overwrite existing env with empty strings
@@ -718,7 +724,6 @@ export class PythonExecutionService extends EventEmitter {
         this.emit('event', { type: 'output', content: '▶ Preflight checks', timestamp: Date.now() });
         // Python path and version
         try {
-          const { execFileSync } = require('child_process');
           const ver: string = execFileSync(this.pythonPath, ['--version']).toString().trim();
           this.emit('event', { type: 'output', content: `✓ Python: ${this.pythonPath} (${ver})`, timestamp: Date.now() });
         } catch (e) {

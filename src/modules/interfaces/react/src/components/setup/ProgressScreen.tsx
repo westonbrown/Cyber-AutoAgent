@@ -24,23 +24,26 @@ interface ProgressScreenProps {
 
 // Step details for each deployment mode
 const SETUP_STEPS = {
-  'local-cli': [
+'local-cli': [
+    { name: 'preflight', label: 'Initializing setup', detail: 'Loading configuration and environment checks' },
     { name: 'environment', label: 'Setting up Python environment', detail: 'Creating virtual environment and installing packages' },
     { name: 'dependencies', label: 'Installing dependencies', detail: 'pip install -e . (cyberautoagent, strands-sdk)' },
     { name: 'config', label: 'Configuring CLI', detail: 'Setting up configuration files' },
     { name: 'validation', label: 'Validating setup', detail: 'Testing Python module import' }
   ],
-  'single-container': [
+'single-container': [
+    { name: 'preflight', label: 'Initializing setup', detail: 'Loading configuration and environment checks' },
     { name: 'docker-check', label: 'Checking Docker', detail: 'Verifying Docker Desktop is running' },
-    { name: 'pull', label: 'Pulling image', detail: 'docker pull cyberautoagent:latest' },
+    { name: 'pull', label: 'Images availability', detail: 'Checking/pulling cyberautoagent:latest if missing' },
     { name: 'containers-start', label: 'Starting container', detail: 'docker run cyber-autoagent' },
     { name: 'network-setup', label: 'Setting up network', detail: 'Configuring port mappings' },
     { name: 'validation', label: 'Health check', detail: 'Verifying container is responsive' }
   ],
-  'full-stack': [
+'full-stack': [
+    { name: 'preflight', label: 'Initializing setup', detail: 'Loading configuration and environment checks' },
     { name: 'docker-check', label: 'Checking Docker', detail: 'Verifying Docker Desktop is running' },
-    { name: 'pull', label: 'Pulling images', detail: 'Downloading Langfuse, PostgreSQL, Redis images' },
-    { name: 'containers-start', label: 'Starting services', detail: 'docker-compose up -d (4 containers)' },
+    { name: 'pull', label: 'Images availability', detail: 'Checking/pulling required images (Langfuse, PostgreSQL, Redis, MinIO, ClickHouse)' },
+    { name: 'containers-start', label: 'Starting services', detail: 'docker-compose up -d (4+ containers)' },
     { name: 'network-setup', label: 'Configuring network', detail: 'Setting up inter-container communication' },
     { name: 'database-setup', label: 'Initializing database', detail: 'Creating tables and initial configuration' },
     { name: 'validation', label: 'Health checks', detail: 'Testing all services are connected' }
@@ -134,10 +137,9 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
   };
 
   const steps = SETUP_STEPS[deploymentMode];
-  const currentStepIndex = progress ? 
-    steps.findIndex(s => s.name === progress.stepName) : -1;
-  const effectiveStepIndex = currentStepIndex >= 0 ? currentStepIndex : 0;
-  const currentStep = currentStepIndex >= 0 ? steps[currentStepIndex] : null;
+const rawIndex = progress ? steps.findIndex(s => s.name === progress.stepName) : -1;
+  const currentIndex = Math.max(0, rawIndex);
+  const currentStep = rawIndex >= 0 ? steps[rawIndex] : steps[0];
   const installInfo = INSTALLATION_INFO[deploymentMode];
 
   return (
@@ -156,7 +158,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
         <Box flexDirection="row" justifyContent="space-between" marginBottom={2}>
           <Text color={theme.muted}>Elapsed: {formatTime(elapsedTime)}</Text>
           {progress && (
-            <Text color={theme.muted}>Step {(currentStepIndex >= 0 ? currentStepIndex : 0) + 1}/{steps.length}</Text>
+<Text color={theme.muted}>Step {currentIndex + 1}/{steps.length}</Text>
           )}
         </Box>
 
@@ -183,30 +185,34 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
             </Box>
           )}
           <Box flexDirection="column" marginTop={1}>
-            {steps.map((step, index) => {
-            const isActive = index === effectiveStepIndex && progress?.stepName !== 'initializing';
-            const isCompleted = effectiveStepIndex > index || isComplete;
-            const isPending = currentStepIndex < index && !isComplete;
-            const hasError = error && index === currentStepIndex;
+{steps.map((step, index) => {
+            const state = (() => {
+              const hasError = Boolean(error) && index === rawIndex;
+              if (hasError) return 'error' as const;
+              if (isComplete) return index <= currentIndex ? 'completed' : 'pending';
+              if (index < currentIndex) return 'completed' as const;
+              if (index === currentIndex) return 'active' as const;
+              return 'pending' as const;
+            })();
             
             return (
               <Box key={step.name} flexDirection="row" alignItems="flex-start">
                 <Box width={4} marginRight={1}>
-                  {isCompleted && <Text color={theme.success}>✓</Text>}
-                  {isActive && !hasError && <Spinner type="dots" />}
-                  {isPending && <Text color={theme.muted}>○</Text>}
-                  {hasError && <Text color={theme.danger}>✗</Text>}
+                  {state === 'completed' && <Text color={theme.success}>✓</Text>}
+                  {state === 'active'    && <Spinner type="dots" />}
+                  {state === 'pending'   && <Text color={theme.muted}>○</Text>}
+                  {state === 'error'     && <Text color={theme.danger}>✗</Text>}
                 </Box>
                 <Box flexDirection="column" flexGrow={1}>
                   <Text color={
-                    isCompleted ? theme.success :
-                    isActive ? theme.foreground :
-                    hasError ? theme.danger :
-                    theme.muted
+                    state === 'completed' ? theme.success :
+                    state === 'active'    ? theme.foreground :
+                    state === 'error'     ? theme.danger :
+                                             theme.muted
                   }>
                     {step.label}
                   </Text>
-                  {isActive && step.detail && (
+                  {state === 'active' && step.detail && (
                     <Box marginLeft={0}>
                       <Text color={theme.muted}>
                         {step.detail}
@@ -221,16 +227,20 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
         </Box>
 
         {/* Progress bar */}
-        {progress && !error && (
+{progress && !error && (
           <Box flexDirection="column" marginBottom={2}>
             {(() => {
             const maxBar = Math.max(20, Math.min(width - 10, 100));
             const barWidth = maxBar;
-            const current = Number(progress.current);
-            const total = Number(progress.total);
-            const valid = Number.isFinite(current) && Number.isFinite(total) && total > 0;
-            const ratioRaw = valid ? current / total : 0;
-            const ratio = Math.max(0, Math.min(1, ratioRaw));
+            const totalSteps = steps.length;
+            const activePhaseRatio = Math.max(0, Math.min(1, Number((progress as any)?.meta?.phaseRatio ?? 0)));
+            const completedSteps = Math.max(0, currentIndex);
+            // Prevent regression: once ratio increases, clamp to a monotonic non-decreasing local max
+            const ratioRaw = (completedSteps + activePhaseRatio) / Math.max(1, totalSteps);
+            const ratioNow = Math.max(0, Math.min(1, ratioRaw));
+            // Store last ratio in a ref for monotonicity
+            const r = (global as any).__SETUP_RATIO__ = Math.max(((global as any).__SETUP_RATIO__ || 0), ratioNow);
+            const ratio = r;
             const percent = Math.min(100, Math.max(0, Math.round(ratio * 100)));
             const filled = Math.max(0, Math.min(barWidth, Math.floor(ratio * barWidth)));
             const empty = Math.max(0, barWidth - filled);
@@ -249,6 +259,14 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = React.memo(({
             <Box marginTop={1}>
               <Text color={theme.muted}>
                 › {cleanLead(progress.message)}
+              </Text>
+            </Box>
+          )}
+          {/* Optional counters during container startup */}
+          {progress.stepName === 'containers-start' && Boolean((progress as any)?.meta?.running) && (
+            <Box>
+              <Text color={theme.muted}>
+                {String((progress as any).meta.running)}/{String((progress as any).meta.required)} services started
               </Text>
             </Box>
           )}

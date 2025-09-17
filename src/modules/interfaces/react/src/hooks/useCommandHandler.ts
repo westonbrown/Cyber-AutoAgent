@@ -29,6 +29,8 @@ interface UseCommandHandlerProps {
   refreshStatic: () => void;
   modalManager: any;
   setAssessmentFlowState?: (state: any) => void;
+  // Use the same exit path as the ESC kill switch
+  requestExit: () => void;
 }
 
 export function useCommandHandler({
@@ -47,7 +49,8 @@ export function useCommandHandler({
   handleScreenClear,
   refreshStatic,
   modalManager,
-  setAssessmentFlowState
+  setAssessmentFlowState,
+  requestExit
 }: UseCommandHandlerProps) {
 
   const handleUnifiedInput = useCallback(async (userInput: string) => {
@@ -311,6 +314,10 @@ For detailed instructions, use: /docs`;
         actions.setInitializationFlow(true, true);
         
         // Don't add history entry - it would just clutter the cleared screen
+        break;
+      case 'exit':
+        // Use the same robust exit path as the ESC kill switch
+        requestExit();
         break;
       default:
         addOperationHistoryEntry('error', `Unknown command: /${command}. Type /help for available commands.`);

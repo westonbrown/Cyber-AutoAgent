@@ -255,7 +255,8 @@ const AppContent: React.FC<AppProps> = ({
     handleScreenClear,
     refreshStatic,
     modalManager,
-    setAssessmentFlowState: operationManager.setAssessmentFlowState
+    setAssessmentFlowState: operationManager.setAssessmentFlowState,
+    requestExit: requestExitWithLog
   });
   
   // Module context

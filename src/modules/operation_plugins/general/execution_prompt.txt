@@ -1,10 +1,10 @@
-<domain_focus>
+src/modules/evaluation/evaluation.py<domain_focus>
 Advanced web application security assessment using intelligent tool orchestration.
 Focus on complex authentication flows, business logic flaws, and sophisticated injection attacks.
 </domain_focus>
 
 <assessment_methodology>
-Phases (concise):
+Phases:
 1) Reconnaissance → fingerprinting + attack surface mapping
 2) Payload coordination → parameter discovery + injection testing
 3) Auth flow analysis → map mechanisms + test bypasses

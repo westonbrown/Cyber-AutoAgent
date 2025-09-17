@@ -12,6 +12,7 @@ import { useConfig } from '../contexts/ConfigContext.js';
 import { DeploymentStatus } from '../services/DeploymentDetector.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import * as path from 'path';
 
 const execAsync = promisify(exec);
 
@@ -87,23 +88,42 @@ export const DeploymentRecovery: React.FC<DeploymentRecoveryProps> = ({
 
   const recoverDockerContainer = async () => {
     setRecoveryMessage('Recovering Docker container...');
-    
-    // Check if container exists but is stopped
+
     try {
+      // First check if container is already running
+      const { stdout: runningCheck } = await execAsync('docker ps --filter name=cyber-autoagent --format "{{.Names}}"');
+      if (runningCheck.trim() === 'cyber-autoagent') {
+        setRecoveryMessage('Container already running, using existing...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return; // Container is already running, nothing to do
+      }
+
+      // Check if container exists but is stopped
       const { stdout } = await execAsync('docker ps -a --filter name=cyber-autoagent --format "{{.Status}}"');
       if (stdout.includes('Exited')) {
         setRecoveryMessage('Starting stopped container...');
         await execAsync('docker start cyber-autoagent');
       } else if (!stdout) {
         setRecoveryMessage('Creating new container...');
-        await execAsync('docker run -d --name cyber-autoagent cyber-autoagent:latest');
+        // Get project root directory (4 levels up from this component)
+        const projectRoot = path.resolve(__dirname, '../../../../..');
+        const outputsPath = path.join(projectRoot, 'outputs');
+        const toolsPath = path.join(projectRoot, 'tools');
+
+        // Create container with proper volume mounts for service mode
+        const dockerCmd = `docker run -d --name cyber-autoagent ` +
+          `-v ${outputsPath}:/app/outputs ` +
+          `-v ${toolsPath}:/app/tools ` +
+          `cyber-autoagent:latest --service-mode`;
+
+        await execAsync(dockerCmd);
       }
+
+      setRecoveryMessage('Waiting for container to be healthy...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } catch (err) {
       throw new Error('Failed to recover Docker container');
     }
-    
-    setRecoveryMessage('Waiting for container to be healthy...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
   };
 
   const recoverFullStack = async () => {

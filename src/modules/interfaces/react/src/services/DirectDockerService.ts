@@ -26,6 +26,7 @@ import { AssessmentParams } from '../types/Assessment.js';
 import { Config } from '../contexts/ConfigContext.js';
 import { StreamEvent, EventType } from '../types/events.js';
 import { ContainerManager, DeploymentMode } from './ContainerManager.js';
+import { createLogger } from '../utils/logger.js';
 
 /**
  * Sanitize target name for filesystem use (matches Python agent logic)
@@ -53,6 +54,7 @@ function sanitizeTargetName(target: string): string {
  * @emits 'stopped' - Container was stopped or cancelled
  * @emits 'error' - Execution error occurred
  */
+const logger = createLogger('DirectDockerService');
 export class DirectDockerService extends EventEmitter {
   private readonly dockerClient: Dockerode;
   private activeContainer?: Dockerode.Container;
@@ -61,6 +63,10 @@ export class DirectDockerService extends EventEmitter {
   private streamEventBuffer = '';
   private abortController?: AbortController;
   private activeExec?: Dockerode.Exec;
+  // Track when backend signals operation completion to avoid premature "complete"
+  private seenOperationComplete = false;
+  // Auto-confirm interactive handoffs when configured (maps to BYPASS_TOOL_CONSENT)
+  private autoConfirm = true;
 
   /**
    * Initialize the Docker service with connection to Docker daemon
@@ -97,6 +103,9 @@ export class DirectDockerService extends EventEmitter {
       
       // Initialize environment variables - always pass objective via env to avoid escaping issues
       const env: string[] = [`CYBER_OBJECTIVE=${objective}`];
+      
+      // Decide auto-confirm behavior from config (default true when confirmations are disabled)
+      this.autoConfirm = !(config.confirmations === true);
       
       const args = [
         // Note: --service-mode will be added later ONLY for new containers, not for docker exec
@@ -200,6 +209,31 @@ export class DirectDockerService extends EventEmitter {
         env.push(`CYBER_AGENT_EVALUATION_MODEL=${config.evaluationModel}`);
       }
 
+      // Debug logging: what we're about to send to Docker
+      const maskEnv = (vars: string[]) => {
+        const SENSITIVE = new Set([
+          'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK', 'OPENAI_API_KEY',
+          'ANTHROPIC_API_KEY', 'COHERE_API_KEY', 'LANGFUSE_SECRET_KEY'
+        ]);
+        const out: Record<string, string> = {};
+        for (const e of vars) {
+          const idx = e.indexOf('=');
+          if (idx > 0) {
+            const k = e.slice(0, idx);
+            const v = e.slice(idx + 1);
+            out[k] = SENSITIVE.has(k) ? '***' : v;
+          }
+        }
+        return out;
+      };
+      logger.info('Docker exec plan', {
+        args,
+        env: maskEnv(env),
+        target: params.target,
+        module: params.module,
+        mode: await ContainerManager.getInstance().getCurrentMode()
+      });
+
       // Get deployment mode for configuration and messaging decisions
       const deploymentManager = ContainerManager.getInstance();
       const currentDeploymentMode = await deploymentManager.getCurrentMode();
@@ -264,18 +298,25 @@ export class DirectDockerService extends EventEmitter {
 
       // Evaluation settings from config
       env.push(`ENABLE_AUTO_EVALUATION=${config.autoEvaluation ? 'true' : 'false'}`);
-      if (config.autoEvaluation && config.evaluationModel) {
-        env.push(`RAGAS_EVALUATOR_MODEL=${config.evaluationModel}`);
+      if (config.autoEvaluation) {
+        if (config.evaluationModel) {
+          env.push(`RAGAS_EVALUATOR_MODEL=${config.evaluationModel}`);
+        }
         env.push(`EVALUATION_BATCH_SIZE=${config.evaluationBatchSize || 5}`);
+        // LLM-driven evaluation tunables (ensure container sees the same values as local Python)
+        if (config.minToolCalls !== undefined) env.push(`EVAL_MIN_TOOL_CALLS=${config.minToolCalls}`);
+        if (config.minEvidence !== undefined) env.push(`EVAL_MIN_EVIDENCE=${config.minEvidence}`);
+        if (config.evalMaxWaitSecs !== undefined) env.push(`EVALUATION_MAX_WAIT_SECS=${config.evalMaxWaitSecs}`);
+        if (config.evalPollIntervalSecs !== undefined) env.push(`EVALUATION_POLL_INTERVAL_SECS=${config.evalPollIntervalSecs}`);
+        if (config.evalSummaryMaxChars !== undefined) env.push(`EVAL_SUMMARY_MAX_CHARS=${config.evalSummaryMaxChars}`);
       }
 
-      // Enable container reuse in full-stack mode to use the existing docker-compose container
-      // This container is already running with --service-mode flag
+      // Prefer ad-hoc container per assessment for reliability; allow opt-in reuse via env
+      // Set CYBER_DOCKER_REUSE=true to re-enable exec into the service container
       const ENABLE_SERVICE_CONTAINER_REUSE = currentDeploymentMode === 'full-stack';
       
       if (ENABLE_SERVICE_CONTAINER_REUSE) {
-        const serviceContainerName = 'cyber-autoagent';
-        const serviceContainer = await this.findRunningContainerByName(serviceContainerName);
+        const serviceContainer = await this.findServiceContainer();
 
         if (serviceContainer) {
           this.emit('event', {
@@ -283,6 +324,7 @@ export class DirectDockerService extends EventEmitter {
             content: '◆ Reusing existing service container (docker exec)',
             timestamp: Date.now()
           });
+          logger.info('Exec into existing service container', { name: 'cyber-autoagent' });
 
           await this.execIntoContainer(serviceContainer, args, env, currentDeploymentMode);
           return;
@@ -330,6 +372,7 @@ export class DirectDockerService extends EventEmitter {
       }
 
 
+      logger.info('Creating ad-hoc container', { image: dockerImage, network: dockerNetwork, binds, args, env: maskEnv(env) });
       this.activeContainer = await this.dockerClient.createContainer({
         Image: dockerImage,
         // Don't set Cmd - let the Entrypoint handle the execution
@@ -412,7 +455,9 @@ export class DirectDockerService extends EventEmitter {
         this.abortController = undefined;
         // Clear stream buffer to prevent stale prompt detection
         this.streamEventBuffer = '';
-        this.emit('complete');
+        // Only emit "complete" when backend signaled operation_complete
+        if (this.seenOperationComplete) this.emit('complete');
+        else this.emit('stopped');
       });
       
       // Handle abort signal
@@ -571,8 +616,8 @@ export class DirectDockerService extends EventEmitter {
     
     this.streamEventBuffer += cleanedData;
 
-    // Look for event markers - use non-global regex to prevent duplicate processing
-    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/s;
+    // Look for event markers - use global regex and iterate through
+    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
     let match;
     let processedEvents = false;
     
@@ -651,13 +696,44 @@ export class DirectDockerService extends EventEmitter {
               // The startup thinking animation is already active and more appropriate
             }, 100);
           }, 1000);
+        } else if (event.type === 'operation_complete') {
+          // Backend signaled completion; mark and emit complete once
+          this.seenOperationComplete = true;
+          this.emit('complete');
+        } else if (event.type === 'user_handoff') {
+          // Structured user handoff from backend: if autoConfirm is enabled, press Enter automatically
+          if (this.autoConfirm) {
+            logger.info('Auto-confirming user_handoff');
+            setTimeout(() => {
+              if (this.containerStream && this.isExecutionActive) {
+                try {
+                  this.containerStream.write('\r\n');
+                  logger.info('stdin write (auto-confirm)', { data: '\r\\n' });
+                  setTimeout(() => {
+                    try { if (this.containerStream && this.isExecutionActive) this.containerStream.write('\r\n'); } catch {}
+                  }, 200);
+                  setTimeout(() => {
+                    try { if (this.containerStream && this.isExecutionActive) this.containerStream.write('execute\r\n'); } catch {}
+                  }, 1200);
+                } catch (err) {
+                  logger.error('stdin write (auto-confirm) error', err as any);
+                }
+              }
+            }, 200);
+          }
         }
         
         this.emit('event', event);
         
-        // Remove processed event from buffer immediately to prevent duplicate processing
-        const processedLength = match.index + match[0].length;
-        this.streamEventBuffer = this.streamEventBuffer.slice(processedLength);
+        // Remove only the matched event from buffer, preserve any surrounding non-event content
+        const start = match.index as number;
+        const end = start + match[0].length;
+        const before = this.streamEventBuffer.slice(0, start);
+        const after = this.streamEventBuffer.slice(end);
+        this.streamEventBuffer = before + after;
+
+        // Immediately check for interactive prompts after processing each event
+        this.handleInteractivePrompts();
         
       } catch (error) {
         // Emit parsing errors as events instead of console.error
@@ -676,9 +752,9 @@ export class DirectDockerService extends EventEmitter {
     // Check for interactive prompts that need automatic responses
     this.handleInteractivePrompts();
     
-    // Keep only last 10KB to prevent memory issues
-    if (this.streamEventBuffer.length > 10240) {
-      this.streamEventBuffer = this.streamEventBuffer.slice(-5120);
+    // Keep only last 32KB to prevent memory issues
+    if (this.streamEventBuffer.length > 32768) {
+      this.streamEventBuffer = this.streamEventBuffer.slice(-16384);
     }
   }
 
@@ -691,29 +767,37 @@ export class DirectDockerService extends EventEmitter {
     if (!this.isExecutionActive || !this.containerStream) {
       return;
     }
-    
-    // Check for assessment execution prompt and auto-execute
+
+    // Check for assessment execution prompt and auto-execute (original behavior)
     // The prompt may have a module prefix like "◆ general > " or similar
-    const executePromptPattern = /Press Enter or type "execute" to start assessment/;
-    
+    const executePromptPattern = /Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment/i;
+
     if (executePromptPattern.test(this.streamEventBuffer)) {
+      logger.info('Prompt detected: auto-sending Enter', { bufferLength: this.streamEventBuffer.length });
       // Give a brief delay to ensure the container is ready for input
       setTimeout(() => {
         if (this.containerStream && this.isExecutionActive) {
-          // Send just Enter key (empty line) to proceed - simulates pressing Enter
-          this.containerStream.write('\n');
-          
-          this.emit('event', {
-            type: 'output',
-            content: '◆ Auto-executing assessment (pressing Enter to continue)',
-            timestamp: Date.now()
-          });
+          try {
+            // Send execute command directly for exec sessions
+            this.containerStream.write('execute\r\n');
+            logger.info('stdin write sent', { data: 'execute\\r\\n' });
+            // Safety resend Enter after 500ms in case first is missed
+            setTimeout(() => {
+              try {
+                if (this.containerStream && this.isExecutionActive) {
+                  this.containerStream.write('\r\n');
+                  logger.info('stdin fallback sent', { data: '\\r\\n' });
+                }
+              } catch {}
+            }, 500);
+          } catch (err) {
+            logger.error('stdin write error', err as any);
+          }
         }
-      }, 500); // Increased delay to ensure container is ready
-      
-      // Remove the prompt from buffer to prevent duplicate executions
-      // Match any line containing the prompt text
-      this.streamEventBuffer = this.streamEventBuffer.replace(/.*Press Enter or type "execute" to start assessment[^\n]*\n?/g, '');
+      }, 500); // Increased initial delay for exec sessions
+
+      // Remove the prompt from buffer to prevent duplicate executions (tolerant to quotes/spacing)
+      this.streamEventBuffer = this.streamEventBuffer.replace(/.*Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment[^\n]*\n?/gi, '');
     }
   }
 
@@ -770,8 +854,11 @@ export class DirectDockerService extends EventEmitter {
 
     try {
       // Send input to container stdin with newline
-      this.containerStream.write(input + '\n');
+      const payload = input + '\n';
+      logger.info('stdin write (user)', { data: payload });
+      this.containerStream.write(payload);
     } catch (error) {
+      logger.error('stdin write (user) error', error as any);
       // Re-throw error for caller to handle, don't use console.error
       throw new Error(`Error sending input to container: ${error}`);
     }
@@ -856,13 +943,30 @@ export class DirectDockerService extends EventEmitter {
   }
 
   /**
-   * Try to find a running container by exact name.
+   * Find the running service container for reuse.
+   * Prefers exact name match (container_name), then falls back to Compose labels.
    */
-  private async findRunningContainerByName(name: string): Promise<Dockerode.Container | null> {
+  private async findServiceContainer(): Promise<Dockerode.Container | null> {
     try {
-      const containers = await this.dockerClient.listContainers({ all: false });
-      const match = containers.find(c => (c.Names || []).some(n => n.replace(/^\//, '') === name));
-      return match ? this.dockerClient.getContainer(match.Id) : null;
+      const containers = await this.dockerClient.listContainers({ all: true });
+      // Prefer exact name match and running state
+      let candidate = containers.find(c => c.State === 'running' && (c.Names || []).some(n => n.replace(/^\//, '') === 'cyber-autoagent'));
+      if (!candidate) {
+        // Fallback: match by compose service label
+        candidate = containers.find(c => c.State === 'running' && c.Labels && (c.Labels as any)['com.docker.compose.service'] === 'cyber-autoagent');
+      }
+      if (!candidate) return null;
+      const cont = this.dockerClient.getContainer(candidate.Id);
+      try {
+        const info = await cont.inspect();
+        logger.info('Service container candidate', {
+          name: (candidate.Names || [])[0],
+          image: candidate.Image,
+          tty: info?.Config?.Tty,
+          openStdin: info?.Config?.OpenStdin,
+        });
+      } catch {}
+      return cont;
     } catch {
       return null;
     }
@@ -899,6 +1003,7 @@ export class DirectDockerService extends EventEmitter {
     // Prepare command (python entrypoint + args) to align with container Entrypoint
     const cmd = ['python', '/app/src/cyberautoagent.py', ...args];
 
+    // Ensure TTY and stdin are enabled for interactive prompts
     const exec = await container.exec({
       Cmd: cmd,
       AttachStdout: true,
@@ -919,6 +1024,14 @@ export class DirectDockerService extends EventEmitter {
     });
 
     this.containerStream = stream;
+    // Reset completion flag for new exec session
+    this.seenOperationComplete = false;
+
+    // Don't send initial input - let the auto-response handler deal with prompts
+
+    // Log exec start
+    const cmdStr = ['python', '/app/src/cyberautoagent.py', ...args].join(' ');
+    logger.info('Exec session started', { cmd: cmdStr });
 
     // Create event parser and pipe (TTY=true means single stream)
     const eventParser = new Transform({
@@ -927,16 +1040,20 @@ export class DirectDockerService extends EventEmitter {
     stream.pipe(eventParser);
 
     eventParser.on('error', (error) => {
+      logger.error('Event parser error', error as any);
       this.emit('event', { type: 'output', content: `Event parser error: ${error}`, timestamp: Date.now() });
     });
     stream.on('error', (error: any) => {
+      logger.error('Exec stream error', error);
       this.emit('event', { type: 'output', content: `Stream error: ${error}`, timestamp: Date.now() });
     });
     stream.on('end', () => {
       this.isExecutionActive = false;
       this.abortController = undefined;
       this.streamEventBuffer = '';
-      this.emit('complete');
+      logger.info('Exec stream ended', { seenOperationComplete: this.seenOperationComplete });
+      if (this.seenOperationComplete) this.emit('complete');
+      else this.emit('stopped');
     });
 
     // Startup user messages to mirror container path

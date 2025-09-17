@@ -5,6 +5,8 @@
  * for observability and evaluation settings based on available infrastructure.
  */
 
+import * as net from 'node:net';
+
 export type DeploymentMode = 'cli' | 'container' | 'compose';
 
 export interface DeploymentInfo {
@@ -41,7 +43,6 @@ async function isLangfuseAvailable(): Promise<boolean> {
       const port = 3000;
       
       return new Promise((resolve) => {
-        const net = require('net');
         const socket = new net.Socket();
         
         socket.setTimeout(2000);

@@ -77,7 +77,13 @@ export const SetupProgressScreen: React.FC<SetupProgressScreenProps> = ({
       const ss = (seconds % 60).toString().padStart(2, '0');
       setElapsed(`${mm}:${ss}`);
     }, 1000);
-    return () => clearInterval(interval);
+
+    // Keep Ink responsive during long-running I/O by forcing a small no-op state update
+    const keepAlive = setInterval(() => {
+      try { process.stdout.write(''); } catch {}
+    }, 800);
+
+    return () => { clearInterval(interval); clearInterval(keepAlive); };
   }, [startTime, isComplete, hasFailed]);
 
   // Update current step based on log content
