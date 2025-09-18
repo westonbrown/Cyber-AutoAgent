@@ -41,6 +41,9 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   availableModules = ['general'],
   recentTargets = []
 }) => {
+  // Access global app state via a lightweight event bridge to avoid circular deps
+  // We'll read from process.env-like bridge exposed on actions; App passes actions down
+  const appStateRef = (global as any).CYBER_APP_STATE_REF as { getCommandHistory?: () => string[] } | undefined;
   const theme = themeManager.getCurrentTheme();
   const { exit } = useApp();
   const { currentModule, availableModules: contextModules } = useModule();
@@ -55,10 +58,21 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const previousStep = useRef(flowState.step);
 
-  // Command history
-  const [history, setHistory] = useState<string[]>([]);
+  // Command history (fallback to local if global not available)
+  const [history, setHistory] = useState<string[]>(() => appStateRef?.getCommandHistory?.() || []);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const draftBeforeHistoryRef = useRef<string>('');
+
+  // Keep local history in sync with global command history when it changes
+  useEffect(() => {
+    const globalHist = appStateRef?.getCommandHistory?.();
+    if (Array.isArray(globalHist)) {
+      setHistory(prev => {
+        // Only update if different to avoid cursor reset while editing
+        return JSON.stringify(prev) !== JSON.stringify(globalHist) ? globalHist : prev;
+      });
+    }
+  }, [appStateRef?.getCommandHistory?.()]);
   
   // Track a key to force TextInput re-mount when needed
   const [inputKey, setInputKey] = useState(0);
@@ -328,7 +342,10 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     if (!disabled || userHandoffActive) {
       const trimmed = submittedValue.trim();
       if (trimmed.length > 0) {
+        // Local history update
         setHistory(prev => (prev.length === 0 || prev[prev.length - 1] !== submittedValue) ? [...prev, submittedValue] : prev);
+        // Push into global application history (used by other components)
+        try { (global as any).CYBER_APP_STATE_ACTIONS?.pushCommandHistory?.(submittedValue); } catch {}
       }
       setHistoryIndex(null);
       draftBeforeHistoryRef.current = '';
