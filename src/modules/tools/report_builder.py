@@ -64,6 +64,21 @@ def sanitize_target_for_path(target: str) -> str:
     return clean or "unknown_target"
 
 
+def _safe_truncate(text: str, n: int) -> str:
+    """Safely truncate text to n characters, preserving readability.
+
+    Adds an ellipsis when truncation occurs and handles None/empty inputs.
+    """
+    if text is None:
+        return ""
+    s = str(text).strip()
+    if len(s) <= max(0, n):
+        return s
+    if n <= 3:
+        return s[:max(0, n)]
+    return s[: n - 3] + "..."
+
+
 def _clean_remediation_text(text: str) -> str:
     if not text:
         return ""

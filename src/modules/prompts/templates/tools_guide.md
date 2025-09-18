@@ -3,12 +3,12 @@
 - Availability realism: prefer native scanners if available; else perform minimal substitutes (e.g., curl headers/payloads) and save transcripts
 - Minimal-next-step bias: choose the smallest execution that yields new evidence
 - Tools placement: write Python tools under `tools/` and load via `load_tool`; do not place tools in `outputs/<target>/...`
-- **shell**: Deterministic, non-interactive system commands (parallel up to 10).
-  - Prefer existing cyber tools that are already in the env. Default using professional cyber tools loaded into the environment rather than building your own or attempting yourself with other methods. For example use sqlmap (if you have it) rather than attempting to exploit an identified sql injection yourself.
+- Always first consult the available tools injected in your prompt (ENVIRONMENTAL CONTEXT). 
+- **shell**: Deterministic, non-interactive system commands capable of running in parrallel.
+  - Prefer tools that are present in the current environment. Use cyber tools when available choose an equivalent available tool when the example isn’t present.
   - If a required tool is missing, you may install it non-interactively with explicit flags; document the command and rationale.
-  - **TIMEOUT MANAGEMENT**: Default timeout is 120s. For long-running operations:
+  - **TIMEOUT MANAGEMENT**: Default timeout is 300s. For long-running operations:
     * ALWAYS specify timeout for parallel operations: {"parallel": true, "timeout": 180}
-    * Quick operations (ping, curl, basic checks): 60-120s timeout
     * Port scans with service detection (-sV -sC): Use {"timeout": 300} minimum
     * Full port scans (-p-): Use {"timeout": 600} or break into ranges
   - Web scanners (nikto): Use {"timeout": 300–600}
@@ -47,8 +47,6 @@
   - Task Format (Max 100 words) with STATE: [Current access/findings], GOAL: [ONE specific objective], AVOID: [What not to repeat] and FOCUS: [Specific technique]
   - AVOID (concrete): derive exclusions from memory/recent outputs and do not: re-run completed scans/enumeration on the same hosts/endpoints, re-validate the same findings without a new vector, re-run failing commands unchanged, or overlap targets assigned to other sub-agents.
   - Set max_iterations based on team size: ~15 per agent (e.g., 4 agents = 60)
-- Use node_timeout≈900s for heavy tools (nmap, sqlmap) and execution_timeout≈1800–2400s for the swarm
-  - Bounds (hard caps): agents ≤ 6, max_iterations ≤ 200, max_handoffs ≤ 200, execution_timeout ≤ 3000s
   - Include explicit handoff triggers in agent prompts: "After finding 3-5 novel findings, handoff to next agent"
   - Completion semantics: The swarm ends when the current agent completes without handing off. There is no `complete_swarm_task`; to continue collaboration, explicitly call `handoff_to_agent(agent_name, message, context)`
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
@@ -56,8 +54,7 @@
 - **load_tool**: Dynamically register editor-created tools for immediate use.
 - **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing.
   - Specify method, URL, headers, body, and auth explicitly. Store request/response pairs to memory.
-  - Use for validation: Query CVE databases, check vendor docs, verify if findings are standard practice.
-  - Resource discovery (OSINT) when a capability/tool is missing: spend up to 2–5 steps to locate reputable resources (official docs, CVE databases, curated lists/awesome repos), traverse ≤2 link hops, save pages as artifacts, extract candidate tools/commands, then install via shell and verify with which/--version.
+    - Resource discovery (OSINT) when a capability/tool is missing: spend up to 2–5 steps to locate reputable resources (official docs, CVE databases, curated lists/awesome repos), traverse ≤2 link hops, save pages as artifacts, extract candidate tools/commands, then install via shell and verify with which/--version.
   - Prefer two independent signals where feasible and include at least one negative/control case; re-run key steps once to confirm stability.
   - External intel quick refs: NVD/CVE, Exploit‑DB, vendor advisories, Shodan/Censys, VirusTotal; store JSON/HTML responses and reference artifact paths.
   - Large responses (HTML/JS): save raw content to outputs/<target>/OP_<id>/artifacts/*.html via shell; review with grep/sed/awk instead of dumping large blobs into memory; store only the file path in findings.

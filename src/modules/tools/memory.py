@@ -405,6 +405,10 @@ class Mem0ServiceClient:
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
+        # Default agent_id to user_id to avoid null actor attribution in some backends
+        if user_id and not agent_id:
+            agent_id = user_id
+
         messages = [{"role": "user", "content": content}]
         try:
             # For cybersecurity findings, use infer=False to ensure all data is stored
