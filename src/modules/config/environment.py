@@ -126,6 +126,9 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         "httprobe": "Probes for working HTTP and HTTPS servers",
         "subjack": "Subdomain takeover tool",
         "knockpy": "DNS subdomain scanner",
+        "assetfinder": "Subdomain discovery (tomnomnom)",
+        "httpx": "HTTP probing and technology detection (ProjectDiscovery)",
+        "katana": "Fast web crawler (ProjectDiscovery)",
         # DNS/Recon
         "dnsrecon": "DNS reconnaissance",
         "dnsenum": "DNS enumeration",

@@ -108,6 +108,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     skipfish \
     # Offensive frameworks
     metasploit-framework \
+    # Go toolchain for ProjectDiscovery/tomnomnom tools
+    golang \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Install uv for fast dependency management
@@ -136,6 +138,36 @@ ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
 ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
 ENV PYTHONPATH="/app/src"
+
+# Pre-install Go-based recon tools (mix of go build and prebuilt binaries)
+# assetfinder (tomnomnom) builds quickly from source
+RUN go install github.com/tomnomnom/assetfinder@latest
+
+# httpx and katana from ProjectDiscovery can pull large dependency graphs; use prebuilt binaries instead
+RUN set -eux; \
+    arch=$(uname -m); \
+    if [ "$arch" = "x86_64" ]; then platform="linux_amd64"; \
+    elif [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then platform="linux_arm64"; \
+    else platform="linux_amd64"; fi; \
+    KATANA_URL=$(curl -s https://api.github.com/repos/projectdiscovery/katana/releases/latest \
+      | grep -Eo '"browser_download_url"\s*:\s*"[^"]*' | cut -d '"' -f4 \
+      | grep -E "${platform}\\.zip$" | head -n1); \
+    HTTPX_URL=$(curl -s https://api.github.com/repos/projectdiscovery/httpx/releases/latest \
+      | grep -Eo '"browser_download_url"\s*:\s*"[^"]*' | cut -d '"' -f4 \
+      | grep -E "${platform}\\.zip$" | head -n1); \
+    echo "Fetching: $KATANA_URL"; \
+    echo "Fetching: $HTTPX_URL"; \
+    wget -qO /tmp/katana.zip "$KATANA_URL"; \
+    wget -qO /tmp/httpx.zip "$HTTPX_URL"; \
+    rm -rf /tmp/katana_extracted /tmp/httpx_extracted; \
+    mkdir -p /tmp/katana_extracted /tmp/httpx_extracted; \
+    unzip -q /tmp/katana.zip -d /tmp/katana_extracted || true; \
+    unzip -q /tmp/httpx.zip -d /tmp/httpx_extracted || true; \
+    # Find and install binaries
+    find /tmp/katana_extracted -type f -name katana -exec mv {} /usr/local/bin/katana \; || true; \
+    find /tmp/httpx_extracted -type f -name httpx -exec mv {} /usr/local/bin/httpx \; || true; \
+    chmod +x /usr/local/bin/katana /usr/local/bin/httpx || true; \
+    rm -rf /tmp/katana_extracted /tmp/httpx_extracted /tmp/katana.zip /tmp/httpx.zip
 
 # Persist important directories
 VOLUME ["/app/evidence", "/app/logs"]

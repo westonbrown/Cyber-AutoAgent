@@ -54,8 +54,9 @@ services:
     
     volumes:
       # Unified output structure persistence
-      - ../outputs:/app/outputs
-      - ../tools:/app/tools
+      # Use :delegated for Docker Desktop on macOS to fix permission issues
+      - ../outputs:/app/outputs:delegated
+      - ../tools:/app/tools:delegated
       
     
     # Network configuration - bridge mode to allow Langfuse communication
