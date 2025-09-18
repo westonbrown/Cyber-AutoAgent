@@ -209,14 +209,34 @@ class TraceParser:
         # Method 2: Parse from input
         if hasattr(trace, "input") and trace.input:
             input_str = str(trace.input)
+            # Try structured parse first
             if "objective" in input_str.lower():
-                # Try to extract objective from input
                 try:
                     input_data = json.loads(input_str) if isinstance(input_str, str) else input_str
                     if isinstance(input_data, dict):
-                        return input_data.get("objective")
+                        obj = input_data.get("objective")
+                        if obj:
+                            return obj
                 except Exception:
+                    # Fall back to regex extraction from free-form content
                     pass
+            # Handle list-of-messages with nested content (common in Langfuse traces)
+            try:
+                if isinstance(trace.input, list) and trace.input:
+                    first = trace.input[0]
+                    content = None
+                    # Newer formats: list of dicts with content
+                    if isinstance(first, dict) and "content" in first:
+                        content = str(first.get("content", ""))
+                    else:
+                        content = input_str
+                    if content:
+                        import re
+                        m = re.search(r"Objective:\s*(.+)", content, flags=re.IGNORECASE)
+                        if m:
+                            return m.group(1).strip()
+            except Exception:
+                pass
 
         # Method 3: Extract from trace name
         if hasattr(trace, "name") and trace.name:
@@ -588,10 +608,23 @@ class TraceParser:
 
     def _extract_metadata(self, trace: Any) -> Dict[str, Any]:
         """Extract relevant metadata from the trace."""
-        metadata = {}
+        metadata: Dict[str, Any] = {}
 
         if hasattr(trace, "metadata") and isinstance(trace.metadata, dict):
             metadata.update(trace.metadata)
+
+        # Try to attach session/operation identifiers for downstream filtering
+        try:
+            if hasattr(trace, "session_id") and trace.session_id:
+                metadata.setdefault("session_id", trace.session_id)
+            # Flatten attributes.operation.id if present
+            attrs = metadata.get("attributes") if isinstance(metadata, dict) else None
+            if isinstance(attrs, dict):
+                op_id = attrs.get("operation.id") or attrs.get("langfuse.session.id")
+                if op_id:
+                    metadata["operation_id"] = op_id
+        except Exception:
+            pass
 
         # Add computed metrics
         if hasattr(trace, "latency"):
@@ -693,47 +726,64 @@ class TraceParser:
         """
         findings = []
 
+        # Determine current operation id if available for strict filtering
+        current_op_id = None
+        try:
+            if isinstance(parsed_trace.metadata, dict):
+                current_op_id = parsed_trace.metadata.get("operation_id") or parsed_trace.metadata.get("session_id")
+        except Exception:
+            current_op_id = None
+
         for tool in parsed_trace.tool_calls:
-            if tool.name == "mem0_memory":
-                # Check store operations for findings
-                if isinstance(tool.input_data, dict):
-                    action = tool.input_data.get("action", "")
-                    content = tool.input_data.get("content", "")
+            if tool.name == "mem0_memory" and isinstance(tool.input_data, dict):
+                action = tool.input_data.get("action", "")
+                content = tool.input_data.get("content", "")
+                meta = tool.input_data.get("metadata", {}) if isinstance(tool.input_data.get("metadata", {}), dict) else {}
 
-                    if action == "store" and content:
-                        # Look for security-relevant content
-                        content_lower = content.lower()
-                        if any(
-                            keyword in content_lower
-                            for keyword in [
-                                "vulnerability",
-                                "finding",
-                                "exploit",
-                                "critical",
-                                "high",
-                                "medium",
-                                "exposed",
-                                "injection",
-                                "misconfigur",
-                                "bypass",
-                                "disclosure",
-                                "discovery",
-                                "evidence",
-                            ]
-                        ):
-                            # Extract metadata for context
-                            metadata = tool.input_data.get("metadata", {})
-                            severity = metadata.get("severity", "unknown")
-                            category = metadata.get("category", "unknown")
-                            findings.append(f"[Security Finding - {severity}/{category}] {content[:500]}")
+                # When possible, include only store operations that belong to the current operation
+                same_operation = True
+                try:
+                    op_id = meta.get("operation_id")
+                    if op_id and current_op_id:
+                        same_operation = (op_id == current_op_id)
+                except Exception:
+                    pass
 
-                    elif action == "retrieve" and tool.output:
-                        # Include retrieved findings
-                        output_str = str(tool.output)
-                        if "finding" in output_str.lower() or "vulnerability" in output_str.lower():
-                            findings.append(f"[Retrieved Finding] {output_str[:400]}")
+                if action == "store" and content and same_operation:
+                    # Emit concise context for current-session findings only
+                    sev = meta.get("severity", "unknown")
+                    cat = meta.get("category", "unknown")
+                    findings.append(f"[Security Finding - {sev}/{cat}] {str(content)[:500]}")
+
+                elif action == "retrieve" and tool.output and same_operation:
+                    # Include retrieved findings from this operation only
+                    output_str = str(tool.output)
+                    if output_str:
+                        findings.append(f"[Retrieved Finding] {output_str[:400]}")
 
         return findings
+
+    def count_current_evidence_findings(self, parsed_trace: ParsedTrace) -> int:
+        """Count evidence findings restricted to the current operation id.
+
+        This relies only on structured metadata equality checks, not patterns.
+        """
+        try:
+            current_op_id = None
+            if isinstance(parsed_trace.metadata, dict):
+                current_op_id = parsed_trace.metadata.get("operation_id") or parsed_trace.metadata.get("session_id")
+            if not current_op_id:
+                return 0
+            findings = 0
+            for tool in parsed_trace.tool_calls:
+                if tool.name == "mem0_memory" and isinstance(tool.input_data, dict):
+                    meta = tool.input_data.get("metadata", {}) if isinstance(tool.input_data.get("metadata", {}), dict) else {}
+                    action = tool.input_data.get("action", "")
+                    if meta.get("operation_id") == current_op_id and action == "store" and tool.input_data.get("content"):
+                        findings += 1
+            return findings
+        except Exception:
+            return 0
 
     def _create_single_turn_sample(self, parsed_trace: ParsedTrace) -> SingleTurnSample:
         """Create a SingleTurnSample for simple evaluations."""

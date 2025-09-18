@@ -454,10 +454,10 @@ Available {config.module} module tools:
         tools_context = f"""
 ## ENVIRONMENTAL CONTEXT
 
-Professional tools discovered in your environment:
+Cyber Tools available in this environment:
 {", ".join(config.available_tools)}
 
-Leverage these tools directly via shell. 
+Guidance and tool names in prompts are illustrative, not prescriptive. Always check availability and prefer tools present in this list. If a capability is missing, follow Ask-Enable-Retry for minimal, non-interactive enablement, or choose an equivalent available tool.
 """
 
     # Combine environmental and module tools context

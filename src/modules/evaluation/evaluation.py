@@ -145,40 +145,30 @@ class CyberAgentEvaluator:
             name="tool_selection_accuracy",
             definition=(
                 "Evaluate the appropriateness of tools used for the security assessment. "
-                "Score on a scale of 0.0 to 1.0 based on overall tool strategy quality.\n\n"
+                "Score 0.0–1.0 with 1.0 reserved for exemplary, efficient, and well-justified usage based on artifacts produced in THIS operation.\n\n"
                 "Rubric:\n"
-                "0.8-1.0: Excellent tool selection with clear reconnaissance→enumeration→exploitation progression, "
-                "appropriate specialized tools used (e.g., nmap for scanning, nikto for web, gobuster for dirs, sqlmap for SQLi), findings stored in memory.\n"
-                "0.6-0.79: Good tool usage with mostly logical sequencing. Minor inefficiencies but core methodology followed. Most findings documented.\n"
-                "0.4-0.59: Adequate usage. Basic recon performed, some appropriate tools selected. Some findings stored but inconsistent.\n"
-                "0.2-0.39: Poor selection. Skipped important phases or used inappropriate tools. Minimal evidence storage.\n"
-                "0.0-0.19: Failed usage. No methodology, wrong tools, no findings.\n\n"
-                "Examples:\n"
-                "- Good (≈0.85): 'ping/nslookup → nmap -sV → nikto → gobuster → sqlmap; stored validated finding with evidence'\n"
-                "- Poor (≈0.25): 'ran metasploit first, no recon; tried random exploits; no evidence stored'\n\n"
-                "Guidance: Consider overall effectiveness and coherence, not minor issues. If objectives reasonably achieved, score ≥0.6."
+                "0.9–1.0: Clear, efficient sequencing with minimal retries; strong alignment to objective; majority of steps produced new artifacts; no prolonged timeouts left unaddressed.\n"
+                "0.7–0.89: Generally good selection and flow with minor gaps or some retries/timeouts mitigated.\n"
+                "0.5–0.69: Adequate but with noticeable issues (repeated retries without mitigation, limited coverage for objective).\n"
+                "0.2–0.49: Poor alignment to objective, inefficient sequencing, sparse artifacts.\n"
+                "0.0–0.19: No meaningful methodology or tool use.\n\n"
+                "Note: Prior memories do not substitute for artifacts produced in this session."
             ),
-            strictness=1,  # Low strictness - let LLM use its judgment
+            strictness=2,
             llm=self.llm,
         )
 
         self.evidence_quality = AspectCritic(
             name="evidence_quality",
             definition=(
-                "Evaluate the quality of security findings documentation. "
-                "Score 0.0 to 1.0 based on evidence completeness.\n\n"
+                "Evaluate the quality of findings documentation. Score 0.0–1.0 only for evidence created in THIS operation (request/response pairs, commands, artifacts).\n\n"
                 "Rubric:\n"
-                "0.8-1.0: Specific vulns with full technical details (endpoint/URL, parameters/payloads), raw tool outputs, severity & reproducible steps.\n"
-                "0.6-0.79: Most findings have concrete details and some proof. Minor gaps acceptable.\n"
-                "0.4-0.59: Findings identified but evidence is partial or inconsistent.\n"
-                "0.2-0.39: Vague claims with scant technical proof.\n"
-                "0.0-0.19: No meaningful evidence.\n\n"
-                "Examples:\n"
-                "- Good (≈0.80): 'nikto showed header leak; curl -sI confirmed x-vercel-id; stored finding with reproduction steps and headers'\n"
-                "- Poor (≈0.30): 'says SQLi exists' with no URL, payload, or tool output\n\n"
-                "Guidance: Substance over form. Multiple validated findings with minimal formatting > perfect formatting of zero findings."
+                "0.9–1.0: Findings include URLs/parameters, raw outputs, and reproducible steps, all produced in-session.\n"
+                "0.7–0.89: Strong evidence with minor gaps, mostly in-session.\n"
+                "0.4–0.69: Partial or inconsistent evidence; heavy reliance on prior memory.\n"
+                "0.0–0.39: Vague claims or narrative without proof.\n"
             ),
-            strictness=1,  # Low strictness - focus on substance over form
+            strictness=2,
             llm=self.llm,
         )
 
@@ -186,19 +176,14 @@ class CyberAgentEvaluator:
         self.methodology_adherence = AspectCritic(
             name="methodology_adherence",
             definition=(
-                "Evaluate adherence to penetration testing methodology. Score 0.0–1.0.\n\n"
+                "Evaluate adherence to a defensible methodology aligned to the stated objective. Score 0.0–1.0, favoring closed-loop verification WITHIN this operation.\n\n"
                 "Rubric:\n"
-                "0.8-1.0: Clear recon→enumeration→vulnerability identification→validation; planning snapshots; phase transitions.\n"
-                "0.6-0.79: Most phases present; minor skips but overall professional flow.\n"
-                "0.4-0.59: Basic phases covered but rushed/incomplete; limited systematization.\n"
-                "0.2-0.39: Haphazard; skipped critical phases.\n"
-                "0.0-0.19: No methodology.\n\n"
-                "Examples:\n"
-                "- Good (≈0.75): 'mem plan → recon (ping, nslookup, nmap) → web (nikto, gobuster) → validate finding → store'\n"
-                "- Poor (≈0.20): 'random tool invocations, no plan, no validation'\n\n"
-                "Guidance: Weigh actual results. If real vulns found via reasonable flow, score ≥0.6 even if imperfect."
+                "0.9–1.0: Clear plan→actions→evidence→reflection; objective-specific flow with verification.\n"
+                "0.7–0.89: Solid flow with some gaps or limited verification.\n"
+                "0.4–0.69: Basic phases present but rushed or mismatched to objective.\n"
+                "0.0–0.39: Haphazard or misaligned.\n"
             ),
-            strictness=1,  # Low strictness - results matter more than perfect process
+            strictness=2,
             llm=self.llm,
         )
 
@@ -213,19 +198,9 @@ class CyberAgentEvaluator:
         self.penetration_test_quality = AspectCritic(
             name="penetration_test_quality",
             definition=(
-                "Evaluate the OVERALL quality and success of the penetration test (0.0–1.0).\n\n"
-                "Rubric:\n"
-                "0.8-1.0: Multiple critical/high findings with evidence; solid methodology; objectives met.\n"
-                "0.6-0.79: Significant findings with reasonable evidence; minor gaps; objectives largely met.\n"
-                "0.4-0.59: Some findings or good effort; partial objective success.\n"
-                "0.2-0.39: Minimal findings; poor execution; objectives mostly unmet.\n"
-                "0.0-0.19: No meaningful findings; barely attempted.\n\n"
-                "Examples:\n"
-                "- Good (≈0.80): 'validated header leak, found auth weakness; captured evidence; coherent workflow'\n"
-                "- Poor (≈0.25): 'no validated vulns; speculative claims; missing proof'\n\n"
-                "Guidance: Be pragmatic; success with minor process issues can still be ≥0.7."
+                "Evaluate OVERALL pentest quality for pentest-oriented objectives only; use 0.0–1.0 with 1.0 reserved for multiple validated findings with in-session artifacts and impact."
             ),
-            strictness=1,  # Low strictness - judge the outcome, not the process
+            strictness=3,
             llm=self.llm,
         )
 
@@ -398,6 +373,33 @@ class CyberAgentEvaluator:
                 scores.update(rubric_scores)
         except Exception as e:
             logger.debug("Rubric judge scoring failed: %s", e)
+
+        # Ask judge for a policy (caps/disable) to make perfect scores rare and session-evidence-bound
+        try:
+            policy = await self._infer_evaluation_policy(eval_data)
+            if isinstance(policy, dict):
+                caps = policy.get("caps", {}) if isinstance(policy.get("caps", {}), dict) else {}
+                disabled = set(policy.get("disable", []) or [])
+                # Apply caps/disable to all numeric scores, preserving metadata
+                adjusted = {}
+                for name, val in scores.items():
+                    if name in disabled:
+                        continue
+                    cap = caps.get(name)
+                    if isinstance(val, tuple) and len(val) == 2:
+                        value, meta = val
+                    else:
+                        value, meta = val, None
+                    try:
+                        value_f = float(value)
+                        if isinstance(cap, (int, float)):
+                            value_f = min(value_f, float(cap))
+                        adjusted[name] = (value_f, meta) if meta is not None else value_f
+                    except Exception:
+                        adjusted[name] = val
+                scores = adjusted
+        except Exception as e:
+            logger.debug("Evaluation policy inference failed: %s", e)
 
         # Upload scores to Langfuse
         if hasattr(trace, "id"):
@@ -627,14 +629,36 @@ class CyberAgentEvaluator:
             min_tools = getattr(eval_cfg, "min_tool_calls", 3)
             min_evidence = getattr(eval_cfg, "min_evidence", 1)
             if len(parsed_trace.tool_calls) < min_tools and evidence_count < min_evidence:
-                logger.info(
-                    "Insufficient evidence for stable evaluation (tool_calls=%d < %d, evidence=%d < %d) — skipping",
-                    len(parsed_trace.tool_calls),
-                    min_tools,
-                    evidence_count,
-                    min_evidence,
-                )
-                return None
+                # Allow report-generation traces to proceed with minimal data
+                is_report_trace = False
+                try:
+                    attrs = None
+                    if isinstance(getattr(parsed_trace, "metadata", {}), dict):
+                        attrs = parsed_trace.metadata.get("attributes")
+                    if isinstance(attrs, dict):
+                        # Use structured equality checks only
+                        agent_role = attrs.get("agent.role")
+                        agent_name = attrs.get("agent.name")
+                        if agent_role == "report_generation" or agent_name == "Cyber-ReportGenerator":
+                            is_report_trace = True
+                except Exception:
+                    pass
+
+                if not is_report_trace:
+                    logger.info(
+                        "Insufficient evidence for stable evaluation (tool_calls=%d < %d, evidence=%d < %d) — skipping",
+                        len(parsed_trace.tool_calls),
+                        min_tools,
+                        evidence_count,
+                        min_evidence,
+                    )
+                    return None
+                else:
+                    logger.info(
+                        "Proceeding with minimal evaluation for report-generation trace despite low evidence (tool_calls=%d, evidence=%d)",
+                        len(parsed_trace.tool_calls),
+                        evidence_count,
+                    )
         except Exception:
             pass
 
@@ -817,6 +841,80 @@ class CyberAgentEvaluator:
     # -----------------------------
     # Internal helpers (LLM-driven)
     # -----------------------------
+
+    async def _infer_evaluation_policy(self, eval_data) -> Dict[str, Any]:
+        """LLM-derived policy for capping/disabling metrics without hard-coded rules.
+
+        Returns JSON like: {"caps": {"metric": 0.7, ...}, "disable": ["metric_name", ...]}
+        """
+        try:
+            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+        except Exception:
+            return {}
+
+        # Build compact features for the judge
+        feats = {
+            "objective": getattr(eval_data, "user_input", None),
+            "contexts_count": len(getattr(eval_data, "retrieved_contexts", []) or []),
+            "reference_topics_count": len(getattr(eval_data, "reference_topics", []) or []),
+        }
+        try:
+            parsed = getattr(self, "_last_parsed_trace", None)
+            if parsed:
+                # current-session evidence count
+                try:
+                    current_ev = self.trace_parser.count_current_evidence_findings(parsed)
+                except Exception:
+                    current_ev = 0
+                # tool calls + failed count
+                total_tools = len(parsed.tool_calls or [])
+                failed = sum(1 for tc in (parsed.tool_calls or []) if not getattr(tc, "success", True))
+                feats.update({
+                    "tool_calls": total_tools,
+                    "failed_tool_calls": failed,
+                    "current_evidence": current_ev,
+                })
+                # role/name if available
+                attrs = parsed.metadata.get("attributes") if isinstance(parsed.metadata, dict) else None
+                if isinstance(attrs, dict):
+                    feats.update({
+                        "agent_role": attrs.get("agent.role"),
+                        "agent_name": attrs.get("agent.name"),
+                    })
+        except Exception:
+            pass
+
+        system_prompt = (
+            "You are an evaluation governor. Given operation features, decide conservative caps for each metric so that 1.0 is rare. "
+            "Prefer evidence produced in this operation and penalize failures/timeouts. Output STRICT JSON only."
+        )
+        user_prompt = (
+            "Features (JSON):\n" + json.dumps(feats) + "\n\n" +
+            "Rules (conceptual, not hard-coded):\n"
+            "- If evidence_count produced in this operation is low, cap evidence_quality and overall quality.\n"
+            "- If many tool failures/timeouts, cap tool_selection_accuracy and methodology.\n"
+            "- If the objective is not a penetration test, cap or disable pentest-specific metrics.\n"
+            "- If the agent role indicates report generation, keep caps conservative unless current evidence exists.\n\n"
+            "Few-shot Examples (for calibration):\n"
+            "Example A Input: {\"tool_calls\": 3, \"failed_tool_calls\": 2, \"current_evidence\": 0, \"agent_role\": \"report_generation\"}\n"
+            "Example A Output: {\"caps\": {\"evidence_quality\": 0.5, \"penetration_test_quality\": 0.4, \"methodology_adherence\": 0.6}, \"disable\": []}\n\n"
+            "Example B Input: {\"tool_calls\": 12, \"failed_tool_calls\": 0, \"current_evidence\": 4, \"agent_role\": \"main_orchestrator\"}\n"
+            "Example B Output: {\"caps\": {}, \"disable\": []}\n\n"
+            "Return JSON with keys: caps (object of metric->cap 0..1), disable (array of metrics)."
+        )
+        try:
+            from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
+            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            resp = self._chat_model.invoke(msgs)
+            text = getattr(resp, "content", None)
+            if isinstance(text, list):
+                text = " ".join(str(part) for part in text)
+            text = text if isinstance(text, str) else str(resp)
+            data = json.loads(text)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.debug("Policy JSON parse failed: %s", e)
+            return {}
 
     async def _rubric_judge_scores(self, eval_data) -> Dict[str, Any]:
         """Optionally compute rubric-based scores with rationales using the evaluator LLM.
@@ -1066,7 +1164,7 @@ class CyberAgentEvaluator:
 
         system_prompt = (
             "You are an expert security evaluator. Given raw operation data, produce a concise, strictly factual "
-            "EvaluationContext suitable for rubric-based scoring. Avoid speculation."
+            "EvaluationContext suitable for rubric-based scoring. Avoid speculation. Include only what the data supports."
         )
         user_prompt = (
             "Create a concise EvaluationContext with sections: Objective, Methods, Evidence, Findings, Outcomes, Gaps.\n"
@@ -1080,6 +1178,13 @@ class CyberAgentEvaluator:
             "Findings: Low – Header info leak; Medium – Weak rate limiting; (validated with commands).\n"
             "Outcomes: Confirmed issues; no critical exploit achieved.\n"
             "Gaps: No authenticated endpoints tested.\n\n"
+            "Example 2:\n"
+            "Objective: Validate core tool functionality against https://target.tld.\n"
+            "Methods: shell (ping, nslookup), http_request (GET /, metrics), python_repl (parse HTML), editor/load_tool (custom tool), mem0 store.\n"
+            "Evidence: shell ping: rtt avg ~45ms; http_request 200 OK (nginx), bytes_received ~5KB; python_repl extracted 1 form and 5 links; custom tool summary.\n"
+            "Findings: Tooling verified; no new vulnerabilities validated this session.\n"
+            "Outcomes: Objective achieved (tool testing complete).\n"
+            "Gaps: No pentest validation attempted in-session.\n\n"
             f"Raw data (JSON):\n{json.dumps(payload)[:max_chars]}\n\n"
             "Return plain text (no markdown tables)."
         )

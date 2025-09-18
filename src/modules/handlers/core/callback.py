@@ -347,8 +347,14 @@ class ReasoningHandler(PrintingCallbackHandler):
         # Import here to avoid circular imports
         from modules.evaluation.evaluation import CyberAgentEvaluator
 
-        # Check if evaluation is enabled
-        if not os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
+        # Check if evaluation is enabled (application is source of truth when explicit)
+        ui_mode = os.getenv("CYBER_UI_MODE", "").lower()
+        if "ENABLE_AUTO_EVALUATION" in os.environ:
+            enabled = os.environ["ENABLE_AUTO_EVALUATION"].lower() == "true"
+        else:
+            # In React UI, default to false unless explicitly enabled by the app
+            enabled = os.getenv("ENABLE_AUTO_EVALUATION", "false" if ui_mode == "react" else "true").lower() == "true"
+        if not enabled:
             logger.info("Evaluation disabled - skipping")
             return
 
