@@ -551,8 +551,8 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "ragas", specifier = ">=0.3.0" },
     { name = "requests", specifier = ">=2.25.0" },
-    { name = "strands-agents", extras = ["ollama", "otel", "litellm"], specifier = "==1.4.0" },
-    { name = "strands-agents-tools", specifier = "==0.2.3" },
+    { name = "strands-agents", extras = ["ollama", "otel", "litellm"], specifier = "==1.9.0" },
+    { name = "strands-agents-tools", specifier = "==0.2.8" },
 ]
 provides-extras = ["dev"]
 
@@ -652,7 +652,7 @@ name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz", hash = "sha256:b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88", size = 29749, upload-time = "2025-05-10T17:42:51.123Z" }
 wheels = [
@@ -701,6 +701,30 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/af/e7/6cc03ead5e19275e34992419e2b7d107d0295390ccf589636ff26adb41e2/faiss_cpu-1.12.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:9b43d0c295e93a8e5f1dd30325caaf34d4ecb51f1e3d461c7b0e71bff3a8944b", size = 24156530, upload-time = "2025-08-13T06:06:32.23Z" },
     { url = "https://files.pythonhosted.org/packages/34/90/438865fe737d65e7348680dadf3b2983bdcef7e5b7e852000e74c50a9933/faiss_cpu-1.12.0-cp313-cp313-win_amd64.whl", hash = "sha256:a7c6156f1309bb969480280906e8865c3c4378eebb0f840c55c924bf06efd8d3", size = 18169604, upload-time = "2025-08-13T06:06:34.884Z" },
     { url = "https://files.pythonhosted.org/packages/76/69/40a1d8d781a70d33c57ef1b4b777486761dd1c502a86d27e90ef6aa8a9f9/faiss_cpu-1.12.0-cp313-cp313-win_arm64.whl", hash = "sha256:0b5fac98a350774a98b904f7a7c6689eb5cf0a593d63c552e705a80c55636d15", size = 8012523, upload-time = "2025-08-13T06:06:37.24Z" },
+]
+
+[[package]]
+name = "fastuuid"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/17/13146a1e916bd2971d0a58db5e0a4ad23efdd49f78f33ac871c161f8007b/fastuuid-0.12.0.tar.gz", hash = "sha256:d0bd4e5b35aad2826403f4411937c89e7c88857b1513fe10f696544c03e9bd8e", size = 19180, upload-time = "2025-01-27T18:04:14.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/c3/9db9aee6f34e6dfd1f909d3d7432ac26e491a0471f8bb8b676c44b625b3f/fastuuid-0.12.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:22a900ef0956aacf862b460e20541fdae2d7c340594fe1bd6fdcb10d5f0791a9", size = 247356, upload-time = "2025-01-27T18:04:45.397Z" },
+    { url = "https://files.pythonhosted.org/packages/14/a5/999e6e017af3d85841ce1e172d32fd27c8700804c125f496f71bfddc1a9f/fastuuid-0.12.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0302f5acf54dc75de30103025c5a95db06d6c2be36829043a0aa16fc170076bc", size = 258384, upload-time = "2025-01-27T18:04:03.562Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/e6/beae8411cac5b3b0b9d59ee08405eb39c3abe81dad459114363eff55c14a/fastuuid-0.12.0-cp310-cp310-manylinux_2_34_x86_64.whl", hash = "sha256:7946b4a310cfc2d597dcba658019d72a2851612a2cebb949d809c0e2474cf0a6", size = 278480, upload-time = "2025-01-27T18:04:05.663Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/f6/c598b9a052435716fc5a084ef17049edd35ca2c8241161269bfea4905ab4/fastuuid-0.12.0-cp310-cp310-win_amd64.whl", hash = "sha256:a1b6764dd42bf0c46c858fb5ade7b7a3d93b7a27485a7a5c184909026694cd88", size = 156799, upload-time = "2025-01-27T18:05:41.867Z" },
+    { url = "https://files.pythonhosted.org/packages/d4/99/555eab31381c7912103d4c8654082611e5e82a7bb88ad5ab067e36b622d7/fastuuid-0.12.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2bced35269315d16fe0c41003f8c9d63f2ee16a59295d90922cad5e6a67d0418", size = 247249, upload-time = "2025-01-27T18:03:23.092Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/3b/d62ce7f2af3d50a8e787603d44809770f43a3f2ff708bf10c252bf479109/fastuuid-0.12.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:82106e4b0a24f4f2f73c88f89dadbc1533bb808900740ca5db9bbb17d3b0c824", size = 258369, upload-time = "2025-01-27T18:04:08.903Z" },
+    { url = "https://files.pythonhosted.org/packages/86/23/33ec5355036745cf83ea9ca7576d2e0750ff8d268c03b4af40ed26f1a303/fastuuid-0.12.0-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:4db1bc7b8caa1d7412e1bea29b016d23a8d219131cff825b933eb3428f044dca", size = 278316, upload-time = "2025-01-27T18:04:12.74Z" },
+    { url = "https://files.pythonhosted.org/packages/40/91/32ce82a14650148b6979ccd1a0089fd63d92505a90fb7156d2acc3245cbd/fastuuid-0.12.0-cp311-cp311-win_amd64.whl", hash = "sha256:07afc8e674e67ac3d35a608c68f6809da5fab470fb4ef4469094fdb32ba36c51", size = 156643, upload-time = "2025-01-27T18:05:59.266Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/28/442e79d6219b90208cb243ac01db05d89cc4fdf8ecd563fb89476baf7122/fastuuid-0.12.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:328694a573fe9dce556b0b70c9d03776786801e028d82f0b6d9db1cb0521b4d1", size = 247372, upload-time = "2025-01-27T18:03:40.967Z" },
+    { url = "https://files.pythonhosted.org/packages/40/eb/e0fd56890970ca7a9ec0d116844580988b692b1a749ac38e0c39e1dbdf23/fastuuid-0.12.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:02acaea2c955bb2035a7d8e7b3fba8bd623b03746ae278e5fa932ef54c702f9f", size = 258200, upload-time = "2025-01-27T18:04:12.138Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/3c/4b30e376e65597a51a3dc929461a0dec77c8aec5d41d930f482b8f43e781/fastuuid-0.12.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:ed9f449cba8cf16cced252521aee06e633d50ec48c807683f21cc1d89e193eb0", size = 278446, upload-time = "2025-01-27T18:04:15.877Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/96/cc5975fd23d2197b3e29f650a7a9beddce8993eaf934fa4ac595b77bb71f/fastuuid-0.12.0-cp312-cp312-win_amd64.whl", hash = "sha256:0df2ea4c9db96fd8f4fa38d0e88e309b3e56f8fd03675a2f6958a5b082a0c1e4", size = 157185, upload-time = "2025-01-27T18:06:19.21Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/e8/d2bb4f19e5ee15f6f8e3192a54a897678314151aa17d0fb766d2c2cbc03d/fastuuid-0.12.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:7fe2407316a04ee8f06d3dbc7eae396d0a86591d92bafe2ca32fce23b1145786", size = 247512, upload-time = "2025-01-27T18:04:08.115Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/53/25e811d92fd60f5c65e098c3b68bd8f1a35e4abb6b77a153025115b680de/fastuuid-0.12.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b9b31dd488d0778c36f8279b306dc92a42f16904cba54acca71e107d65b60b0c", size = 258257, upload-time = "2025-01-27T18:03:56.408Z" },
+    { url = "https://files.pythonhosted.org/packages/10/23/73618e7793ea0b619caae2accd9e93e60da38dd78dd425002d319152ef2f/fastuuid-0.12.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:b19361ee649365eefc717ec08005972d3d1eb9ee39908022d98e3bfa9da59e37", size = 278559, upload-time = "2025-01-27T18:03:58.661Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/41/6317ecfc4757d5f2a604e5d3993f353ba7aee85fa75ad8b86fce6fc2fa40/fastuuid-0.12.0-cp313-cp313-win_amd64.whl", hash = "sha256:8fc66b11423e6f3e1937385f655bedd67aebe56a3dcec0cb835351cfe7d358c9", size = 157276, upload-time = "2025-01-27T18:06:39.245Z" },
 ]
 
 [[package]]
@@ -1390,11 +1414,12 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.72.9"
+version = "1.77.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "click" },
+    { name = "fastuuid" },
     { name = "httpx" },
     { name = "importlib-metadata" },
     { name = "jinja2" },
@@ -1405,9 +1430,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/66/75/2b9219630b4a3056ceb345cc45c2a45e17798b30ef8d1a2eefe70465ddd2/litellm-1.72.9.tar.gz", hash = "sha256:2559509ae18d5c8165431e76196e9715c8e586af690f597bbaa2a1fecc303b30", size = 8448963, upload-time = "2025-06-21T04:04:06.282Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/65/71fe4851709fa4a612e41b80001a9ad803fea979d21b90970093fd65eded/litellm-1.77.1.tar.gz", hash = "sha256:76bab5203115efb9588244e5bafbfc07a800a239be75d8dc6b1b9d17394c6418", size = 10275745, upload-time = "2025-09-13T21:05:21.377Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/75/c53d65a5797852ce42edfa93050f4e914e67c31ce531844b756e4721de8e/litellm-1.72.9-py3-none-any.whl", hash = "sha256:b0c353d426694298855e07f5387ee299442def6c9325ef8e2db5a8551a2077c8", size = 8358116, upload-time = "2025-06-21T04:04:04.453Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/dc/ff4f119cd4d783742c9648a03e0ba5c2b52fc385b2ae9f0d32acf3a78241/litellm-1.77.1-py3-none-any.whl", hash = "sha256:407761dc3c35fbcd41462d3fe65dd3ed70aac705f37cde318006c18940f695a0", size = 9067070, upload-time = "2025-09-13T21:05:18.078Z" },
 ]
 
 [[package]]
@@ -3305,7 +3330,7 @@ wheels = [
 
 [[package]]
 name = "strands-agents"
-version = "1.4.0"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -3319,14 +3344,15 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/9e/6f578c0055156a96e3a747c4a3e953a442cb78f76758ea72c4838b80eb59/strands_agents-1.4.0.tar.gz", hash = "sha256:ef8bc719a1758115fd3602b1562b4a0a108ccc803ac8eb5b9fd9a33aa37244a8", size = 252894, upload-time = "2025-08-08T17:41:38.525Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/e0/65952b5c8767b62e9e5b4da1df8203bbaaa1e0d8753b5bc0a35674e0d607/strands_agents-1.9.0.tar.gz", hash = "sha256:84610b855bc79236ce822626b852c6f5a3c1a1de63592445a704a4f8a7249695", size = 394868, upload-time = "2025-09-17T19:13:01.751Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/68/45dc5a0a91f1d74c6e4d238751e48998b4fbe837e40b29b38fc371b4c170/strands_agents-1.4.0-py3-none-any.whl", hash = "sha256:06a2c9c9bc3bff6035b624a3d5e559761c0c1fdf80e6e3881644d3cb0a32d0d8", size = 176768, upload-time = "2025-08-08T17:41:35.988Z" },
+    { url = "https://files.pythonhosted.org/packages/64/af/dec0c4c71eeafb07fdbf24f74f2d0e7a6796931a3a192e19d0ed0e9bb106/strands_agents-1.9.0-py3-none-any.whl", hash = "sha256:a7a7c51d71278ee6daf7d47089456abc6de3a62e7cd433c08031a97c6b2e59f3", size = 205328, upload-time = "2025-09-17T19:13:00.22Z" },
 ]
 
 [package.optional-dependencies]
 litellm = [
     { name = "litellm" },
+    { name = "openai" },
 ]
 ollama = [
     { name = "ollama" },
@@ -3337,9 +3363,10 @@ otel = [
 
 [[package]]
 name = "strands-agents-tools"
-version = "0.2.3"
+version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "aws-requests-auth" },
     { name = "botocore" },
     { name = "dill" },
@@ -3348,6 +3375,7 @@ dependencies = [
     { name = "prompt-toolkit" },
     { name = "pyjwt" },
     { name = "readabilipy" },
+    { name = "requests" },
     { name = "rich" },
     { name = "slack-bolt" },
     { name = "strands-agents" },
@@ -3356,9 +3384,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/49/074c44247323fb84dafac217bf263bebe200fb80bbc14c1c83efba702434/strands_agents_tools-0.2.3.tar.gz", hash = "sha256:14958c73fa3c4b37544ba0c267d49f4faeb1c75ace0bbeacee1ad20db756717e", size = 396058, upload-time = "2025-07-30T16:11:40.751Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/50/6d5015c17b4522fd5ce146fc983a2058c9d0374b3982756bac0837bcd6d7/strands_agents_tools-0.2.8.tar.gz", hash = "sha256:73b960a4d2c18dd9aed07bdccab37cc2cd7cbc8f2d470017c0a4122b7d0d4338", size = 419250, upload-time = "2025-09-17T19:48:16.602Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/e4/29ba1c68ac9c57aceb5b1a43596e82821c99997724f5dab76c320a28eb8d/strands_agents_tools-0.2.3-py3-none-any.whl", hash = "sha256:730d5f05aff67bf1e175b5390a344413b3e4a7ff7ad14c84d8686c95ffec07d4", size = 268980, upload-time = "2025-07-30T16:11:38.965Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/f1/6a3a2e6888793db2a9fdce4136d01293bca400af808e294a98220e96e061/strands_agents_tools-0.2.8-py3-none-any.whl", hash = "sha256:3f01617566b5afd5d5474afc6a96c2c25ce278cb40e69fbc216ce26bc30425ca", size = 282708, upload-time = "2025-09-17T19:48:14.704Z" },
 ]
 
 [[package]]
