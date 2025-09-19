@@ -31,10 +31,7 @@ import warnings
 from datetime import datetime
 
 # Third-party imports
-try:
-    import requests
-except ImportError:
-    requests = None  # Handle optional dependency
+import requests
 from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
 from requests.exceptions import ReadTimeout as RequestsReadTimeout, ConnectionError as RequestsConnectionError
@@ -138,7 +135,20 @@ def setup_telemetry(logger):
     logger.info("Strands telemetry initialized - token counting enabled")
 
     # Check if remote observability (Langfuse export) is enabled
-    observability_enabled = os.getenv("ENABLE_OBSERVABILITY", default_observability).lower() == "true"
+    # Keep it simple: in React UI mode, the app is the source of truth; otherwise fall back to previous default
+    ui_mode = os.getenv("CYBER_UI_MODE", "").lower()
+    if ui_mode == "react":
+        observability_enabled = os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+        logger.info(
+            "React UI mode: observability %s by application",
+            "enabled" if observability_enabled else "disabled",
+        )
+    else:
+        observability_enabled = os.getenv("ENABLE_OBSERVABILITY", default_observability).lower() == "true"
+        logger.info(
+            "Non-UI/CLI mode: observability %s (fallback defaults)",
+            "enabled" if observability_enabled else "disabled",
+        )
 
     if observability_enabled:
         logger.info("Remote observability enabled - configuring Langfuse export")
@@ -378,7 +388,7 @@ def main():
     if not os.environ.get("SHELL_DEFAULT_TIMEOUT"):
         # Many external tools (e.g., nmap, curl to slow hosts) can exceed low defaults
         # Use a safer default to reduce spurious timeouts while keeping responsiveness
-        os.environ["SHELL_DEFAULT_TIMEOUT"] = "300"
+        os.environ["SHELL_DEFAULT_TIMEOUT"] = "600"
 
     # Get centralized region configuration if not provided
     if args.region is None:

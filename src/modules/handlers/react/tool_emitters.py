@@ -76,52 +76,14 @@ class ToolEventEmitter:
         # Skip redundant metadata - tool formatter already shows this
 
     def _emit_editor_operation(self, tool_input: Any) -> None:
-        """Emit editor operation details."""
-        if isinstance(tool_input, dict):
-            command = tool_input.get("command", "")
-            path = tool_input.get("path", "")
+        """No-op for editor details.
 
-            # Emit more detailed metadata based on command type
-            metadata = {"command": command, "path": path}
-
-            # Add command-specific details
-            if command in ("str_replace", "str_replace_based_edit_tool"):
-                old_str = tool_input.get("old_str", "")
-                new_str = tool_input.get("new_str", "")
-                if old_str:
-                    metadata["replacing"] = old_str[:50] + "..." if len(old_str) > 50 else old_str
-                if new_str:
-                    metadata["with"] = new_str[:50] + "..." if len(new_str) > 50 else new_str
-            elif command == "view":
-                view_range = tool_input.get("view_range", [])
-                if view_range:
-                    metadata["lines"] = f"{view_range[0]}-{view_range[1]}" if len(view_range) == 2 else str(view_range)
-
-            # Determine content text and compute basic size metrics for create operations
-            content_text = ""
-            if command == "create":
-                content_text = tool_input.get("file_text") or tool_input.get("content") or ""
-                if isinstance(content_text, str) and content_text:
-                    lines = content_text.count("\n") + 1
-                    metadata["size"] = f"{lines} lines"
-
-            # Compose minimal tool_config for UI consumers that expect it
-            try:
-                tool_config = {
-                    "command": command,
-                    "path": path,
-                }
-                if isinstance(content_text, str) and content_text:
-                    tool_config["size_lines"] = content_text.count("\n") + 1
-                    tool_config["size_chars"] = len(content_text)
-                if isinstance(path, str) and path.endswith(".py"):
-                    tool_config["language"] = "python"
-                metadata["tool_config"] = tool_config
-            except Exception:
-                # Never fail emission due to tool_config computation
-                pass
-
-            self.emit_ui_event({"type": "metadata", "content": metadata})
+        Rationale: arguments for editor operations are already rendered from the
+        tool_start payload. Emitting an additional metadata event here caused
+        duplicate and occasionally out-of-order argument lines. Keeping a single
+        source of truth (tool_start) avoids duplication and preserves ordering.
+        """
+        return
 
     def _emit_generic_tool_params(self, tool_name: str, tool_input: Any) -> None:  # pylint: disable=unused-argument
         """Emit generic tool parameters for tools without specialized handlers."""
@@ -221,20 +183,20 @@ class ToolEventEmitter:
                 )
 
     def _emit_load_tool(self, tool_input: Any) -> None:
-        """Emit dynamic tool loading details."""
-        if isinstance(tool_input, dict):
-            tool_name = tool_input.get("tool_name", "")
-            path = tool_input.get("path", "")
-            self.emit_ui_event({"type": "metadata", "content": {"loading": tool_name, "path": path}})
+        """No-op for load_tool details.
+
+        The UI renders load_tool parameters from the tool_start payload. Emitting
+        a separate metadata event here led to duplicate lines. We rely on the
+        tool_start args for a single, consistent view of the operation.
+        """
+        return
 
     def _emit_stop_tool(self, tool_input: Any) -> None:
-        """Emit stop execution details."""
-        if isinstance(tool_input, dict):
-            reason = tool_input.get("reason", "No reason provided")
-        else:
-            reason = str(tool_input) if tool_input else "No reason provided"
+        """Stop tool: no extra metadata emission to avoid duplicate 'stop reason' lines.
 
-        self.emit_ui_event({"type": "metadata", "content": {"stopping": reason}})
+        The StreamDisplay renders a concise 'tool: stop' block using the tool_input.
+        """
+        return
 
     def _emit_report_generator(self, tool_input: Any) -> None:
         """Emit report generation details."""
@@ -244,12 +206,13 @@ class ToolEventEmitter:
             self.emit_ui_event({"type": "metadata", "content": {"target": target, "type": report_type}})
 
     def _emit_agent_handoff(self, tool_input: Any) -> None:
-        """Emit agent handoff details."""
-        if isinstance(tool_input, dict):
-            agent_name = tool_input.get("agent_name", "")
-            message = tool_input.get("message", "")
-            message_preview = message[:100] + "..." if len(message) > 100 else message
-            self.emit_ui_event({"type": "metadata", "content": {"handoff_to": agent_name, "message": message_preview}})
+        """No-op for agent handoff details.
+
+        The StreamDisplay renders the handoff_to_agent tool header with
+        handoff target and message directly from tool_start/tool_input.
+        Emitting an extra metadata event here duplicates those lines.
+        """
+        return
 
     def _emit_swarm_complete(self, tool_input: Any) -> None:
         """Emit swarm completion event (placeholder for main handler)."""

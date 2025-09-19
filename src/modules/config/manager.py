@@ -996,9 +996,12 @@ class ConfigManager:
                 "or set AWS_BEARER_TOKEN_BEDROCK for API key authentication"
             )
 
-        # Bearer token should be used directly by boto3
-        if bearer_token:
+        # Prefer standard AWS credentials when present; use bearer token only if no standard credentials
+        if bearer_token and not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer_token
+        else:
+            # Ensure bearer token does not override SigV4 when standard creds are set
+            os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
 
         # Optionally validate region and client construction; ignore client errors here.
         self._validate_bedrock_model_access()
