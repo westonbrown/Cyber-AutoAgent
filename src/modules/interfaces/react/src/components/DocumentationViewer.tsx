@@ -190,7 +190,6 @@ Use /help for available commands or refer to the project repository for complete
     try {
       // Get current working directory info for debugging
       const cwd = process.cwd();
-      // console.log('[DocumentationViewer] Current working directory:', cwd);
       
       // Try to load from file system first
       const possiblePaths = [
@@ -209,7 +208,6 @@ Use /help for available commands or refer to the project repository for complete
         try {
           content = await fs.readFile(testPath, 'utf-8');
           foundPath = testPath;
-          // console.log('[DocumentationViewer] Successfully loaded from:', testPath);
           break;
         } catch (err) {
           continue;

@@ -157,11 +157,9 @@ export const EventLine: React.FC<{
         // For swarm operations, show agent name with their step count and swarm-wide progress
         // Use replaceAll to handle multi-word agent names correctly
         const agentName = String(swarmAgent).toUpperCase().replaceAll('_', ' ');
-        // Show both agent's step count and swarm-wide iteration progress
-        const swarmTotalIterations = (event as any)['swarm_total_iterations'] || swarmSubStep;
-        const maxIterations = swarmMaxIterations || 30;
-        // Display format: agent step count + swarm-wide progress to show actual SDK enforcement
-        stepDisplay = `[SWARM: ${agentName} • STEP ${swarmSubStep} | SWARM TOTAL ${swarmTotalIterations}/${maxIterations}]`;
+        // Show agent's step count and swarm-wide iteration progress (no max cap shown)
+        const swarmTotal = (event as any)['swarm_total_iterations'] ?? swarmSubStep;
+        stepDisplay = `[SWARM: ${agentName} • STEP ${swarmSubStep} | SWARM TOTAL ${swarmTotal}]`;
       } else if (isSwarmOperation) {
         // Generic swarm operation without specific agent
         stepDisplay = `[SWARM • STEP ${event.step}/${event.maxSteps}]`;
@@ -201,8 +199,14 @@ export const EventLine: React.FC<{
       return null;
       
     case 'termination_reason': {
-      // Display termination notification (no extra step counters to avoid confusion)
+      // Suppress iteration-limit notifications entirely; SDK governs swarm limits
       const reason = (event as any).reason as string | undefined;
+      const msg = (event as any).message as string | undefined;
+      if ((typeof reason === 'string' && reason.toLowerCase().includes('swarm')) ||
+          (typeof msg === 'string' && msg.toLowerCase().includes('swarm iteration limit'))) {
+        return null;
+      }
+      // Display termination notification (no extra step counters to avoid confusion)
       let reasonLabel = 'TERMINATED';
       let reasonColor: any = 'yellow';
       switch (reason) {
@@ -594,14 +598,15 @@ export const EventLine: React.FC<{
         }
           
         case 'handoff_to_agent': {
-          const targetAgent = latestInput.agent || latestInput.target_agent || 'unknown';
+          // Prefer explicit agent_name (set by backend), then handoff_to, then other fallbacks
+          const handoffTo = latestInput.agent_name || latestInput.handoff_to || latestInput.agent || latestInput.target_agent || 'unknown';
           const handoffMsg = latestInput.message || '';
           const msgPreview = handoffMsg.length > 80 ? handoffMsg.substring(0, 80) + '...' : handoffMsg;
           return (
             <Box flexDirection="column">
               <Text color="green" bold>tool: handoff_to_agent</Text>
               <Box marginLeft={2}>
-                <Text dimColor>├─ target: {targetAgent}</Text>
+                <Text dimColor>├─ handoff_to: {handoffTo}</Text>
               </Box>
               {msgPreview && (
                 <Box marginLeft={2}>
@@ -613,7 +618,7 @@ export const EventLine: React.FC<{
         }
           
         case 'load_tool': {
-          const toolName = latestInput.tool_name || latestInput.tool || 'unknown';
+          const toolName = latestInput.tool_name || latestInput.tool || latestInput.name || 'unknown';
           const toolPath = latestInput.path || '';
           const toolDescription = latestInput.description || '';
           const hasPath = !!toolPath;
@@ -639,8 +644,8 @@ export const EventLine: React.FC<{
         }
           
         case 'stop': {
-          const stopReason = latestInput.reason || 'Manual stop requested';
-          
+          // Show clean stop tool header with reason
+          const stopReason = (latestInput && (latestInput.reason || latestInput.message)) || 'Manual stop requested';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: stop</Text>
@@ -807,6 +812,8 @@ export const EventLine: React.FC<{
       const filteredLinesPre = plain.split('\n').filter(line => {
         const l = line.trim();
         if (l.length === 0) return true; // keep blank spacers
+        // Suppress duplicate stop-cycle noise (reason is shown via metadata/termination panel)
+        if (l.startsWith('Event loop cycle stop requested')) return false;
         // Drop only standalone placeholder lines (not JSON content)
         if (l === 'output' || l === 'reasoning') return false;
         // Drop empty Error: labels
@@ -1073,22 +1080,29 @@ export const EventLine: React.FC<{
       const entries = Object.entries(event.content);
       if (entries.length === 0) return null;
 
-      // Compact single-line display for stop notification metadata like { stopping: reason }
+      // Suppress duplicate stop-notification metadata; stop reason is shown in the tool header
       if (entries.length === 1 && entries[0][0] === 'stopping') {
-        const [, value] = entries[0];
-        const displayValue = typeof value === 'string' && value.length > 100 ? value.substring(0, 100) + '...' : String(value);
-        return (
-          <Box marginLeft={2}>
-            <Text dimColor>└─ stop reason: {displayValue}</Text>
-          </Box>
-        );
+        return null;
       }
 
       return (
         <Box flexDirection="column" marginLeft={2}>
           {entries.map(([key, value], index) => {
             const isLast = index === entries.length - 1;
-            const displayValue = typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : String(value);
+            let displayValue: string;
+            if (value === null || value === undefined) {
+              displayValue = 'null';
+            } else if (typeof value === 'object') {
+              try {
+                const json = JSON.stringify(value);
+                displayValue = json.length > 50 ? json.substring(0, 50) + '...' : json;
+              } catch {
+                displayValue = '[object]';
+              }
+            } else {
+              const s = String(value);
+              displayValue = s.length > 50 ? s.substring(0, 50) + '...' : s;
+            }
             return (
               <Box key={index}>
                 <Text dimColor>{isLast ? '└─' : '├─'} {key}: {displayValue}</Text>

@@ -275,7 +275,6 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
       // If we have at least some containers running, don't try to start them
       if (runningContainers >= 3) {
         // Most containers are running, just proceed
-        // console.log('Containers detected with different names, proceeding...');
       } else {
         // Try to start containers
         setCurrentStep('starting-containers');
@@ -289,7 +288,6 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
           
           if (runningAfterError >= 4) {
             // They're actually running, just with different names
-            // console.log('Containers are already running');
             setHealthStatus(recheckHealth);
           } else {
             setStepStatus(prev => ({ ...prev, containers: 'error' }));
