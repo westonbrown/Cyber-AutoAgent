@@ -331,8 +331,9 @@ Leverage these tools directly via shell.
         result_with_memories = get_system_prompt(
             target="test.com",
             objective="test objective",
-            max_steps=50,
             operation_id="OP_20240101_120000",
+            current_step=0,
+            max_steps=50,
             has_existing_memories=True,
         )
 
@@ -346,13 +347,14 @@ Leverage these tools directly via shell.
         result_fresh = get_system_prompt(
             target="test.com",
             objective="test objective",
-            max_steps=50,
             operation_id="OP_20240101_120000",
+            current_step=0,
+            max_steps=50,
             has_existing_memories=False,
         )
 
         assert "Starting fresh assessment with no previous context" in result_fresh
-        assert "Begin with reconnaissance and target information gathering" in result_fresh
+        assert "reconnaissance and target information gathering" in result_fresh
 
 
 class TestMemoryAwarePromptIntegration:

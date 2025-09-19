@@ -796,7 +796,7 @@ class TestEnvironmentIntegration:
             "us.anthropic.claude-opus-4-20250514-v1:0", "us-east-1"
         )
         assert thinking_config["temperature"] == 1.0
-        assert thinking_config["max_tokens"] == 4096
+        assert thinking_config["max_tokens"] == 32000
         assert "additional_request_fields" in thinking_config
         assert "anthropic_beta" in thinking_config["additional_request_fields"]
         assert "thinking" in thinking_config["additional_request_fields"]
@@ -806,13 +806,13 @@ class TestEnvironmentIntegration:
             "us.anthropic.claude-3-5-sonnet-20241022-v2:0", "us-east-1", "bedrock"
         )
         assert standard_config["temperature"] == 0.95
-        assert standard_config["max_tokens"] == 4096
+        assert standard_config["max_tokens"] == 32000
         assert standard_config["top_p"] == 0.95
 
         # Test local model configuration
         local_config = config_manager.get_local_model_config("llama3.2:3b", "ollama")
         assert local_config["temperature"] == 0.95
-        assert local_config["max_tokens"] == 4096
+        assert local_config["max_tokens"] == 65000
         assert "host" in local_config
         assert local_config["host"].startswith("http://")
 

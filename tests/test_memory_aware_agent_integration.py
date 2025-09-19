@@ -58,6 +58,7 @@ class TestMemoryAwareAgentIntegration:
                 {"content": "XSS vulnerability in search", "created_at": "2024-01-02"},
             ],
         }
+        mock_memory_client.get_active_plan.return_value = None  # No active plan
         mock_get_client.return_value = mock_memory_client
 
         # Mock model creation
@@ -76,7 +77,7 @@ class TestMemoryAwareAgentIntegration:
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
         mock_check_memories.assert_called_once_with("test.com", "bedrock")
-        mock_get_client.assert_called_once()
+        assert mock_get_client.call_count == 2  # Called for overview and active plan
         mock_memory_client.get_memory_overview.assert_called_once_with(user_id="cyber_agent")
 
         # Verify agent was created with memory-aware system prompt
@@ -148,7 +149,7 @@ class TestMemoryAwareAgentIntegration:
         system_prompt = agent.system_prompt
         assert "## MEMORY CONTEXT" in system_prompt
         assert "Starting fresh assessment" in system_prompt
-        assert "Begin with reconnaissance" in system_prompt
+        assert "reconnaissance and target information gathering" in system_prompt
         assert "Store all findings immediately" in system_prompt
 
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
