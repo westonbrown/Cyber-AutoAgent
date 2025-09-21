@@ -485,36 +485,80 @@ export class ContainerManager extends EventEmitter {
         });
         if (phaseLabel) aggregator.setLabel(phaseLabel);
         return await new Promise<void>((resolve, reject) => {
+          let stderrBuffer = '';
+          const fullCommand = [cmd, ...baseArgs, '-f', composePath, ...args].join(' ');
           const child = spawn(cmd, [...baseArgs, '-f', composePath, ...args], { cwd });
           child.stdout.on('data', (buf) => aggregator.update(buf.toString()));
-          child.stderr.on('data', (buf) => aggregator.update(buf.toString()));
+          child.stderr.on('data', (buf) => {
+            const output = buf.toString();
+            stderrBuffer += output;
+            aggregator.update(output);
+          });
           child.on('error', reject);
           child.on('close', (code) => {
             aggregator.finalize();
-            code === 0 ? resolve() : reject(new Error(`${cmd} ${args.join(' ')} exited with ${code}`));
+            if (code === 0) {
+              resolve();
+            } else {
+              const errorMsg = stderrBuffer.trim() ?
+                `Command failed: ${fullCommand}\nError: ${stderrBuffer.trim()}` :
+                `Command failed with exit code ${code}: ${fullCommand}`;
+              reject(new Error(errorMsg));
+            }
           });
         });
       };
 
       // For single-container mode we can skip dependencies in up, but we still pull if needed
-      // Perform a streamed pull first for better progress visibility
-      const pullArgs = ['pull', ...config.services];
+      // Check if cyber-autoagent image exists locally first
+      let needsBuild = false;
+      try {
+        const { stdout } = await execAsync('docker images -q cyber-autoagent:latest');
+        needsBuild = !stdout.trim();
+      } catch {
+        needsBuild = true;
+      }
+
       const upArgs = config.mode === 'single-container'
         ? ['up', '-d', '--no-recreate', '--no-deps', ...config.services]
         : ['up', '-d', '--no-recreate', '--remove-orphans', ...config.services];
-      
-      // upArgs and pullArgs prepared above are used for compose actions via runCompose
-      
-      try {
-        // Pull images with streaming progress
-        await runCompose(pullArgs, 'Downloading images…', config.services);
-      } catch (e) {
-        // Non-fatal; proceed to up which will build/pull as needed
-        this.logger.warn('Compose pull failed or skipped, continuing to up', e as Error);
+
+      // Prepare parallel operations for building and pulling
+      const parallelOperations: Promise<void>[] = [];
+
+      // Build cyber-autoagent if needed
+      if (needsBuild && config.services.includes('cyber-autoagent')) {
+        this.emit('progress', `◆ Building cyber-autoagent image (first time setup)...`);
+
+        const buildOperation = runCompose(['build', 'cyber-autoagent'], 'Building cyber-autoagent…', ['cyber-autoagent'])
+          .catch(e => {
+            this.logger.error('Failed to build cyber-autoagent image', e as Error);
+            throw new Error(`Failed to build cyber-autoagent image. Ensure Docker has enough resources and all files are present.`);
+          });
+
+        parallelOperations.push(buildOperation);
+      }
+
+      // Pull external service images in parallel with build
+      const externalServices = config.services.filter(s => s !== 'cyber-autoagent');
+      if (externalServices.length > 0) {
+        const pullOperation = runCompose(['pull', ...externalServices], 'Downloading service images…', externalServices)
+          .catch(e => {
+            // Non-fatal for external services; some may be local only
+            this.logger.warn('Some service pulls failed, continuing', e as Error);
+          });
+
+        parallelOperations.push(pullOperation);
+      }
+
+      // Execute build and pull operations in parallel
+      if (parallelOperations.length > 0) {
+        this.emit('progress', `◆ Preparing images (building and downloading in parallel)...`);
+        await Promise.all(parallelOperations);
       }
 
       // Start containers with streaming progress
-      await runCompose(upArgs, 'Starting…', config.services);
+      await runCompose(upArgs, 'Starting containers…', config.services);
       
       // Wait for containers to be ready
       await this.waitForContainers(config.services, this.config.containerStartupTimeout);

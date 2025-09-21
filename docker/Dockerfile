@@ -110,6 +110,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     metasploit-framework \
     # Go toolchain for ProjectDiscovery/tomnomnom tools
     golang \
+    # Rust toolchain for building Python packages with native extensions
+    rustc \
+    cargo \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Install uv for fast dependency management
