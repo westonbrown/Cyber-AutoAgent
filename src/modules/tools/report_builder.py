@@ -23,6 +23,8 @@ from modules.prompts.factory import (
     generate_findings_summary_table,
 )
 from modules.tools.memory import get_memory_client, Mem0ServiceClient
+from modules.config.manager import get_config_manager
+from modules.handlers.core.utils import sanitize_target_name
 
 logger = logging.getLogger(__name__)
 
@@ -140,11 +142,20 @@ def build_report_sections(
             memory_client = None
 
         if not memory_client:
-            # Configure memory client with target-specific path as a fallback
+            # Configure memory client with target-specific path as a fallback using unified path logic
             config = Mem0ServiceClient.get_default_config()
             if config and "vector_store" in config and "config" in config["vector_store"]:
-                safe_target_name = sanitize_target_for_path(target)
-                config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
+                try:
+                    manager = get_config_manager()
+                    unified_path = manager.get_unified_memory_path(
+                        server="bedrock",  # memory path base does not depend on model provider semantics
+                        target_name=sanitize_target_name(target),
+                    )
+                    config["vector_store"]["config"]["path"] = unified_path
+                except Exception as e:
+                    # Fallback to sanitized path logic if manager is unavailable
+                    safe_target_name = sanitize_target_for_path(target)
+                    config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
             # Use silent mode to suppress initialization output during report generation
             memory_client = Mem0ServiceClient(config, silent=True)
             logger.info("Initialized memory client (fallback) for target: %s", target)
@@ -160,19 +171,41 @@ def build_report_sections(
                 elif isinstance(memories, list):
                     raw_memories = memories
 
-                # Do not filter by operation_id; include all relevant memories for the report
-                # Select an active plan if available; otherwise the first plan found
+                # Select the newest active plan for this operation when possible
+                try:
+                    plan_candidates = []
+                    for m in raw_memories:
+                        meta = m.get("metadata", {}) or {}
+                        if str(meta.get("category", "")) == "plan":
+                            if str(meta.get("operation_id", "")) == str(operation_id):
+                                plan_candidates.append(m)
+                    # Fallback: include any plan if no op-scoped candidates
+                    if not plan_candidates:
+                        for m in raw_memories:
+                            meta = m.get("metadata", {}) or {}
+                            if str(meta.get("category", "")) == "plan":
+                                plan_candidates.append(m)
+                    # Sort by created_at descending
+                    def _dt(m: Dict[str, Any]) -> str:
+                        return str(m.get("created_at", ""))
+                    plan_candidates.sort(key=_dt, reverse=True)
+                    # Pick the first active one; else first candidate
+                    for m in plan_candidates:
+                        meta = m.get("metadata", {}) or {}
+                        if meta.get("active", False) is True:
+                            operation_plan = m.get("memory", "")
+                            logger.info("Selected newest active operation plan from memory")
+                            break
+                    if not operation_plan and plan_candidates:
+                        operation_plan = plan_candidates[0].get("memory", "")
+                        logger.info("Selected newest available plan from memory")
+                except Exception as _pe:
+                    logger.debug(f"Plan selection fallback due to: {_pe}")
+
+                # Process evidence entries
                 for memory_item in raw_memories:
                     memory_content = memory_item.get("memory", "")
                     metadata = memory_item.get("metadata", {})
-
-                    # Operation plan selection
-                    if metadata and metadata.get("category") == "plan" and not operation_plan:
-                        if metadata.get("active", True):
-                            operation_plan = memory_content
-                            logger.info("Selected active operation plan from memory")
-                            continue
-                        # Defer non-active plans in case an active shows up later
 
                     # Always include original content in evidence for downstream filters/tests
                     base_evidence = {
@@ -246,13 +279,13 @@ def build_report_sections(
                         )
                         evidence.append(item)
 
-                # If no active plan was found, pick the first plan present (if any)
+                # Legacy fallback kept for robustness (should rarely execute now)
                 if not operation_plan:
                     for memory_item in raw_memories:
                         meta = memory_item.get("metadata", {})
                         if meta and meta.get("category") == "plan":
                             operation_plan = memory_item.get("memory", "")
-                            logger.info("Selected first available plan from memory")
+                            logger.info("Selected first available plan from memory (fallback)")
                             break
 
                 logger.info("Retrieved %d pieces of evidence from memory", len(evidence))

@@ -360,6 +360,15 @@ def create_agent(
 
     # Initialize memory system
     target_name = sanitize_target_name(config.target)
+
+    # Ensure unified output directories (root + artifacts) exist before any tools run
+    try:
+        paths = config_manager.ensure_operation_output_dirs(config.provider, target_name, operation_id)
+        print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
+    except Exception:
+        # Non-fatal: proceed even if directory creation logs an error
+        pass
+
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
 
@@ -421,6 +430,16 @@ def create_agent(
                     f"Discovered {len(module_tool_paths)} module-specific tools for '{config.module}' (will need load_tool)",
                     "INFO",
                 )
+            # Log module and tool discovery explicitly for validation
+            try:
+                agent_logger.info(
+                    "CYBERAUTOAGENT: module='%s', tools_discovered=%d, tools='%s'",
+                    config.module,
+                    len(tool_names),
+                    ", ".join(tool_names),
+                )
+            except Exception:
+                pass
 
             # Create specific tool examples for system prompt
             tool_examples = []
@@ -429,11 +448,19 @@ def create_agent(
                 for tool_name in tool_names:
                     tool_examples.append(f"{tool_name}()  # Pre-loaded and ready to use")
             else:
-                # Fallback to load_tool instructions
-                for tool_name in tool_names:
-                    tool_examples.append(
-                        f'load_tool(path="/app/src/modules/operation_plugins/{config.module}/tools/{tool_name}.py", name="{tool_name}")'
-                    )
+                # Fallback to load_tool instructions using discovered absolute paths
+                # This works in both local CLI and Docker since module_tool_paths are resolved in the current runtime
+                for tool_path in module_tool_paths:
+                    try:
+                        abs_path = str(Path(tool_path).resolve())
+                        tool_name = Path(tool_path).stem
+                        tool_examples.append(
+                            f'load_tool(path="{abs_path}", name="{tool_name}")'
+                        )
+                    except Exception:
+                        # As a last resort, include a name-only hint
+                        tool_name = Path(tool_path).stem
+                        tool_examples.append(f"# load_tool path resolution failed for {tool_name}")
 
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
@@ -479,6 +506,13 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             print_status(f"Loaded module-specific execution prompt for '{config.module}'", "SUCCESS")
         else:
             print_status(f"No module-specific execution prompt found for '{config.module}' - using default", "INFO")
+        # Emit explicit config log for module and execution prompt source
+        exec_src = getattr(module_loader, "last_loaded_execution_prompt_source", None) or "default (none found)"
+        agent_logger.info(
+            "CYBERAUTOAGENT: module='%s', execution_prompt_source='%s'",
+            config.module,
+            exec_src,
+        )
     except Exception as e:
         logger.warning("Error loading module execution prompt for '%s': %s", config.module, e)
 

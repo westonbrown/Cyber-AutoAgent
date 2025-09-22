@@ -56,10 +56,25 @@ export class AssessmentFlow {
     objective: null // Auto-generated based on module
   };
 
-  /** Available security assessment modules with comprehensive coverage */
-  private readonly supportedSecurityModules = [
-    'general',          // General-purpose security assessment
-  ];
+  /**
+   * Dynamically maintained set of supported modules.
+   * Defaults to ['general'] but should be updated by the UI with actual discovered modules.
+   * If a requested module is not yet in this set (e.g., discovery race), we still accept it to avoid hardcoding.
+   */
+  private supportedModules: Set<string> = new Set(['general']);
+
+  /**
+   * Update the set of supported modules at runtime.
+   * The UI should call this when module discovery completes or changes.
+   */
+  public setSupportedModules(modules: string[]): void {
+    try {
+      const incoming = Array.isArray(modules) ? modules.filter(Boolean) : [];
+      this.supportedModules = new Set(incoming.length > 0 ? incoming : ['general']);
+    } catch {
+      // Keep existing set on error
+    }
+  }
 
   /**
    * Initialize AssessmentFlow with default module selection state
@@ -177,6 +192,11 @@ export class AssessmentFlow {
         nextPrompt: 'Enter target to assess (e.g., https://example.com)'
       };
     }
+
+    // Allow module selection at any stage (global command)
+    if (sanitizedInput.startsWith('module ')) {
+      return this.processModuleSelectionInput(sanitizedInput);
+    }
     
     switch (this.assessmentState.stage) {
       case 'module':
@@ -218,29 +238,25 @@ export class AssessmentFlow {
         success: false,
         message: 'Please specify a security module to load',
         error: 'Usage: module <security_domain>',
-        nextPrompt: 'Available modules: ' + this.supportedSecurityModules.join(', ')
+        nextPrompt: 'Enter module name (e.g., general, ctf)'
       };
     }
 
     const requestedModuleName = userInput.replace('module ', '').trim();
-    
-    // Validate module availability
-    if (!this.supportedSecurityModules.includes(requestedModuleName)) {
-      return {
-        success: false,
-        message: `Security module '${requestedModuleName}' is not available`,
-        error: 'Available modules: ' + this.supportedSecurityModules.join(', '),
-        nextPrompt: 'Please select a valid security module'
-      };
-    }
 
-    // Update state and advance workflow
+    // Accept dynamically discovered modules without hardcoding. If the UI has not yet populated
+    // supportedModules, still accept to avoid blocking valid modules due to timing.
+    const isKnown = this.supportedModules.has(requestedModuleName);
+
+    // Update state and advance workflow regardless; backend will perform final validation
     this.assessmentState.module = requestedModuleName;
     this.assessmentState.stage = 'target';
-    
+
     return {
       success: true,
-      message: `Security module '${requestedModuleName}' loaded successfully`,
+      message: isKnown
+        ? `Security module '${requestedModuleName}' loaded successfully`
+        : `Security module '${requestedModuleName}' selected (pending discovery)`,
       nextPrompt: 'Now define your assessment target (IP, domain, URL, etc.):'
     };
   }
@@ -379,7 +395,7 @@ export class AssessmentFlow {
     switch (this.assessmentState.stage) {
       case 'module':
         return `Load a module to begin:\n` +
-               this.supportedSecurityModules.map(m => `  module ${m}`).join('\n');
+               Array.from(this.supportedModules).map(m => `  module ${m}`).join('\n');
       
       case 'target':
         return `Module loaded. Now set target:\n` +

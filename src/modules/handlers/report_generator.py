@@ -100,10 +100,16 @@ def generate_security_report(
         # Get module report prompt if available for domain guidance
         module_report_prompt = _get_module_report_prompt(module)
 
-        # Load the report template from file
+        # Load the report template, preferring module-specific template when available
         from modules.prompts import load_prompt_template
 
-        report_template = load_prompt_template("report_template.md")
+        # If a module-specific report prompt exists (e.g., ctf/report_prompt.txt), use it as the template
+        if module_report_prompt and str(module_report_prompt).strip():
+            report_template = module_report_prompt
+            logger.info("Using module-specific report template for module: %s", module)
+        else:
+            report_template = load_prompt_template("report_template.md")
+            logger.info("Using default security assessment report template")
 
         # Create report agent with the builder tool
         report_agent = ReportGenerator.create_report_agent(
@@ -310,8 +316,19 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
         else:
             raw_memories = []
 
+        # Prefer operation-scoped memories if tagged; fallback to all if none
+        op_scoped_memories = []
+        try:
+            for m in raw_memories:
+                meta = m.get("metadata", {}) or {}
+                if str(meta.get("operation_id", "")) == str(_operation_id):
+                    op_scoped_memories.append(m)
+        except Exception:
+            op_scoped_memories = []
+        scoped = op_scoped_memories or raw_memories
+
         # Filter and format memories
-        for mem in raw_memories:
+        for mem in scoped:
             metadata = mem.get("metadata", {})
             memory_content = mem.get("memory", "")
             memory_id = mem.get("id", "")
