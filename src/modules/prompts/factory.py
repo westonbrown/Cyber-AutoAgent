@@ -19,15 +19,226 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+# --- Langfuse Prompt Management (inline, minimal) ---
+# Aligned with observability: active only when BOTH ENABLE_OBSERVABILITY and ENABLE_LANGFUSE_PROMPTS are true.
+# Uses REST to GET/POST /api/public/v2/prompts with Basic Auth. Falls back silently on errors.
+import os
+import base64
+import json
+import time
+import threading
+from urllib import request as _urlreq
+from urllib import parse as _urlparse
+
+# In-memory cache with TTL (defaults to 300s, min 60s)
+_LF_CACHE: Dict[str, Dict[str, Any]] = {}
+_LF_CACHE_TTL = max(60, int(os.getenv("LANGFUSE_PROMPT_CACHE_TTL", "300") or 300))
+_LF_CACHE_LOCK = threading.Lock()
+_LF_SEEDED = False
+_LF_SEEDED_LOCK = threading.Lock()
+
+# Mapping local template filenames -> remote Langfuse prompt names
+_LF_TEMPLATE_TO_NAME = {
+    "system_prompt.md": "cyber/system/system_prompt",
+    "tools_guide.md": "cyber/system/tools_guide",
+    "report_agent_system_prompt.md": "cyber/report/report_agent_system_prompt",
+    "report_template.md": "cyber/report/report_template",
+    "report_generation_prompt.md": "cyber/report/report_generation_prompt",
+}
+
+
+def _lf_env_true(name: str) -> bool:
+    return os.getenv(name, "false").lower() == "true"
+
+
+def _lf_is_docker() -> bool:
+    return os.path.exists("/.dockerenv") or os.path.exists("/app")
+
+
+def _lf_enabled() -> bool:
+    # Strict alignment with observability as requested
+    return _lf_env_true("ENABLE_OBSERVABILITY") and _lf_env_true("ENABLE_LANGFUSE_PROMPTS")
+
+
+def _lf_host() -> str:
+    default_host = "http://langfuse-web:3000" if _lf_is_docker() else "http://localhost:3000"
+    return os.getenv("LANGFUSE_HOST", default_host).rstrip("/")
+
+
+def _lf_auth_header() -> str:
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public")
+    sk = os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret")
+    token = base64.b64encode(f"{pk}:{sk}".encode()).decode()
+    return f"Basic {token}"
+
+
+def _lf_ck(name: str, label: str) -> str:
+    return f"{name}::{label}"
+
+
+def _lf_cache_get(name: str, label: str) -> Optional[Dict[str, Any]]:
+    key = _lf_ck(name, label)
+    with _LF_CACHE_LOCK:
+        item = _LF_CACHE.get(key)
+        if item and (time.time() - item.get("ts", 0)) < _LF_CACHE_TTL:
+            return item.get("value")
+        if item:
+            _LF_CACHE.pop(key, None)
+    return None
+
+
+def _lf_cache_set(name: str, label: str, value: Dict[str, Any]) -> None:
+    key = _lf_ck(name, label)
+    with _LF_CACHE_LOCK:
+        _LF_CACHE[key] = {"ts": time.time(), "value": value}
+
+
+def _lf_get_prompt(name: str, label: str) -> Optional[Dict[str, Any]]:
+    if not _lf_enabled():
+        return None
+    cached = _lf_cache_get(name, label)
+    if cached is not None:
+        return cached
+    try:
+        url = f"{_lf_host()}/api/public/v2/prompts/{_urlparse.quote(name)}?label={_urlparse.quote(label)}"
+        req = _urlreq.Request(url, method="GET")
+        req.add_header("Authorization", _lf_auth_header())
+        req.add_header("Accept", "application/json")
+        with _urlreq.urlopen(req, timeout=5) as resp:  # nosec - local network
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, dict):
+                    _lf_cache_set(name, label, data)
+                    return data
+            else:
+                logger.debug("Langfuse prompts GET %s -> %s", url, resp.status)
+    except Exception as e:  # pragma: no cover
+        logger.debug("Langfuse prompts GET error: %s", e)
+    return None
+
+
+def _lf_create_prompt_version(*, name: str, prompt_text: str, label: str, tags: Optional[List[str]] = None, commit: str = "seed") -> Optional[Dict[str, Any]]:
+    if not _lf_enabled():
+        return None
+    payload = {
+        "type": "text",
+        "name": name,
+        "prompt": prompt_text,
+        "labels": [label],
+        "tags": tags or ["cyber-autoagent"],
+        "commitMessage": commit,
+    }
+    try:
+        url = f"{_lf_host()}/api/public/v2/prompts"
+        body = json.dumps(payload).encode("utf-8")
+        req = _urlreq.Request(url, method="POST")
+        req.add_header("Authorization", _lf_auth_header())
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "application/json")
+        with _urlreq.urlopen(req, data=body, timeout=7) as resp:  # nosec - local network
+            if 200 <= resp.status < 300:
+                data = json.loads(resp.read().decode("utf-8"))
+                # Invalidate cache for this name/label
+                with _LF_CACHE_LOCK:
+                    _LF_CACHE.pop(_lf_ck(name, label), None)
+                return data
+            else:
+                logger.debug("Langfuse prompts POST %s -> %s", url, resp.status)
+    except Exception as e:  # pragma: no cover
+        logger.debug("Langfuse prompts POST error: %s", e)
+    return None
+
+
+def _lf_read_local_template(template_name: str) -> str:
+    try:
+        p = Path(__file__).parent / "templates" / template_name
+        if not p.exists():
+            return ""
+        return p.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _lf_ensure_seeded() -> None:
+    if not _lf_enabled():
+        return
+    global _LF_SEEDED
+    if _LF_SEEDED:
+        return
+    with _LF_SEEDED_LOCK:
+        if _LF_SEEDED:
+            return
+        try:
+            label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
+            for fname, rname in _LF_TEMPLATE_TO_NAME.items():
+                # Skip if already present
+                if _lf_get_prompt(rname, label) is not None:
+                    continue
+                content = _lf_read_local_template(fname)
+                if content.strip():
+                    created = _lf_create_prompt_version(name=rname, prompt_text=content, label=label, commit=f"seed {fname}")
+                    if created:
+                        logger.info("Seeded Langfuse prompt: %s", rname)
+        except Exception as e:  # pragma: no cover
+            logger.debug("Langfuse seed error: %s", e)
+        finally:
+            _LF_SEEDED = True
+
+
+def _lf_resolve_template_text(template_name: str) -> str:
+    """Try to resolve template content from Langfuse (text or flattened chat)."""
+    if not _lf_enabled():
+        return ""
+    rname = _LF_TEMPLATE_TO_NAME.get(template_name)
+    if not rname:
+        return ""
+    label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
+    obj = _lf_get_prompt(rname, label)
+    if not isinstance(obj, dict):
+        return ""
+    prompt = obj.get("prompt")
+    # We seed as text; still handle chat best-effort
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, list):
+        try:
+            parts = []
+            for msg in prompt:
+                if isinstance(msg, dict) and "content" in msg:
+                    parts.append(str(msg.get("content") or ""))
+            return "\n".join(p for p in parts if p)
+        except Exception:
+            return ""
+    return ""
+
+
 # --- Template and Utility Functions ---
 
 
 def load_prompt_template(template_name: str) -> str:
-    """Load a prompt template from the templates directory.
+    """Load a prompt template, optionally via Langfuse when enabled.
 
-    Returns an error string if the template is not found. Callers should provide
-    a minimal fallback if needed (less is more philosophy).
+    Behavior:
+    - If ENABLE_OBSERVABILITY and ENABLE_LANGFUSE_PROMPTS are both true,
+      seed core templates to Langfuse on first use, then try to fetch the
+      template content from Langfuse. If unavailable, fall back to local file.
+    - If disabled, read local file directly.
+
+    Returns empty string if not found. Callers should provide a minimal fallback.
     """
+    # Try remote (Langfuse) first when aligned toggles are enabled
+    try:
+        if _lf_enabled():
+            # Best-effort seed once per process
+            _lf_ensure_seeded()
+            remote_text = _lf_resolve_template_text(template_name)
+            if isinstance(remote_text, str) and remote_text.strip():
+                return remote_text
+    except Exception as e:
+        # Do not fail prompt construction due to remote issues
+        logger.debug("Remote prompt resolution skipped for %s: %s", template_name, e)
+
+    # Fallback to local file
     try:
         template_path = Path(__file__).parent / "templates" / template_name
         if not template_path.exists():
@@ -91,7 +302,7 @@ def _plan_first_directive(has_existing_memories: bool) -> str:
             """
             Starting fresh assessment with no previous context
             Do NOT check memory on fresh operations (no retrieval of prior data)
-            CRITICAL FIRST ACTION: Create a minimal strategic plan in memory via mem0_memory(action="store_plan", content="<objective + 3 phases>")
+            CRITICAL FIRST ACTION: Create a strategic plan in memory via mem0_memory(action="store_plan")
             Then begin reconnaissance and target information gathering guided by the plan
             Store all findings immediately with category="finding"
             """
@@ -306,6 +517,9 @@ class ModulePromptLoader:
         self.templates_dir = templates_dir or (Path(__file__).parent / "templates")
         # Base dir for operation plugins: modules/operation_plugins
         self.plugins_dir = (Path(__file__).parent.parent / "operation_plugins").resolve()
+        # Track sources for observability
+        self.last_loaded_execution_prompt_source: Optional[str] = None
+        self.last_loaded_report_prompt_source: Optional[str] = None
 
     def load_module_execution_prompt(self, module_name: str) -> str:
         """Load a module-specific execution prompt if available.
@@ -314,11 +528,14 @@ class ModulePromptLoader:
         Fallback to common filenames in prompts/templates.
         Returns empty string if not found.
         """
+        # Reset tracker
+        self.last_loaded_execution_prompt_source = None
         # 1) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
         try:
             for fname in ("execution_prompt.md", "execution_prompt.txt"):
                 p = (self.plugins_dir / module_name / fname)
                 if p.exists() and p.is_file():
+                    self.last_loaded_execution_prompt_source = str(p)
                     return p.read_text(encoding="utf-8").strip()
         except Exception:
             # best-effort
@@ -333,6 +550,7 @@ class ModulePromptLoader:
         for name in candidates:
             content = load_prompt_template(name)
             if content:
+                self.last_loaded_execution_prompt_source = f"templates:{name}"
                 return content
         return ""
 
@@ -342,6 +560,8 @@ class ModulePromptLoader:
         Looks in operation_plugins/<module>/report_prompt.txt (or .md).
         Returns empty string if none present.
         """
+        # Reset tracker
+        self.last_loaded_report_prompt_source = None
         try:
             candidates = [
                 self.plugins_dir / module_name / "report_prompt.txt",
@@ -349,6 +569,7 @@ class ModulePromptLoader:
             ]
             for path in candidates:
                 if path.exists() and path.is_file():
+                    self.last_loaded_report_prompt_source = str(path)
                     return path.read_text(encoding="utf-8").strip()
         except Exception as e:
             logger.debug("Failed to load module report prompt for '%s': %s", module_name, e)
@@ -358,14 +579,37 @@ class ModulePromptLoader:
         """Discover module-specific tool files under operation_plugins.
 
         Returns a list of Python file paths for tools in modules/operation_plugins/<module>/tools.
+        If module.yaml defines a 'tools' whitelist, only those tool stems are returned.
         """
         results: List[str] = []
         try:
             tools_dir = self.plugins_dir / module_name / "tools"
-            if tools_dir.exists() and tools_dir.is_dir():
-                for py in tools_dir.glob("*.py"):
-                    if py.name != "__init__.py":
-                        results.append(str(py.resolve()))
+            if not (tools_dir.exists() and tools_dir.is_dir()):
+                return results
+
+            # Attempt to read module.yaml to honor a tools whitelist
+            allowed_tools: Optional[List[str]] = None
+            try:
+                if yaml is not None:
+                    for fname in ("module.yaml", "module.yml"):
+                        ypath = (self.plugins_dir / module_name / fname)
+                        if ypath.exists() and ypath.is_file():
+                            data = yaml.safe_load(ypath.read_text(encoding="utf-8"))  # type: ignore[no-untyped-call]
+                            if isinstance(data, dict) and isinstance(data.get("tools"), list):
+                                allowed_tools = [str(t).strip() for t in data.get("tools", []) if t]
+                            break
+            except Exception as ye:
+                logger.debug("discover_module_tools: unable to parse tools whitelist for '%s': %s", module_name, ye)
+                allowed_tools = None
+
+            for py in tools_dir.glob("*.py"):
+                if py.name == "__init__.py":
+                    continue
+                stem = py.stem
+                if allowed_tools is not None and stem not in allowed_tools:
+                    # Skip non-whitelisted tools
+                    continue
+                results.append(str(py.resolve()))
         except Exception as e:
             logger.debug("discover_module_tools failed for '%s': %s", module_name, e)
         return results
