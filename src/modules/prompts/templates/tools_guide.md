@@ -1,10 +1,11 @@
 ## TOOLS & CAPABILITIES
-- Evidence invariants: save artifacts for every meaningful action; High/Critical require a Proof Pack (artifact path + one-line why); otherwise mark Hypothesis with next steps
+- Evidence invariants: save artifacts for every meaningful action under outputs/<target>/OP_<id>/artifacts; High/Critical require a Proof Pack (artifact path + one-line why); otherwise mark Hypothesis with next steps; never hardcode success/verified flags—derive from outcomes and controls
+- Proof Pack structure (for High/Critical): provide `metadata.proof_pack` with `{ artifacts: ["/absolute/or/relative/path"...], rationale: "one-line why artifact proves impact" }` (files must exist)
 - Availability realism: prefer native scanners if available; else perform minimal substitutes (e.g., curl headers/payloads) and save transcripts
 - Minimal-next-step bias: choose the smallest execution that yields new evidence
 - Tools placement: write Python tools under `tools/` and load via `load_tool`; do not place tools in `outputs/<target>/...`
-- Always first consult the available tools injected in your prompt (ENVIRONMENTAL CONTEXT). 
-- **shell**: Deterministic, non-interactive system commands capable of running in parrallel.
+- Always first consult the available tools injected in your prompt (ENVIRONMENTAL CONTEXT) and act fast. 
+- **shell**: Deterministic, non-interactive system commands capable of running in parrallel; persist outputs to outputs/<target>/OP_<id>/artifacts via tee/redirection (dir pre-created; skip mkdir).
   - Prefer tools that are present in the current environment. Use cyber tools when available choose an equivalent available tool when the example isn’t present.
   - If a required tool is missing, you may install it non-interactively with explicit flags; document the command and rationale.
   - **TIMEOUT MANAGEMENT**: Default timeout is 300s. For long-running operations:
@@ -23,7 +24,7 @@
     * Comprehensive: Split port ranges if full scan needed
 - **python_repl**: Rapid payload/PoC prototyping and validators.
   - Use to iterate quickly; once stable, migrate PoCs into a proper tool via `editor` + `load_tool`.
-  - Store important snippets and results in memory as `artifact` with reproduction notes.
+- Store important snippets and results as files in outputs/<target>/OP_<id>/artifacts and reference the file path in memory with reproduction notes.
   - **CRITICAL**: No execution timeout - avoid long-running operations (network requests, infinite loops, blocking I/O) that may exceed 600s.
 - **mem0_memory**: Central knowledge base for planning, reflection, evidence, and findings (see `modules/tools/memory.py`).
   - **Step 0-1**: Follow the directive in PLANNING section (either RETRIEVE or CREATE)
@@ -32,6 +33,7 @@
   - Use `store_reflection`/`reflect` for periodic reasoning checkpoints (every 20-25 steps)
   - Use `store` with `metadata` (e.g., `category: finding|signal|decision|artifact|observation`, plus `severity`, `confidence`, etc.).
   - Plan storage: compact JSON with `objective`, `current_phase`, and `phases[]` (id, title, status, criteria). Update status to done when Criteria met, then advance current_phase.
+  - Plan metadata invariants: always stamp `metadata.active=true` and `metadata.operation_id` on store; older plans are auto-deactivated.
   - Decision log: store only when starting a new phase or pivoting (metadata.category=decision); keep to one line with rationale.
   - Memory hygiene: store artifact paths, not large blobs; reference files saved in outputs/<target>/OP_<id>/artifacts.
   - Use `retrieve` to surface prior context and guide next actions.
@@ -41,9 +43,9 @@
     * Reproduction Steps mini-structure inside [STEPS]: preconditions, command, expected, actual, artifacts, environment, cleanup, notes
     * For HIGH/CRITICAL, include a short Proof Pack (LLM-authored): 2–4 sentences referencing at least one artifact path and a one-line rationale linking the artifact to the claim
     * If no artifact exists: mark as Hypothesis by setting `metadata.validation_status="hypothesis"` and include next steps to obtain proof
-    * Set confidence based on evidence quality: 90%+ (exploited), 70-89% (confirmed), 50-69% (anomaly), <50% (unverified)
+- Set confidence based on evidence quality: 90%+ (exploited), 70-89% (confirmed), 50-69% (anomaly), <50% (unverified); success flags must reflect evidence and remain false when inconclusive
 - **swarm**: Launch specialized agents for parallel verification (e.g., auth, storage, API). Each agent should have a clear specialization
-  - Define clear objectives and success criteria. Each agent writes outcomes to `mem0_memory`.
+- Define clear objectives and success criteria (including post-exploitation escalation: priv-esc, lateral movement, persistence). Each agent writes outcomes to `mem0_memory`.
   - Task Format (Max 100 words) with STATE: [Current access/findings], GOAL: [ONE specific objective], AVOID: [What not to repeat] and FOCUS: [Specific technique]
   - AVOID (concrete): derive exclusions from memory/recent outputs and do not: re-run completed scans/enumeration on the same hosts/endpoints, re-validate the same findings without a new vector, re-run failing commands unchanged, or overlap targets assigned to other sub-agents.
   - Set max_iterations based on team size: ~15 per agent (e.g., 4 agents = 60)
@@ -54,13 +56,15 @@
 - **load_tool**: Dynamically register editor-created tools for immediate use.
 - **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing.
   - Specify method, URL, headers, body, and auth explicitly. Store request/response pairs to memory.
+- For web/API validation: must save a request/response transcript AND a negative/control transcript as artifacts under outputs/<target>/OP_<id>/artifacts/; reference only the paths in memory.
+  - Provide deterministic reproduction (http_request parameters and a cURL equivalent) and a one-line rationale in the Proof Pack.
     - Resource discovery (OSINT) when a capability/tool is missing: spend up to 2–5 steps to locate reputable resources (official docs, CVE databases, curated lists/awesome repos), traverse ≤2 link hops, save pages as artifacts, extract candidate tools/commands, then install via shell and verify with which/--version.
   - Prefer two independent signals where feasible and include at least one negative/control case; re-run key steps once to confirm stability.
   - External intel quick refs: NVD/CVE, Exploit‑DB, vendor advisories, Shodan/Censys, VirusTotal; store JSON/HTML responses and reference artifact paths.
-  - Large responses (HTML/JS): save raw content to outputs/<target>/OP_<id>/artifacts/*.html via shell; review with grep/sed/awk instead of dumping large blobs into memory; store only the file path in findings.
+- Large responses (HTML/JS): save raw content to outputs/<target>/OP_<id>/artifacts/*.html; review with grep/sed/awk instead of dumping large blobs into memory; store only the file path in findings.
   - Common managed endpoints/keys (e.g., Vercel, Supabase anon keys, Tenderly RPC, analytics) are often normal; treat as observations unless abuse, sensitive exposure, or improper authorization is demonstrated with artifacts.
 - **stop**: Cleanly terminate when the operation is complete.
-  - Invoke when: (1) All plan phases complete and Criteria met with artifacts; (2) Objective satisfied with Proof Packs; (3) ≥80% steps consumed with diminishing returns (last 3 actions produced no new artifacts).
+- Only invoke when: (1) All plan phases complete and Criteria met with artifacts; (2) Objective satisfied with Proof Packs; (3) ≥80% steps consumed with diminishing returns (last 3 actions produced no new artifacts).
   - Before stopping: write a brief PhaseSummary and mem0_memory(action="store_reflection") with completion rationale; update the plan to DONE if appropriate.
 
 Interrelation and flow:
@@ -72,7 +76,7 @@ Interrelation and flow:
 - Employ `swarm` for parallel, well-scoped verification tasks that also write back to memory.
 
 Non-interactive rule:
-- All tools must run non-interactively. Avoid prompts/TTY requirements; use explicit flags and idempotent commands.
+- All tools must run non-interactively—use explicit flags and idempotent commands; avoid prompts/TTY requirements.
 
 Capability gaps (Ask-Enable-Retry):
 - When a missing capability blocks progress (e.g., blockchain RPC/web3, headless browser):
@@ -132,11 +136,11 @@ mem0_memory(
 
 ## VERIFICATION-FIRST WORKFLOW
 <verification_workflow>
-1. HYPOTHESIZE: Pattern found - is this actually vulnerable?
-2. TEST: Attempt exploitation to confirm impact
-3. RESEARCH: Cross-reference with CVEs and documentation
-4. CALIBRATE: Adjust confidence based on evidence gathered
-5. REFLECT: Challenge assumptions before finalizing
+1. HYPOTHESIZE quickly: Pattern found - is this actually vulnerable?
+2. TEST: Attempt exploitation to confirm impact and escalate the chain safely (priv-esc/persistence) when in-scope
+3. RESEARCH targeted: Cross-reference with CVEs and documentation
+4. CALIBRATE aggressively: Adjust confidence based on evidence gathered
+5. REFLECT and commit: Challenge assumptions before finalizing
 
 Evidence required for confidence levels:
 - >70%: Successful exploitation demonstrated

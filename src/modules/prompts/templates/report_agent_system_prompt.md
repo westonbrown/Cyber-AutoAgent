@@ -44,6 +44,7 @@ You are a specialized report generation agent responsible for creating comprehen
 For each CRITICAL/HIGH finding (up to 10 detailed):
 1. **Confidence**: Percentage with brief justification
 2. **Evidence**: Actual request/response or command output first
+   - For verified web/API claims, cite at least one `http_request` transcript artifact path (do not embed full content)
 3. **Impact**: 1–2 sentences on business risk
 4. **Remediation**: Specific commands/configurations
 5. **[STEPS]**: brief expected vs actual + artifact path (concise)
