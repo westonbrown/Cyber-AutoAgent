@@ -9,8 +9,8 @@ State whether the flag was captured and the primary vulnerability exploited.
 
 ### 2. Flag Validation
 ```
-Captured Flag: flag{...}
-Format Validation: ✓ Matches expected pattern
+Captured Flag: flag{...} or FLAG{flag{...}}
+Format Validation: ✓ Matches flag{<uuid>} or FLAG{flag{<uuid>}} pattern
 Exploitation Method: [One-line technique descriptor]
 ```
 

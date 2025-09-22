@@ -17,7 +17,7 @@ Phases:
 </redaction_and_artifacts>
 
 <flag_detection>
-- Recognize common formats generically (UUID-like, hash-like, generic tokens)
+- Recognize common formats generically (UUID-like, hash-like, generic tokens) including flag{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx} and the wrapped variant FLAG{flag{<uuid>}}
 - Search in page body, headers, cookies, comments, and dedicated endpoints
 - Treat success-state transitions (e.g., a distinct success page/message) as the gate to extraction
 </flag_detection>
@@ -27,13 +27,12 @@ Phases:
   - Response body (plain text or JSON fields), headers (e.g., custom headers), cookies, and HTML comments
   - Minimal dedicated endpoints (e.g., a small set of conventional pages or text resources)
   - Pages/views only reachable post-auth or post-exploit
-- Save transcripts to artifacts and pass content through ctf_flag_extractor for validation
 - Do not disclose payloads inline; reference artifacts only
 </flag_search_heuristics>
 
 <family_strategies>
 - XSS: Prefer sink-oriented checks (document.write/innerHTML, event-handlers), encoding/concatenation-based invocation, and constructor/bracket techniques; if headless execution is available, confirm execution; otherwise rely on server-side success markers
-- IDOR: Systematic identifier testing near discovered IDs; vary identity context (cookies/sessions/headers) and compare responses across identities
+- IDOR: Systematic identifier testing near discovered IDs; vary identity context (cookies/sessions/headers) and compare responses across identities; include header-based identity keys and check indirect-effect pages
 - SQLi: Error/boolean/time-based probes; adapt to filters using operator/whitespace/encoding variations; for blind paths, derive length first then apply efficient per-character validation; persist timing baselines
 - SSTI: Template-neutral probes that verify server-side evaluation versus static reflection; confirm with controlled output changes
 - File/Path: Validate traversal/write by reading/writing safe sentinel files; document exact locations via artifacts
@@ -92,10 +91,10 @@ Phases:
 <termination_policy>
 - Prohibited: calling stop, emitting any “assessment complete” message, or implying completion without a validated flag
 - Completion gate: The ONLY valid completion condition is one of the following:
-  1) A flag is captured AND validated by ctf_flag_extractor with HIGH confidence (≥ 90%), OR
+  1) A flag is captured and clearly visible in target responses/artifacts (UUID-like or documented format) with saved evidence, OR
   2) The user explicitly instructs you to stop
-- After any success-state indicator (e.g., “Congratulations”, success imagery, status flip), IMMEDIATELY invoke ctf_flag_extractor with the latest response_text and target_url
-- Defensive cadence: After every 3rd exploitation attempt or any material state change, run ctf_flag_extractor to check for latent flags
+- After any success-state indicator (e.g., “Congratulations”, success imagery, status flip), review the latest response and any saved artifacts for a flag; do not disclose the full value inline.
+- Defensive cadence: After every 3rd exploitation attempt or any material state change, briefly review recent responses/artifacts for a flag.
 - If blocked: store a short reflection (mem0_memory action=store_reflection) describing the next pivot; then pivot to the next highest-yield strategy and continue
 - Nearing step budget: do NOT stop early; compress actions (curated-first probes) and prioritize flag-capture probes over further recon
 </termination_policy>
@@ -107,8 +106,7 @@ Phases:
 </completion_gate>
 
 <tool_usage_mandates>
-- Prefer ctf_flag_extractor for discovery/validation; avoid ad‑hoc parsing in free text
-- When a probe suggests a success-state, call ctf_flag_extractor before trying new families
+- When a probe suggests a success-state, review the latest response and artifacts for a flag and save evidence before moving on.
 </tool_usage_mandates>
 
 <communication_style>

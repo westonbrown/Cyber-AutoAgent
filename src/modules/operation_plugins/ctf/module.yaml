@@ -1,6 +1,6 @@
 name: ctf
 version: 1.0.0
-description: Strategy-first CTF module with broad vulnerability coverage and disciplined flag extraction
+description: CTF module with broad vulnerability coverage and flag extraction
 author: Cyber-AutoAgent Team
 license: MIT
 cognitive_level: 4
@@ -23,8 +23,7 @@ supported_targets:
   - web-application
   - api-endpoint
   - ctf-challenge
-tools:
-  - ctf_flag_extractor
+tools: []
 module_interface:
   accepts_from: []
   provides_to: []
