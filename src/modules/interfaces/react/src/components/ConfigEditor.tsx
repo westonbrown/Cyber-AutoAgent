@@ -7,11 +7,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import SelectInput from 'ink-select-input';
-import TextInput from 'ink-text-input';
+import TextInput, { UncontrolledTextInput } from 'ink-text-input';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { Header } from './Header.js';
 import { loggingService } from '../services/LoggingService.js';
+import { PasswordInput } from './PasswordInput.js';
+import { TokenInput } from './TokenInput.js';
 
 interface ConfigEditorProps {
   onClose: () => void;
@@ -146,7 +148,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const messageTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Use ref for handleSave to avoid stale closure issues
-  const handleSaveRef = React.useRef<() => void>();
+  const handleSaveRef = React.useRef<(() => void) | undefined>(undefined);
   
   // Use ref to protect message during saves
   const isSavingRef = React.useRef(false);
@@ -395,8 +397,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
   }, { isActive: !editingField });
 
-  // Separate input handler for when editing to handle Ctrl+S
+  // Separate input handler for when editing to handle Ctrl+S and Ctrl+V
   useInput((input, key) => {
+    // Handle Ctrl+S for save
     if (key.ctrl && input === 's') {
       // Save the current editing value first
       if (editingField && tempValue) {
@@ -408,9 +411,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               updateConfigValue(field.key, numValue);
             }
           } else {
-            // Trim whitespace from text and password fields
-            const trimmedValue = tempValue.trim();
-            updateConfigValue(field.key, trimmedValue);
+            // Clean and sanitize the value, especially for tokens/keys
+            const cleanedValue = cleanInputForKey(field.key, tempValue);
+            updateConfigValue(field.key, cleanedValue);
           }
         }
       }
@@ -420,12 +423,55 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       // Prevent the 's' from being added to the input
       return;
     }
-    
+
+    // Handle Ctrl+V for paste - prevent 'v' from being inserted
+    if (key.ctrl && input === 'v') {
+      // Don't allow the 'v' to be inserted - just ignore for now
+      // Users can use regular system paste (Cmd+V on Mac, which Ink handles)
+      return;
+    }
+
     if (key.escape) {
       setEditingField(null);
       setTempValue('');
     }
   }, { isActive: editingField !== null });
+
+  // Sanitize input values for specific keys (tokens, API keys, etc.)
+  const cleanInputForKey = (key: string, raw: string): string => {
+    if (typeof raw !== 'string') return raw;
+
+    // List of fields that should have all whitespace stripped
+    const secretFields = new Set([
+      'awsBearerToken',
+      'awsAccessKeyId',
+      'awsSecretAccessKey',
+      'awsSessionToken',
+      'openaiApiKey',
+      'anthropicApiKey',
+      'cohereApiKey',
+      'mem0ApiKey',
+      'langfusePublicKey',
+      'langfuseSecretKey',
+      'langfuseEncryptionKey'
+    ]);
+
+    if (secretFields.has(key)) {
+      // Remove ALL whitespace (spaces, tabs, newlines, etc.) from secrets
+      let cleaned = raw.replace(/\s+/g, '');
+
+      // For bearer tokens, ensure it's valid base64
+      if (key === 'awsBearerToken') {
+        // Remove any non-base64 characters
+        cleaned = cleaned.replace(/[^A-Za-z0-9+/=]/g, '');
+      }
+
+      return cleaned;
+    }
+
+    // For other fields, just trim outer whitespace
+    return raw.trim();
+  };
 
   const updateConfigValue = useCallback((key: string, value: any) => {
     // Special handling for provider changes - set appropriate default models
@@ -518,16 +564,16 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const startEditing = useCallback((field: ConfigField) => {
     // Prevent editing of read-only fields
     if (field.key === 'modelPricingInfo') {
-      setMessage({ 
-        text: 'Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"', 
-        type: 'info' 
+      setMessage({
+        text: 'Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"',
+        type: 'info'
       });
-      
+
       // Clear existing timeout if any
       if (messageTimeoutRef.current) {
         clearTimeout(messageTimeoutRef.current);
       }
-      
+
       // Set new timeout with cleanup
       messageTimeoutRef.current = setTimeout(() => {
         setMessage(null);
@@ -535,24 +581,44 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }, 3000);
       return;
     }
-    
+
     const currentValue = config[field.key as keyof typeof config];
-    
+
     if (field.type === 'boolean') {
       // Toggle boolean immediately
       updateConfigValue(field.key, !currentValue);
       return;
     }
-    
+
     // Set up editing state
     setEditingField({
       field: field.key,
       type: field.type as any,
       options: field.options
     });
-    
+
     // Set initial value for editing
-    if (field.type === 'number') {
+    // For password/secret fields, start with empty to avoid paste issues
+    if (field.type === 'password') {
+      // Always start with empty field for password types to ensure clean paste
+      // This prevents the issue where pasting inserts in the middle of masked text
+      setTempValue('');
+      if (currentValue) {
+        // Show brief message that field is cleared for re-entry
+        setMessage({
+          text: 'Field cleared. Enter or paste new value (Cmd+V on Mac)',
+          type: 'info'
+        });
+        // Clear message after 2 seconds
+        if (messageTimeoutRef.current) {
+          clearTimeout(messageTimeoutRef.current);
+        }
+        messageTimeoutRef.current = setTimeout(() => {
+          setMessage(null);
+          messageTimeoutRef.current = null;
+        }, 2000);
+      }
+    } else if (field.type === 'number') {
       setTempValue(String(currentValue || 0));
     } else {
       setTempValue(String(currentValue || ''));
@@ -664,9 +730,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           {unsavedChanges && <Text color={theme.warning}> [Unsaved]</Text>}
         </Box>
         <Text color={theme.muted}>
-          {navigationMode === 'sections' 
+          {navigationMode === 'sections'
             ? 'Navigate with ↑↓ arrows • Enter to expand section • Ctrl+S to save • Esc to continue and exit'
-            : 'Navigate with ↑↓ arrows • Enter to edit field • Tab/Shift+Tab to navigate • Esc to collapse section'}
+            : 'Navigate with ↑↓ arrows • Enter to edit field • Cmd+V to paste (Mac) • Ctrl+S to save • Esc to collapse section'}
         </Text>
       </Box>
     );
@@ -751,7 +817,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   const renderEditingField = (field: ConfigField) => {
     if (!editingField) return null;
-    
+
     if (field.type === 'select' && editingField.options) {
       return (
         <SelectInput
@@ -766,26 +832,107 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         />
       );
     }
-    
+
+    // Use TokenInput for AWS Bearer token
+    if (field.key === 'awsBearerToken') {
+      return (
+        <TokenInput
+          fieldKey={field.key}
+          onSubmit={(value) => {
+            // Clean and sanitize the value
+            const cleanedValue = cleanInputForKey(field.key, value);
+            updateConfigValue(field.key, cleanedValue);
+            setEditingField(null);
+            setTempValue('');
+
+            // Brief success message
+            setMessage({
+              text: `Token saved (${cleanedValue.length} chars)`,
+              type: 'success'
+            });
+            if (messageTimeoutRef.current) {
+              clearTimeout(messageTimeoutRef.current);
+            }
+            messageTimeoutRef.current = setTimeout(() => {
+              setMessage(null);
+              messageTimeoutRef.current = null;
+            }, 2000);
+          }}
+        />
+      );
+    }
+
+    // Use custom PasswordInput for other password fields
+    if (field.type === 'password') {
+      return (
+        <PasswordInput
+          fieldKey={field.key}
+          onSubmit={(value) => {
+            // Clean and sanitize the value
+            const cleanedValue = cleanInputForKey(field.key, value);
+            updateConfigValue(field.key, cleanedValue);
+            setEditingField(null);
+            setTempValue('');
+          }}
+        />
+      );
+    }
+
     return (
       <TextInput
         value={tempValue}
-        onChange={setTempValue}
+        onChange={(newValue) => {
+          // Debug logging for non-password fields
+          if (field.key === 'awsBearerToken') {
+            loggingService.debug('TextInput onChange:', {
+              fieldKey: field.key,
+              newValueLength: newValue.length,
+              newValueFirst20: newValue.substring(0, 20),
+              newValueLast20: newValue.substring(newValue.length - 20),
+              fullValue: newValue
+            });
+          }
+          // Directly update temp value
+          setTempValue(newValue);
+        }}
         onSubmit={(value) => {
+          // Debug logging for non-password fields
+          if (field.key === 'awsBearerToken') {
+            loggingService.debug('TextInput onSubmit:', {
+              fieldKey: field.key,
+              valueLength: value.length,
+              valueFirst20: value.substring(0, 20),
+              valueLast20: value.substring(value.length - 20),
+              fullValue: value
+            });
+          }
+
           if (field.type === 'number') {
             const numValue = parseFloat(value);
             if (!isNaN(numValue)) {
               updateConfigValue(field.key, numValue);
             }
           } else {
-            // Trim whitespace from text and password fields
-            const trimmedValue = value.trim();
-            updateConfigValue(field.key, trimmedValue);
+            // Clean and sanitize the value, especially for tokens/keys
+            const cleanedValue = cleanInputForKey(field.key, value);
+
+            // More debug logging
+            if (field.key === 'awsBearerToken') {
+              loggingService.debug('After cleanInputForKey:', {
+                fieldKey: field.key,
+                cleanedLength: cleanedValue.length,
+                cleanedFirst20: cleanedValue.substring(0, 20),
+                cleanedLast20: cleanedValue.substring(cleanedValue.length - 20),
+                fullCleaned: cleanedValue
+              });
+            }
+
+            updateConfigValue(field.key, cleanedValue);
           }
           setEditingField(null);
           setTempValue('');
         }}
-        mask={field.type === 'password' ? '*' : undefined}
+        mask={undefined}
       />
     );
   };
