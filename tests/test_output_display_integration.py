@@ -71,7 +71,7 @@ class TestOutputDisplayIntegration:
                 "target": "https://example.com:8080/path",
                 "operation_id": "OP_20250718_123456",
                 "base_dir": "/app/outputs",
-                "expected": "/app/outputs/example.com/OP_20250718_123456",  # Port removed by sanitize_target_name
+                "expected": "/app/outputs/example.com_8080/OP_20250718_123456",  # Port preserved with underscore
             },
             {
                 "target": "192.168.1.1",
