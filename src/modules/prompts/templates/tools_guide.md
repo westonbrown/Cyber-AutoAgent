@@ -12,7 +12,7 @@
     * ALWAYS specify timeout for parallel operations: {"parallel": true, "timeout": 180}
     * Port scans with service detection (-sV -sC): Use {"timeout": 300} minimum
     * Full port scans (-p-): Use {"timeout": 600} or break into ranges
-  - Web scanners (nikto): Use {"timeout": 300–600}
+- Web scanners (e.g., nikto/sqlmap/ffuf/gobuster or equivalents available): Use {"timeout": 300–900}
   - Heavy directory fuzzers (dirb/gobuster/feroxbuster): Use {"timeout": 600–900}
   - If a heavy scan times out, DOUBLE the timeout once and reduce scope (smaller wordlist, lower depth/recursion, lower rate) before expanding again
     * Database/exploit tools (sqlmap, metasploit): Use {"timeout": 600}
@@ -54,7 +54,7 @@
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
   - Only for Python tool files under `tools/`; do not use for reports or general notes.
 - **load_tool**: Dynamically register editor-created tools for immediate use.
-- **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing.
+- **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing (including structured JSON bodies, e.g., GraphQL, when applicable).
   - Specify method, URL, headers, body, and auth explicitly. Store request/response pairs to memory.
 - For web/API validation: must save a request/response transcript AND a negative/control transcript as artifacts under outputs/<target>/OP_<id>/artifacts/; reference only the paths in memory.
   - Provide deterministic reproduction (http_request parameters and a cURL equivalent) and a one-line rationale in the Proof Pack.

@@ -569,9 +569,9 @@ class Mem0ServiceClient:
                 "active": True,
             }
         )
-        # Tag with current operation ID when available
-        op_id = os.getenv("CYBER_OPERATION_ID")
-        if op_id and "operation_id" not in plan_metadata:
+        # Tag with current operation ID (prefer client config, then env)
+        op_id = (self.config or {}).get("operation_id") or os.getenv("CYBER_OPERATION_ID")
+        if op_id:
             plan_metadata["operation_id"] = op_id
 
         # Deactivate previous plans
@@ -625,27 +625,64 @@ class Mem0ServiceClient:
             content=f"[REFLECTION] {reflection_content}", user_id=user_id, metadata=reflection_metadata
         )
 
-    def get_active_plan(self, user_id: str = "cyber_agent") -> Optional[Dict]:
-        """Get the most recent active plan.
+    def get_active_plan(self, user_id: str = "cyber_agent", operation_id: Optional[str] = None) -> Optional[Dict]:
+        """Get the most recent active plan, preferring the current operation.
+
+        This avoids semantic-search drift by listing all memories and selecting the
+        newest plan entry (by created_at) with metadata.active == True. If an
+        operation_id is provided, only consider plans tagged with that ID.
 
         Args:
             user_id: User ID to search plans for
+            operation_id: Optional operation ID to scope plan selection
 
         Returns:
-            Most recent plan or None if no plans found
+            Most recent active plan or None if no plans found
         """
         try:
-            # Search for plans
-            plan_results = self.search_memories(query="category:plan [PLAN]", user_id=user_id)
+            # Prefer deterministic listing over semantic search to avoid stale snapshots
+            all_memories = self.list_memories(user_id=user_id)
 
-            if isinstance(plan_results, list) and plan_results:
-                # Return the most recent plan (highest score/most recent)
-                return plan_results[0]
-            elif isinstance(plan_results, dict):
-                results = plan_results.get("results", [])
-                return results[0] if results else None
+            if isinstance(all_memories, dict):
+                raw = all_memories.get("results", []) or all_memories.get("memories", []) or []
+            elif isinstance(all_memories, list):
+                raw = all_memories
+            else:
+                raw = []
 
-            return None
+            # Filter to plan items, optionally scoped to operation_id
+            plan_items: List[Dict[str, Any]] = []
+            for m in raw:
+                meta = m.get("metadata", {}) or {}
+                if str(meta.get("category", "")) != "plan":
+                    continue
+                if operation_id and str(meta.get("operation_id", "")) != str(operation_id):
+                    continue
+                plan_items.append(m)
+
+            if not plan_items:
+                # Fallback: if op-scoped search had no results, try any plan
+                for m in raw:
+                    meta = m.get("metadata", {}) or {}
+                    if str(meta.get("category", "")) == "plan":
+                        plan_items.append(m)
+
+            if not plan_items:
+                return None
+
+            # Sort by created_at (desc). If missing, keep original order.
+            def _dt(x: Dict[str, Any]) -> str:
+                return str(x.get("created_at", ""))
+
+            plan_items.sort(key=_dt, reverse=True)
+
+            # Prefer the first active plan; if none, return most recent plan
+            for m in plan_items:
+                meta = m.get("metadata", {}) or {}
+                if meta.get("active", False) is True:
+                    return m
+
+            return plan_items[0]
         except Exception as e:
             logger.error(f"Error retrieving active plan: {e}")
             return None
@@ -1041,6 +1078,12 @@ def initialize_memory_system(
     enhanced_config["operation_id"] = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     enhanced_config["target_name"] = target_name or "default_target"
 
+    # Expose operation context for downstream components that rely on env
+    try:
+        os.environ["CYBER_OPERATION_ID"] = enhanced_config["operation_id"]
+    except Exception:
+        pass
+
     _MEMORY_CONFIG = enhanced_config
     _MEMORY_CLIENT = Mem0ServiceClient(enhanced_config, has_existing_memories, silent)
     logger.info(
@@ -1083,31 +1126,31 @@ def mem0_memory(
     """
     Memory management tool for storing, retrieving, and managing memories in Mem0.
 
-    This tool provides a comprehensive interface for managing memories with Mem0,
-    including storing new memories, retrieving existing ones, listing all memories,
-    performing semantic searches, and managing memory history.
+    Purpose and scope:
+    - Store atomic, reproducible evidence and findings; aggregation happens at report generation.
+    - Never store executive summaries/final reports in memory.
 
-    IMPORTANT: Store only atomic findings during operation. Do NOT store:
-    - Executive summaries or final reports (auto-generated at operation end)
-    - Comprehensive assessments or operation summaries
-    - Aggregated findings (aggregation happens at report generation)
+    Failure-mode hardening (validation first):
+    - High/Critical findings require metadata.proof_pack with existing artifact paths; missing/invalid proof_pack → auto-downgrade validation_status to "hypothesis" and cap confidence.
+    - Pattern-only signals are capped at low confidence and marked as "pattern_match" evidence_type.
+    - Do not store success/verified booleans; use validation_status + proof_pack instead.
 
-    For findings, use structured format:
+    Structured finding content:
     [VULNERABILITY] title [WHERE] location [IMPACT] impact
     [EVIDENCE] proof [STEPS] reproduction [REMEDIATION] fix or "Not determined"
     [CONFIDENCE] percentage with justification
 
     Args:
-        action: The action to perform (store, get, list, retrieve, delete, history)
-        content: Content to store (for store action) - use structured format for findings
+        action: One of store|get|list|retrieve|delete|history|store_plan|get_plan|store_reflection|reflect
+        content: Content to store (for store action) — use structured format for findings
         memory_id: Memory ID (for get, delete, history actions)
         query: Search query (for retrieve action)
-        user_id: User ID for the memory operations (defaults to 'cyber_agent')
-        agent_id: Agent ID for the memory operations
-        metadata: Optional metadata with category, severity, confidence
+        user_id: User ID for memory operations (defaults to 'cyber_agent')
+        agent_id: Agent ID for memory operations
+        metadata: Optional metadata with category, severity, confidence; for findings include severity, validation_status, and proof_pack when verified
 
     Returns:
-        Formatted string response with operation results
+        JSON/text response summarizing the memory operation; on parsing issues, returns a safe fallback summary.
     """
     global _MEMORY_CLIENT
 
@@ -1123,6 +1166,49 @@ def mem0_memory(
         # Use simple user_id if not provided
         if not user_id and not agent_id:
             user_id = "cyber_agent"
+
+        def _normalize_confidence(conf_val: Any, cap_to: float | None = None) -> str:
+            """Normalize confidence to a percentage string, optionally capping at cap_to."""
+            try:
+                if isinstance(conf_val, str) and conf_val.strip().endswith("%"):
+                    num = float(conf_val.strip().rstrip("%"))
+                else:
+                    num = float(conf_val)
+            except Exception:
+                num = 0.0
+            if cap_to is not None:
+                num = min(num, cap_to)
+            num = max(0.0, min(100.0, num))
+            return f"{num:.1f}%"
+
+        def _is_valid_proof_pack(proof: Any) -> bool:
+            """Validate proof_pack structure and artifact existence (fail-closed).
+
+            Expectations:
+            - proof_pack is a dict with key 'artifacts': List[str] of file paths (absolute or relative)
+            - Optional 'rationale': short string tying artifacts to impact
+            - Every listed artifact path MUST exist at validation time
+
+            Notes:
+            - No content parsing or domain heuristics are used here; presence of files only
+            - Any exception or malformed input results in False (fail-closed)
+            """
+            if not isinstance(proof, dict):
+                return False
+            arts = proof.get("artifacts")
+            if not isinstance(arts, list) or len(arts) == 0:
+                return False
+            # All listed artifacts must exist; relative or absolute paths supported
+            for p in arts:
+                try:
+                    if not isinstance(p, str) or not p.strip():
+                        return False
+                    if not os.path.exists(p):
+                        return False
+                except Exception:
+                    return False
+            # Rationale is encouraged but not strictly required for validity here
+            return True
 
         # Check if we're in development mode
         strands_dev = os.environ.get("BYPASS_TOOL_CONSENT", "").lower() == "true"
@@ -1147,7 +1233,9 @@ def mem0_memory(
             return json.dumps(results, indent=2)
 
         elif action == "get_plan":
-            plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent")
+            # Scope retrieval to current operation when available to avoid stale plans
+            op_id = os.getenv("CYBER_OPERATION_ID")
+            plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent", operation_id=op_id)
             if plan:
                 if not strands_dev:
                     console.print("[green]📋 Active plan retrieved[/green]")
@@ -1215,6 +1303,35 @@ def mem0_memory(
             else:
                 metadata = {}
 
+            # High-level guardrails for classification (domain-agnostic, no pattern matching)
+            if metadata.get("category") == "finding":
+                # Normalize severity
+                valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+                sev = str(metadata.get("severity", "MEDIUM")).upper()
+                if sev not in valid_severities:
+                    sev = "MEDIUM"
+                metadata["severity"] = sev
+
+                # Normalize validation_status
+                vstat = str(metadata.get("validation_status", "")).lower()
+
+                # For High/Critical: require a valid proof_pack for Verified status.
+                if sev in {"HIGH", "CRITICAL"}:
+                    proof = metadata.get("proof_pack")
+                    if _is_valid_proof_pack(proof):
+                        # If caller intended verified, keep it; otherwise upgrade to unverified by default
+                        if vstat not in {"verified", "unverified", "hypothesis"}:
+                            metadata["validation_status"] = "unverified"
+                        # Confidence can remain as provided
+                    else:
+                        # Missing/invalid proof_pack: downgrade to hypothesis and cap confidence
+                        metadata["validation_status"] = "hypothesis"
+                        metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "60%"), cap_to=60.0)
+                else:
+                    # For non-high/critical, if validation_status absent, set to unverified by default
+                    if vstat not in {"verified", "unverified", "hypothesis"}:
+                        metadata["validation_status"] = "unverified"
+
             # Tag with current operation ID when available
             op_id = os.getenv("CYBER_OPERATION_ID")
             if op_id and "operation_id" not in metadata:
@@ -1237,11 +1354,11 @@ def mem0_memory(
                     if "validation_status" not in metadata:
                         metadata["validation_status"] = "unverified"
                     if "evidence_type" not in metadata:
-                        # Determine evidence type based on confidence level
+                        # Determine evidence type based on confidence level only (no content parsing)
                         confidence_str = metadata.get("confidence", "0%")
                         try:
-                            confidence_val = float(confidence_str.rstrip("%"))
-                        except (ValueError, AttributeError):
+                            confidence_val = float(str(confidence_str).rstrip("%"))
+                        except Exception:
                             confidence_val = 0
 
                         if confidence_val >= 70:
@@ -1252,14 +1369,8 @@ def mem0_memory(
                             metadata["evidence_type"] = "pattern_match"
 
                     # Ensure low initial confidence for pattern matches
-                    if metadata.get("evidence_type") == "pattern_match" and metadata.get("confidence", "0%") == "0%":
-                        metadata["confidence"] = "35%"
-
-                    # Validate findings include evidence
-                    if "[EVIDENCE]" not in cleaned_content and "evidence" not in cleaned_content.lower():
-                        logging.getLogger(__name__).warning(
-                            "Finding stored without [EVIDENCE] section - may lack validation"
-                        )
+                    if metadata.get("evidence_type") == "pattern_match":
+                        metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "35%"), cap_to=40.0)
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")
