@@ -5,7 +5,8 @@
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import TextInput from 'ink-text-input';
+import { ExtendedTextInput } from './ExtendedTextInput.js';
+import { ErrorBoundary } from './ErrorBoundary.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { useModule } from '../contexts/ModuleContext.js';
 
@@ -73,9 +74,6 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       });
     }
   }, [appStateRef?.getCommandHistory?.()]);
-  
-  // Track a key to force TextInput re-mount when needed
-  const [inputKey, setInputKey] = useState(0);
 
   // Generate smart suggestions based on flow state and input
   // Don't use useCallback here to avoid infinite loop
@@ -208,12 +206,12 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   // Clear input when flow state changes to help with transitions
   useEffect(() => {
     if (previousStep.current !== flowState.step) {
-      // Clear input and force TextInput re-mount when flow state changes
+      // Clear input when flow state changes (no remount in Ink 6.x)
       setValue('');
       setShowSuggestions(false);
       setSelectedSuggestionIndex(0);
-      setInputKey(prev => prev + 1); // Force re-mount for clean state
-      
+      // Don't increment inputKey - causes crashes in Ink 6.x
+
       // Update the previous step ref
       previousStep.current = flowState.step;
     }
@@ -350,11 +348,11 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       setHistoryIndex(null);
       draftBeforeHistoryRef.current = '';
 
-      // Clear state and force re-mount of TextInput to ensure clean state
+      // Clear state without forcing re-mount (helps avoid Ink 6.x crashes)
       setValue('');
       setShowSuggestions(false);
-      setInputKey(prev => prev + 1); // Force TextInput to re-mount with clean state
-      
+      // Leave inputKey unchanged; incrementing it has triggered paste-related crashes in Ink 6.x
+
       // Process the command after ensuring clean state
       setTimeout(() => {
         onInput(submittedValue);
@@ -362,15 +360,28 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
   };
 
-  const handleChange = (newLineValue: string) => {
-    // Replace only the last line with the new input value
+  const handleChange = React.useCallback((newLineValue: string) => {
+    // Simple synchronous update; paste is treated as normal text
     setValue(prev => {
+      // Multi-line paste handling
+      if (newLineValue.includes('\n')) {
+        return newLineValue;
+      }
+
+      // Single-line handling
+      if (!prev || prev === '') {
+        return newLineValue;
+      }
+
       const parts = prev.split('\n');
-      if (parts.length === 0) return newLineValue;
-      parts[parts.length - 1] = newLineValue;
-      return parts.join('\n');
+      if (parts.length > 0) {
+        parts[parts.length - 1] = newLineValue;
+        return parts.join('\n');
+      }
+
+      return newLineValue;
     });
-  };
+  }, []);
 
   return (
     <Box flexDirection="column" width="100%">
@@ -387,25 +398,38 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Text>
         <Box marginLeft={1} flexGrow={1} flexDirection="column">
           {(() => {
-            const parts = value.split('\n');
-            const head = parts.slice(0, -1);
-            const tail = parts[parts.length - 1] ?? '';
-            return (
-              <>
-                {head.map((line, idx) => (
-                  <Text key={`ml-${idx}`} color={theme.foreground}>{line || ' '}</Text>
-                ))}
-                <TextInput
-                  key={inputKey}
-                  value={tail}
-                  onChange={handleChange}
-                  onSubmit={handleSubmit}
-                  placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
-                  showCursor={!disabled || userHandoffActive}
-                  focus={!disabled || userHandoffActive}
-                />
-              </>
-            );
+            try {
+              const safeValue = String(value || '');
+              const parts = safeValue.split('\n');
+              const head = parts.slice(0, -1);
+              const tail = parts[parts.length - 1] || '';
+
+              return (
+                <>
+                  {head.map((line, idx) => {
+                    // Ensure line is a safe string
+                    const safeLine = String(line || ' ');
+                    return (
+                      <Text key={`ml-${idx}`} color={theme.foreground}>{safeLine}</Text>
+                    );
+                  })}
+                  <ErrorBoundary>
+                    <ExtendedTextInput
+                      value={tail}
+                      onChange={handleChange}
+                      onSubmit={handleSubmit}
+                      placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
+                      showCursor={!disabled || userHandoffActive}
+                      focus={!disabled || userHandoffActive}
+                      disabled={disabled && !userHandoffActive}
+                    />
+                  </ErrorBoundary>
+                </>
+              );
+            } catch (error) {
+              // Fallback render without logging
+              return <Text color={theme.foreground}>_</Text>;
+            }
           })()}
         </Box>
       </Box>

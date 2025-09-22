@@ -59,7 +59,10 @@ export function useAutoRun({
       }
       // Note: Persisting config updates would require a context method; omitted intentionally.
 
-      // Set assessment parameters
+      // Set assessment parameters (module first to ensure correct plugin prompts/tools)
+      if (module) {
+        operationManager.assessmentFlowManager.processUserInput(`module ${module}`);
+      }
       operationManager.assessmentFlowManager.processUserInput(`target ${target}`);
       if (objective) {
         operationManager.assessmentFlowManager.processUserInput(`objective ${objective}`);

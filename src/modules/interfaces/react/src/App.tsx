@@ -196,33 +196,71 @@ const AppContent: React.FC<AppProps> = ({
     }
   }, { isActive: true });
 
-  // Extra low-level fallback: capture raw ESC byte if any handler above misses it
+  // Exit only on a real, standalone ESC keypress (ignore ESC-prefixed sequences like bracketed paste).
   React.useEffect(() => {
-    const onData = (chunk: Buffer) => {
-      // ESC is 0x1B
-      if (chunk && chunk.length > 0) {
-        // Detect ESC byte (0x1B) anywhere in the buffer
-        const hasEsc = typeof (chunk as any).includes === 'function' ? (chunk as any).includes(0x1b) : (chunk.toString('binary').indexOf('\x1b') >= 0);
-        if (hasEsc) {
-          // Do not allow the raw ESC fallback to fire during the setup wizard
+    let escTimer: NodeJS.Timeout | null = null;
+    let pendingEsc = false;
+
+    const clearEscTimer = () => {
+      if (escTimer) {
+        try { clearTimeout(escTimer); } catch {}
+        escTimer = null;
+      }
+    };
+
+    const armStandaloneEsc = () => {
+      pendingEsc = true;
+      clearEscTimer();
+      // Briefly debounce to tell a lone ESC key from the start of a control sequence
+      escTimer = setTimeout(() => {
+        if (pendingEsc) {
           const atMain = activeModal === ModalType.NONE && !appState.activeOperation && !appState.isInitializationFlowActive;
           const suppressed = Date.now() < escSuppressUntilRef.current;
           if (atMain && !suppressed) {
             requestExitWithLog();
           }
         }
+        pendingEsc = false;
+        escTimer = null;
+      }, 30) as unknown as NodeJS.Timeout;
+    };
+
+    const onData = (chunk: Buffer) => {
+      if (!chunk || chunk.length === 0) return;
+
+      // If we were waiting to see if ESC was standalone and more bytes arrived, cancel
+      if (pendingEsc) {
+        pendingEsc = false;
+        clearEscTimer();
+      }
+
+      // If the buffer is exactly a single ESC byte, start the debounce
+      if (chunk.length === 1 && chunk[0] === 0x1b) {
+        armStandaloneEsc();
+        return;
+      }
+
+      // If the buffer starts with ESC, assume it's a control sequence and ignore it for exit
+      if (chunk[0] === 0x1b) {
+        // Ignore ESC-prefixed control sequences, including bracketed paste
+        return;
       }
     };
+
+    let removeListener: (() => void) | null = null;
     try {
       const stdin: any = (process as any).stdin;
       if (stdin && typeof stdin.on === 'function') {
         stdin.on('data', onData);
-        return () => {
-          try { stdin.off?.('data', onData); } catch {}
-        };
+        removeListener = () => { try { stdin.off?.('data', onData); } catch {} };
       }
     } catch {}
-  }, [activeModal, appState.activeOperation, exit]);
+
+    return () => {
+      clearEscTimer();
+      if (removeListener) removeListener();
+    };
+  }, [activeModal, appState.activeOperation, requestExitWithLog]);
 
   // Enforce raw mode on stdin to ensure ESC and other control keys are captured reliably
   React.useEffect(() => {
@@ -262,10 +300,15 @@ const AppContent: React.FC<AppProps> = ({
   // Module context
   const { availableModules } = useModule();
   
-  // Sync available modules with InputParser
+  // Sync available modules with InputParser and AssessmentFlow (dynamic, no hardcoding)
   useEffect(() => {
-    commandParser.setAvailableModules(Object.keys(availableModules));
-  }, [availableModules, commandParser]);
+    const mods = Object.keys(availableModules);
+    commandParser.setAvailableModules(mods);
+    try {
+      // Propagate discovered modules to AssessmentFlow so module selection is fully dynamic
+      operationManager.assessmentFlowManager?.setSupportedModules?.(mods);
+    } catch {}
+  }, [availableModules, commandParser, operationManager]);
   
   // Configuration loading effect - mark as loaded
   useEffect(() => {
