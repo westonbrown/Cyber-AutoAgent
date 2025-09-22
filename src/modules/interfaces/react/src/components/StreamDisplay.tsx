@@ -449,7 +449,7 @@ export const EventLine: React.FC<{
                 })
               ) : (
                 <Box marginLeft={2}>
-                  <Text dimColor>└─ (no command)</Text>
+<Text dimColor>└─ (awaiting args …)</Text>
                 </Box>
               )}
               {extraParams.length > 0 && (
@@ -462,8 +462,9 @@ export const EventLine: React.FC<{
         }
           
         case 'http_request': {
-          const method = latestInput.method || 'GET';
+const method = latestInput.method || 'GET';
           const url = latestInput.url || '';
+          const urlDisplay = url && url.trim().length > 0 ? url : '(awaiting args …)';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: http_request</Text>
@@ -471,7 +472,7 @@ export const EventLine: React.FC<{
                 <Text dimColor>├─ method: {method}</Text>
               </Box>
               <Box marginLeft={2}>
-                <Text dimColor>└─ url: {url}</Text>
+<Text dimColor>└─ url: {urlDisplay}</Text>
               </Box>
             </Box>
           );
@@ -814,6 +815,8 @@ export const EventLine: React.FC<{
         if (l.length === 0) return true; // keep blank spacers
         // Suppress duplicate stop-cycle noise (reason is shown via metadata/termination panel)
         if (l.startsWith('Event loop cycle stop requested')) return false;
+        // Remove python_repl success banner lines
+        if (/^Code executed successfully\.?$/i.test(l)) return false;
         // Drop only standalone placeholder lines (not JSON content)
         if (l === 'output' || l === 'reasoning') return false;
         // Drop empty Error: labels
@@ -823,6 +826,8 @@ export const EventLine: React.FC<{
           // Only drop CYBER_EVENT and timestamp logs for tool outputs
           if (l.startsWith('__CYBER_EVENT__') || l.endsWith('__CYBER_EVENT_END__')) return false;
           if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+(INFO|DEBUG|WARNING|ERROR)\s+-\s+/.test(l)) return false;
+          // Suppress noisy parser errors that could appear during large report emission
+          if (/^Error parsing event:/i.test(l)) return false;
           return true;
         }
         // For non-tool outputs, apply normal filtering
@@ -832,6 +837,8 @@ export const EventLine: React.FC<{
         if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+-\s+(INFO|DEBUG|WARNING|ERROR)\s+-\s+/.test(l)) return false;
         // Drop [3:19:46 PM]-style app logs
         if (appLogPatterns.some(p => p.test(l))) return false;
+        // Suppress noisy parser errors globally as well
+        if (/^Error parsing event:/i.test(l)) return false;
         return true;
       });
       if (filteredLinesPre.length === 0) {
@@ -903,6 +910,7 @@ export const EventLine: React.FC<{
       
       // Check if this is a security report or important system output
       const isReport = contentStr.includes('# SECURITY ASSESSMENT REPORT') || 
+                      contentStr.includes('# CTF Challenge Assessment Report') ||
                       contentStr.includes('EXECUTIVE SUMMARY') ||
                       contentStr.includes('KEY FINDINGS') ||
                       contentStr.includes('REMEDIATION ROADMAP');
@@ -960,6 +968,7 @@ export const EventLine: React.FC<{
                 <Text key={index}>{line}</Text>
               ))}
             </Box>
+            <Text> </Text>
           </Box>
         );
       }
@@ -981,24 +990,34 @@ export const EventLine: React.FC<{
                 return <Text key={index}>{line}</Text>;
               })}
             </Box>
+            <Text> </Text>
           </Box>
         );
       }
 
       // Show tool output with special formatting
       if (fromToolBuffer) {
+        const toolNameMeta = (event as any).metadata?.tool as string | undefined;
+        const isPy = toolNameMeta === 'python_repl';
+        const headerText = isPy ? 'output (python_repl)' : 'output';
+        const showCount = isPy ? dedupedLines.length > 0 : dedupedLines.length > 10;
         return (
           <Box flexDirection="column" marginTop={1}>
             <Box>
-              <Text color="yellow">output</Text>
-              {dedupedLines.length > 10 && <Text dimColor> [{dedupedLines.length} lines]</Text>}
+              <Text color="yellow">{headerText}</Text>
+              {showCount && <Text dimColor> [{dedupedLines.length} lines]</Text>}
               {metadata.length > 0 && <Text dimColor> ({metadata.join(', ')})</Text>}
             </Box>
             <Box marginLeft={2} flexDirection="column">
-              {displayLines.map((line: string, index: number) => (
-                <Text key={index} dimColor>{line}</Text>
-              ))}
+              {isPy && dedupedLines.length === 0 ? (
+                <Text dimColor>(no stdout)</Text>
+              ) : (
+                displayLines.map((line: string, index: number) => (
+                  <Text key={index} dimColor>{line}</Text>
+                ))
+              )}
             </Box>
+            <Text> </Text>
           </Box>
         );
       }
@@ -1016,6 +1035,7 @@ export const EventLine: React.FC<{
               <Text key={index} dimColor>{line}</Text>
             ))}
           </Box>
+          <Text> </Text>
         </Box>
       );
     }

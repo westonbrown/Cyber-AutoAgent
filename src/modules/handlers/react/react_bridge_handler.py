@@ -636,7 +636,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # The tool_input_update will handle it
                 return
 
-            should_emit = has_meaningful_input or is_swarm_agent_tool
+            # Only the swarm path emits tool headers from the bridge; main agent headers come from ReactHooks
+            should_emit = self.in_swarm_operation and (has_meaningful_input or is_swarm_agent_tool)
 
             if should_emit:
                 # Suppress OutputInterceptor during tool execution
@@ -2621,8 +2622,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 target=target, objective=objective, operation_id=self.operation_id, config_data=config_data
             )
 
-            if report_content and report_content.strip().startswith("# SECURITY ASSESSMENT REPORT"):
-                # Save report to file first
+            # Accept any non-empty report content; do not enforce a specific header
+            if isinstance(report_content, str) and report_content.strip():
                 try:
                     from pathlib import Path
 
@@ -2639,8 +2640,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
 
-                    # Emit the full report content to the UI
-                    self._emit_ui_event({"type": "report_content", "content": report_content})
+                    # Emit the full report content to the UI (truncate if excessively large to ensure stable transport)
+                    try:
+                        if len(report_content) > 20000:
+                            preview = report_content[:20000] + "\n... (truncated - see saved file for full report)"
+                            self._emit_ui_event({"type": "output", "content": preview})
+                        else:
+                            self._emit_ui_event({"type": "output", "content": report_content})
+                    except Exception:
+                        # Fallback: if report content could not be serialized, emit a short note
+                        self._emit_ui_event({"type": "output", "content": "⚠️ Report generated but could not be inlined due to size. See saved file path below."})
 
                     # Also emit file path information for reference
                     self._emit_ui_event(
@@ -2663,7 +2672,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         {"type": "output", "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"}
                     )
             else:
-                self._emit_ui_event({"type": "error", "content": f"Failed to generate report: {report_content}"})
+                self._emit_ui_event({"type": "error", "content": "Failed to generate report: empty content from report generator"})
 
         except Exception as e:
             logger.error("Error generating final report: %s", e)

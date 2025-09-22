@@ -12,6 +12,11 @@ export class EventAggregator {
   private lastEventType?: string;
   private activeThinking: boolean = false;
   private activeReasoningSession: boolean = false;
+  private pendingStepHeader?: DisplayStreamEvent;
+  // Track step gating to properly attribute early reasoning to the previous step
+  private pendingStepNumber?: number;
+  private hasToolForPendingStep: boolean = false;
+  private lastEmittedStepNumber?: number;
   
   // Command buffering delay constant  
   private readonly COMMAND_BUFFER_MS = 100; // Short delay to collect all commands
@@ -25,6 +30,11 @@ export class EventAggregator {
   private swarmActive: boolean = false;
   private currentSwarmAgent: string | null = null;
   private swarmHandoffSequence: number = 0;
+
+  // Dedupe: avoid duplicate tool headers from dual emitters (hooks + bridge handler)
+  private displayedToolStartIds: Set<string> = new Set();
+  // Track dedupe keys by tool id so we can clean them up on tool_end
+  private toolStartDedupeKeyById: Map<string, string> = new Map();
   
   // These methods are no longer used since we don't buffer events
   // Kept for potential future use if buffering is needed
@@ -47,31 +57,28 @@ export class EventAggregator {
       case 'step_header':
         // End any active reasoning session
         this.activeReasoningSession = false;
-        
         // Track swarm agent from step header
         if (event.is_swarm_operation && event.swarm_agent) {
           this.currentSwarmAgent = event.swarm_agent;
         }
-        
-        // Backend now emits step headers at the correct time (after reasoning)
-        // Just emit step header immediately
-        results.push({
+        // Buffer the step header; flush when the first tool event of this step arrives
+        this.pendingStepHeader = {
           type: 'step_header',
           step: event.step,
           maxSteps: event.maxSteps,
           operation: event.operation,
           duration: event.duration,
-          // Include swarm-related properties if present
-          is_swarm_operation: event.is_swarm_operation,
-          swarm_agent: event.swarm_agent || this.currentSwarmAgent,
-          swarm_sub_step: event.swarm_sub_step,
-          swarm_max_sub_steps: event.swarm_max_sub_steps,
-          swarm_total_iterations: event.swarm_total_iterations,  // Pass through for x/y display
-          swarm_max_iterations: event.swarm_max_iterations,      // Pass through for x/y display
-          swarm_context: event.swarm_context || (this.swarmActive ? 'Multi-Agent Operation' : undefined)
-        } as DisplayStreamEvent);
-        
-        // End reasoning session after step header
+          is_swarm_operation: (event as any).is_swarm_operation,
+          swarm_agent: (event as any).swarm_agent || this.currentSwarmAgent,
+          swarm_sub_step: (event as any).swarm_sub_step,
+          swarm_max_sub_steps: (event as any).swarm_max_sub_steps,
+          swarm_total_iterations: (event as any).swarm_total_iterations,
+          swarm_max_iterations: (event as any).swarm_max_iterations,
+          swarm_context: (event as any).swarm_context || (this.swarmActive ? 'Multi-Agent Operation' : undefined)
+        } as DisplayStreamEvent;
+        // Track pending step number and reset tool flag
+        this.pendingStepNumber = (typeof event.step === 'number') ? event.step : undefined;
+        this.hasToolForPendingStep = false;
         this.activeReasoningSession = false;
         break;
         
@@ -98,6 +105,10 @@ export class EventAggregator {
           if ('is_swarm_operation' in event && event.is_swarm_operation) {
             reasoningEvent.is_swarm_operation = event.is_swarm_operation;
           }
+          
+          // IMPORTANT: If a new step header is pending and no tool has been seen for that step yet,
+          // keep this reasoning attached to the previous step by not flushing the header here.
+          // This preserves the intuitive attribution (reasoning summarizing prior step results).
           results.push(reasoningEvent as DisplayStreamEvent);
         }
         break;
@@ -143,6 +154,30 @@ export class EventAggregator {
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           this.activeThinking = false;
         }
+
+        // If there is a pending step header, emit it now before the tool header
+        if (this.pendingStepHeader) {
+          results.push(this.pendingStepHeader);
+          // Update step gating state
+          this.lastEmittedStepNumber = this.pendingStepNumber ?? this.lastEmittedStepNumber;
+          this.pendingStepHeader = undefined;
+          this.hasToolForPendingStep = true;
+        }
+
+        // Dedupe duplicate tool headers by tool id (hooks + bridge may emit both)
+        {
+          const candidateId = (event as any).toolId ?? (event as any).tool_id ?? undefined;
+          const stepKey = (this.pendingStepNumber ?? this.lastEmittedStepNumber ?? 0).toString();
+          if (candidateId) {
+            const dedupeKey = `${stepKey}:${candidateId}`;
+            if (this.displayedToolStartIds.has(dedupeKey)) {
+              // Already displayed a header for this tool invocation within this step; ignore duplicates
+              break;
+            }
+            this.displayedToolStartIds.add(dedupeKey);
+            this.toolStartDedupeKeyById.set(String(candidateId), dedupeKey);
+          }
+        }
         
         this.currentToolId = event.toolId;
         
@@ -186,6 +221,13 @@ export class EventAggregator {
         break;
         
       case 'shell_command':
+        // Treat shell_command as evidence of a tool starting (in case a start event was missed)
+        if (this.pendingStepHeader && !this.hasToolForPendingStep) {
+          results.push(this.pendingStepHeader);
+          this.lastEmittedStepNumber = this.pendingStepNumber ?? this.lastEmittedStepNumber;
+          this.pendingStepHeader = undefined;
+          this.hasToolForPendingStep = true;
+        }
         results.push({
           type: 'shell_command',
           command: event.command,
@@ -218,6 +260,12 @@ export class EventAggregator {
           this.lastOutputContent = event.content;
           this.lastOutputTime = currentTime;
           
+          // IMPORTANT: Do NOT flush a pending step header on generic 'output' events.
+          // Late output from the previous tool can arrive after a new step_header
+          // (e.g., final buffer flush). Flushing here would incorrectly advance
+          // the header before prior-step reasoning is rendered.
+          // We only flush on explicit tool signals (tool_start/tool_output).
+          
           // Clear any active thinking when output appears
           if (this.activeThinking) {
             results.push({ type: 'thinking_end' } as DisplayStreamEvent);
@@ -232,11 +280,37 @@ export class EventAggregator {
         }
         break;
         
+      case 'tool_output':
+        // If a step is pending and we receive a standardized tool_output event,
+        // flush the step header before displaying output to keep attribution correct.
+        if (this.pendingStepHeader && !this.hasToolForPendingStep) {
+          results.push(this.pendingStepHeader);
+          this.lastEmittedStepNumber = this.pendingStepNumber ?? this.lastEmittedStepNumber;
+          this.pendingStepHeader = undefined;
+          this.hasToolForPendingStep = true;
+        }
+        // Pass through the event as-is for StreamDisplay to render
+        results.push(event as DisplayStreamEvent);
+        break;
+        
       case 'tool_end':
         // Clear any active thinking when tool ends
         if (this.activeThinking) {
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           this.activeThinking = false;
+        }
+
+        // Cleanup dedupe cache for this tool id to avoid unbounded growth
+        if ((event as any).toolId) {
+          const tid = String((event as any).toolId);
+          const key = this.toolStartDedupeKeyById.get(tid);
+          if (key) {
+            this.displayedToolStartIds.delete(key);
+            this.toolStartDedupeKeyById.delete(tid);
+          } else {
+            // Fallback: remove by raw id if present (legacy cleanup)
+            this.displayedToolStartIds.delete(tid);
+          }
         }
         
         results.push({

@@ -36,7 +36,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   animationsEnabled = true
 }) => {
   // Direct event rendering without Static component
-  // No buffer limit - events are already persisted to disk in log files
+  // Limit event buffer to prevent memory leaks - events are already persisted to disk
+  const MAX_EVENTS = 1000; // Keep last 1000 events in memory
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
   const [metrics, setMetrics] = useState({
@@ -105,6 +106,65 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   const OUTPUT_DEDUPE_TIME_MS = 500;
   const theme = themeManager.getCurrentTheme();
   
+  // Step gating state (anchor step headers until first tool signal)
+  const pendingStepHeaderRef = useRef<DisplayStreamEvent | null>(null);
+  const pendingStepNumberRef = useRef<number | undefined>(undefined);
+  const hasToolForPendingStepRef = useRef<boolean>(false);
+  const lastEmittedStepNumberRef = useRef<number | undefined>(undefined);
+
+  const flushPendingStepHeader = (collector: DisplayStreamEvent[]) => {
+    if (pendingStepHeaderRef.current && !hasToolForPendingStepRef.current) {
+      collector.push(pendingStepHeaderRef.current);
+      lastEmittedStepNumberRef.current = pendingStepNumberRef.current ?? lastEmittedStepNumberRef.current;
+      pendingStepHeaderRef.current = null;
+      hasToolForPendingStepRef.current = true;
+    }
+  };
+
+  // Track max steps and operation id from operation_init for synthetic headers
+  const opMaxStepsRef = useRef<number | undefined>(undefined);
+  const operationIdRef = useRef<string | undefined>(undefined);
+  const stepCounterRef = useRef<number>(0);
+  const lastPushedTypeRef = useRef<string | null>(null);
+  const firstHeaderSeenRef = useRef<boolean>(false);
+  // Buffer for operation summary lines (paths) so we can show them after report preview/content
+  const opSummaryBufferRef = useRef<DisplayStreamEvent[]>([]);
+
+  // Pending reasoning buffer (queue): hold reasoning events after the first header
+  const pendingReasoningsRef = useRef<DisplayStreamEvent[]>([]);
+  const pendingReasoningTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const REASONING_LOOKAHEAD_MS = 1000; // kept for compatibility (no timer-based flushes currently used)
+
+  const flushPendingReasoning = (collector: DisplayStreamEvent[]) => {
+    if (pendingReasoningTimerRef.current) {
+      clearTimeout(pendingReasoningTimerRef.current);
+      pendingReasoningTimerRef.current = null;
+    }
+    if (pendingReasoningsRef.current.length > 0) {
+      // Merge all pending reasoning into a single block for this step
+      const parts: string[] = [];
+      let last: any = null;
+      for (const r of pendingReasoningsRef.current) {
+        if (r && typeof (r as any).content === 'string') {
+          const s = String((r as any).content).trim();
+          if (s) parts.push(s);
+        }
+        last = r || last;
+      }
+      const merged = parts.join('\n\n');
+      if (merged) {
+        const mergedEvent: any = { type: 'reasoning', content: merged };
+        // Preserve swarm context from the last reasoning in the queue if present
+        if (last && (last as any).swarm_agent) mergedEvent.swarm_agent = (last as any).swarm_agent;
+        collector.push(mergedEvent as DisplayStreamEvent);
+      }
+      pendingReasoningsRef.current = [];
+    }
+  };
+
+  // Track swarm sub-steps per agent for synthesized headers
+  const swarmAgentStepsRef = useRef<Map<string, number>>(new Map());
+
   // Event processing function - replaces EventAggregator.processEvent
   const processEvent = (event: any): DisplayStreamEvent[] => {
     const results: DisplayStreamEvent[] = [];
@@ -131,23 +191,47 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           setCurrentSwarmAgent(event.swarm_agent);
         }
         
+        // Push header immediately (no gating)
+        // Before starting a new step, flush any pending reasoning from the previous tool call
+        // so it appears at the end of the previous step (below its outputs)
+        flushPendingReasoning(results);
+
         results.push({
           type: 'step_header',
           step: event.step,
           maxSteps: event.maxSteps,
           operation: event.operation,
           duration: event.duration,
-          // Include swarm-related properties if present
           is_swarm_operation: event.is_swarm_operation,
           swarm_agent: event.swarm_agent || currentSwarmAgent,
           swarm_sub_step: event.swarm_sub_step,
           swarm_max_sub_steps: event.swarm_max_sub_steps,
-          swarm_agent_max: event.swarm_agent_max,  // Per-agent max steps
-          swarm_total_iterations: event.swarm_total_iterations,  // Pass through for x/y display
-          swarm_max_iterations: event.swarm_max_iterations,      // Pass through for x/y display
-          agent_count: event.agent_count,  // Number of agents in swarm
+          swarm_agent_max: event.swarm_agent_max,
+          swarm_total_iterations: event.swarm_total_iterations,
+          swarm_max_iterations: event.swarm_max_iterations,
+          agent_count: event.agent_count,
           swarm_context: event.swarm_context || (swarmActive ? 'Multi-Agent Operation' : undefined)
         } as DisplayStreamEvent);
+
+        // Mark that we've seen the first header
+        firstHeaderSeenRef.current = true;
+        if (typeof event.step === 'number') {
+          stepCounterRef.current = event.step;
+        }
+        lastPushedTypeRef.current = 'step_header';
+        break;
+        
+      case 'operation_init':
+        // Cache operation metadata for synthetic/simple headers
+        if (typeof event.max_steps === 'number') {
+          opMaxStepsRef.current = event.max_steps;
+        }
+        if (typeof event.operation_id === 'string') {
+          operationIdRef.current = event.operation_id;
+        }
+        stepCounterRef.current = 0;
+        lastPushedTypeRef.current = null;
+        results.push(event as DisplayStreamEvent);
         break;
         
       case 'reasoning':
@@ -173,12 +257,16 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           
           // Start reasoning session
           setActiveReasoning(true);
-          
-          // Emit the complete reasoning block directly
-          results.push({
+
+          const reasoningEvent: DisplayStreamEvent = {
             type: 'reasoning',
-            content: event.content.trim()
-          } as DisplayStreamEvent);
+            content: String(event.content).trim(),
+            ...(swarmActive && currentSwarmAgent ? { swarm_agent: currentSwarmAgent } : {})
+          } as DisplayStreamEvent;
+
+          // Minimal rule for correctness: always queue reasoning
+          // We will flush after tool_end (preferred) or at the next step_header if needed.
+          pendingReasoningsRef.current.push(reasoningEvent);
         }
         break;
         
@@ -231,6 +319,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         
       case 'tool_start':
         emitTestMarker(`tool_start tool=${event.toolName || event.tool_name}`);
+        // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
         // Get the tool ID from the event (support both camel/snake)
         let toolId: string | undefined = event.toolId || event.tool_id;
         // Some tools (e.g., orchestrators) don't emit IDs; use a stable fallback so headers render.
@@ -338,6 +427,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'shell_command':
+        // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
         results.push({
           type: 'shell_command',
           command: event.command,
@@ -356,6 +446,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         
       case 'output':
         emitTestMarker('output');
+        // Output should not be held; but ensure we don't have stale pending reasoning lingering
+        // If output appears, we do NOT auto-flush pending reasoning; it may belong under the next header
         // Handle tool output or general output with deduplication
         if (event.content) {
           // Update swarm agent if present in event
@@ -366,7 +458,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           // Suppress verbose termination block lines after ESC
           if (suppressTerminationBannerRef.current) {
             const line = String(event.content).trim();
-            const isDivider = /^([\u2500-\u257F\u2501\u2509\u250A\u250B\u250C\u250D\u250E\u250F\u2510\u2511\u2512\u2513\u2574\u2576\u2501\u2500\-\=\_\~\s]){10,}$/.test(line) || /\u2501|\u2500|\u2502|\u2503|\u2505|\u2507|\u2509/.test(line);
+            const isDivider = /^(\[\u2500-\u257F\u2501\u2509\u250A\u250B\u250C\u250D\u250E\u250F\u2510\u2511\u2512\u2513\u2574\u2576\u2501\u2500\-\=\_\~\s\]){10,}$/.test(line) || /\u2501|\u2500|\u2502|\u2503|\u2505|\u2507|\u2509/.test(line);
             const terminationPhrases = [
               'ESC Kill Switch activated',
               'Assessment stopped by user',
@@ -407,11 +499,41 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
             setActiveThinking(false);
           }
           
-          results.push({
+          // Reorder operation summary vs report preview/content: buffer op-summary and flush after report
+          const fromToolBuffer = !!((event as any).metadata && (event as any).metadata.fromToolBuffer);
+          const isReportPreview = contentStr.includes('# SECURITY ASSESSMENT REPORT') || contentStr.includes('# CTF Challenge Assessment Report') || contentStr.includes('EXECUTIVE SUMMARY') || contentStr.includes('KEY FINDINGS') || contentStr.includes('REMEDIATION ROADMAP');
+          const isOperationSummary = !fromToolBuffer && (
+            contentStr.includes('Outputs stored in:') ||
+            contentStr.includes('Memory stored in:') ||
+            contentStr.includes('Report saved to:') ||
+            contentStr.includes('REPORT ALSO SAVED TO:') ||
+            contentStr.includes('OPERATION LOGS:') ||
+            contentStr.includes('Operation ID:')
+          );
+
+          if (isOperationSummary) {
+            // Buffer operation summary to show after report preview/content
+            opSummaryBufferRef.current.push({
+              type: 'output',
+              content: event.content,
+              toolId: currentToolId
+            } as DisplayStreamEvent);
+            break;
+          }
+
+          // Push normal output
+          const outEvt: DisplayStreamEvent = {
             type: 'output',
             content: event.content,
             toolId: currentToolId
-          } as DisplayStreamEvent);
+          } as DisplayStreamEvent;
+          results.push(outEvt);
+
+          // If this is a report preview block, immediately flush any buffered operation summary below it
+          if (isReportPreview && opSummaryBufferRef.current.length > 0) {
+            results.push(...opSummaryBufferRef.current);
+            opSummaryBufferRef.current = [];
+          }
         }
         break;
         
@@ -433,6 +555,9 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         }
         seenThinkingThisPhaseRef.current = false;
         
+        // Flush any pending reasoning so it appears below the outputs of this tool call
+        flushPendingReasoning(results);
+
         results.push({
           type: 'tool_end',
           toolId: event.toolId,
@@ -447,13 +572,28 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       case 'operation_complete':
         // Clear any active states
         setActiveThinking(false);
+        // Flush any pending reasoning before we finalize
+        flushPendingReasoning(results);
         setActiveReasoning(false);
         
+        // If any op-summary lines are still buffered (no report emitted), flush them now before metrics
+        if (opSummaryBufferRef.current.length > 0) {
+          results.push(...opSummaryBufferRef.current);
+          opSummaryBufferRef.current = [];
+        }
+
         results.push({
           type: 'metrics_update',
           metrics: event.metrics || {},
           duration: event.duration
         } as DisplayStreamEvent);
+        break;
+        
+      case 'tool_output':
+        // Standardized tool output: treat as first tool signal for pending step
+        flushPendingStepHeader(results);
+        // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
+        results.push(event as DisplayStreamEvent);
         break;
         
       case 'swarm_start':
@@ -490,9 +630,23 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         results.push(event as DisplayStreamEvent);
         break;
         
-      default:
-        // Pass through other events as-is
+      case 'report_content':
+        // Pass report content directly for StreamDisplay to render the preview
+        // Flush any pending reasoning so report appears correctly at the end
+        flushPendingReasoning(results);
+        // Show report content
         results.push(event as DisplayStreamEvent);
+        // Then flush any buffered operation summary (paths) so they appear beneath the report
+        if (opSummaryBufferRef.current.length > 0) {
+          results.push(...opSummaryBufferRef.current);
+          opSummaryBufferRef.current = [];
+        }
+        break;
+
+      default:
+        // Pass through other events as-is (no synthetic headers)
+        results.push(event as DisplayStreamEvent);
+        try { lastPushedTypeRef.current = String((event as any).type || ''); } catch {}
         break;
     }
     
@@ -601,11 +755,18 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               }
               // Optional spacing before thinking animation to visually separate
               if (animationsEnabled) {
-                setCompletedEvents(prev => [
-                  ...prev,
-                  { type: 'output', content: '' } as DisplayStreamEvent,
-                  { type: 'output', content: '' } as DisplayStreamEvent
-                ]);
+                setCompletedEvents(prev => {
+                  const updated = [
+                    ...prev,
+                    { type: 'output', content: '' } as DisplayStreamEvent,
+                    { type: 'output', content: '' } as DisplayStreamEvent
+                  ];
+                  // Keep only the last MAX_EVENTS
+                  if (updated.length > MAX_EVENTS) {
+                    return updated.slice(-MAX_EVENTS);
+                  }
+                  return updated;
+                });
               }
               const thinkingEvent: DisplayStreamEvent = {
                 type: 'thinking',
@@ -637,7 +798,14 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           // Move non-thinking items to completed
           const newCompletedEvents = regularEvents.filter(e => e.type !== 'thinking');
           if (newCompletedEvents.length > 0) {
-            setCompletedEvents(prev => [...prev, ...newCompletedEvents]);
+            setCompletedEvents(prev => {
+              const updated = [...prev, ...newCompletedEvents];
+              // Keep only the last MAX_EVENTS to prevent memory growth
+              if (updated.length > MAX_EVENTS) {
+                return updated.slice(-MAX_EVENTS);
+              }
+              return updated;
+            });
           }
 
           // Keep current thinking (if any) in active tail without duplication
@@ -686,10 +854,17 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       // Mark that we should suppress verbose termination block lines
       suppressTerminationBannerRef.current = true;
       // Emit a concise stop summary event
-      setCompletedEvents(prev => [
-        ...prev,
-        { type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent
-      ]);
+      setCompletedEvents(prev => {
+        const updated = [
+          ...prev,
+          { type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent
+        ];
+        // Keep only the last MAX_EVENTS
+        if (updated.length > MAX_EVENTS) {
+          return updated.slice(-MAX_EVENTS);
+        }
+        return updated;
+      });
       handleComplete();
     };
     executionService.on('stopped', handleStopped);
