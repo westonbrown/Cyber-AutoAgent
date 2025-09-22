@@ -1,0 +1,31 @@
+name: ctf
+version: 1.0.0
+description: Strategy-first CTF module with broad vulnerability coverage and disciplined flag extraction
+author: Cyber-AutoAgent Team
+license: MIT
+cognitive_level: 4
+configuration:
+  timeout: 1200
+  max_depth: 15
+  approach: Family-driven discovery and exploitation with curated-first probes and explicit success-state termination
+  confidence_threshold: 0.70
+capabilities:
+  - flag_pattern_recognition: Recognize common flag formats (UUID-like, hash-like, generic tokens)
+  - xss_strategy_and_state_detection: Execute sink-oriented tests and detect success-state transitions
+  - idor_parameter_tampering: Systematic identifier testing and context/header variation
+  - auth_chain_analysis: Session/cookie/claim transitions with verifiable checks
+  - injection_strategies: Error/boolean/time-based probing for SQLi/SSTI and related classes
+  - file_and_path_controls: Upload/path traversal validation with safe read/write checks
+  - ssrf_and_network_probes: Minimal requests to confirm server-originated fetches
+  - graphql_and_api_tests: Introspection and field abuse checks when applicable
+  - curated_first_endpoint_discovery: Prioritize high-yield paths before broad fuzzing
+supported_targets:
+  - web-application
+  - api-endpoint
+  - ctf-challenge
+tools:
+  - ctf_flag_extractor
+module_interface:
+  accepts_from: []
+  provides_to: []
+  finding_categories: ["ctf-flags", "xss-bypasses", "idor-discoveries", "auth-bypasses", "injection-points", "file-traversal", "ssrf"]
