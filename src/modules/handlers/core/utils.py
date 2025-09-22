@@ -78,8 +78,13 @@ def sanitize_target_name(target: str) -> str:
     # Remove query parameters
     sanitized = sanitized.split("?")[0]
 
-    # Remove port numbers
-    sanitized = re.sub(r":\d+$", "", sanitized)
+    # Extract port if present for special handling
+    port = None
+    port_match = re.search(r":(\d+)$", sanitized)
+    if port_match:
+        port = port_match.group(1)
+        # Remove port temporarily for processing
+        sanitized = re.sub(r":\d+$", "", sanitized)
 
     # Replace unsafe characters with underscores
     sanitized = re.sub(r"[^\w\-.]", "_", sanitized)
@@ -89,6 +94,10 @@ def sanitize_target_name(target: str) -> str:
 
     # Remove leading/trailing underscores and dots
     sanitized = sanitized.strip("_.")
+
+    # Re-append port if it was present (using underscore separator for filesystem safety)
+    if port:
+        sanitized = f"{sanitized}_{port}"
 
     # Ensure non-empty result
     if not sanitized:

@@ -622,6 +622,27 @@ class ConfigManager:
             base_dir=output_config.base_dir,
         )
 
+    def ensure_operation_output_dirs(
+        self,
+        server: str,
+        target_name: str,
+        operation_id: str,
+        **overrides,
+    ) -> Dict[str, str]:
+        """Ensure operation output directories exist (root and artifacts).
+
+        Creates ./outputs/<target>/<operation_id>/ and ./outputs/<target>/<operation_id>/artifacts
+        using the configured base_dir. Safe to call multiple times.
+        """
+        root = self.get_unified_output_path(server, target_name, operation_id, "", **overrides)
+        artifacts = self.get_unified_output_path(server, target_name, operation_id, "artifacts", **overrides)
+        try:
+            os.makedirs(root, exist_ok=True)
+            os.makedirs(artifacts, exist_ok=True)
+        except Exception as e:
+            logger.debug("ensure_operation_output_dirs: could not create dirs: %s", e)
+        return {"root": root, "artifacts": artifacts}
+
     def get_unified_memory_path(self, server: str, target_name: str, **overrides) -> str:
         """Get unified memory path for target.
 
