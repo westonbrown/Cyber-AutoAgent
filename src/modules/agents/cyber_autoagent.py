@@ -165,14 +165,22 @@ def _create_remote_model(
         )
     # Standard model configuration
     config = config_manager.get_standard_model_config(model_id, region_name, provider)
-    return BedrockModel(
-        model_id=config["model_id"],
-        region_name=config["region_name"],
-        temperature=config["temperature"],
-        max_tokens=config["max_tokens"],
-        top_p=config["top_p"],
-        boto_client_config=boto_config,
-    )
+
+    # Build BedrockModel kwargs
+    model_kwargs = {
+        "model_id": config["model_id"],
+        "region_name": config["region_name"],
+        "temperature": config["temperature"],
+        "max_tokens": config["max_tokens"],
+        "top_p": config["top_p"],
+        "boto_client_config": boto_config,
+    }
+
+    # Add optional fields if present
+    if "additional_request_fields" in config:
+        model_kwargs["additional_request_fields"] = config["additional_request_fields"]
+
+    return BedrockModel(**model_kwargs)
 
 
 def _create_local_model(

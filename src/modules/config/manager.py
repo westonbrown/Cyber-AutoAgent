@@ -304,13 +304,20 @@ class ConfigManager:
 
     def get_thinking_model_config(self, model_id: str, region_name: str) -> Dict[str, Any]:
         """Get configuration for thinking-enabled models."""
+        # Base beta flags for thinking models
+        beta_flags = ["interleaved-thinking-2025-05-14"]
+
+        # Add 1M context flag for Claude Sonnet 4
+        if "claude-sonnet-4-20250514" in model_id:
+            beta_flags.append("context-1m-2025-08-07")
+
         return {
             "model_id": model_id,
             "region_name": region_name,
             "temperature": 1.0,
             "max_tokens": 32000,
             "additional_request_fields": {
-                "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+                "anthropic_beta": beta_flags,
                 "thinking": {"type": "enabled", "budget_tokens": 10000},
             },
         }
@@ -320,13 +327,21 @@ class ConfigManager:
         provider_config = self.get_server_config(provider)
         llm_config = provider_config.llm
 
-        return {
+        config = {
             "model_id": model_id,
             "region_name": region_name,
             "temperature": llm_config.temperature,
             "max_tokens": llm_config.max_tokens,
             "top_p": llm_config.top_p,
         }
+
+        # Add 1M context support for Claude Sonnet 4
+        if "claude-sonnet-4-20250514" in model_id:
+            config["additional_request_fields"] = {
+                "anthropic_beta": ["context-1m-2025-08-07"]
+            }
+
+        return config
 
     def get_local_model_config(self, model_id: str, provider: str) -> Dict[str, Any]:
         """Get configuration for local Ollama models."""
