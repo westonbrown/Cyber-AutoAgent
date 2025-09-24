@@ -139,7 +139,7 @@ export class OperationManager {
   // Helper to get context limits for models
   private getModelContextLimit(modelId: string): number {
     const contextLimits: { [key: string]: number } = {
-      'us.anthropic.claude-sonnet-4-20250514-v1:0': 200000,
+      'us.anthropic.claude-sonnet-4-20250514-v1:0': 1000000, // 1M context with beta flag
       'us.anthropic.claude-opus-4-1-20250805-v1:0': 200000,
       'claude-3-5-sonnet-20241022-v2:0': 200000,
       'claude-3-5-sonnet-20240620-v1:0': 200000,
