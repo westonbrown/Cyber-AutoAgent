@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-pip \
     python-is-python3 \
+    # Java runtime for ZAP/Burp
+    openjdk-21-jre-headless \
     # Security tools
     nmap \
     sqlmap \
@@ -43,6 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nikto \
     whatweb \
     wafw00f \
+    zaproxy \
+    burpsuite \
     # Recon and DNS
     amass \
     subfinder \
@@ -113,6 +117,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Rust toolchain for building Python packages with native extensions
     rustc \
     cargo \
+    # Node.js for GraphQL tools
+    nodejs \
+    npm \
+    # Python build tools for pip packages
+    python3-dev \
+    build-essential \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Install uv for fast dependency management
@@ -140,11 +150,40 @@ RUN uv sync --no-dev && \
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
 ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
-ENV PYTHONPATH="/app/src"
+ENV PYTHONPATH="/usr/lib/python3/dist-packages:/app/src"
 
 # Pre-install Go-based recon tools (mix of go build and prebuilt binaries)
 # assetfinder (tomnomnom) builds quickly from source
 RUN go install github.com/tomnomnom/assetfinder@latest
+
+# Install additional security tools
+# GraphQL Clairvoyance - GraphQL schema enumeration
+RUN git clone https://github.com/nikitastupin/clairvoyance.git /opt/clairvoyance && \
+    cd /opt/clairvoyance && \
+    python3 -m venv venv && \
+    . venv/bin/activate && \
+    pip install .
+
+# JWT Tool - JWT analysis and manipulation
+RUN git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool && \
+    chmod +x /opt/jwt_tool/jwt_tool.py
+
+# tplmap - Server-Side Template Injection scanner
+RUN git clone https://github.com/epinna/tplmap.git /opt/tplmap && \
+    chmod +x /opt/tplmap/tplmap.py
+
+# GraphQL Inspector CLI for GraphQL introspection
+RUN npm install -g @graphql-inspector/cli jwt-decode
+
+# Install Python packages for our new tools (use --break-system-packages for Kali)
+RUN pip3 install --break-system-packages requests aiohttp jinja2 'httpx[cli]' ratelimit pycryptodomex
+
+# Create wrapper scripts for easy access
+RUN echo '#!/bin/bash\ncd /opt/clairvoyance && source venv/bin/activate && python -m clairvoyance "$@"' > /usr/local/bin/clairvoyance && \
+    echo '#!/bin/bash\npython3 /opt/jwt_tool/jwt_tool.py "$@"' > /usr/local/bin/jwt-tool && \
+    echo '#!/bin/bash\npython3 /opt/tplmap/tplmap.py "$@"' > /usr/local/bin/tplmap && \
+    echo '#!/bin/bash\nif [ $# -eq 0 ]; then echo "Usage: jwt-decode <jwt-token>"; exit 1; fi\nnode -e "const jwt = require(\"jwt-decode\"); try { console.log(JSON.stringify(jwt.default(\"$1\"), null, 2)); } catch (e) { console.error(\"Error decoding JWT:\", e.message); process.exit(1); }"' > /usr/local/bin/jwt-decode && \
+    chmod +x /usr/local/bin/clairvoyance /usr/local/bin/jwt-tool /usr/local/bin/tplmap /usr/local/bin/jwt-decode
 
 # httpx and katana from ProjectDiscovery can pull large dependency graphs; use prebuilt binaries instead
 RUN set -eux; \

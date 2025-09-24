@@ -108,6 +108,19 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         "gobuster": "Directory/file brute-forcer",
         "whatweb": "Web technology fingerprinting",
         "wafw00f": "WAF fingerprinting",
+        # Web app scanners (GUI/CLI)
+        "zaproxy": "OWASP ZAP web scanner (CLI/API)",
+        "burpsuite": "Burp Suite (Community) web scanner",
+        # GraphQL-specific tools
+        "clairvoyance": "GraphQL schema enumeration and introspection",
+        "graphql-inspector": "GraphQL schema analysis and validation",
+        # JWT manipulation tools
+        "jwt-tool": "JWT analysis and manipulation toolkit",
+        "jwt-decode": "JWT token decoder and validator",
+        # Template injection tools
+        "tplmap": "Server-Side Template Injection scanner",
+        # Cookie/Session manipulation
+        "cookiecutter": "Cookie template generation tool",
         # ProjectDiscovery ecosystem
         "nuclei": "Templated vulnerability scanner",
         "naabu": "Fast TCP port scanner (SYN/CONNECT)",
@@ -169,6 +182,16 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         "msfvenom": "msfvenom",
         "iproute2": "ip",
         "net-tools": "netstat",
+        # Explicit binary names for GUI scanners
+        "zaproxy": "zaproxy",
+        "burpsuite": "burpsuite",
+        # New security tools
+        "clairvoyance": "clairvoyance",
+        "graphql-inspector": "graphql-inspector",
+        "jwt-tool": "jwt-tool",
+        "jwt-decode": "jwt-decode",
+        "tplmap": "tplmap",
+        "cookiecutter": "cookiecutter",
     }
 
     available_tools = []
