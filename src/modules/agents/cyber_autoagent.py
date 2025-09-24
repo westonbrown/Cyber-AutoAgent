@@ -532,19 +532,53 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         if memory_client:
             active_plan = memory_client.get_active_plan(user_id="cyber_agent")
             if active_plan:
-                raw = active_plan.get("memory") or active_plan.get("content", "")
-                if isinstance(raw, str) and raw:
-                    # Best-effort extraction: find first active/pending phase and any criteria line
-                    phase_line = None
-                    criteria_line = None
-                    for line in raw.split("\n"):
-                        ls = line.strip()
-                        if not phase_line and ls.lower().startswith("phase"):
-                            phase_line = ls
-                        if ("criteria:" in ls.lower() or "criterion:" in ls.lower()) and not criteria_line:
-                            criteria_line = ls
-                        if phase_line and criteria_line:
-                            break
+                # First try to get JSON from metadata
+                plan_json = active_plan.get("metadata", {}).get("plan_json")
+
+                # If we have JSON, create a rich snapshot
+                if plan_json and isinstance(plan_json, dict):
+                    try:
+                        plan_current_phase = plan_json.get("current_phase", 1)
+                        objective = plan_json.get("objective", "Unknown objective")
+                        phases = plan_json.get("phases", [])
+
+                        # Find current phase details
+                        current_phase_info = None
+                        for phase in phases:
+                            if phase.get("id") == plan_current_phase or phase.get("status") == "active":
+                                current_phase_info = phase
+                                break
+
+                        # Build comprehensive snapshot
+                        snap_lines = []
+                        snap_lines.append(f"Objective: {objective}")
+                        if current_phase_info:
+                            snap_lines.append(f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})")
+                            snap_lines.append(f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}")
+
+                        plan_snapshot = "\n".join(snap_lines)
+                    except Exception as e:
+                        logger.debug("Error creating plan snapshot from JSON: %s", e)
+
+                # Fallback to text extraction if no JSON
+                if not plan_snapshot:
+                    raw = active_plan.get("memory") or active_plan.get("content", "")
+                    if isinstance(raw, str) and raw:
+                        # Best-effort extraction: find first active/pending phase and any criteria line
+                        phase_line = None
+                        criteria_line = None
+                        for line in raw.split("\n"):
+                            ls = line.strip()
+                            # Look for phase lines in format: "Phase X [STATUS]: title - criteria"
+                            if not phase_line and ls.lower().startswith("phase"):
+                                # Check if it's an active phase
+                                if "[ACTIVE]" in ls or "[active]" in ls.upper():
+                                    phase_line = ls
+                                    # Extract criteria from the same line (after the dash)
+                                    if " - " in ls and not criteria_line:
+                                        criteria_line = ls.split(" - ", 1)[1]
+                            if phase_line and criteria_line:
+                                break
                     # Try JSON extraction first (plan stored as JSON or within [PLAN] {json})
                     plan_json = None
                     try:
@@ -572,19 +606,25 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                     # Compose snapshot with up to three lines
                     snap_lines = []
                     if phase_line:
-                        snap_lines.append(f"Phase: {phase_line}")
+                        # Clean up the phase line for display
+                        clean_phase = phase_line.replace("[ACTIVE]", "").replace("[PENDING]", "").replace("[COMPLETED]", "").strip()
+                        snap_lines.append(f"CurrentPhase: {clean_phase}")
                     # Derive sub-objective from phase goal portion if present
                     sub_obj = None
                     try:
-                        # Heuristic: text after ':' is goal
+                        # Extract title from format: "Phase X [STATUS]: title - criteria"
                         if phase_line and ":" in phase_line:
-                            sub_obj = phase_line.split(":", 1)[1].strip()
+                            after_colon = phase_line.split(":", 1)[1].strip()
+                            if " - " in after_colon:
+                                sub_obj = after_colon.split(" - ", 1)[0].strip()
+                            else:
+                                sub_obj = after_colon
                     except Exception:
                         sub_obj = None
                     if sub_obj:
-                        snap_lines.append(f"SubObjective: {sub_obj}")
+                        snap_lines.append(f"Objective: {sub_obj}")
                     if criteria_line:
-                        snap_lines.append(f"Criteria: {criteria_line.split(':',1)[1].strip() if ':' in criteria_line else criteria_line}")
+                        snap_lines.append(f"Criteria: {criteria_line}")
                     plan_snapshot = "\n".join(snap_lines[:3]).strip() or None
     except Exception as e:
         logger.debug("Plan snapshot not available: %s", e)

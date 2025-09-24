@@ -392,6 +392,11 @@ def get_system_prompt(
     )
     parts.append(memory_context_text)
 
+    # Inject plan snapshot IMMEDIATELY after memory context for coherence
+    if plan_snapshot:
+        parts.append("## PLAN SNAPSHOT")
+        parts.append(str(plan_snapshot).strip())
+
     # Include tools context if provided
     if tools_context:
         parts.append("## ENVIRONMENTAL CONTEXT")
@@ -406,12 +411,6 @@ def get_system_prompt(
         parts.append(f"Target: {target_name}")
         parts.append(f"Target organization: {base_dir.rstrip('/')}/{target_name}/")
         parts.append("Evidence and logs will be stored under a unified operation path.")
-
-
-    # Inject a concise plan snapshot if provided
-    if plan_snapshot:
-        parts.append("## PLAN SNAPSHOT")
-        parts.append(str(plan_snapshot).strip())
 
     # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
     try:

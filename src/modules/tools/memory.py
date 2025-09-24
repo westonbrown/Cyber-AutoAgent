@@ -45,15 +45,34 @@ Plan & Reflection:
 - Cadence: get_plan every ~20 steps or at phase boundaries; store_reflection after High/Critical findings or pivots.
 - Update: when Criteria met, set phase.status=done, advance current_phase, and store_plan with updated statuses/criteria.
 
-Plan JSON (compact):
-{ "objective": "...", "current_phase": 1, "total_phases": 3,
-  "phases": [
-    { "id": 1, "title": "Reconnaissance", "status": "active", "criteria": "services mapped, versions identified" },
-    { "id": 2, "title": "Vulnerability Analysis", "status": "pending", "criteria": "vulns verified with artifacts" },
-    { "id": 3, "title": "Exploitation & Impact", "status": "pending", "criteria": "impact demonstrated or definitively blocked" }
-  ] }
+Adaptation Tracking:
+- After failed attempts: store("[BLOCKED] Approach X at endpoint Y", metadata={"category": "adaptation", "retry_count": n})
+- Include what was blocked (script tags, specific chars, etc.) and next strategy
+- After 3 retries with same approach, mandatory pivot to different technique
 
-LLM Proof Pack policy:
+Plan Storage - CRITICAL: Pass as JSON dict, NOT as string!
+
+CORRECT EXAMPLE (pass dict directly):
+mem0_memory(
+  action="store_plan",
+  content={
+    "objective": "Comprehensive security assessment of target",
+    "current_phase": 1,
+    "total_phases": 3,
+    "phases": [
+      {"id": 1, "title": "Reconnaissance", "status": "active", "criteria": "tech_stack identified, endpoints mapped"},
+      {"id": 2, "title": "Vulnerability Testing", "status": "pending", "criteria": "vulns tested with PoC"},
+      {"id": 3, "title": "Exploitation", "status": "pending", "criteria": "flag extracted, evidence saved"}
+    ]
+  }
+)
+
+WRONG (do NOT pass as string):
+content="{\"objective\": \"...\", ...}"  # ❌ This will be rejected
+
+Required fields: objective, current_phase, total_phases, phases (with id, title, status, criteria)
+
+Proof Pack policy:
 - For any HIGH/CRITICAL finding stored via mem0_memory, include a short Proof Pack authored by the LLM:
   • 2–4 sentences that reference at least one concrete artifact (evidence/<...> path, HTTP transcript, RPC JSON, or screenshot)
   • One-line rationale linking the artifact to the claim
@@ -134,8 +153,8 @@ TOOL_SPEC = {
                     ],
                 },
                 "content": {
-                    "type": "string",
-                    "description": "Content to store (required for store action)",
+                    "type": ["string", "object"],
+                    "description": "Content to store - string for store/store_reflection, dict for store_plan",
                 },
                 "memory_id": {
                     "type": "string",
@@ -516,48 +535,56 @@ class Mem0ServiceClient:
     ) -> Dict:
         """Store a strategic plan in memory with category='plan'.
 
-        Supports both simple string plans and hierarchical dictionary plans.
-
-        String Format:
-        - "Phase 1: [ACTION]. Phase 2: [ACTION]. Phase 3: [ACTION]"
-
-        Dict Format:
-        {
-            "objective": "Main objective",
-            "phases": [
-                {"id": 1, "goal": "Map attack surface", "status": "active"},
-                {"id": 2, "goal": "Identify vulnerabilities", "status": "pending"},
-                {"id": 3, "goal": "Exploit and document", "status": "pending"}
-            ],
-            "constraints": ["Time limit", "Stealth required"]
-        }
+        REQUIRES dict format (JSON string is parsed before this method)
 
         Args:
-            plan_content: The strategic plan (string or dict)
+            plan_content: The strategic plan dict with required fields
             user_id: User ID for memory storage
             metadata: Optional metadata (will be enhanced with category='plan')
 
         Returns:
             Memory storage result
         """
-        # Convert dict to formatted string if needed
-        if isinstance(plan_content, dict):
-            objective = plan_content.get("objective", "Unknown objective")
-            phases = plan_content.get("phases", [])
-            constraints = plan_content.get("constraints", [])
+        # This should always be a dict (mem0_memory parses JSON strings)
+        if isinstance(plan_content, str):
+            logger.error("Unexpected string in store_plan - should be dict")
+            raise ValueError(
+                "Internal error: plan_content should be dict at this point. "
+                "The mem0_memory function should have parsed any JSON string."
+            )
 
-            # Format as structured text
-            formatted_plan = f"OBJECTIVE: {objective}\n"
-            for phase in phases:
-                formatted_plan += f"Phase {phase['id']}: {phase['goal']} [{phase.get('status', 'pending')}]\n"
-            if constraints:
-                formatted_plan += f"CONSTRAINTS: {', '.join(constraints)}"
+        # Validate required fields
+        required_fields = ["objective", "current_phase", "total_phases", "phases"]
+        missing = [f for f in required_fields if f not in plan_content]
+        if missing:
+            logger.error(f"Plan missing required fields: {missing}")
+            raise ValueError(f"Plan missing required fields: {missing}. See tool docstring for format.")
 
-            plan_content_str = formatted_plan.strip()
-            plan_structured = True
-        else:
-            plan_content_str = str(plan_content)
-            plan_structured = False
+        # Validate phases structure
+        if not isinstance(plan_content.get("phases"), list) or not plan_content["phases"]:
+            raise ValueError("Plan must have 'phases' as non-empty list")
+
+        for phase in plan_content["phases"]:
+            phase_required = ["id", "title", "status", "criteria"]
+            phase_missing = [f for f in phase_required if f not in phase]
+            if phase_missing:
+                raise ValueError(f"Phase {phase.get('id', '?')} missing fields: {phase_missing}")
+
+        # Format dict as structured text for storage
+        objective = plan_content.get("objective", "Unknown objective")
+        current_phase = plan_content.get("current_phase", 1)
+        total_phases = plan_content.get("total_phases", len(plan_content.get("phases", [])))
+        phases = plan_content.get("phases", [])
+
+        # Format as structured text
+        formatted_plan = f"OBJECTIVE: {objective}\n"
+        formatted_plan += f"PROGRESS: Phase {current_phase}/{total_phases}\n"
+        for phase in phases:
+            status_text = "COMPLETED" if phase["status"] == "done" else "ACTIVE" if phase["status"] == "active" else "PENDING"
+            formatted_plan += f"Phase {phase['id']} [{status_text}]: {phase['title']} - {phase['criteria']}\n"
+
+        plan_content_str = formatted_plan.strip()
+        plan_structured = True
 
         plan_metadata = metadata or {}
         plan_metadata.update(
@@ -567,6 +594,7 @@ class Mem0ServiceClient:
                 "type": "strategic_plan",
                 "structured": plan_structured,
                 "active": True,
+                "plan_json": plan_content,  # Store original JSON in metadata
             }
         )
         # Tag with current operation ID (prefer client config, then env)
@@ -1218,7 +1246,19 @@ def mem0_memory(
             if not content:
                 raise ValueError("content is required for store_plan action")
 
-            results = _MEMORY_CLIENT.store_plan(content, user_id or "cyber_agent")
+            # Parse JSON string to dict if needed
+            if isinstance(content, str):
+                try:
+                    plan_dict = json.loads(content)
+                except json.JSONDecodeError:
+                    raise ValueError(
+                        "Content must be valid JSON dict with: objective, current_phase, total_phases, phases. "
+                        "Got invalid JSON string."
+                    )
+            else:
+                plan_dict = content
+
+            results = _MEMORY_CLIENT.store_plan(plan_dict, user_id or "cyber_agent")
             if not strands_dev:
                 console.print("[green]✅ Strategic plan stored successfully[/green]")
             return json.dumps(results, indent=2)
