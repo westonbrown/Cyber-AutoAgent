@@ -39,9 +39,16 @@
   - External intel quick refs: NVD/CVE, Exploit‑DB, vendor advisories, Shodan/Censys, VirusTotal; store JSON/HTML responses and reference artifact paths.
 - Large responses (HTML/JS): save raw content to outputs/<target>/OP_<id>/artifacts/*.html; review with grep/sed/awk instead of dumping large blobs into memory; store only the file path in findings.
   - Common managed endpoints/keys (e.g., Vercel, Supabase anon keys, Tenderly RPC, analytics) are often normal; treat as observations unless abuse, sensitive exposure, or improper authorization is demonstrated with artifacts.
-- **stop**: Cleanly terminate when the operation is complete.
-- Only invoke when: (1) All plan phases complete and Criteria met with artifacts; (2) Objective satisfied with Proof Packs; (3) ≥80% steps consumed with diminishing returns (last 3 actions produced no new artifacts).
-  - Before stopping: write a brief PhaseSummary and mem0_memory(action="store_reflection") with completion rationale; update the plan to DONE if appropriate.
+- **stop**: Terminate operation ONLY when success criteria met.
+  **STOP DECISION TREE** (follow in order):
+  1. Do you have the exact proof/artifact required by objective? → YES: May stop | NO: Continue to #2
+  2. Has user explicitly said "stop"? → YES: May stop | NO: Continue to #3
+  3. Used <50% budget? → YES: MUST try 3 different approaches before stop | NO: Continue to #4
+  4. Used <80% budget? → YES: MUST deploy swarm before stop | NO: Continue to #5
+  5. Used ≥95% budget AND tried swarm? → YES: May stop after reflection | NO: Continue working
+
+  **INVALID STOP REASONS**: "analysis complete", "documented findings", "technique not working", "blocked by protection", "exhausted current approach"
+  **VALID REASONS**: exact objective achieved with proof, user request, budget exhausted (≥95%) after swarm
 
 
 Non-interactive rule:
