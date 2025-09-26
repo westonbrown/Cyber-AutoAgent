@@ -146,7 +146,7 @@ def _create_remote_model(
     # This prevents ReadTimeoutError during long-running operations
     boto_config = BotocoreConfig(
         region_name=region_name,
-        retries={"max_attempts": 5, "mode": "adaptive"},  # Slightly higher attempts for long sessions
+        retries={"max_attempts": 10, "mode": "adaptive"},  # Higher retry count for long sessions
         read_timeout=420,  # 7 minutes read timeout
         connect_timeout=60,  # 1 minute connection timeout
         max_pool_connections=100,  # Larger pool for long sessions with tools

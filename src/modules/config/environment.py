@@ -65,6 +65,9 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
 
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
+    # Disable Mem0 telemetry to prevent PostHog connection attempts
+    os.environ.setdefault("MEM0_TELEMETRY", "false")
+
     # Create necessary directories in proper locations
     try:
         tools_path = Path("tools")

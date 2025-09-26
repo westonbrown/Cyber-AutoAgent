@@ -72,7 +72,7 @@ class ReportGenerator:
             from botocore.config import Config as BotocoreConfig
             boto_config = BotocoreConfig(
                 region_name=cfg.get_server_config("bedrock").region,
-                retries={"max_attempts": 5, "mode": "adaptive"},
+                retries={"max_attempts": 10, "mode": "adaptive"},
                 read_timeout=420,
                 connect_timeout=60,
                 max_pool_connections=100,
