@@ -103,6 +103,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         except Exception:
             self._recent_reasoning_ttl = 20.0
 
+        # Ensure each numeric step has exactly one reasoning block (after initial pre-step reasoning)
+        self._reasoning_required_for_current_step = False  # Set True at each step header; cleared on reasoning emit
+
         # Step header tracking
         self.pending_step_header = False
         # Track whether we already emitted a header for the current reasoning-only cycle
@@ -219,11 +222,45 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             logger.error(f"Failed to emit event {event.get('type')}: {e}", exc_info=True)
 
     def _emit_termination(self, reason: str, message: str) -> None:
-        """Emit a single termination_reason event (idempotent)."""
+        """Emit a single termination_reason event (idempotent) with a clear final step.
+
+        Ensures the UI sees a clean end-of-operation sequence:
+        - Flush any pending reasoning
+        - End any active thinking indicator
+        - Emit a final step header (TERMINATED)
+        - Emit the termination_reason payload
+        """
         try:
             if self._termination_emitted:
                 return
             self._termination_emitted = True
+
+            # Flush any accumulated reasoning so it doesn't appear after termination
+            try:
+                self._emit_accumulated_reasoning(force=True)
+            except Exception:
+                pass
+
+            # End any active thinking indicator in the UI
+            try:
+                self._emit_ui_event({"type": "thinking_end"})
+            except Exception:
+                pass
+
+            # Emit a final step header for clear visual separation in the stream
+            try:
+                self._emit_ui_event(
+                    {
+                        "type": "step_header",
+                        "step": "TERMINATED",
+                        "operation": self.operation_id,
+                        "duration": self._format_duration(time.time() - self.start_time),
+                    }
+                )
+            except Exception:
+                pass
+
+            # Emit termination details
             self._emit_ui_event(
                 {
                     "type": "termination_reason",
@@ -234,7 +271,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 }
             )
         except Exception as e:
-            logger.debug(f"Failed to emit termination event: {e}")
+            logger.debug("Failed to emit termination event: %s", e)
 
     def _transform_sdk_event(self, kwargs: Dict[str, Any]) -> None:
         """Adapt SDK callbacks to UI events.
@@ -1305,6 +1342,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if self.in_swarm_operation and self.reasoning_buffer:
             self._emit_accumulated_reasoning(force=True)
 
+        # Ensure exactly one reasoning per step: if none occurred in this step, emit a brief rationale now
+        try:
+            if (not self.in_swarm_operation) and bool(getattr(self, "_reasoning_required_for_current_step", False)):
+                fallback = f"Reviewed {self.last_tool_name or 'tool'} results and determined next action."
+                self._emit_ui_event({"type": "reasoning", "content": fallback})
+                self._emitted_any_reasoning = True
+                self._reasoning_emitted_since_last_step_header = True
+                self._reasoning_required_for_current_step = False
+        except Exception:
+            pass
+
     def _parse_editor_tool_output(self, output_text: str) -> str:
         """Parse editor tool output - keep raw output to show what was changed."""
         if not output_text:
@@ -1733,7 +1781,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Emit termination before raising
                 self._emit_termination(
                     "step_limit",
-                    f"Completed maximum allowed steps ({self.max_steps}/{self.max_steps}). Operation will now generate final report.",
+                    f"Completed maximum allowed steps ({self.max_steps}/{self.max_steps}). Operation will now finalize.",
                 )
                 from modules.handlers.base import StepLimitReached
 
@@ -1788,6 +1836,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Mark that we have emitted reasoning at least once in this operation
         self._emitted_any_reasoning = True
         self._reasoning_emitted_since_last_step_header = True
+        # This step now has its reasoning
+        try:
+            self._reasoning_required_for_current_step = False
+        except Exception:
+            pass
         # Update last flush time for streaming control
         try:
             self._last_reasoning_flush = time.time()
@@ -1804,13 +1857,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             return
         # Reset per-step reasoning gate for the new step and flush buffered reasoning before header
         try:
-            if self._any_step_header_emitted:
-                # Starting a new step interval: allow one reasoning emission again
-                self._reasoning_emitted_since_last_step_header = False
+            flushed_here = False
             # In swarm mode, do NOT pre-flush at headers; flush occurs after tool_end for proper ordering
             if (not self.in_swarm_operation) and self.reasoning_buffer:
                 # Flush accumulated reasoning for the upcoming step (appears above header)
                 self._emit_accumulated_reasoning(force=True)
+                flushed_here = True
+            if self._any_step_header_emitted:
+                # Starting a new step interval: allow one reasoning emission again
+                # BUT if we just flushed here, keep the emission gate set (True) to avoid a second
+                # reasoning block within the same step interval.
+                if not flushed_here:
+                    self._reasoning_emitted_since_last_step_header = False
         except Exception:
             pass
         event = {
@@ -1852,6 +1910,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 event["swarm_context"] = "Multi-Agent Operation"
 
         self._emit_ui_event(event)
+        # This new step requires a reasoning emission (unless a pre-header flush already sufficed)
+        try:
+            if not flushed_here:
+                self._reasoning_required_for_current_step = True
+            else:
+                # If we flushed reasoning just before the header, consider this step satisfied
+                self._reasoning_required_for_current_step = False
+        except Exception:
+            pass
         # Mark that we have emitted at least one header
         self._any_step_header_emitted = True
 
@@ -2547,12 +2614,41 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.generate_final_report(agent, target, objective, module)
 
     def generate_final_report(self, agent, target: str, objective: str, module: str = None) -> None:
-        """Generate final security assessment report."""
+        """Generate final security assessment report.
+
+        If no memories/evidence were collected, skip report generation to avoid
+        producing an empty or meaningless report.
+        """
         if self._report_generated:
             return
 
         try:
             self._report_generated = True
+
+            # If nothing was persisted to memory/evidence, skip report generation
+            try:
+                mem_ops = int(getattr(self, "memory_ops", 0) or 0)
+                ev_count = int(getattr(self, "evidence_count", 0) or 0)
+            except Exception:
+                mem_ops, ev_count = 0, 0
+
+            if mem_ops <= 0 and ev_count <= 0:
+                # Inform the UI and conclude cleanly without generating a report
+                try:
+                    self._emit_ui_event(
+                        {
+                            "type": "output",
+                            "content": "◆ No memories or evidence were collected during this operation. Skipping report generation.",
+                        }
+                    )
+                    # Emit completion marker for a clean UI transition
+                    self._emit_ui_event(
+                        {"type": "assessment_complete", "operation_id": self.operation_id, "report_path": None}
+                    )
+                except Exception:
+                    pass
+                return
+
             # Import report generator function (not a tool, called directly by handler)
             from modules.handlers.report_generator import generate_security_report
 
@@ -2640,16 +2736,21 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
 
-                    # Emit the full report content to the UI (truncate if excessively large to ensure stable transport)
+                    # Emit the full report content to the UI using a dedicated event understood by the React frontend
+                    # This avoids heavy generic 'output' rendering and ensures consistent report presentation.
                     try:
-                        if len(report_content) > 20000:
-                            preview = report_content[:20000] + "\n... (truncated - see saved file for full report)"
-                            self._emit_ui_event({"type": "output", "content": preview})
-                        else:
-                            self._emit_ui_event({"type": "output", "content": report_content})
+                        self._emit_ui_event({"type": "report_content", "content": report_content})
                     except Exception:
-                        # Fallback: if report content could not be serialized, emit a short note
-                        self._emit_ui_event({"type": "output", "content": "⚠️ Report generated but could not be inlined due to size. See saved file path below."})
+                        # Fallback: if dedicated event emission fails, send a truncated output preview
+                        try:
+                            if len(report_content) > 20000:
+                                preview = report_content[:20000] + "\n... (truncated - see saved file for full report)"
+                                self._emit_ui_event({"type": "output", "content": preview})
+                            else:
+                                self._emit_ui_event({"type": "output", "content": report_content})
+                        except Exception:
+                            # Final fallback note
+                            self._emit_ui_event({"type": "output", "content": "⚠️ Report generated but could not be inlined due to size. See saved file path below."})
 
                     # Also emit file path information for reference
                     self._emit_ui_event(
