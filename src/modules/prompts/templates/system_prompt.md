@@ -77,11 +77,17 @@ Step: {{ current_step }}/{{ max_steps }} (Remaining: {{ remaining_steps }} steps
 
 **MANDATORY CADENCE**:
 - Step 0-1: store_plan (if new) or get_plan
-- Every 20 steps: get_plan (CANNOT skip)
+- Every 20 steps: get_plan → CHECK if phase criteria met → YES: mark status="done", advance current_phase, store_plan
 - After HIGH/CRITICAL: store_reflection with impact
-- After 3 consecutive failures: store_reflection with pivot strategy
-- Phase complete: update status, advance phase
+- After 3 consecutive failures: store_reflection with pivot strategy + plan update if pivot changes approach
 - Before considering swarm: reflect on whether truly needed
+
+**PHASE TRANSITIONS**:
+When criteria satisfied: phase.status="done" → current_phase++ → next phase.status="active" → store_plan
+
+**STUCK DETECTION**:
+- Phase >40% budget without progress → mark "done" with context, advance next
+- Reflection indicates pivot → update phases in plan, store with new strategy
 
 **FAILURE TRIGGERS** (mandatory reflection):
 - 3 attempts on same approach with no progress

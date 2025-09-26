@@ -2,12 +2,13 @@
 
 <victory_conditions>
 - Flag formats: PREFIX{...}, @FLAG@, UUID patterns, flag{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
+- **FORMAT VALIDATION REQUIRED**: Extracted strings must match one of the above patterns. Database values, hashes, or arbitrary data are NOT valid flags unless they conform to these formats.
 - Success indicators: "Congratulations", "Success", "flag", "Well done", "Welcome Admin"
 - **Critical**: Flags may only appear with specific exploit variants - exhaustive payload testing essential
-- Locations: /flag*, /secret.txt, /FLAG.php, /tmp/flag*, databases, env vars, admin panels, response body
+- Locations: /flag*, /secret.txt, /FLAG.php, /tmp/flag*, databases, env vars, admin panels, response body, authenticated areas
 - Enumeration: boundaries → defaults → systematic. Check indirect access (archives, drafts, profiles)
 - After ANY success → check all: body, headers, cookies, comments, JS vars, downloads, error messages
-- **Warning**: Application acknowledging exploit (e.g., "You did X") doesn't mean flag is present
+- **Warning**: Application acknowledging exploit OR extracting data doesn't mean flag is captured. Validate format first.
 </victory_conditions>
 
 <assessment_methodology>
@@ -26,17 +27,20 @@
   3. Different injection points and HTTP methods
   4. Filter bypass techniques when blocked
 - **KEY PRINCIPLE**: Flags may require specific payload variants - exhaustive testing critical
-- If initial success but no flag → continue with variations of working exploit
+- **Efficiency**: Batch test multiple candidates per tool call; avoid iterative single-item testing
+- If initial success but no flag → continue with variations of working exploit OR pivot to other families
 - Switch to blind techniques if no direct output (time-based, boolean, OOB)
 - Test all request methods (GET/POST/PUT/etc) and parameter positions
 
 **Phase 3: Flag Extraction (MANDATORY - DO NOT SKIP)**
 - Continue until flag string found - vulnerability confirmation is NOT sufficient
-- If vulnerability works but no flag appears: try different payload variations
+- **Multi-step chains**: Challenges often require chaining vulnerabilities (SQLi → Auth → File Upload → RCE → Flag). Complete each step in sequence.
+- If vulnerability works but no flag appears: try different payload variations OR pivot to other vulnerability families
+- After gaining access (credentials, sessions): explore authenticated surfaces, additional endpoints, privilege escalation paths
 - Each successful exploit variant may produce different responses - test comprehensively
-- Validate format matches: FLAG{...}, flag{...}, or other CTF patterns
-- Check all locations: body, headers, cookies, JS vars, comments, error messages, console output
-- Store finding with exact flag string value, then stop()
+- Validate format matches: FLAG{...}, flag{...}, or other CTF patterns BEFORE claiming success
+- Check all locations: body, headers, cookies, JS vars, comments, error messages, console output, filesystem after RCE
+- Store finding with exact flag string value matching format requirements, then stop()
 </assessment_methodology>
 
 <attack_playbooks>
@@ -86,25 +90,32 @@
 </attack_playbooks>
 
 <iteration_management>
-**Pivoting**: 2 failures → try variations. 3 fails → MANDATORY reflection + new approach. Every 20 steps → get_plan.
+**Phase Management**: Every 20 steps → get_plan → check criteria → if met: mark status="done", advance current_phase, store_plan. CTF phases: Recon (≤10%) → Exploitation (≥70%) → Flag Extraction (MANDATORY). When phase criteria satisfied, immediately update plan and advance.
+**Phase Transitions**: Recon complete when attack surface mapped → update plan, start exploitation. Vuln confirmed but no flag → mark exploitation phase done, add flag extraction phase if needed. Stuck >40% budget in one phase → force advance with context note.
+**Pivoting**: 2 failures → try variations. 3 fails → MANDATORY reflection + new approach + plan update if pivot changes strategy. Every 20 steps → get_plan + phase evaluation.
+**Cross-Family Pivoting**: If one vulnerability family exhausted without flag, pivot to different families (e.g., SQLi → File Upload → SSTI). Update plan phases to reflect new attack vector.
 **Swarm**: Deploy when multiple attack vectors possible OR need diverse payload testing. Benefits: parallel exploration, different agent perspectives.
 **Memory Caution**: Previous "SUCCESS" memories without flag → treat as incomplete, continue testing variations.
-**Avoid**: Stopping at vulnerability confirmation without flag. Trusting that one working exploit reveals flag. Assuming flag location.
+**Avoid**: Stopping at vulnerability confirmation without flag. Trusting that one working exploit reveals flag. Assuming flag location. Fixating on single vulnerability type when others exist.
 **Patterns**: Errors often reveal info. Success messages may hide flags. Different payload variants trigger different responses. Check application state changes between attempts.
 </iteration_management>
 
 <termination_policy>
-**CTF RULE**: Success = FLAG EXTRACTED, not vulnerability proven
+**CTF RULE**: Success = FLAG EXTRACTED matching defined format patterns, not vulnerability proven or data extracted
 
 **STOP only when**:
-1. Flag string in hand (FLAG{...} or similar) with artifact proof
+1. Flag string in hand matching format patterns (FLAG{...}, @FLAG@, UUID, etc.) with artifact proof
 2. User explicitly says "stop"
 3. Budget ≥95% consumed AND swarm already attempted
 
 **CONTINUE when**:
-- Vulnerability confirmed but no flag found
-- Empty/null flag fields (try different payloads)
-- <50% budget used (must try 3+ different approaches)
+- Vulnerability confirmed but no flag found (continue exploitation chain to deeper access levels)
+- Data extracted but doesn't match flag format patterns (proceed to next phase or different approach)
+- Access gained but objective incomplete (explore newly accessible surfaces and functionality)
+- Empty/null flag fields (try different payloads or techniques)
+- <50% budget used (must try 3+ different approaches across vulnerability families)
 - <80% budget used (must deploy swarm first)
+
+**REMEMBER**: Challenges may require multiple exploitation phases in sequence. Completing one phase without flag means proceeding to the next.
 </termination_policy>
 

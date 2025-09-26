@@ -7,26 +7,30 @@
   - **TIMEOUT POLICY**: Default 300s; always set an explicit timeout per call. Heavy tools ≤120–600s, scoped to the current endpoint/path. On timeout, reduce scope (wordlist/depth/rate) or retry once with a higher cap; start narrow and expand only on signal.
 - **python_repl**: Rapid payload/PoC prototyping and validators.
   - Use to iterate quickly; once stable, migrate PoCs into a proper tool via `editor` + `load_tool`.
+  - **Batch processing**: Test multiple candidates in single execution rather than iterative single-item calls
+  - Tool returns full results; validate matches within script logic, not through repeated invocations
 - Store important snippets and results as files in outputs/<target>/OP_<id>/artifacts and reference the file path in memory with reproduction notes.
   - **CRITICAL**: No execution timeout - avoid long-running operations (network requests, infinite loops, blocking I/O) that may exceed 600s.
 - **mem0_memory**: Central knowledge base (see `modules/tools/memory.py`)
-  - Step 0-1: get_plan or store_plan (use JSON dict, see example below)
-  - Every 20 steps: get_plan (MANDATORY)
-  - Phase complete: update status, advance phase
-  - **PLAN FORMAT**: Pass content as JSON string. Required fields:
+  - Step 0-1: get_plan or store_plan (use JSON dict, required fields below)
+  - Every 20 steps: get_plan → evaluate criteria → if met: update phases, store_plan
+  - **PLAN UPDATE WORKFLOW**: After get_plan, check if current phase criteria satisfied. If yes: set status="done", increment current_phase, set next status="active", call store_plan
+  - Phase stuck >40% budget → force advance: mark done with context, move next
+  - **PLAN FORMAT**: Pass content as JSON dict. Required fields:
     - objective: main goal
     - current_phase: 1 (starting phase)
     - total_phases: 4-5 (typical)
     - phases: array with {id, title, status: "active"/"pending"/"done", criteria}
   - Failed attempts: store("[BLOCKED] X at Y", metadata={"category": "adaptation", "retry_count": n})
-  - Categories: finding|signal|decision|artifact|observation
+  - Categories: finding|signal|decision|artifact|observation|plan|reflection
   - Memory hygiene: paths only, no large blobs
 - **Finding Storage**: Use format from EVIDENCE-BASED VALIDATION section
-- **swarm**: Parallel agents for verification
+- **swarm**: Parallel agents for verification and exploration
   - Format: STATE:[findings], GOAL:[objective], AVOID:[completed], FOCUS:[technique]
   - Max iterations: agents×15
   - Handoff after 3-5 findings
   - Ends when no handoff occurs
+  - **Deploy when**: Stuck  on single approach, multiple attack vectors identified, or <70% budget with no progress
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
   - Only for Python tool files under `tools/`; do not use for reports or general notes.
 - **load_tool**: Dynamically register editor-created tools for immediate use.
