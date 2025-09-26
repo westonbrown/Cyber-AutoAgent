@@ -41,9 +41,11 @@ Key Features:
    • Vector Store (FAISS, OpenSearch, Mem0 Platform)
 
 Plan & Reflection:
-- TurnStart: get_plan; if absent, store_plan (compact JSON with status/criteria). Align next action to SubObjective and test Criteria.
-- Cadence: get_plan every ~20 steps or at phase boundaries; store_reflection after High/Critical findings or pivots.
-- Update: when Criteria met, set phase.status=done, advance current_phase, and store_plan with updated statuses/criteria.
+- TurnStart: get_plan; if absent, store_plan (compact JSON with status/criteria)
+- Cadence: Every ~20 steps: get_plan → check if criteria met → YES: update phases, store_plan
+- Phase transitions: When criteria satisfied → set status="done", advance current_phase, set next status="active", store_plan
+- After store_reflection: evaluate plan, update if phase complete or pivot needed
+- Stuck detection: Phase >40% budget → force advance with context, move to next
 
 Adaptation Tracking:
 - After failed attempts: store("[BLOCKED] Approach X at endpoint Y", metadata={"category": "adaptation", "retry_count": n})
@@ -126,11 +128,13 @@ TOOL_SPEC = {
     "description": (
         "Memory management: store/retrieve/list/get/delete/history.\n"
         "Actions: store, store_plan, store_reflection, get_plan, reflect, get, list, retrieve, delete, history.\n"
-        "Plan (compact JSON): objective, current_phase, phases[id|title|status|criteria]; update status as criteria are met.\n"
-        "TurnStart: get_plan; if none store_plan. Every ~20 steps or after High/Critical: get_plan or store_reflection.\n"
+        "Plan (compact JSON): objective, current_phase, phases[id|title|status|criteria].\n"
+        "TurnStart: get_plan; if none store_plan. Every ~20 steps: get_plan → check criteria → if met: update phases, store_plan.\n"
+        "Phase transitions: When criteria satisfied, set status='done', advance current_phase, set next status='active', store_plan.\n"
+        "After store_reflection: evaluate plan, update if pivot/phase change needed.\n"
         "Finding Format: [VULNERABILITY][WHERE][IMPACT][EVIDENCE][STEPS][REMEDIATION][CONFIDENCE].\n"
         "Proof Pack (High/Critical): artifact path + one-line rationale; else validation_status='hypothesis' with next steps.\n"
-        "Capability gaps: Ask-Enable-Retry; store artifacts or precise next steps. Default user_id='cyber_agent' if unspecified.\n"
+        "Default user_id='cyber_agent' if unspecified.\n"
     ),
     "inputSchema": {
         "json": {
@@ -635,7 +639,7 @@ class Mem0ServiceClient:
             metadata: Optional metadata (will be enhanced with category='reflection')
 
         Returns:
-            Memory storage result
+            Memory storage result with plan evaluation reminder
         """
         reflection_metadata = metadata or {}
         reflection_metadata.update(
@@ -649,9 +653,14 @@ class Mem0ServiceClient:
         if plan_id:
             reflection_metadata["related_plan_id"] = plan_id
 
-        return self.store_memory(
+        result = self.store_memory(
             content=f"[REFLECTION] {reflection_content}", user_id=user_id, metadata=reflection_metadata
         )
+
+        # Add plan evaluation reminder
+        result["_reminder"] = "Reflection stored. Now: get_plan → check if phase criteria met or pivot needed → update if yes"
+
+        return result
 
     def get_active_plan(self, user_id: str = "cyber_agent", operation_id: Optional[str] = None) -> Optional[Dict]:
         """Get the most recent active plan, preferring the current operation.
@@ -753,26 +762,21 @@ class Mem0ServiceClient:
             reflection_prompt += f"""
 Active plan: {plan_content}
 
-**Required Analysis:**
-1. Are we following the current plan effectively?
-2. Do recent findings suggest we should pivot strategy?
-3. What new attack vectors have emerged?
-4. Should we deploy specialized swarms for discovered services?
-5. Are we missing any critical reconnaissance areas?
+**Required Actions:**
+1. Is current phase criteria satisfied? If YES → mark status="done", advance current_phase, store_plan
+2. Should we pivot strategy? If YES → update phases with new approach, store_plan
+3. Phase stuck >40% budget? If YES → force advance to next phase
+4. Deploy swarms if multiple vectors or <70% budget with no progress
 
-Analyze findings and then update/store new plan if needed.
+After analysis: get_plan → evaluate → update phases if needed → store_plan → continue
 """
         else:
             reflection_prompt += """
 No active plan found.
 
-**Required Analysis:**
-1. Based on recent findings, what should our strategic approach be?
-2. What specialized tools/swarms do we need?
-3. What are the highest priority targets/services?
-4. What reconnaissance gaps need filling?
-
-Analyze findings and store a new strategic plan.
+**Required Action:**
+Create strategic plan NOW with store_plan before continuing.
+Include: objective, current_phase=1, phases with clear criteria for each.
 """
 
         return reflection_prompt
