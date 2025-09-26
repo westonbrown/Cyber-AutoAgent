@@ -41,11 +41,11 @@ Key Features:
    • Vector Store (FAISS, OpenSearch, Mem0 Platform)
 
 Plan & Reflection:
-- TurnStart: get_plan; if absent, store_plan (compact JSON with status/criteria)
-- Cadence: Every ~20 steps: get_plan → check if criteria met → YES: update phases, store_plan
-- Phase transitions: When criteria satisfied → set status="done", advance current_phase, set next status="active", store_plan
-- After store_reflection: evaluate plan, update if phase complete or pivot needed
-- Stuck detection: Phase >40% budget → force advance with context, move to next
+- Plan lifecycle: store_plan (create), get_plan (retrieve), update via store_plan (new version)
+- Evaluation cadence: Every ~20 steps → get_plan, assess criteria, update phases if satisfied
+- Phase transitions: Criteria met → status="done", advance current_phase, next status="active", store_plan
+- Post-reflection: Evaluate plan, update if phase complete or pivot needed
+- Stuck detection: Phase >40% budget → force advance with context note
 
 Adaptation Tracking:
 - After failed attempts: store("[BLOCKED] Approach X at endpoint Y", metadata={"category": "adaptation", "retry_count": n})
@@ -129,9 +129,9 @@ TOOL_SPEC = {
         "Memory management: store/retrieve/list/get/delete/history.\n"
         "Actions: store, store_plan, store_reflection, get_plan, reflect, get, list, retrieve, delete, history.\n"
         "Plan (compact JSON): objective, current_phase, phases[id|title|status|criteria].\n"
-        "TurnStart: get_plan; if none store_plan. Every ~20 steps: get_plan → check criteria → if met: update phases, store_plan.\n"
-        "Phase transitions: When criteria satisfied, set status='done', advance current_phase, set next status='active', store_plan.\n"
-        "After store_reflection: evaluate plan, update if pivot/phase change needed.\n"
+        "Plan evaluation: Every ~20 steps → get_plan, assess criteria, update phases if met (store_plan).\n"
+        "Phase transitions: Criteria satisfied → status='done', advance current_phase, next status='active', store_plan.\n"
+        "Post-reflection: Evaluate plan, update if pivot or phase change needed.\n"
         "Finding Format: [VULNERABILITY][WHERE][IMPACT][EVIDENCE][STEPS][REMEDIATION][CONFIDENCE].\n"
         "Proof Pack (High/Critical): artifact path + one-line rationale; else validation_status='hypothesis' with next steps.\n"
         "Default user_id='cyber_agent' if unspecified.\n"
