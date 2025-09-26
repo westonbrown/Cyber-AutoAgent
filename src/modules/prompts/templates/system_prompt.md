@@ -105,6 +105,9 @@ When criteria satisfied: phase.status="done" → current_phase++ → next phase.
 ```
 </planning_and_reflection>
 
+<termination>
+All phases status="done" → assessment_complete=true in plan → call stop("Assessment complete: X phases done, Y findings") → report auto-generated. Do NOT add phases after assessment_complete=true.
+</termination>
 
 <memory_operations>
 Finding Write Ritual (before storing a finding): set validation_status=verified|hypothesis; include a short Proof Pack (artifact path + one-line why); in [STEPS] include: preconditions, command, expected, actual, artifacts, environment, cleanup, notes.

@@ -606,6 +606,19 @@ class Mem0ServiceClient:
         if op_id:
             plan_metadata["operation_id"] = op_id
 
+        # Warn if extending plan after marking complete
+        try:
+            prev = self.get_active_plan(user_id)
+            if prev:
+                prev_json = prev.get("metadata", {}).get("plan_json", {})
+                if prev_json.get("assessment_complete") and total_phases > prev_json.get("total_phases", 0):
+                    logger.warning(
+                        f"Adding phases ({prev_json.get('total_phases')} → {total_phases}) after assessment_complete=true. "
+                        "Consider stopping and generating report instead."
+                    )
+        except Exception as e:
+            logger.debug(f"Could not check previous plan for extension: {e}")
+
         # Deactivate previous plans
         try:
             previous_plans = self.search_memories("category:plan active:true", user_id=user_id)
@@ -621,7 +634,16 @@ class Mem0ServiceClient:
         except Exception as e:
             logger.debug(f"Could not deactivate previous plans: {e}")
 
-        return self.store_memory(content=f"[PLAN] {plan_content_str}", user_id=user_id, metadata=plan_metadata)
+        result = self.store_memory(content=f"[PLAN] {plan_content_str}", user_id=user_id, metadata=plan_metadata)
+
+        # Check if all phases complete and add reminder
+        all_done = all(p["status"] == "done" for p in phases)
+        if all_done and not plan_content.get("assessment_complete"):
+            plan_content["assessment_complete"] = True
+            result["_reminder"] = "All phases complete. Call stop('Assessment complete: X phases done, Y findings')"
+            logger.info("All phases complete - set assessment_complete=true")
+
+        return result
 
     def store_reflection(
         self,
