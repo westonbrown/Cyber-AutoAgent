@@ -99,7 +99,6 @@
 **Success-Without-Progress**: Technique works (SQLi confirmed, creds extracted, auth bypassed) but phase criteria unmet → assess if technique serves objective. If not: reflection + pivot to different approach or next phase.
 **Capability-Goal Alignment**: When stuck, ask "Am I using this capability optimally for my goal?" Same capability serves different purposes (e.g., SQLi for access vs extraction). If current use fails repeatedly, explore alternative applications toward objective.
 **Cross-Family Pivoting**: If one vulnerability family exhausted without flag, pivot to different families (e.g., SQLi → File Upload → SSTI). Update plan phases to reflect new attack vector.
-**Swarm**: Deploy when multiple attack vectors possible OR need diverse payload testing. Benefits: parallel exploration, different agent perspectives.
 **Memory Caution**: Previous "SUCCESS" memories without flag → treat as incomplete, continue testing variations.
 **Avoid**: Stopping at vulnerability confirmation without flag. Trusting that one working exploit reveals flag. Assuming flag location. Fixating on single vulnerability type when others exist.
 **Patterns**: Errors often reveal info. Success messages may hide flags. Different payload variants trigger different responses. Check application state changes between attempts.
