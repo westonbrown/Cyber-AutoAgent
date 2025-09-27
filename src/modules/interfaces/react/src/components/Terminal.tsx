@@ -15,6 +15,29 @@ import { themeManager } from '../themes/theme-manager.js';
 import { loggingService } from '../services/LoggingService.js';
 import { useEventBatcher } from '../utils/useBatchedState.js';
 import { normalizeEvent } from '../services/events/normalize.js';
+import { RingBuffer } from '../utils/RingBuffer.js';
+import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
+import { DISPLAY_LIMITS } from '../constants/config.js';
+
+// Exported helper: build a trimmed report preview to avoid storing huge content in memory
+export const buildTrimmedReportContent = (raw: string): string => {
+  try {
+    const normalized = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    const head = DISPLAY_LIMITS.REPORT_PREVIEW_LINES || 100;
+    const tail = DISPLAY_LIMITS.REPORT_TAIL_LINES || 20;
+    if (lines.length <= head + tail) return normalized;
+    return [
+      ...lines.slice(0, head),
+      '',
+      '... (content continues)',
+      '',
+      ...lines.slice(-tail)
+    ].join('\n');
+  } catch {
+    return String(raw || '');
+  }
+};
 
 interface TerminalProps {
   executionService: ExecutionService | null;
@@ -37,9 +60,25 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
 }) => {
   // Direct event rendering without Static component
   // Limit event buffer to prevent memory leaks - events are already persisted to disk
-  const MAX_EVENTS = 1000; // Keep last 1000 events in memory
+const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N events in memory (default 3000)
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
+  // Ring buffers to bound memory regardless of session length
+  const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
+  const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(MAX_EVENT_BYTES, (e) => {
+    try {
+      if (!e) return 0;
+      let bytes = 64;
+      const any: any = e as any;
+      const add = (v: any) => { if (typeof v === 'string') bytes += v.length; };
+      add(any.content);
+      add(any.command);
+      add(any.message);
+      // Tool outputs are the largest; budget mostly on content
+      return bytes;
+    } catch { return 256; }
+  }));
+  const activeBufRef = useRef(new RingBuffer<DisplayStreamEvent>(Math.min(200, Math.floor(MAX_EVENTS / 5))));
   const [metrics, setMetrics] = useState({
     tokens: 0,
     cost: 0,
@@ -48,11 +87,17 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
     evidence: 0
   });
   
+  // Deduplication state: track seen output fingerprints per tool session and globally
+  const perToolOutputSeenRef = useRef<Map<string, Set<string>>>(new Map());
+  const globalOutputSeenRef = useRef<Set<string>>(new Set());
+  
   // Throttle state for metrics emissions to parent
   const lastEmitRef = useRef<number>(0);
   const pendingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingMetricsRef = useRef<{ tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number } | null>(null);
   const EMIT_INTERVAL_MS = 300;
+  const METRICS_COALESCE_MS = 150;
+  const lastMetricsTsRef = useRef<number>(0);
   
   // State for event processing - replacing EventAggregator with React patterns
   const [activeThinking, setActiveThinking] = useState(false);
@@ -71,6 +116,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const seenThinkingThisPhaseRef = useRef<boolean>(false);
   const suppressTerminationBannerRef = useRef<boolean>(false);
+  // Track last reasoning text to prevent duplicate consecutive emissions
+  const lastReasoningTextRef = useRef<string | null>(null);
   // Duplicate emission resolved in ReactBridgeHandler
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -106,6 +153,20 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   const OUTPUT_DEDUPE_TIME_MS = 500;
   const theme = themeManager.getCurrentTheme();
   
+  // Fingerprint helper for deduplication
+  const fingerprintContent = (s: string): string => {
+    try {
+      const str = String(s);
+      const len = str.length;
+      if (len === 0) return 'len:0';
+      const head = str.slice(0, 512);
+      const tail = len > 512 ? str.slice(-512) : '';
+      return `len:${len}|h:${head}|t:${tail}`;
+    } catch {
+      return 'err';
+    }
+  };
+  
   // Step gating state (anchor step headers until first tool signal)
   const pendingStepHeaderRef = useRef<DisplayStreamEvent | null>(null);
   const pendingStepNumberRef = useRef<number | undefined>(undefined);
@@ -124,6 +185,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   // Track max steps and operation id from operation_init for synthetic headers
   const opMaxStepsRef = useRef<number | undefined>(undefined);
   const operationIdRef = useRef<string | undefined>(undefined);
+  const targetRef = useRef<string | undefined>(undefined);
   const stepCounterRef = useRef<number>(0);
   const lastPushedTypeRef = useRef<string | null>(null);
   const firstHeaderSeenRef = useRef<boolean>(false);
@@ -165,6 +227,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   // Track swarm sub-steps per agent for synthesized headers
   const swarmAgentStepsRef = useRef<Map<string, number>>(new Map());
 
+
   // Event processing function - replaces EventAggregator.processEvent
   const processEvent = (event: any): DisplayStreamEvent[] => {
     const results: DisplayStreamEvent[] = [];
@@ -179,10 +242,32 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
     };
     
     switch (event.type) {
+      case 'operation_init':
+        // Reset dedup sets at operation start
+        perToolOutputSeenRef.current.clear();
+        globalOutputSeenRef.current.clear();
+        // Cache operation metadata
+        if (typeof event.max_steps === 'number') {
+          opMaxStepsRef.current = event.max_steps;
+        }
+        if (typeof event.operation_id === 'string') {
+          operationIdRef.current = event.operation_id;
+        }
+        if (typeof event.target === 'string') {
+          targetRef.current = event.target;
+        }
+        // Reset counters at operation start
+        stepCounterRef.current = 0;
+        lastPushedTypeRef.current = null;
+        results.push(event as DisplayStreamEvent);
+        break;
+
       case 'step_header':
         emitTestMarker(`step_header step=${event.step} max=${event.maxSteps}`);
         // End any active reasoning session
         setActiveReasoning(false);
+        // Reset last reasoning dedupe on new step
+        lastReasoningTextRef.current = null;
         // Reset output suppression for next operation phase
         suppressTerminationBannerRef.current = false;
         
@@ -221,18 +306,6 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         lastPushedTypeRef.current = 'step_header';
         break;
         
-      case 'operation_init':
-        // Cache operation metadata for synthetic/simple headers
-        if (typeof event.max_steps === 'number') {
-          opMaxStepsRef.current = event.max_steps;
-        }
-        if (typeof event.operation_id === 'string') {
-          operationIdRef.current = event.operation_id;
-        }
-        stepCounterRef.current = 0;
-        lastPushedTypeRef.current = null;
-        results.push(event as DisplayStreamEvent);
-        break;
         
       case 'reasoning':
         emitTestMarker('reasoning');
@@ -348,6 +421,9 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         
         // Always render the tool header now that we have a deterministic id
         
+        // Initialize per-tool dedup set
+        try { if (toolId) perToolOutputSeenRef.current.set(toolId, new Set()); } catch {}
+        
         // Reset phase flags
         seenThinkingThisPhaseRef.current = false;
         setCurrentToolId(toolId);
@@ -368,7 +444,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         } as DisplayStreamEvent);
 
         // Show single unified thinking animation
-        if (!activeReasoning && !activeThinkingRef.current) {
+        // Edge case fix: show spinner even if reasoning was active, since we just ended it above.
+        if (!activeThinkingRef.current) {
           if (delayedThinkingTimerRef.current) {
             clearTimeout(delayedThinkingTimerRef.current);
             delayedThinkingTimerRef.current = null;
@@ -490,6 +567,29 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               }
             }
           }
+          // Fingerprint-based dedup across tool session
+          try {
+            const fp = fingerprintContent(contentStr);
+            const set = currentToolId ? (perToolOutputSeenRef.current.get(currentToolId) || null) : null;
+            let seen = false;
+            if (set) {
+              if (set.has(fp)) {
+                seen = true;
+              } else {
+                set.add(fp);
+              }
+            } else {
+              if (globalOutputSeenRef.current.has(fp)) {
+                seen = true;
+              } else {
+                globalOutputSeenRef.current.add(fp);
+              }
+            }
+            if (seen) {
+              break; // skip duplicate chunk/content for this tool/session
+            }
+          } catch {}
+
           setLastOutputContent(contentStr);
           setLastOutputTime(currentTime);
           
@@ -562,10 +662,12 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           type: 'tool_end',
           toolId: event.toolId,
           tool: event.toolName || 'unknown',
-          id: `tool_end_${Date.now()}`,
+          id: `tool_end_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           timestamp: new Date().toISOString(),
           sessionId: 'current'
         } as DisplayStreamEvent);
+        // Clear per-tool dedup set when tool ends
+        try { if (event.toolId) perToolOutputSeenRef.current.delete(String(event.toolId)); } catch {}
         setCurrentToolId(undefined);
         break;
 
@@ -595,6 +697,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
         results.push(event as DisplayStreamEvent);
         break;
+
         
       case 'swarm_start':
         // Mark swarm as active and reset tracking
@@ -631,12 +734,38 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         break;
         
       case 'report_content':
-        // Pass report content directly for StreamDisplay to render the preview
-        // Flush any pending reasoning so report appears correctly at the end
+        // Trim massive report content to prevent OOM and rely on InlineReportViewer for full content.
         flushPendingReasoning(results);
-        // Show report content
-        results.push(event as DisplayStreamEvent);
-        // Then flush any buffered operation summary (paths) so they appear beneath the report
+        // Augment event with operation metadata and replace content with a trimmed preview
+        const rcEvent: any = { ...event };
+        if (typeof rcEvent.content === 'string') {
+          rcEvent.content = buildTrimmedReportContent(rcEvent.content);
+        } else if (rcEvent.content) {
+          try { rcEvent.content = buildTrimmedReportContent(JSON.stringify(rcEvent.content)); } catch { rcEvent.content = ''; }
+        }
+        if (operationIdRef.current) rcEvent.operation_id = operationIdRef.current;
+        if (targetRef.current) rcEvent.target = targetRef.current;
+        results.push(rcEvent as DisplayStreamEvent);
+        // Synthesize a paths section immediately below the report
+        try {
+          const opId = operationIdRef.current || '';
+          const target = targetRef.current || '';
+          const safeTarget = target ? target.replace(/^https?:\/\//, '').replace(/\.{2}|\.\//g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^[_\.]+|[_\.]+$/g, '') : '';
+          const base = safeTarget && opId ? `./outputs/${safeTarget}/${opId}` : '';
+          const memory = safeTarget ? `./outputs/${safeTarget}/memory` : '';
+          const reportPath = base ? `${base}/security_assessment_report.md` : '';
+          const logPath = base ? `${base}/cyber_operations.log` : '';
+          results.push({
+            type: 'report_paths',
+            operation_id: opId,
+            target,
+            outputDir: base,
+            reportPath,
+            logPath,
+            memoryPath: memory
+          } as unknown as DisplayStreamEvent);
+        } catch {}
+        // Then flush any buffered operation summary (paths) so they appear beneath the report as well
         if (opSummaryBufferRef.current.length > 0) {
           results.push(...opSummaryBufferRef.current);
           opSummaryBufferRef.current = [];
@@ -666,8 +795,18 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       //   timestamp: new Date().toISOString()
       // });
       
+      // Preserve preflight and discovery output printed before operation_init.
+      // Memory is bounded by CYBER_MAX_EVENTS ring buffer rather than clearing mid-run.
+
       // Handle metrics updates - backend sends cumulative totals, not deltas
       if (event.type === 'metrics_update' && event.metrics) {
+        // Coalesce frequent metrics updates within a short window to reduce render churn
+        const nowTs = Date.now();
+        if (nowTs - (lastMetricsTsRef.current || 0) < METRICS_COALESCE_MS) {
+          // Drop this update; a fresher one will arrive soon
+          return;
+        }
+        lastMetricsTsRef.current = nowTs;
         const newMetrics = {
           // Backend sends cumulative totals, use them directly
           tokens: event.metrics.tokens !== undefined ? event.metrics.tokens : metrics.tokens,
@@ -755,18 +894,10 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               }
               // Optional spacing before thinking animation to visually separate
               if (animationsEnabled) {
-                setCompletedEvents(prev => {
-                  const updated = [
-                    ...prev,
-                    { type: 'output', content: '' } as DisplayStreamEvent,
-                    { type: 'output', content: '' } as DisplayStreamEvent
-                  ];
-                  // Keep only the last MAX_EVENTS
-                  if (updated.length > MAX_EVENTS) {
-                    return updated.slice(-MAX_EVENTS);
-                  }
-                  return updated;
-                });
+                // Add a tiny spacer into the completed ring buffer without unbounded growth
+                completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
+                completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
+                setCompletedEvents(completedBufRef.current.toArray());
               }
               const thinkingEvent: DisplayStreamEvent = {
                 type: 'thinking',
@@ -779,7 +910,9 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               setActiveThinking(true);
               seenThinkingThisPhaseRef.current = true;
               // Remove any existing thinking before adding a new one (belt-and-braces)
-              setActiveEvents(prev => [...prev.filter(e => e.type !== 'thinking'), thinkingEvent]);
+activeBufRef.current.clear();
+              activeBufRef.current.push(thinkingEvent);
+              setActiveEvents(activeBufRef.current.toArray());
               delayedThinkingTimerRef.current = null;
             }, delay);
             continue;
@@ -787,7 +920,10 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
 
           if (processedEvent.type === 'thinking_end') {
             // Move thinking events to static when done
-            setActiveThrottled(prev => prev.filter(e => e.type !== 'thinking'));
+setActiveThrottled(prev => {
+              activeBufRef.current.clear();
+              return activeBufRef.current.toArray();
+            });
             continue;
           }
 
@@ -798,23 +934,19 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           // Move non-thinking items to completed
           const newCompletedEvents = regularEvents.filter(e => e.type !== 'thinking');
           if (newCompletedEvents.length > 0) {
-            setCompletedEvents(prev => {
-              const updated = [...prev, ...newCompletedEvents];
-              // Keep only the last MAX_EVENTS to prevent memory growth
-              if (updated.length > MAX_EVENTS) {
-                return updated.slice(-MAX_EVENTS);
-              }
-              return updated;
-            });
+completedBufRef.current.pushMany(newCompletedEvents);
+            setCompletedEvents(completedBufRef.current.toArray());
           }
 
           // Keep current thinking (if any) in active tail without duplication
           const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
           if (thinkingEvents.length > 0) {
-            setActiveThrottled(prev => [
-              ...prev.filter(e => e.type !== 'thinking'),
-              ...thinkingEvents
-            ]);
+setActiveThrottled(prev => {
+            // Keep only latest thinking in active tail
+            activeBufRef.current.clear();
+            for (const t of thinkingEvents) activeBufRef.current.push(t);
+            return activeBufRef.current.toArray();
+          });
           }
         }
       }
@@ -854,17 +986,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       // Mark that we should suppress verbose termination block lines
       suppressTerminationBannerRef.current = true;
       // Emit a concise stop summary event
-      setCompletedEvents(prev => {
-        const updated = [
-          ...prev,
-          { type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent
-        ];
-        // Keep only the last MAX_EVENTS
-        if (updated.length > MAX_EVENTS) {
-          return updated.slice(-MAX_EVENTS);
-        }
-        return updated;
-      });
+completedBufRef.current.push({ type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent);
+      setCompletedEvents(completedBufRef.current.toArray());
       handleComplete();
     };
     executionService.on('stopped', handleStopped);
@@ -893,18 +1016,18 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
     return null;
   }
 
-  return (
-    <Box flexDirection="column" width="100%">
-      {/* Completed stream (immutable, deduped): render via StaticStreamDisplay to avoid re-renders and keep normalization */}
-      {completedEvents.length > 0 && (
-        <StaticStreamDisplay events={completedEvents} />
-      )}
 
-      {/* Active tail: small, dynamic section only for in-flight events */}
-      {activeEvents.length > 0 && (
-        <StreamDisplay events={activeEvents} animationsEnabled={animationsEnabled} />
-      )}
- 
+  return (
+    <Box flexDirection="column" flexGrow={1}>
+      <>
+        {completedEvents.length > 0 && (
+          <StaticStreamDisplay events={completedEvents} />
+        )}
+        {activeEvents.length > 0 && (
+          <StreamDisplay events={activeEvents} animationsEnabled={animationsEnabled} />
+        )}
+      </>
+      
       {/* Trailing spacer to avoid footer crowding */}
       <Box>
         <Text> </Text>

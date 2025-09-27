@@ -344,6 +344,10 @@ const AppContent: React.FC<AppProps> = ({
   const handleModalClose = React.useCallback(() => {
     // Close the modal (no clear for lightweight modals like CONFIG)
     closeModal();
+
+    // Bump modal static to force MainAppView remount (combined key)
+    try { modalManager.refreshStaticOnly(); } catch {}
+
     // Force a full remount of the main view to guarantee a clean screen
     setForceRemount(true);
     
@@ -352,11 +356,11 @@ const AppContent: React.FC<AppProps> = ({
     registerTimeout(() => {
       try { stdout.write(ansiEscapes.clearTerminal); } catch {}
       setForceRemount(false);
-    }, 100); // 100ms for reliable transitions
+    }, 0);
     
     // Suppress any buffered ESC for a short window to prevent accidental app exit
     escSuppressUntilRef.current = Date.now() + 300; // Increased from 200ms to 300ms
-  }, [closeModal, actions, stdout, registerTimeout]);
+  }, [closeModal, modalManager, stdout, registerTimeout]);
   
   // Main app view props
   const mainAppViewProps = React.useMemo(() => ({
@@ -365,7 +369,8 @@ const AppContent: React.FC<AppProps> = ({
     currentTheme,
     operationHistoryEntries: operationManager.operationHistoryEntries,
     assessmentFlowState: operationManager.assessmentFlowState,
-    staticKey: appState.staticKey,
+    // Combine app staticKey with modal staticKey to ensure remounts after modal transitions
+    staticKey: (appState.staticKey || 0) + (modalStaticKey || 0),
     activeModal,
     modalContext,
     isTerminalInteractive,
@@ -381,6 +386,7 @@ const AppContent: React.FC<AppProps> = ({
     operationManager.operationHistoryEntries,
     operationManager.assessmentFlowState,
     appState.staticKey,
+    modalStaticKey,
     activeModal,
     modalContext,
     isTerminalInteractive,
@@ -434,7 +440,7 @@ const AppContent: React.FC<AppProps> = ({
   // This ensures there's always something in the render tree
   if (forceRemount) {
     return (
-      <Box width="100%" height={1}>
+      <Box height={1} flexGrow={1}>
         <Text> </Text>
       </Box>
     );

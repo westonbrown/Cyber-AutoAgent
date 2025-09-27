@@ -90,6 +90,14 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
       // A new stream is starting; allow header for this run
       setHasAnyOperationEnded(false);
     }
+
+    if (prev && !showOperationStream) {
+      // Falling edge: stream ended. Do NOT clear the terminal.
+      // We keep scrollback so users can review the previous operation's output
+      // while returning to the main screen. If duplicate headers are a concern,
+      // we can address them by adjusting header rendering, not by clearing.
+    }
+
     prevShowStreamRef.current = showOperationStream;
   }, [showOperationStream, stdout]);
 
@@ -148,7 +156,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
   });
 
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <Box flexDirection="column" flexGrow={1}>
       {/* MODAL LAYER: Renders on top of everything else */}
       {activeModal !== ModalType.NONE && (
         <ModalRegistry
@@ -161,7 +169,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         />
       )}
 
-      {/* HEADER: When a stream is running, render inside Static so it stays above streaming output. */}
+      {/* HEADER: Use Static during streaming so it stays above stream output */}
       {!hideHeader && activeModal === ModalType.NONE && (
         showOperationStream ? (
           <Static items={[`app-header-${staticKey}`]}>

@@ -38,7 +38,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   });
 
   return (
-    <Box width="100%" flexDirection="column" alignItems="center" paddingY={1}>
+    <Box flexDirection="column" alignItems="center" paddingY={1} flexGrow={1}>
       <Box width={width} flexDirection="column">
         <Box marginBottom={1}>
           <Text bold color={theme.primary}>Welcome to Cyber-AutoAgent</Text>

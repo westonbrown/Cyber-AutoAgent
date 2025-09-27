@@ -56,6 +56,11 @@ function sanitizeTargetName(target: string): string {
  */
 const logger = createLogger('DirectDockerService');
 export class DirectDockerService extends EventEmitter {
+  private autoExecuteTimer?: NodeJS.Timeout;
+  private autoExecuteInterval?: NodeJS.Timeout;
+  private autoExecuteAttempts: number = 0;
+  private autoExecuteSent: boolean = false;
+  private progressDetected: boolean = false;
   private readonly dockerClient: Dockerode;
   private activeContainer?: Dockerode.Container;
   private containerStream?: any;
@@ -67,6 +72,43 @@ export class DirectDockerService extends EventEmitter {
   private seenOperationComplete = false;
   // Auto-confirm interactive handoffs when configured (maps to BYPASS_TOOL_CONSENT)
   private autoConfirm = true;
+  // Raw tool stdout buffering (guarded) for cases where backend doesn't emit consolidated tool_output events
+  private inToolExecution = false;
+  private toolOutputBuffer = '';
+  private sawBackendToolOutput = false;
+  private _currentToolName: string | undefined = undefined;
+
+  /** Emit a chunk of buffered tool output */
+  private emitToolOutputChunk(content: string): void {
+    try {
+      this.emit('event', {
+        type: 'output',
+        content,
+        timestamp: Date.now(),
+        metadata: { fromToolBuffer: true, tool: this._currentToolName, chunked: true }
+      } as any);
+    } catch {}
+  }
+
+  /**
+   * Flush tool output buffer in chunks to keep memory flat and reduce latency.
+   * If force=true, flush remaining buffer even if smaller than chunk size.
+   */
+  private flushToolOutputChunks(force: boolean = false): void {
+    const CHUNK_SIZE = 64 * 1024; // 64 KiB
+    const MIN_SPLIT = 32 * 1024;  // Prefer newline split after 32 KiB
+    while (this.toolOutputBuffer.length > CHUNK_SIZE || (force && this.toolOutputBuffer.length > 0)) {
+      const window = this.toolOutputBuffer.slice(0, CHUNK_SIZE);
+      let n = Math.min(this.toolOutputBuffer.length, CHUNK_SIZE);
+      const nl = window.lastIndexOf('\n');
+      if (nl >= MIN_SPLIT && nl < CHUNK_SIZE) {
+        n = nl + 1; // split on newline
+      }
+      const chunk = this.toolOutputBuffer.slice(0, n);
+      this.emitToolOutputChunk(chunk);
+      this.toolOutputBuffer = this.toolOutputBuffer.slice(n);
+    }
+  }
 
   /**
    * Initialize the Docker service with connection to Docker daemon
@@ -83,6 +125,10 @@ export class DirectDockerService extends EventEmitter {
     params: AssessmentParams,
     config: Config
   ): Promise<void> {
+    // Reset per-run state to ensure clean behavior when reusing the service in the same app session
+    this.resetSessionState();
+    this.abortController = new AbortController();
+    this.progressDetected = false;
     if (this.isExecutionActive) {
       throw new Error('Assessment already running');
     }
@@ -166,7 +212,7 @@ export class DirectDockerService extends EventEmitter {
         'PYTHONUNBUFFERED=1', // Disable Python output buffering for real-time streaming
         `BYPASS_TOOL_CONSENT=${config.confirmations ? 'false' : 'true'}`,
         'CYBER_UI_MODE=react',
-        'CYBERAGENT_NO_BANNER=false',
+        'CYBERAGENT_NO_BANNER=true',
         `DEV=${config.verbose ? 'true' : 'false'}`,
       );
 
@@ -312,8 +358,8 @@ export class DirectDockerService extends EventEmitter {
       }
 
       // Prefer ad-hoc container per assessment for reliability; allow opt-in reuse via env
-      // Set CYBER_DOCKER_REUSE=true to re-enable exec into the service container
-      const ENABLE_SERVICE_CONTAINER_REUSE = currentDeploymentMode === 'full-stack';
+      // Set CYBER_DOCKER_REUSE=true to enable exec into the service container explicitly
+      const ENABLE_SERVICE_CONTAINER_REUSE = currentDeploymentMode === 'full-stack' && process.env.CYBER_DOCKER_REUSE === 'true';
       
       if (ENABLE_SERVICE_CONTAINER_REUSE) {
         const serviceContainer = await this.findServiceContainer();
@@ -386,10 +432,12 @@ export class DirectDockerService extends EventEmitter {
         Tty: true,  // Enable TTY for interactive tools
         OpenStdin: true,
         StdinOnce: false,
+        User: 'root',
         HostConfig: {
           AutoRemove: true,
           NetworkMode: dockerNetwork,
           Binds: binds,
+          CapAdd: ['NET_RAW','NET_ADMIN','SYS_PTRACE']
         },
         WorkingDir: '/app',
       });
@@ -623,6 +671,20 @@ export class DirectDockerService extends EventEmitter {
     
     while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
       processedEvents = true;
+      const start = match.index as number;
+      const end = start + match[0].length;
+      // Capture any raw text preceding this structured event and buffer it if a tool is running
+      const preText = this.streamEventBuffer.slice(0, start);
+      if (preText && this.inToolExecution) {
+        this.toolOutputBuffer += preText;
+        // Clamp tool output buffer to prevent unbounded growth
+        const MAX_TOOL_OUTPUT = 1 * 1024 * 1024; // 1 MiB cap
+        if (this.toolOutputBuffer.length > MAX_TOOL_OUTPUT) {
+          this.toolOutputBuffer = this.toolOutputBuffer.slice(-MAX_TOOL_OUTPUT);
+        }
+        // Chunk out as we accumulate
+        this.flushToolOutputChunks(false);
+      }
       try {
         const eventData = JSON.parse(match[1]);
 
@@ -638,6 +700,30 @@ export class DirectDockerService extends EventEmitter {
           // Include all original properties for legacy events
           ...eventData
         };
+
+        // Track tool execution state for raw output buffering
+        if (eventData.type === 'tool_start' || eventData.type === 'tool_invocation_start') {
+          this.inToolExecution = true;
+          this.toolOutputBuffer = '';
+          this.sawBackendToolOutput = false;
+          try { this._currentToolName = eventData.tool_name || eventData.toolName || eventData.tool || undefined; } catch {}
+        } else if (
+          eventData.type === 'tool_invocation_end' ||
+          eventData.type === 'tool_result' ||
+          eventData.type === 'step_header' ||
+          eventData.type === 'tool_end'
+        ) {
+          // Flush any remaining raw output when tool ends, but only if backend
+          // did NOT send a consolidated tool output event. This avoids duplicates.
+          if (!this.sawBackendToolOutput) {
+            // Flush remaining buffered output in chunks
+            this.flushToolOutputChunks(true);
+          }
+          this.toolOutputBuffer = '';
+          this.inToolExecution = false;
+          this.sawBackendToolOutput = false;
+          try { this._currentToolName = undefined; } catch {}
+        }
 
         // Handle tool discovery events with improved formatting
         if (event.type === 'tool_discovery_start') {
@@ -659,6 +745,8 @@ export class DirectDockerService extends EventEmitter {
             timestamp: Date.now()
           });
         } else if (event.type === 'environment_ready') {
+          // Schedule a fallback auto-execute shortly after environment is ready
+          this.scheduleAutoExecuteFallback(1500);
           this.emit('event', {
             type: 'output',
             content: `◆ Environment ready - ${eventData.tool_count} cybersecurity tools loaded`,
@@ -696,8 +784,19 @@ export class DirectDockerService extends EventEmitter {
               // The startup thinking animation is already active and more appropriate
             }, 100);
           }, 1000);
+        } else if (event.type === 'output') {
+          // Track if this is backend-consolidated tool output
+          if (event.metadata && (event.metadata as any).fromToolBuffer) {
+            this.sawBackendToolOutput = true;
+          }
         } else if (event.type === 'operation_complete') {
+          this.cancelAutoExecuteFallback();
           // Backend signaled completion; mark and emit complete once
+          this.seenOperationComplete = true;
+          this.emit('complete');
+        } else if (event.type === 'assessment_complete') {
+          this.cancelAutoExecuteFallback();
+          // React backend emits assessment_complete after final report generation
           this.seenOperationComplete = true;
           this.emit('complete');
         } else if (event.type === 'user_handoff') {
@@ -723,11 +822,18 @@ export class DirectDockerService extends EventEmitter {
           }
         }
         
+        // Cancel fallback on signs of forward progress where execute is no longer needed
+        if (event.type === 'step_header' || event.type === 'tool_start') {
+          this.progressDetected = true;
+          this.cancelAutoExecuteFallback();
+        }
+        // After operation_init, schedule a near-term fallback since the prompt typically appears next
+        if (event.type === 'operation_init') {
+          this.scheduleAutoExecuteFallback(1000);
+        }
         this.emit('event', event);
         
         // Remove only the matched event from buffer, preserve any surrounding non-event content
-        const start = match.index as number;
-        const end = start + match[0].length;
         const before = this.streamEventBuffer.slice(0, start);
         const after = this.streamEventBuffer.slice(end);
         this.streamEventBuffer = before + after;
@@ -752,6 +858,21 @@ export class DirectDockerService extends EventEmitter {
     // Check for interactive prompts that need automatic responses
     this.handleInteractivePrompts();
     
+    // If no structured events were found in this chunk, opportunistically capture raw output
+    if (!processedEvents && cleanedData) {
+      if (this.inToolExecution) {
+        this.toolOutputBuffer += cleanedData;
+        const MAX_TOOL_OUTPUT = 1 * 1024 * 1024; // 1 MiB cap
+        if (this.toolOutputBuffer.length > MAX_TOOL_OUTPUT) {
+          this.toolOutputBuffer = this.toolOutputBuffer.slice(-MAX_TOOL_OUTPUT);
+        }
+        // Chunk out as we accumulate
+        this.flushToolOutputChunks(false);
+      }
+      // Clear buffer to avoid duplicating raw data as preText on the next structured event
+      this.streamEventBuffer = '';
+    }
+
     // Keep only last 32KB to prevent memory issues
     if (this.streamEventBuffer.length > 32768) {
       this.streamEventBuffer = this.streamEventBuffer.slice(-16384);
@@ -770,9 +891,12 @@ export class DirectDockerService extends EventEmitter {
 
     // Check for assessment execution prompt and auto-execute (original behavior)
     // The prompt may have a module prefix like "◆ general > " or similar
-    const executePromptPattern = /Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment/i;
+    // Support multiple variants of the execute prompt (with or without quotes/box UI wording)
+    const executePromptPattern = /Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment|Type\s+["']?execute["']?\s*\(default\)|^\s*execute\s*:\s*press\s+enter/ims;
 
     if (executePromptPattern.test(this.streamEventBuffer)) {
+      // Cancel any pending fallback; we will send immediately
+      this.cancelAutoExecuteFallback();
       logger.info('Prompt detected: auto-sending Enter', { bufferLength: this.streamEventBuffer.length });
       // Give a brief delay to ensure the container is ready for input
       setTimeout(() => {
@@ -781,6 +905,7 @@ export class DirectDockerService extends EventEmitter {
             // Send execute command directly for exec sessions
             this.containerStream.write('execute\r\n');
             logger.info('stdin write sent', { data: 'execute\\r\\n' });
+            this.autoExecuteSent = true;
             // Safety resend Enter after 500ms in case first is missed
             setTimeout(() => {
               try {
@@ -797,7 +922,9 @@ export class DirectDockerService extends EventEmitter {
       }, 500); // Increased initial delay for exec sessions
 
       // Remove the prompt from buffer to prevent duplicate executions (tolerant to quotes/spacing)
-      this.streamEventBuffer = this.streamEventBuffer.replace(/.*Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment[^\n]*\n?/gi, '');
+      this.streamEventBuffer = this.streamEventBuffer
+        .replace(/.*Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment[^\n]*\n?/gi, '')
+        .replace(/.*Type\s+["']?execute["']?\s*\(default\)[^\n]*\n?/gi, '');
     }
   }
 
@@ -805,6 +932,8 @@ export class DirectDockerService extends EventEmitter {
    * Stop the running assessment - forcefully kills container and job
    */
   async stop(): Promise<void> {
+    // Ensure any pending auto-execute fallback is cleared
+    this.cancelAutoExecuteFallback();
     if (!this.isExecutionActive) {
       return;
     }
@@ -902,9 +1031,91 @@ export class DirectDockerService extends EventEmitter {
   }
 
   /**
+   * Reset lightweight per-run flags and buffers
+   */
+  private resetSessionState(): void {
+    // Clear any pending fallback timers/flags
+    if (this.autoExecuteTimer) {
+      try { clearTimeout(this.autoExecuteTimer); } catch {}
+      this.autoExecuteTimer = undefined;
+    }
+    this.autoExecuteSent = false;
+    this.seenOperationComplete = false;
+    this.streamEventBuffer = '';
+  }
+
+  /**
+   * Schedule a timed fallback to send "execute" if prompt detection is missed.
+   */
+  private scheduleAutoExecuteFallback(delayMs: number = 1500) {
+    try {
+      if (this.autoExecuteSent || !this.isExecutionActive) return;
+      // Clear any existing timers
+      if (this.autoExecuteTimer) { clearTimeout(this.autoExecuteTimer); this.autoExecuteTimer = undefined; }
+      if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
+      this.autoExecuteAttempts = 0;
+      // Initial single delay before starting retries
+      this.autoExecuteTimer = setTimeout(() => {
+        // Start a bounded retry loop: try up to 3 times every 1.5s unless progress is detected
+        if (!this.isExecutionActive || this.autoExecuteSent || this.progressDetected) return;
+        this.trySendExecute('fallback');
+        this.autoExecuteAttempts = 1;
+        this.autoExecuteInterval = setInterval(() => {
+          if (!this.isExecutionActive || this.autoExecuteSent || this.progressDetected || this.autoExecuteAttempts >= 3) {
+            if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
+            return;
+          }
+          this.trySendExecute('fallback');
+          this.autoExecuteAttempts += 1;
+        }, 1500) as unknown as NodeJS.Timeout;
+      }, delayMs) as unknown as NodeJS.Timeout;
+    } catch {}
+  }
+
+  /** Cancel any pending auto-execute fallback timer */
+  private cancelAutoExecuteFallback() {
+    try {
+      if (this.autoExecuteTimer) { clearTimeout(this.autoExecuteTimer); this.autoExecuteTimer = undefined; }
+      if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
+    } catch {}
+  }
+
+  /** Attempt to send execute to the container stdin */
+  private trySendExecute(reason: 'fallback'|'prompt') {
+    try {
+      if (!this.containerStream || !this.isExecutionActive) return;
+      if (this.autoExecuteSent) return;
+      // Emit a visible marker only in debug mode to aid investigation
+      if (process.env.CYBER_DEBUG === 'true' || process.env.DEBUG === 'true') {
+        this.emit('event', {
+          type: 'output',
+          content: `[auto-execute ${reason} fired]`,
+          timestamp: Date.now()
+        });
+      }
+      // Send a robust sequence to satisfy various prompt states
+      this.containerStream.write('execute\r\n');
+      logger.info('stdin write sent', { reason, data: 'execute\\r\\n' });
+      // Follow up with an extra Enter shortly after
+      setTimeout(() => {
+        try {
+          if (!this.containerStream || !this.isExecutionActive) return;
+          this.containerStream.write('\r\n');
+          logger.info('stdin write sent', { reason, data: '\\r\\n' });
+        } catch {}
+      }, 150);
+      this.autoExecuteSent = true;
+    } catch (err) {
+      logger.error('stdin write error (auto-execute)', err as any);
+    }
+  }
+
+  /**
    * Cleanup resources and remove all event listeners
    */
   cleanup(): void {
+    // Cancel fallback timers
+    this.cancelAutoExecuteFallback();
     // Stop any active container
     if (this.activeContainer) {
       this.stopContainer().catch(error => {
@@ -998,6 +1209,12 @@ export class DirectDockerService extends EventEmitter {
     env: string[],
     deploymentMode: DeploymentMode
   ): Promise<void> {
+    // Reset per-run state at the beginning of a new exec session
+    this.resetSessionState();
+    this.abortController = new AbortController();
+    this.progressDetected = false;
+    // Fallback auto-execute in exec reuse path
+    this.scheduleAutoExecuteFallback(2500);
     this.isExecutionActive = true;
     
     // Prepare command (python entrypoint + args) to align with container Entrypoint
@@ -1024,8 +1241,10 @@ export class DirectDockerService extends EventEmitter {
     });
 
     this.containerStream = stream;
-    // Reset completion flag for new exec session
+    // Reset completion flag for new exec session (already done in resetSessionState, keep for safety)
     this.seenOperationComplete = false;
+    // Clear any residual buffer so prompt detection is fresh
+    this.streamEventBuffer = '';
 
     // Don't send initial input - let the auto-response handler deal with prompts
 

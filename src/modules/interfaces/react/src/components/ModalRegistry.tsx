@@ -52,11 +52,14 @@ export const ModalRegistry: React.FC<ModalRegistryProps> = ({
   }
   
   // Common modal wrapper for consistent styling
-  const ModalWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <Box flexDirection="column" width="90%">
-      {children}
-    </Box>
-  );
+  const ModalWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const w = Math.max(40, Math.floor(((terminalWidth || ((process as any)?.stdout?.columns ?? 100)) * 0.9)));
+    return (
+      <Box flexDirection="column" width={w}>
+        {children}
+      </Box>
+    );
+  };
   
   switch (activeModal) {
     case ModalType.CONFIG:

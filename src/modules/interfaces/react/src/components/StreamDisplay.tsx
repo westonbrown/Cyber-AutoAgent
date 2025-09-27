@@ -11,11 +11,13 @@ import { SwarmDisplay, SwarmState, SwarmAgent } from './SwarmDisplay.js';
 import { formatToolInput } from '../utils/toolFormatters.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 // Extended event types for UI-specific events not covered by the core SDK events
 // These events are used for UI state management and display formatting
 export type AdditionalStreamEvent = 
-  | { type: 'step_header'; step: number | string; maxSteps: number; operation: string; duration: string; [key: string]: any }
+  | { type: 'step_header'; step: number | string; maxSteps?: number; operation?: string; duration?: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
   | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; [key: string]: any }
   | { type: 'thinking_end'; [key: string]: any }
@@ -42,7 +44,8 @@ export type AdditionalStreamEvent =
   | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any }
   | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
-  | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any };
+  | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any }
+  | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any };
 
 // Combined event type supporting both SDK-aligned and additional events
 export type DisplayStreamEvent = StreamEvent | AdditionalStreamEvent;
@@ -67,13 +70,115 @@ interface ToolState {
 
 const DIVIDER = '─'.repeat(process.stdout.columns || 80);
 
+// Operation context used to locate artifacts like the final report
+type OperationContext = {
+  operationId?: string | null;
+  target?: string | null;
+};
+
+// Utility: sanitize target into safe path segment (mirrors Python logic)
+const sanitizeTargetForPath = (target: string): string => {
+  try {
+    let clean = target.replace(/^https?:\/\//, '');
+    clean = clean.replace(/\.\./g, '').replace(/\.\//g, '');
+    clean = clean.replace(/[^a-zA-Z0-9._-]/g, '_');
+    clean = clean.replace(/_+/g, '_');
+    clean = clean.slice(0, 100).replace(/^[_\.]+|[_\.]+$/g, '');
+    return clean || 'unknown_target';
+  } catch {
+    return 'unknown_target';
+  }
+};
+
+// Inline viewer to load and render the generated markdown report from disk
+const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
+  const [content, setContent] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        setError(null);
+        if (!ctx.operationId || !ctx.target) {
+          setError('Report context unavailable');
+          return;
+        }
+        const safeTarget = sanitizeTargetForPath(String(ctx.target));
+        const reportPathCandidates = [
+          path.join(process.cwd(), 'outputs', safeTarget, String(ctx.operationId), 'security_assessment_report.md'),
+          path.join(process.cwd(), '..', 'outputs', safeTarget, String(ctx.operationId), 'security_assessment_report.md'),
+        ];
+        let loaded: string | null = null;
+        for (const p of reportPathCandidates) {
+          try {
+            const data = await fs.readFile(p, 'utf-8');
+            loaded = data;
+            break;
+          } catch {}
+        }
+        if (!loaded) {
+          setError('Report file not found');
+          return;
+        }
+        setContent(loaded);
+      } catch (e: any) {
+        setError('Failed to load report');
+      }
+    };
+    load();
+  }, [ctx.operationId, ctx.target]);
+
+  if (error) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color="yellow">{error}</Text>
+      </Box>
+    );
+  }
+  if (!content) {
+    return (
+      <Box marginTop={1}>
+        <Text dimColor>Loading final report…</Text>
+      </Box>
+    );
+  }
+
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  let displayLines: string[] = [];
+  if (lines.length > (DISPLAY_LIMITS.REPORT_PREVIEW_LINES + DISPLAY_LIMITS.REPORT_TAIL_LINES)) {
+    displayLines = [
+      ...lines.slice(0, DISPLAY_LIMITS.REPORT_PREVIEW_LINES),
+      '',
+      '... (content continues)',
+      '',
+      ...lines.slice(-DISPLAY_LIMITS.REPORT_TAIL_LINES),
+    ];
+  } else {
+    displayLines = lines;
+  }
+
+  return (
+    <Box flexDirection="column" marginTop={1} marginBottom={1}>
+      <Box borderStyle="double" borderColor="cyan" paddingX={1}>
+        <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
+      </Box>
+      <Box flexDirection="column" marginTop={1} paddingX={1}>
+        {displayLines.map((line, i) => (
+          <Text key={i}>{line}</Text>
+        ))}
+      </Box>
+    </Box>
+  );
+};
+
 // Export EventLine for potential reuse in other components
 export const EventLine: React.FC<{ 
   event: DisplayStreamEvent; 
   toolStates?: Map<string, ToolState>;
   toolInputs?: Map<string, any>;
   animationsEnabled?: boolean;
-}> = React.memo(({ event, toolStates, toolInputs, animationsEnabled = true }) => {
+  operationContext?: OperationContext;
+}> = React.memo(({ event, toolStates, toolInputs, animationsEnabled = true, operationContext }) => {
   switch (event.type) {
     // =======================================================================
     // SDK NATIVE EVENT HANDLERS - Integrated with SDK context
@@ -152,7 +257,10 @@ export const EventLine: React.FC<{
       const isSwarmOperation = (event as any)['is_swarm_operation'];
       
       if (event.step === "FINAL REPORT") {
-        stepDisplay = "📋 [FINAL REPORT]";
+        stepDisplay = "[FINAL REPORT]";
+      } else if (typeof event.step === 'string' && String(event.step).toUpperCase() === 'TERMINATED') {
+        // Clean termination header without confusing step counters
+        stepDisplay = "[TERMINATED]";
       } else if (swarmAgent && swarmSubStep) {
         // For swarm operations, show agent name with their step count and swarm-wide progress
         // Use replaceAll to handle multi-word agent names correctly
@@ -176,6 +284,10 @@ export const EventLine: React.FC<{
             </Text>
           </Box>
           <Text color="#45475A">{DIVIDER.slice(0, Math.max(0, DIVIDER.length - 20))}</Text>
+          {/* If this is the FINAL REPORT and we have operation context, render the report inline */}
+          {event.step === 'FINAL REPORT' && operationContext && (
+            <InlineReportViewer ctx={operationContext} />
+          )}
         </Box>
       );
       
@@ -206,44 +318,39 @@ export const EventLine: React.FC<{
           (typeof msg === 'string' && msg.toLowerCase().includes('swarm iteration limit'))) {
         return null;
       }
-      // Display termination notification (no extra step counters to avoid confusion)
+      // Display a simple termination notification (no emojis)
       let reasonLabel = 'TERMINATED';
-      let reasonColor: any = 'yellow';
       switch (reason) {
         case 'stop_tool':
           reasonLabel = 'STOP TOOL';
-          reasonColor = 'green';
           break;
         case 'step_limit':
           reasonLabel = 'STEP LIMIT';
-          reasonColor = 'yellow';
+          break;
+        case 'user_abort':
+          reasonLabel = 'TERMINATED';
           break;
         case 'network_timeout':
         case 'network_error':
         case 'timeout':
           reasonLabel = 'NETWORK TIMEOUT';
-          reasonColor = 'red';
           break;
         case 'max_tokens':
           reasonLabel = 'TOKEN LIMIT';
-          reasonColor = 'yellow';
           break;
         case 'rate_limited':
           reasonLabel = 'RATE LIMITED';
-          reasonColor = 'yellow';
           break;
         case 'model_error':
           reasonLabel = 'MODEL ERROR';
-          reasonColor = 'red';
           break;
         default:
           reasonLabel = 'TERMINATED';
-          reasonColor = 'yellow';
       }
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Box borderStyle="round" borderColor={reasonColor} paddingX={1}>
-            <Text color={reasonColor} bold>{reasonLabel}: {event.message}</Text>
+          <Box borderStyle="round" borderColor="yellow" paddingX={1}>
+            <Text color="yellow" bold>{reasonLabel}: {event.message}</Text>
           </Box>
         </Box>
       );
@@ -756,6 +863,57 @@ const method = latestInput.method || 'GET';
             </Box>
           );
 
+    case 'report_content': {
+      // Render the final report content directly from the event
+      try {
+        const content = typeof (event as any).content === 'string' ? (event as any).content : JSON.stringify((event as any).content, null, 2);
+        const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+        const maxHead = DISPLAY_LIMITS.REPORT_PREVIEW_LINES || 50;
+        const maxTail = DISPLAY_LIMITS.REPORT_TAIL_LINES || 30;
+        const displayLines = lines.length > (maxHead + maxTail)
+          ? [...lines.slice(0, maxHead), '', '... (content continues)', '', ...lines.slice(-maxTail)]
+          : lines;
+        return (
+          <Box flexDirection="column" marginTop={1} marginBottom={1}>
+            <Box borderStyle="double" borderColor="cyan" paddingX={1}>
+              <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
+            </Box>
+            <Box flexDirection="column" marginTop={1} paddingX={1}>
+              {displayLines.map((line, i) => (
+                <Text key={i}>{line}</Text>
+              ))}
+            </Box>
+          </Box>
+        );
+      } catch {
+        return null;
+      }
+    }
+
+    case 'report_paths': {
+      const opId = (event as any).operation_id || '';
+      const target = (event as any).target || '';
+      const outputDir = (event as any).outputDir || '';
+      const reportPath = (event as any).reportPath || '';
+      const logPath = (event as any).logPath || '';
+      const memoryPath = (event as any).memoryPath || '';
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Box borderStyle="round" borderColor="green" paddingX={1}>
+            <Text color="green" bold>ARTIFACTS AND LOGS</Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1} paddingX={1}>
+            {opId ? (<Text>Operation ID: {opId}</Text>) : null}
+            {target ? (<Text>Target: {target}</Text>) : null}
+            {outputDir ? (<Text>Operation Path: {outputDir}</Text>) : null}
+            {reportPath ? (<Text>Report: {reportPath}</Text>) : null}
+            {logPath ? (<Text>Log: {logPath}</Text>) : null}
+            {memoryPath ? (<Text>Memory: {memoryPath}</Text>) : null}
+          </Box>
+        </Box>
+      );
+    }
+
     case 'output': {
       // Render even when content is empty to preserve intentional spacing.
       if ((event as any).content == null) {
@@ -855,11 +1013,12 @@ const method = latestInput.method || 'GET';
       }
 
       // Startup/system messages: format lifecycle/status lines using original symbols (✓/○)
-      if (filtered && (
+      // IMPORTANT: Do NOT apply this styling to tool outputs
+      if (!fromToolBuffer && filtered && (
         filtered.startsWith('▶') ||
         filtered.startsWith('◆') ||
-        filtered.includes('✓') ||
-        filtered.includes('○') ||
+        filtered.trim().startsWith('✓') ||
+        filtered.trim().startsWith('○') ||
         filtered.startsWith('[Observability]')
       )) {
         if (filtered.startsWith('▶')) {
@@ -869,18 +1028,18 @@ const method = latestInput.method || 'GET';
           );
         } else if (filtered.startsWith('◆')) {
           // System status messages
-          const isComplete = filtered.includes('ready') || filtered.includes('complete');
+          const isComplete = filtered.toLowerCase().includes('ready') || filtered.toLowerCase().includes('complete');
           return (
             <Text color={isComplete ? '#A6E3A1' : '#89DCEB'}>{filtered}</Text>
           );
-        } else if (filtered.includes('✓')) {
+        } else if (filtered.trim().startsWith('✓')) {
           // Success indicators
           return (
             <Box marginLeft={1}>
               <Text color="#A6E3A1">{filtered}</Text>
             </Box>
           );
-        } else if (filtered.includes('○')) {
+        } else if (filtered.trim().startsWith('○')) {
           // Warning/unavailable indicators
           return (
             <Box marginLeft={1}>
@@ -892,10 +1051,6 @@ const method = latestInput.method || 'GET';
             <Text color="#CBA6F7">{filtered}</Text>
           );
         }
-        // Default system message styling
-        return (
-          <Text color="#89DCEB">{filtered}</Text>
-        );
       }
       
       // For command output, show with consistent spacing
@@ -932,9 +1087,16 @@ const method = latestInput.method || 'GET';
       const shouldCollapse = dedupedLines.length > collapseThreshold;
       
       let displayLines: string[];
-      if (shouldCollapse && !isReport && !isOperationSummary && !fromToolBuffer) {
-        // For normal output only (not tool output), show first 5 and last 3 lines
-        displayLines = [...dedupedLines.slice(0, 5), '...', ...dedupedLines.slice(-3)];
+      if (shouldCollapse && fromToolBuffer) {
+        // For tool outputs, show generous head/tail with a continuation marker
+        displayLines = [
+          ...dedupedLines.slice(0, DISPLAY_LIMITS.TOOL_OUTPUT_PREVIEW_LINES),
+          '... (content continues)',
+          ...dedupedLines.slice(-DISPLAY_LIMITS.TOOL_OUTPUT_TAIL_LINES)
+        ];
+      } else if (shouldCollapse && !isReport && !isOperationSummary) {
+        // For normal output, show first 5 and last 3 lines
+        displayLines = [...dedupedLines.slice(0, 5), '... (content continues)', ...dedupedLines.slice(-3)];
       } else if (shouldCollapse && (isReport || isOperationSummary)) {
         // For reports and summaries, show much more content
         if (isReport) {
@@ -951,7 +1113,7 @@ const method = latestInput.method || 'GET';
           displayLines = dedupedLines.slice(0, DISPLAY_LIMITS.OPERATION_SUMMARY_LINES);
         }
       } else {
-        // Show all lines if under threshold
+        // Show all lines if under threshold or expanded
         displayLines = dedupedLines;
       }
       
@@ -1071,20 +1233,6 @@ const method = latestInput.method || 'GET';
       );
     }
       
-    case 'report_content':
-      // Display the full security assessment report
-      if (!event.content) return null;
-      
-      return (
-        <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Box borderStyle="double" borderColor="cyan" paddingX={1}>
-            <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
-          </Box>
-          <Box flexDirection="column" marginTop={1} paddingX={1}>
-            <Text>{event.content}</Text>
-          </Box>
-        </Box>
-      );
       
     case 'error':
       // Simplified error display - just show the content
@@ -1582,6 +1730,19 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
     return events.some(e => e.type === 'swarm_start');
   }, [events]);
   
+  // Capture operation context (operation_id and target) from events for artifact resolution
+  const operationContext = React.useMemo<OperationContext>(() => {
+    let opId: string | null = null;
+    let target: string | null = null;
+    for (const e of events) {
+      if (e.type === 'operation_init') {
+        if ('operation_id' in e && (e as any).operation_id) opId = String((e as any).operation_id);
+        if ('target' in e && (e as any).target) target = String((e as any).target);
+      }
+    }
+    return { operationId: opId, target };
+  }, [events]);
+
   return (
     <Box flexDirection="column">
       {/* Only display swarm if we have actual swarm events in this session */}
@@ -1633,6 +1794,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
               toolStates={toolStates}
               toolInputs={toolInputs} 
               animationsEnabled={animationsEnabled} 
+              operationContext={operationContext}
             />
           ));
         }
@@ -1698,7 +1860,7 @@ export const StaticStreamDisplay: React.FC<{
           out.push({
             key,
             render: () => (
-              <MemoizedEventLine key={key} event={event} toolStates={new Map()} animationsEnabled={false} />
+              <MemoizedEventLine key={key} event={event} toolStates={new Map()} animationsEnabled={false} operationContext={undefined} />
             )
           });
         });

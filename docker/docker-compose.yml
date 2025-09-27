@@ -59,9 +59,10 @@ services:
       - ../tools:/app/tools:delegated
       
     
-    # Network configuration - bridge mode to allow Langfuse communication
+    # Network configuration
     networks:
-      - default
+      - default                    # Langfuse observability stack
+      - cyber-autoagent_default    # Challenge targets network
 
     # Resource limits
     deploy:
@@ -339,3 +340,5 @@ volumes:
 networks:
   default:
     driver: bridge
+  cyber-autoagent_default:
+    external: true

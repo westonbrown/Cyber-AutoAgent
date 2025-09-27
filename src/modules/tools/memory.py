@@ -224,9 +224,6 @@ class Mem0ServiceClient:
         self.silent = silent  # Store silent flag for use in initialization methods
         self.mem0 = self._initialize_client(config)
         self.config = config  # Store config for later use
-        self._should_reflect = False  # Flag for automatic reflection
-        self._finding_count = 0  # Counter for automatic reflection trigger
-        self._reflection_threshold = 3  # Trigger reflection after N findings
 
         # Display memory overview if existing memories are detected (unless silent)
         if not silent:
@@ -445,28 +442,10 @@ class Mem0ServiceClient:
             )
             # Log successful storage
             logger.debug("Memory stored successfully: %s", result)
-
-            # Auto-capture: Check if this is a finding and trigger reflection if needed
-            self._auto_capture_check(metadata)
-
             return result
         except Exception as e:
             logger.error("Critical error storing memory: %s", e)
             raise RuntimeError(f"Memory storage failed: {e}") from e
-
-    def _auto_capture_check(self, metadata: Optional[Dict] = None):
-        """Auto-capture: Check if reflection should be triggered based on stored content."""
-        if metadata and metadata.get("category") == "finding":
-            severity = metadata.get("severity", "").lower()
-
-            # Increment finding counter
-            self._finding_count += 1
-
-            # Trigger reflection for critical/high findings immediately, or after threshold
-            if severity in ["critical", "high"] or self._finding_count >= self._reflection_threshold:
-                logger.info(f"Auto-capture: Triggering reflection after {self._finding_count} findings")
-                self._should_reflect = True
-                self._finding_count = 0  # Reset counter
 
     def get_memory(self, memory_id: str):
         """Get a memory by ID."""
@@ -505,34 +484,56 @@ class Mem0ServiceClient:
         return self.mem0.history(memory_id)
 
     def _display_startup_overview(self) -> None:
-        """Display memory overview at startup for all backends."""
+        """Display memory overview at startup if memories exist."""
         try:
-            # Check if we should display overview based on backend and existing data
-            should_display = self._should_display_overview()
+            # For Mem0 Platform & OpenSearch - always display (remote backends)
+            # For FAISS - only if memories existed before init
+            should_display = (
+                os.environ.get("MEM0_API_KEY") or
+                os.environ.get("OPENSEARCH_HOST") or
+                self.has_existing_memories
+            )
 
-            if should_display:
-                display_memory_overview(self, user_id="cyber_agent")
+            if not should_display:
+                return
+
+            # Get and display overview
+            overview = self.get_memory_overview(user_id="cyber_agent")
+
+            if overview.get("error"):
+                print(f"    Warning: Could not retrieve memory overview: {overview['error']}")
+                return
+
+            if not overview.get("has_memories"):
+                print("    No existing memories found - starting fresh")
+                return
+
+            # Display overview
+            total = overview.get("total_count", 0)
+            categories = overview.get("categories", {})
+            recent_findings = overview.get("recent_findings", [])
+
+            print(f"    Found {total} existing memories:")
+
+            # Show category breakdown
+            if categories:
+                category_parts = [f"{count} {category}" for category, count in categories.items()]
+                print(f"      Categories: {', '.join(category_parts)}")
+
+            # Show recent findings
+            if recent_findings:
+                print("      Recent findings:")
+                for i, finding in enumerate(recent_findings[:3], 1):
+                    content = finding.get("content", "")
+                    if len(content) > 80:
+                        content = content[:77] + "..."
+                    print(f"        {i}. {content}")
+
+            print("    Memory will be loaded as first action to avoid duplicate work")
+
         except Exception as e:
             logger.debug("Could not display startup memory overview: %s", str(e))
             print(f"    Note: Could not check existing memories: {str(e)}")
-
-    def _should_display_overview(self) -> bool:
-        """Check if we should display memory overview based on backend type and existing data."""
-        try:
-            # For Mem0 Platform - always try to display (cloud-based)
-            if os.environ.get("MEM0_API_KEY"):
-                return True
-
-            # For OpenSearch - always try to display (remote service)
-            if os.environ.get("OPENSEARCH_HOST"):
-                return True
-
-            # For FAISS - use the has_existing_memories flag that was already validated
-            # This was set during initialization based on proper file size checks
-            return self.has_existing_memories
-        except Exception as e:
-            logger.debug("Error checking if should display overview: %s", str(e))
-            return False
 
     def store_plan(
         self, plan_content: Union[str, Dict], user_id: str = "cyber_agent", metadata: Optional[Dict] = None
@@ -877,55 +878,6 @@ Include: objective, current_phase=1, phases with clear criteria for each.
                 "has_memories": False,
                 "error": str(e),
             }
-
-
-def display_memory_overview(memory_client: Mem0ServiceClient, user_id: str = "cyber_agent") -> None:
-    """Display memory overview at startup.
-
-    Args:
-        memory_client: Initialized memory client
-        user_id: User ID to check memories for
-    """
-    try:
-        overview = memory_client.get_memory_overview(user_id=user_id)
-
-        if overview.get("error"):
-            print(f"    Warning: Could not retrieve memory overview: {overview['error']}")
-            return
-
-        if not overview.get("has_memories"):
-            print("    No existing memories found - starting fresh")
-            return
-
-        # Display overview
-        total = overview.get("total_count", 0)
-        categories = overview.get("categories", {})
-        recent_findings = overview.get("recent_findings", [])
-
-        print(f"    Found {total} existing memories:")
-
-        # Show category breakdown
-        if categories:
-            category_parts = []
-            for category, count in categories.items():
-                category_parts.append(f"{count} {category}")
-            print(f"      Categories: {', '.join(category_parts)}")
-
-        # Show recent findings
-        if recent_findings:
-            print("      Recent findings:")
-            for i, finding in enumerate(recent_findings, 1):
-                content = finding.get("content", "")
-                # Truncate content for display
-                if len(content) > 80:
-                    content = content[:77] + "..."
-                print(f"        {i}. {content}")
-
-        print("    Memory will be loaded as first action to avoid duplicate work")
-
-    except Exception as e:
-        logger.error("Error displaying memory overview: %s", str(e))
-        print(f"    Warning: Could not display memory overview: {str(e)}")
 
 
 def format_get_response(memory: Dict) -> Panel:
@@ -1324,11 +1276,6 @@ def mem0_memory(
                 recent_findings, current_plan, user_id or "cyber_agent"
             )
 
-            # Check if automatic reflection was triggered
-            if hasattr(_MEMORY_CLIENT, "_should_reflect") and _MEMORY_CLIENT._should_reflect:
-                reflection_prompt = "🔔 AUTOMATIC REFLECTION TRIGGERED\n" + reflection_prompt
-                _MEMORY_CLIENT._should_reflect = False  # Reset flag
-
             if not strands_dev:
                 console.print(
                     Panel(reflection_prompt, title="[bold blue]Reflection Required[/bold blue]", border_style="blue")
@@ -1369,74 +1316,56 @@ def mem0_memory(
             else:
                 metadata = {}
 
-            # High-level guardrails for classification (domain-agnostic, no pattern matching)
-            if metadata.get("category") == "finding":
-                # Normalize severity
-                valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-                sev = str(metadata.get("severity", "MEDIUM")).upper()
-                if sev not in valid_severities:
-                    sev = "MEDIUM"
-                metadata["severity"] = sev
-
-                # Normalize validation_status
-                vstat = str(metadata.get("validation_status", "")).lower()
-
-                # For High/Critical: require a valid proof_pack for Verified status.
-                if sev in {"HIGH", "CRITICAL"}:
-                    proof = metadata.get("proof_pack")
-                    if _is_valid_proof_pack(proof):
-                        # If caller intended verified, keep it; otherwise upgrade to unverified by default
-                        if vstat not in {"verified", "unverified", "hypothesis"}:
-                            metadata["validation_status"] = "unverified"
-                        # Confidence can remain as provided
-                    else:
-                        # Missing/invalid proof_pack: downgrade to hypothesis and cap confidence
-                        metadata["validation_status"] = "hypothesis"
-                        metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "60%"), cap_to=60.0)
-                else:
-                    # For non-high/critical, if validation_status absent, set to unverified by default
-                    if vstat not in {"verified", "unverified", "hypothesis"}:
-                        metadata["validation_status"] = "unverified"
-
             # Tag with current operation ID when available
             op_id = os.getenv("CYBER_OPERATION_ID")
             if op_id and "operation_id" not in metadata:
                 metadata["operation_id"] = op_id
 
-                # Enhanced metadata for findings with validation tracking
-                if metadata.get("category") == "finding":
-                    # Validate and normalize severity
-                    valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-                    severity = metadata.get("severity", "MEDIUM").upper()
-                    if severity not in valid_severities:
-                        logging.getLogger(__name__).warning(
-                            f"Invalid severity '{severity}', defaulting to MEDIUM"
-                        )
-                        metadata["severity"] = "MEDIUM"
+            # Consolidated validation for findings (single pass)
+            if metadata.get("category") == "finding":
+                # 1. Normalize severity
+                valid_severities = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
+                sev = str(metadata.get("severity", "MEDIUM")).upper()
+                if sev not in valid_severities:
+                    logger.warning(f"Invalid severity '{sev}', defaulting to MEDIUM")
+                    sev = "MEDIUM"
+                metadata["severity"] = sev
+
+                # 2. Validate proof_pack for HIGH/CRITICAL findings
+                vstat = str(metadata.get("validation_status", "")).lower()
+                if sev in {"HIGH", "CRITICAL"}:
+                    proof = metadata.get("proof_pack")
+                    if _is_valid_proof_pack(proof):
+                        # Valid proof_pack exists - respect or default to unverified
+                        if vstat not in {"verified", "unverified", "hypothesis"}:
+                            metadata["validation_status"] = "unverified"
                     else:
-                        metadata["severity"] = severity
-
-                    # Set default validation fields if not provided
-                    if "validation_status" not in metadata:
+                        # Missing/invalid proof_pack - downgrade to hypothesis and cap confidence
+                        metadata["validation_status"] = "hypothesis"
+                        metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "60%"), cap_to=60.0)
+                else:
+                    # Non-critical findings - default validation_status if not set
+                    if vstat not in {"verified", "unverified", "hypothesis"}:
                         metadata["validation_status"] = "unverified"
-                    if "evidence_type" not in metadata:
-                        # Determine evidence type based on confidence level only (no content parsing)
-                        confidence_str = metadata.get("confidence", "0%")
-                        try:
-                            confidence_val = float(str(confidence_str).rstrip("%"))
-                        except Exception:
-                            confidence_val = 0
 
-                        if confidence_val >= 70:
-                            metadata["evidence_type"] = "exploited"
-                        elif confidence_val >= 50:
-                            metadata["evidence_type"] = "behavioral"
-                        else:
-                            metadata["evidence_type"] = "pattern_match"
+                # 3. Determine evidence_type based on confidence (if not already set)
+                if "evidence_type" not in metadata:
+                    confidence_str = metadata.get("confidence", "0%")
+                    try:
+                        confidence_val = float(str(confidence_str).rstrip("%"))
+                    except Exception:
+                        confidence_val = 0
 
-                    # Ensure low initial confidence for pattern matches
-                    if metadata.get("evidence_type") == "pattern_match":
-                        metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "35%"), cap_to=40.0)
+                    if confidence_val >= 70:
+                        metadata["evidence_type"] = "exploited"
+                    elif confidence_val >= 50:
+                        metadata["evidence_type"] = "behavioral"
+                    else:
+                        metadata["evidence_type"] = "pattern_match"
+
+                # 4. Cap confidence for pattern matches
+                if metadata.get("evidence_type") == "pattern_match":
+                    metadata["confidence"] = _normalize_confidence(metadata.get("confidence", "35%"), cap_to=40.0)
 
             # Suppress mem0's internal error logging during operation
             mem0_logger = logging.getLogger("root")
@@ -1445,28 +1374,6 @@ def mem0_memory(
 
             try:
                 results = _MEMORY_CLIENT.store_memory(cleaned_content, user_id, agent_id, metadata)
-
-                # Automatic reflection triggers
-                if metadata and metadata.get("category") == "finding":
-                    severity = metadata.get("severity", "").lower()
-                    # Trigger reflection on critical/high findings
-                    if severity in ["critical", "high"]:
-                        logging.getLogger(__name__).debug("High severity finding detected, triggering reflection")
-                        _MEMORY_CLIENT._should_reflect = True
-
-                    # Check finding count for periodic reflection
-                    try:
-                        all_findings = _MEMORY_CLIENT.search_memories(
-                            "category:finding", user_id=user_id or "cyber_agent"
-                        )
-                        finding_count = len(all_findings) if isinstance(all_findings, list) else 0
-                        if finding_count > 0 and finding_count % 3 == 0:
-                            logging.getLogger(__name__).debug(
-                                f"Reached {finding_count} findings, triggering reflection"
-                            )
-                            _MEMORY_CLIENT._should_reflect = True
-                    except Exception as e:
-                        logging.getLogger(__name__).debug(f"Could not check finding count: {e}")
             except Exception as store_error:
                 # Handle mem0 library errors gracefully
                 if "Extra data" in str(store_error) or "Expecting value" in str(store_error):

@@ -329,7 +329,7 @@ Use /help for available commands or refer to the project repository for complete
     const scrollPercentage = Math.round((currentLine / totalLines) * 100);
 
     return (
-      <Box flexDirection="column" height="100%">
+      <Box flexDirection="column">
         {/* Header */}
         <Box 
           borderStyle="single" 
@@ -386,7 +386,7 @@ Use /help for available commands or refer to the project repository for complete
   };
 
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <Box flexDirection="column" flexGrow={1}>
       <Box 
         flexDirection="column" 
         padding={1}

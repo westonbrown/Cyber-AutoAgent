@@ -259,7 +259,7 @@ def main():
         "--module",
         type=str,
         default="general",
-        help="Security module to use (e.g., general, web_security, api_security)",
+        help="Security operational plugins to use (e.g., general, ctf, etc.)",
     )
     parser.add_argument(
         "--objective",
@@ -845,9 +845,22 @@ def main():
                 print(f"{'=' * 80}")
 
     except KeyboardInterrupt:
-        print_status("\nOperation cancelled by user", "WARNING")
-        # Skip cleanup on interrupt for faster exit
-        os._exit(1)
+        ui_mode = os.environ.get("CYBER_UI_MODE", "cli").lower()
+        if ui_mode == "react":
+            # Emit a structured termination event so the UI shows a clear end-of-operation
+            try:
+                if callback_handler:
+                    # Idempotent termination helper emits thinking_end, a final TERMINATED header, and the reason
+                    callback_handler._emit_termination("user_abort", "Operation cancelled by user")  # noqa: SLF001
+            except Exception:
+                pass
+            # Exit gracefully to allow event flushing and frontend to handle "stopped" state
+            # Use 130 (SIGINT) to indicate an intentional interrupt
+            sys.exit(130)
+        else:
+            print_status("\nOperation cancelled by user", "WARNING")
+            # Skip cleanup on interrupt for faster exit
+            os._exit(1)
 
     except Exception as e:
         print_status(f"\nOperation failed: {str(e)}", "ERROR")
@@ -870,9 +883,17 @@ def main():
 
         # Skip cleanup if interrupted
         if interrupted:
-            print_status("Exiting immediately due to interrupt", "WARNING")
-            close_log_outputs()
-            os._exit(1)
+            ui_mode = os.environ.get("CYBER_UI_MODE", "cli").lower()
+            if ui_mode == "react":
+                # In React UI mode, we've already emitted a structured termination event above.
+                # Just close log outputs and return without forcing an abrupt process exit so the
+                # event can reach the frontend cleanly.
+                close_log_outputs()
+                return
+            else:
+                print_status("Exiting immediately due to interrupt", "WARNING")
+                close_log_outputs()
+                os._exit(1)
 
         # Ensure final report is generated - single trigger point
         if callback_handler:

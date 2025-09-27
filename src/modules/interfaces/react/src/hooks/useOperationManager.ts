@@ -10,6 +10,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Operation, OperationManager } from '../services/OperationManager.js';
 import { AssessmentFlow } from '../services/AssessmentFlow.js';
+import { useModule } from '../contexts/ModuleContext.js';
 import { ApplicationState } from './useApplicationState.js';
 import { useDebouncedState } from './useDebouncedState.js';
 import { ExecutionServiceFactory, ServiceSelectionResult } from '../services/ExecutionServiceFactory.js';
@@ -45,6 +46,7 @@ export function useOperationManager({
   activeModal
 }: UseOperationManagerProps) {
   const { config } = useConfig();
+  const { currentModule, availableModules } = useModule();
   // Core service initialization (singleton pattern)
   const [assessmentFlowManager] = useState(() => new AssessmentFlow());
   const [operationManager] = useState(() => new OperationManager(applicationConfig));
@@ -91,6 +93,39 @@ export function useOperationManager({
     lastMetricsUpdateRef.current = now;
     actions.updateMetrics(metrics);
   }, [actions]);
+
+  // Keep AssessmentFlow in sync with available modules from ModuleContext
+  React.useEffect(() => {
+    try {
+      const moduleNames = Object.keys(availableModules || {});
+      if (moduleNames.length > 0) {
+        assessmentFlowManager.setSupportedModules(moduleNames);
+      }
+    } catch {}
+  }, [availableModules, assessmentFlowManager]);
+
+  // Keep AssessmentFlow default module aligned with UI-selected module
+  React.useEffect(() => {
+    try {
+      if (currentModule) {
+        assessmentFlowManager.setDefaultModule(currentModule);
+        // If not actively running an operation and not yet in ready state, align the flow's module now
+        const state = assessmentFlowManager.getState();
+        const notRunning = !appState.activeOperation;
+        const notReady = state.stage !== 'ready';
+        if (notRunning && notReady && state.module !== currentModule) {
+          assessmentFlowManager.setModule(currentModule);
+          // Also reflect into local flow state so prompts/UI remain consistent
+          setAssessmentFlowState?.({
+            step: state.stage === 'ready' ? 'ready' : state.stage === 'objective' ? 'objective' : state.stage === 'target' ? 'target' : 'module',
+            module: currentModule,
+            target: state.target || undefined,
+            objective: state.objective || undefined,
+          });
+        }
+      }
+    } catch {}
+  }, [currentModule, appState.activeOperation, assessmentFlowManager]);
 
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -210,8 +245,13 @@ export function useOperationManager({
         actions.setUserHandoff(false);
         actions.setHasCompletedOperation(true); // Mark as completed to show the message
         
-        // Reset the assessment flow for next operation (fixes issue with same target)
+        // Reset the assessment flow for next operation and preserve current module from UI
+        assessmentFlowManager.setDefaultModule(currentModule || 'general');
         assessmentFlowManager.resetCompleteWorkflow();
+        // Ensure the flow module matches the UI prompt immediately to prevent mismatches
+        if (currentModule) {
+          assessmentFlowManager.setModule(currentModule);
+        }
         
         // Clear existing operation logs first
         clearOperationHistory();

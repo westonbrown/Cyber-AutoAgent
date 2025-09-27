@@ -143,7 +143,7 @@ const rawIndex = progress ? steps.findIndex(s => s.name === progress.stepName) :
   const installInfo = INSTALLATION_INFO[deploymentMode];
 
   return (
-    <Box width="100%" flexDirection="column" alignItems="center" paddingY={1}>
+    <Box flexDirection="column" alignItems="center" paddingY={1} flexGrow={1}>
       <Box width={width} flexDirection="column">
         {/* Header */}
         <Box marginBottom={1}>

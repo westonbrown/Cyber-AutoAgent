@@ -80,15 +80,19 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = React.memo(({ onClo
   
   useInput(handleKeyInput);
   
+  // Compute a numeric container width based on terminal columns to avoid percentage widths
+  const terminalWidth: number = (process as any)?.stdout?.columns || 100;
+  const containerWidth: number = Math.max(40, Math.floor(terminalWidth * 0.6));
+  
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <Box flexDirection="column" flexGrow={1}>
       <Box
         flexDirection="column"
         borderStyle="round"
         borderColor={theme.primary}
         paddingX={3}
         paddingY={2}
-        width="60%"
+        width={containerWidth}
         alignSelf="center"
         marginTop={1}
       >
@@ -108,7 +112,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = React.memo(({ onClo
           return (
             <Box key={module.id} flexDirection="column" marginBottom={1}>
               {/* Module name line */}
-              <Box width="100%" marginBottom={0}>
+              <Box marginBottom={0}>
                 <Text
                   color={isSelected ? theme.accent : theme.foreground}
                   bold={isSelected}
@@ -120,7 +124,7 @@ export const ModuleSelector: React.FC<ModuleSelectorProps> = React.memo(({ onClo
               </Box>
               
               {/* Description line with proper indentation */}
-              <Box marginLeft={4} width="100%">
+              <Box marginLeft={4}>
                 <Text color={theme.muted}>
                   {module.description}
                 </Text>

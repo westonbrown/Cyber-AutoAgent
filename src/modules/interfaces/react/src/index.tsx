@@ -9,6 +9,25 @@ import meow from 'meow';
 import {App} from './App.js';
 import { Config } from './contexts/ConfigContext.js';
 import { loggingService } from './services/LoggingService.js';
+import { enableConsoleSilence } from './utils/consoleSilencer.js';
+
+// Default to production mode when NODE_ENV is unset
+try {
+  if (!process.env.NODE_ENV) {
+    process.env.NODE_ENV = 'production';
+  }
+} catch {}
+
+// Silence noisy console output in production unless explicitly debugging
+try {
+const env = process.env.NODE_ENV || 'production';
+  // Treat anything except explicit 'development' as production by default
+  const isProd = env !== 'development';
+  const debugOn = process.env.DEBUG === 'true' || process.env.CYBER_DEBUG === 'true' || process.env.CYBER_TEST_MODE === 'true';
+  if (isProd && !debugOn) {
+    enableConsoleSilence();
+  }
+} catch {}
 
 // Set project root if not already set (helps ContainerManager find docker-compose.yml)
 if (!process.env.CYBER_PROJECT_ROOT) {

@@ -8,6 +8,7 @@
 import React from 'react';
 import { DeploymentDetector } from '../services/DeploymentDetector.js';
 import { ModalType } from './useModalManager.js';
+import { loggingService } from '../services/LoggingService.js';
 
 interface UseDeploymentDetectionParams {
   isConfigLoading: boolean;
@@ -68,8 +69,8 @@ export function useDeploymentDetection({
                 updateConfig({ deploymentMode: healthyDeployment.mode });
                 await saveConfig();
                 
-                // Log the auto-switch for debugging
-                console.log(`Auto-switched from unhealthy ${configuredMode} to ${healthyDeployment.mode}`);
+                // Log the auto-switch for debugging (suppressed in production UI)
+                loggingService.info(`Auto-switched from unhealthy ${configuredMode} to ${healthyDeployment.mode}`);
               }
             }
           } else if (!applicationConfig?.isConfigured) {
@@ -83,7 +84,7 @@ export function useDeploymentDetection({
                 hasSeenWelcome: true
               });
               await saveConfig();
-              console.log(`Auto-selected healthy deployment: ${healthyDeployment.mode}`);
+              loggingService.info(`Auto-selected healthy deployment: ${healthyDeployment.mode}`);
             }
           }
           

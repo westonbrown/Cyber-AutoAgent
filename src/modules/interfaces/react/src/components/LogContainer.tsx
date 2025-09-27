@@ -6,7 +6,7 @@
  */
 
 import React, { useRef, useEffect } from 'react';
-import { Box, Text, Static } from 'ink';
+import { Box, Text } from 'ink';
 import { themeManager } from '../themes/theme-manager.js';
 import { LogLevelIcon } from './icons.js';
 
@@ -43,7 +43,7 @@ export const LogContainer: React.FC<LogContainerProps> = ({
   const visibleLogs = autoScroll ? logs.slice(-maxHeight) : logs.slice(0, maxHeight);
   
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" flexGrow={1}>
       {/* Title Bar */}
       {title && (
         <Box 
@@ -74,15 +74,15 @@ export const LogContainer: React.FC<LogContainerProps> = ({
         {logs.length === 0 ? (
           <Text color={theme.muted}>No logs yet...</Text>
         ) : (
-          <Static items={visibleLogs}>
-            {(log) => (
+          <>
+            {visibleLogs.map((log) => (
               <LogEntry
                 key={log.id}
                 log={log}
                 showTimestamp={showTimestamps}
               />
-            )}
-          </Static>
+            ))}
+          </>
         )}
         
         {/* Show overflow indicator if there are more logs */}

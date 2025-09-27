@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       alignItems="flex-start"
       flexShrink={0}
       flexDirection="column"
-      width="100%"
+      flexGrow={1}
     >
       {/* Logo - ASCII art or text */}
       {isAsciiArt ? (
@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
           key="compact-logo"
           flexDirection="row"
           justifyContent="space-between"
-          width="100%"
+          flexGrow={1}
           marginBottom={1}
         >
           <Box key="logo-text">
@@ -94,7 +94,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       
       {/* Version and subtitle for ASCII art mode */}
       {isAsciiArt && (
-        <Box key="ascii-subtitle" width="100%" flexDirection="row" justifyContent="flex-start">
+        <Box key="ascii-subtitle" flexDirection="row" justifyContent="flex-start" flexGrow={1}>
           <Text color={theme.muted}>Full Spectrum Cyber Operations v{version}</Text>
           {nightly && (
             <Text color={theme.warning}> | NIGHTLY</Text>
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       
       {/* Optional exit notice under the header */}
       {exitNotice && (
-        <Box key="exit-notice" width="100%">
+        <Box key="exit-notice" flexGrow={1}>
           <Text color={theme.danger}>🔴 ESC — Exiting Cyber-AutoAgent</Text>
         </Box>
       )}

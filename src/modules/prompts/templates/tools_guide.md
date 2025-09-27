@@ -27,9 +27,8 @@
 - **Finding Storage**: Use format from EVIDENCE-BASED VALIDATION section
 - **swarm**: Parallel agents for verification and exploration
   - Format: STATE:[findings], GOAL:[objective], AVOID:[completed], FOCUS:[technique]
-  - Max iterations: agents×15
+  - Max iterations: agents×2
   - Handoff after 3-5 findings
-  - Ends when no handoff occurs
   - **Deploy when**: Stuck  on single approach, multiple attack vectors identified, or <70% budget with no progress
 - **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
   - Only for Python tool files under `tools/`; do not use for reports or general notes.
@@ -45,13 +44,14 @@
   - Common managed endpoints/keys (e.g., Vercel, Supabase anon keys, Tenderly RPC, analytics) are often normal; treat as observations unless abuse, sensitive exposure, or improper authorization is demonstrated with artifacts.
 - **stop**: Terminate operation ONLY when success criteria met.
   **STOP DECISION TREE** (follow in order):
-  1. Do you have the exact proof/artifact required by objective? → YES: May stop | NO: Continue to #2
+  1. Do you have the exact proof/artifact required by objective? → YES: Continue to #1a | NO: Continue to #2
+     1a. Does artifact prove OBJECTIVE completion (not just technique success)? → YES: May stop | NO: Continue to #2
   2. Has user explicitly said "stop"? → YES: May stop | NO: Continue to #3
   3. Used <50% budget? → YES: MUST try 3 different approaches before stop | NO: Continue to #4
   4. Used <80% budget? → YES: MUST deploy swarm before stop | NO: Continue to #5
   5. Used ≥95% budget AND tried swarm? → YES: May stop after reflection | NO: Continue working
 
-  **INVALID STOP REASONS**: "analysis complete", "documented findings", "technique not working", "blocked by protection", "exhausted current approach"
+  **INVALID STOP REASONS**: "analysis complete", "documented findings", "technique not working", "blocked by protection", "exhausted current approach", "extracted intermediate data (credentials/hashes/tokens)"
   **VALID REASONS**: exact objective achieved with proof, user request, budget exhausted (≥95%) after swarm
 
 
@@ -75,26 +75,25 @@ Capability gaps (Ask-Enable-Retry):
 - Must follow pattern: editor → load_tool → custom tool usage
 
 ```python
-# Correct editor usage for meta-tooling
-editor(command="create", path="tools/custom_exploit.py", file_text='''
+# Correct editor usage for operation-specific meta-tooling
+editor(command="create", path="{{operation_tools_dir}}/custom_exploit.py", file_text='''
 from strands import tool
 
-@tool  
+@tool
 def custom_exploit(target: str) -> str:
-    """Custom exploitation functionality"""
-    # Custom implementation based on discovered technology stack
+    """Custom exploitation functionality for this operation"""
     return "Exploitation results"
 ''')
-# Always load immediately after creating a tool
-load_tool(path="tools/custom_exploit.py", name="custom_exploit")
+# Always load immediately after creating a tool (required for operation-specific tools)
+load_tool(path="{{operation_tools_dir}}/custom_exploit.py", name="custom_exploit")
 # Then invoke the loaded tool deterministically
 result = custom_exploit(target="example.com")
 ```
 
 **Protocol: Swarm Deployment - Timeout Configuration**
-- Set node_timeout based on agent operations: 600s for heavy tools (nmap, sqlmap), 300s for API/web
-- Set max_iterations appropriately: agents*15 (e.g., 4 agents = 60 iterations)
-- Example: swarm(task="...", agents=[...], max_iterations=60, node_timeout=600)
+- Set node_timeout based on agent operations: 900s for heavy tools (nmap, sqlmap), 600s for API/web
+- Set max_iterations appropriately: agents*2 (e.g., 4 agents = 8 iterations)
+- Example: swarm(task="...", agents=[...], max_iterations=8, node_timeout=1200)
 
 </critical_tool_protocols>
 

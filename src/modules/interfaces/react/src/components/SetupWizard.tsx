@@ -223,11 +223,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = React.memo(({
   }, [state.currentStep, stdout]);
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" flexGrow={1}>
       {/* Current setup screen */}
       <Box key={`setup-content-${stepRenderKey}`}>
         {isExiting ? (
-          <Box width="100%" paddingY={1} justifyContent="center">
+          <Box paddingY={1} justifyContent="center">
             <Text>
               [WAIT] Switching deployment…
             </Text>

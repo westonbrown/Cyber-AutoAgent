@@ -93,6 +93,18 @@ export function useKeypress(
         return;
       }
 
+      // Special handling for Ctrl+S (toggle expanded view)
+      if (key.ctrl && key.name === 's') {
+        onKeypressRef.current({
+          name: 's',
+          ctrl: true,
+          meta: false,
+          shift: false,
+          sequence: '\x13'
+        });
+        return;
+      }
+
       // DO NOT pass through other keys - they should be handled by text inputs
       // This prevents our global handler from interfering with normal typing
     };
@@ -136,6 +148,18 @@ export function useKeypress(
           meta: false,
           shift: false,
           sequence: '\x0C'
+        });
+        return;
+      }
+
+      // Check for Ctrl+S (expand/collapse)
+      if (input === '\x13' || input.charCodeAt(0) === 19) {
+        handleKeypress(undefined, {
+          name: 's',
+          ctrl: true,
+          meta: false,
+          shift: false,
+          sequence: '\x13'
         });
         return;
       }

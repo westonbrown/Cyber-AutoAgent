@@ -212,6 +212,70 @@ def _lf_resolve_template_text(template_name: str) -> str:
     return ""
 
 
+def _lf_module_prompt_name(module_name: str, kind: str) -> str:
+    """Return the canonical Langfuse name for a module prompt.
+
+    kind: "execution" | "report"
+    """
+    safe_module = str(module_name).strip().replace("/", "_")
+    if kind not in {"execution", "report"}:
+        kind = "execution"
+    return f"cyber/module/{safe_module}/{kind}_prompt"
+
+
+def _lf_resolve_prompt_by_name(name: str, *, label: Optional[str] = None) -> str:
+    """Fetch a prompt by exact Langfuse name and flatten to text if needed."""
+    if not _lf_enabled():
+        return ""
+    _label = label or os.getenv("LANGFUSE_PROMPT_LABEL", "production")
+    obj = _lf_get_prompt(name, _label)
+    if not isinstance(obj, dict):
+        return ""
+    prompt = obj.get("prompt")
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, list):
+        try:
+            parts = []
+            for msg in prompt:
+                if isinstance(msg, dict) and "content" in msg:
+                    parts.append(str(msg.get("content") or ""))
+            return "\n".join(p for p in parts if p)
+        except Exception:
+            return ""
+    return ""
+
+
+def _read_module_yaml_for_tags(module_dir: Path) -> List[str]:
+    """Parse module.yaml to derive tags for Langfuse prompt versions.
+
+    Returns a conservative set of tags like ["module:<name>", "capability:<x>"]
+    """
+    tags: List[str] = []
+    try:
+        if yaml is None:
+            return tags
+        for fname in ("module.yaml", "module.yml"):
+            ypath = module_dir / fname
+            if ypath.exists() and ypath.is_file():
+                data = yaml.safe_load(ypath.read_text(encoding="utf-8"))  # type: ignore[no-untyped-call]
+                if isinstance(data, dict):
+                    name = str(data.get("name") or module_dir.name).strip()
+                    if name:
+                        tags.append(f"module:{name}")
+                    caps = data.get("capabilities")
+                    if isinstance(caps, list):
+                        # Keep at most a handful to avoid excessive tagging
+                        for cap in caps[:5]:
+                            cap_s = str(cap).split(":")[0].strip()
+                            if cap_s:
+                                tags.append(f"capability:{cap_s}")
+                break
+    except Exception:
+        return tags
+    return tags
+
+
 # --- Template and Utility Functions ---
 
 
@@ -406,10 +470,14 @@ def get_system_prompt(
     if isinstance(output_config, dict) and output_config:
         base_dir = output_config.get("base_dir") or output_config.get("base") or "./outputs"
         target_name = output_config.get("target_name") or target
+        tools_path = output_config.get("tools_path", "")
         parts.append("## OUTPUT DIRECTORY STRUCTURE")
         parts.append(f"Base directory: {base_dir}")
         parts.append(f"Target: {target_name}")
         parts.append(f"Target organization: {base_dir.rstrip('/')}/{target_name}/")
+        if tools_path:
+            rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
+            parts.append(f"Operation tools directory: {rel_tools}")
         parts.append("Evidence and logs will be stored under a unified operation path.")
 
     # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
@@ -429,8 +497,10 @@ def get_system_prompt(
             f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} | NextReflectionDueAt: step {_next_reflection} (in {_steps_until} steps)"
         )
         parts.append(
-            "Reflection triggers: High/Critical finding; two attempts without new artifact; repeated timeouts on same command; plan–evidence mismatch."
+            "Reflection triggers: High/Critical finding; two attempts without new artifact; repeated timeouts on same command; plan–evidence mismatch; technique succeeds but criteria unmet."
         )
+        if _steps_until <= 3 and current_step > 0:
+            parts.append(f"⚠️ CHECKPOINT DUE: get_plan in {_steps_until} steps to evaluate phase criteria and update if satisfied")
     except Exception:
         pass
 
@@ -462,6 +532,9 @@ def get_system_prompt(
     try:
         tools_guide = load_prompt_template("tools_guide.md")
         if tools_guide:
+            # Substitute operation tools directory path if available
+            tools_path = output_config.get("tools_path", "tools") if isinstance(output_config, dict) else "tools"
+            tools_guide = tools_guide.replace("{{operation_tools_dir}}", tools_path)
             parts.append(tools_guide.strip())
     except Exception:
         pass
@@ -523,24 +596,67 @@ class ModulePromptLoader:
     def load_module_execution_prompt(self, module_name: str) -> str:
         """Load a module-specific execution prompt if available.
 
-        Prefer module plugin prompts under operation_plugins/<module>/execution_prompt.(md|txt).
-        Fallback to common filenames in prompts/templates.
+        Order of resolution:
+        1) Langfuse-managed module prompt (when enabled): cyber/module/<module>/execution_prompt
+           - If missing remotely, seed from local file if present
+        2) Local file under operation_plugins/<module>/execution_prompt.(md|txt)
+        3) Fallback to shared templates candidates
         Returns empty string if not found.
         """
         # Reset tracker
         self.last_loaded_execution_prompt_source = None
+
+        # 0) Try Langfuse remote first when enabled
+        if _lf_enabled():
+            try:
+                rname = _lf_module_prompt_name(module_name, "execution")
+                label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
+                remote_text = _lf_resolve_prompt_by_name(rname, label=label)
+                if isinstance(remote_text, str) and remote_text.strip():
+                    self.last_loaded_execution_prompt_source = f"langfuse:{rname}@{label}"
+                    return remote_text.strip()
+            except Exception:
+                # continue to local resolution
+                pass
+
         # 1) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
+        local_candidate: Optional[Path] = None
         try:
             for fname in ("execution_prompt.md", "execution_prompt.txt"):
                 p = (self.plugins_dir / module_name / fname)
                 if p.exists() and p.is_file():
-                    self.last_loaded_execution_prompt_source = str(p)
-                    return p.read_text(encoding="utf-8").strip()
+                    local_candidate = p
+                    break
         except Exception:
             # best-effort
-            pass
+            local_candidate = None
+
+        # If Langfuse is enabled but remote was missing, try to seed from local
+        if _lf_enabled() and local_candidate is not None:
+            try:
+                content = local_candidate.read_text(encoding="utf-8").strip()
+                if content:
+                    rname = _lf_module_prompt_name(module_name, "execution")
+                    tags = _read_module_yaml_for_tags(self.plugins_dir / module_name)
+                    created = _lf_create_prompt_version(
+                        name=rname, prompt_text=content, label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"), tags=tags, commit=f"seed module:{module_name} execution"
+                    )
+                    if created:
+                        self.last_loaded_execution_prompt_source = f"seeded:{local_candidate}"
+                        return content
+            except Exception:
+                # Seeding failed; fall through to local return
+                pass
+
+        # 2) Local candidate return
+        if local_candidate is not None:
+            try:
+                self.last_loaded_execution_prompt_source = str(local_candidate)
+                return local_candidate.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
         
-        # 2) Fallback to templates directory candidates
+        # 3) Fallback to templates directory candidates
         candidates = [
             f"{module_name}_execution_prompt.md",
             f"module_{module_name}_execution_prompt.md",
@@ -556,11 +672,29 @@ class ModulePromptLoader:
     def load_module_report_prompt(self, module_name: str) -> str:
         """Load module-specific report prompt guidance if available.
 
-        Looks in operation_plugins/<module>/report_prompt.txt (or .md).
+        Order of resolution:
+        1) Langfuse-managed module prompt (when enabled): cyber/module/<module>/report_prompt
+           - If missing remotely, seed from local file if present
+        2) Local file under operation_plugins/<module>/report_prompt.(txt|md)
         Returns empty string if none present.
         """
         # Reset tracker
         self.last_loaded_report_prompt_source = None
+
+        # 0) Try Langfuse remote first when enabled
+        if _lf_enabled():
+            try:
+                rname = _lf_module_prompt_name(module_name, "report")
+                label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
+                remote_text = _lf_resolve_prompt_by_name(rname, label=label)
+                if isinstance(remote_text, str) and remote_text.strip():
+                    self.last_loaded_report_prompt_source = f"langfuse:{rname}@{label}"
+                    return remote_text.strip()
+            except Exception:
+                pass
+
+        # 1) Local candidates
+        local_candidate: Optional[Path] = None
         try:
             candidates = [
                 self.plugins_dir / module_name / "report_prompt.txt",
@@ -568,10 +702,34 @@ class ModulePromptLoader:
             ]
             for path in candidates:
                 if path.exists() and path.is_file():
-                    self.last_loaded_report_prompt_source = str(path)
-                    return path.read_text(encoding="utf-8").strip()
+                    local_candidate = path
+                    break
         except Exception as e:
-            logger.debug("Failed to load module report prompt for '%s': %s", module_name, e)
+            logger.debug("Failed to enumerate module report prompt for '%s': %s", module_name, e)
+            local_candidate = None
+
+        # If Langfuse is enabled but remote missing, seed from local
+        if _lf_enabled() and local_candidate is not None:
+            try:
+                content = local_candidate.read_text(encoding="utf-8").strip()
+                if content:
+                    rname = _lf_module_prompt_name(module_name, "report")
+                    tags = _read_module_yaml_for_tags(self.plugins_dir / module_name)
+                    created = _lf_create_prompt_version(
+                        name=rname, prompt_text=content, label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"), tags=tags, commit=f"seed module:{module_name} report"
+                    )
+                    if created:
+                        self.last_loaded_report_prompt_source = f"seeded:{local_candidate}"
+                        return content
+            except Exception:
+                pass
+
+        if local_candidate is not None:
+            try:
+                self.last_loaded_report_prompt_source = str(local_candidate)
+                return local_candidate.read_text(encoding="utf-8").strip()
+            except Exception:
+                pass
         return ""
 
     def discover_module_tools(self, module_name: str) -> List[str]:

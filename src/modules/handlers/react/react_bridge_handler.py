@@ -255,6 +255,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         "step": "TERMINATED",
                         "operation": self.operation_id,
                         "duration": self._format_duration(time.time() - self.start_time),
+                        "maxSteps": self.max_steps,
                     }
                 )
             except Exception:

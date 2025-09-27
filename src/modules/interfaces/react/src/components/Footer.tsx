@@ -78,7 +78,7 @@ export const Footer: React.FC<FooterProps> = React.memo(({
   const hasMem = (operationMetrics?.memoryOps || 0) > 0;
 
   return (
-    <Box width="100%" flexDirection="row">
+    <Box flexDirection="row" flexGrow={1}>
       {/* Left section: Connection Status */}
       <Box flexGrow={0} flexShrink={0}>
         <Text color={connIcon.color}>{connIcon.icon}</Text>

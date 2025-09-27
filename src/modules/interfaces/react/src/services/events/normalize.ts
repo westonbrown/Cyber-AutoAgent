@@ -136,6 +136,23 @@ function normalizeToolName(e: AnyEvent): string {
   return (e.toolName || e.tool_name || e.tool || '').toString();
 }
 
+// Clamp and sanitize string fields to keep UI stable
+function clampString(s: unknown, max = 32768): unknown {
+  if (typeof s !== 'string') return s;
+  return s.length > max ? s.slice(0, max) + `… (truncated ${s.length - max} chars)` : s;
+}
+
+function sanitizeAllStrings(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  const out: any = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string') out[k] = clampString(v);
+    else if (v && typeof v === 'object') out[k] = sanitizeAllStrings(v);
+    else out[k] = v;
+  }
+  return out;
+}
+
 // Normalize event in-place (returns a new shallow-cloned object)
 export function normalizeEvent(event: AnyEvent): AnyEvent {
   if (!event || typeof event !== 'object') return event;
@@ -147,6 +164,11 @@ export function normalizeEvent(event: AnyEvent): AnyEvent {
     try { e.timestamp = new Date(e.timestamp).toISOString(); } catch {}
   }
 
+  // First, clamp top-level common stringy fields defensively
+  for (const key of ['content','message','delta','error']) {
+    if (key in e) (e as any)[key] = clampString((e as any)[key]);
+  }
+
   switch (e.type) {
     case 'tool_start': {
       const toolName = e.toolName || e.tool_name || 'tool';
@@ -154,7 +176,8 @@ export function normalizeEvent(event: AnyEvent): AnyEvent {
       const normalizedInput = normalizeToolInput(toolName, rawInput);
 
       e.tool_name = toolName;
-      e.tool_input = normalizedInput;
+      // Clamp tool input deeply to prevent large payloads
+      e.tool_input = sanitizeAllStrings(normalizedInput);
       // Preserve originals for debugging but prefer normalized accessors
       if (e.args !== undefined) delete e.args;
       // Ensure a deterministic toolId if upstream omitted it (leave Terminal's fallback as secondary)
@@ -188,6 +211,12 @@ export function normalizeEvent(event: AnyEvent): AnyEvent {
     }
 
     default:
-      return e;
+      break;
   }
+
+  // As a final guard, clamp any nested string fields in metadata/unknown payloads
+  if (e.metadata && typeof e.metadata === 'object') {
+    e.metadata = sanitizeAllStrings(e.metadata);
+  }
+  return e;
 }

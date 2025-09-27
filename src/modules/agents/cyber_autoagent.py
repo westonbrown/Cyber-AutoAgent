@@ -369,7 +369,7 @@ def create_agent(
     # Initialize memory system
     target_name = sanitize_target_name(config.target)
 
-    # Ensure unified output directories (root + artifacts) exist before any tools run
+    # Ensure unified output directories (root + artifacts + tools) exist before any tools run
     try:
         paths = config_manager.ensure_operation_output_dirs(config.provider, target_name, operation_id)
         print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
@@ -640,7 +640,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
-        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name},
+        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "tools_path": paths.get("tools")},
         plan_snapshot=plan_snapshot,
         plan_current_phase=plan_current_phase,
     )

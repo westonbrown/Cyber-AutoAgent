@@ -883,29 +883,12 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         value={tempValue}
         onChange={(newValue) => {
           // Debug logging for non-password fields
-          if (field.key === 'awsBearerToken') {
-            loggingService.debug('TextInput onChange:', {
-              fieldKey: field.key,
-              newValueLength: newValue.length,
-              newValueFirst20: newValue.substring(0, 20),
-              newValueLast20: newValue.substring(newValue.length - 20),
-              fullValue: newValue
-            });
-          }
-          // Directly update temp value
+          // Directly update temp value (no verbose debug logging)
           setTempValue(newValue);
         }}
         onSubmit={(value) => {
           // Debug logging for non-password fields
-          if (field.key === 'awsBearerToken') {
-            loggingService.debug('TextInput onSubmit:', {
-              fieldKey: field.key,
-              valueLength: value.length,
-              valueFirst20: value.substring(0, 20),
-              valueLast20: value.substring(value.length - 20),
-              fullValue: value
-            });
-          }
+          // Avoid verbose debug logging of field values
 
           if (field.type === 'number') {
             const numValue = parseFloat(value);
@@ -917,16 +900,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             const cleanedValue = cleanInputForKey(field.key, value);
 
             // More debug logging
-            if (field.key === 'awsBearerToken') {
-              loggingService.debug('After cleanInputForKey:', {
-                fieldKey: field.key,
-                cleanedLength: cleanedValue.length,
-                cleanedFirst20: cleanedValue.substring(0, 20),
-                cleanedLast20: cleanedValue.substring(cleanedValue.length - 20),
-                fullCleaned: cleanedValue
-              });
-            }
-
+            // No debug logging of cleaned token values
             updateConfigValue(field.key, cleanedValue);
           }
           setEditingField(null);

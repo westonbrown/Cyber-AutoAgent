@@ -34,7 +34,7 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
   // Config loading state - show a loading indicator to prevent black screen
   if (!appState.isConfigLoaded) {
     return (
-      <Box flexDirection="column" width="100%" paddingY={1}>
+      <Box flexDirection="column" paddingY={1} flexGrow={1}>
         <Box justifyContent="center">
           <Text color="cyan">Loading configuration...</Text>
         </Box>
@@ -69,7 +69,7 @@ export const InitializationWrapper: React.FC<InitializationWrapperProps> = ({
   // Render main application (force remount on staticKey to avoid stale tree post-clear)
   // Add a minimum height to prevent collapse during transitions
   return (
-    <Box minHeight={10} width="100%">
+    <Box minHeight={10} flexGrow={1}>
       <MainAppView key={`main-view-${appState.staticKey}`} {...mainAppViewProps} />
     </Box>
   );

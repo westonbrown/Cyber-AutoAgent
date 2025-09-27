@@ -33,12 +33,7 @@ export const TokenInput: React.FC<TokenInputProps> = ({
     // Submit on Enter
     if (key.return) {
       if (value.length > 0) {
-        loggingService.debug('TokenInput submitting:', {
-          fieldKey,
-          length: value.length,
-          first20: value.substring(0, 20),
-          last20: value.substring(value.length - 20)
-        });
+        // Avoid verbose logging to prevent large payloads in Ink
         onSubmit(value);
       }
       return;
@@ -62,20 +57,7 @@ export const TokenInput: React.FC<TokenInputProps> = ({
 
     // Handle regular input and paste
     if (input && input.length > 0 && !key.ctrl && !key.meta) {
-      setValue(prev => {
-        const newValue = prev + input;
-
-        // Log if it looks like a paste (long input)
-        if (input.length > 10) {
-          loggingService.debug('TokenInput received paste:', {
-            fieldKey,
-            pastedLength: input.length,
-            totalLength: newValue.length
-          });
-        }
-
-        return newValue;
-      });
+      setValue(prev => prev + input);
     }
   });
 

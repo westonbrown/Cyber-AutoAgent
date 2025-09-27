@@ -133,7 +133,7 @@ export const OperationStatusDisplay: React.FC<OperationStatusDisplayProps> = Rea
   }, [currentOperation?.currentStep, currentOperation?.totalSteps]);
 
   return (
-    <Box width="100%" alignItems="center" marginBottom={1}>
+    <Box alignItems="center" marginBottom={1} flexGrow={1}>
       <Box width={innerWidth} flexDirection="column">
         {/* Title + Subtitle */}
         {showFlowProgress && (flowState.module || flowState.target || flowState.objective) && (

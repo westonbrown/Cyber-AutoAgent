@@ -48,6 +48,9 @@ export interface FlowResult {
  * security assessment setup across all supported security domains.
  */
 export class AssessmentFlow {
+  /** Default module to use when resetting flow */
+  private defaultModule: string = 'general';
+
   /** Current assessment configuration state */
   private assessmentState: AssessmentState = {
     stage: 'target', // Start at target since we default to 'general' module
@@ -83,6 +86,23 @@ export class AssessmentFlow {
   constructor() {
     // Initialize with 'general' module by default, starting at target stage
     // Users can change module with /module command if needed
+  }
+
+  /**
+   * Update default module used by resets without forcing an immediate override
+   */
+  public setDefaultModule(module: string): void {
+    if (!module || typeof module !== 'string') return;
+    this.defaultModule = module;
+  }
+
+  /**
+   * Force the current flow module (used by UI to keep flow in sync with visible selection)
+   * This will not advance stages; it only updates the module when not actively executing.
+   */
+  public setModule(module: string): void {
+    if (!module || typeof module !== 'string') return;
+    this.assessmentState.module = module;
   }
 
   /**
@@ -150,8 +170,8 @@ export class AssessmentFlow {
    */
   resetCompleteWorkflow(): void {
     this.assessmentState = {
-      stage: 'target', // Start at target since we default to 'general' module
-      module: 'general', // Default to general module
+      stage: 'target',
+      module: this.defaultModule || 'general',
       target: null,
       objective: null
     };

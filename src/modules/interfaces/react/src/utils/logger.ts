@@ -29,6 +29,64 @@ export interface LoggerConfig {
 /**
  * Production-ready logger with structured output and level filtering
  */
+// Global safety limits for log payload sizes
+const MAX_LOG_CHARS_DEFAULT = 2000; // hard cap for any string field
+const REDACT_KEYS = ['token', 'secret', 'password', 'bearer', 'apikey', 'api_key', 'accesskey', 'access_key', 'awsBearerToken'];
+
+function isLikelySecretKey(k: string): boolean {
+  const key = k.toLowerCase();
+  return REDACT_KEYS.some(s => key.includes(s));
+}
+
+function truncateString(str: string, max: number): string {
+  if (typeof str !== 'string') return str as unknown as string;
+  if (str.length <= max) return str;
+  const omitted = str.length - max;
+  return str.slice(0, max) + `...(truncated ${omitted} chars)`;
+}
+
+function sanitizeValue(val: any, max: number, keyHint?: string): any {
+  try {
+    if (val == null) return val;
+    if (typeof val === 'string') {
+      // Redact secrets by key hint
+      if (keyHint && isLikelySecretKey(keyHint)) return '***redacted***';
+      return truncateString(val, max);
+    }
+    if (Array.isArray(val)) {
+      return val.map(v => sanitizeValue(v, max));
+    }
+    if (typeof val === 'object') {
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        out[k] = sanitizeValue(v, max, k);
+      }
+      return out;
+    }
+    return val;
+  } catch {
+    return val;
+  }
+}
+
+function sanitizeEntry(entry: LogEntry, max: number): LogEntry {
+  const safeMsg = truncateString(entry.message ?? '', max);
+  const safeError = entry.error
+    ? {
+        name: entry.error.name,
+        message: truncateString(entry.error.message ?? '', max),
+        stack: entry.error.stack ? truncateString(entry.error.stack, max) : undefined
+      }
+    : undefined;
+  const safeMeta = entry.metadata ? sanitizeValue(entry.metadata, max) : undefined;
+  return {
+    ...entry,
+    message: safeMsg,
+    ...(safeError && { error: new Error(safeError.message) }),
+    ...(safeMeta && { metadata: safeMeta })
+  };
+}
+
 export class Logger {
   private config: LoggerConfig;
   private static readonly levelPriority: Record<LogLevel, number> = {
@@ -114,10 +172,14 @@ export class Logger {
       ...metadata
     };
 
+    // Apply safety truncation/redaction
+    const max = Number(process.env.CYBER_MAX_LOG_CHARS || MAX_LOG_CHARS_DEFAULT);
+    const safeEntry = sanitizeEntry(entry, isFinite(max) && max > 0 ? max : MAX_LOG_CHARS_DEFAULT);
+
     if (this.config.structured) {
-      this.outputStructured(entry);
+      this.outputStructured(safeEntry);
     } else {
-      this.outputSimple(entry);
+      this.outputSimple(safeEntry);
     }
   }
 

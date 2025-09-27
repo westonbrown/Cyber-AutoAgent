@@ -384,14 +384,14 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
   }, []);
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" flexGrow={1}>
       {/* Input prompt with full width */}
       <Box 
         borderStyle="round" 
         borderColor={disabled ? theme.muted : theme.accent} 
         paddingX={1}
-        width="100%"
         flexDirection="row"
+        flexGrow={1}
       >
         <Text color={disabled ? theme.muted : theme.accent}>
           {getPromptIndicator()} 

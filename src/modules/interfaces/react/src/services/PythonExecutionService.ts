@@ -42,6 +42,38 @@ export class PythonExecutionService extends EventEmitter {
   private toolOutputBuffer = '';
   // Track execution start time for duration reporting
   private startTime?: number;
+
+  /** Emit a chunk of buffered tool output */
+  private emitToolOutputChunk(content: string): void {
+    try {
+      this.emit('event', {
+        type: 'output',
+        content,
+        timestamp: Date.now(),
+        metadata: { fromToolBuffer: true, tool: (this as any)._currentToolName, chunked: true }
+      });
+    } catch {}
+  }
+
+  /**
+   * Flush tool output buffer in chunks to keep memory flat and reduce latency.
+   * If force=true, flush remaining buffer even if smaller than chunk size.
+   */
+  private flushToolOutputChunks(force: boolean = false): void {
+    const CHUNK_SIZE = 64 * 1024; // 64 KiB
+    const MIN_SPLIT = 32 * 1024;  // Prefer newline split after 32 KiB
+    while (this.toolOutputBuffer.length > CHUNK_SIZE || (force && this.toolOutputBuffer.length > 0)) {
+      const window = this.toolOutputBuffer.slice(0, CHUNK_SIZE);
+      let n = Math.min(this.toolOutputBuffer.length, CHUNK_SIZE);
+      const nl = window.lastIndexOf('\n');
+      if (nl >= MIN_SPLIT && nl < CHUNK_SIZE) {
+        n = nl + 1; // split on newline
+      }
+      const chunk = this.toolOutputBuffer.slice(0, n);
+      this.emitToolOutputChunk(chunk);
+      this.toolOutputBuffer = this.toolOutputBuffer.slice(n);
+    }
+  }
   // Track whether backend emitted consolidated tool output to avoid duplication
   private sawBackendToolOutput = false;
   // Track whether a user-initiated stop() was requested to treat exits as intentional
@@ -624,7 +656,7 @@ export class PythonExecutionService extends EventEmitter {
         // React UI integration - critical for event emission
         BYPASS_TOOL_CONSENT: config.confirmations ? 'false' : 'true',
         CYBER_UI_MODE: 'react',
-        CYBERAGENT_NO_BANNER: 'false', // React UI mode suppresses banner server-side
+        CYBERAGENT_NO_BANNER: 'true', // Suppress CLI banner in React UI mode
         DEV: config.verbose ? 'true' : 'false',
         // Set AWS region
         AWS_REGION: config.awsRegion || process.env.AWS_REGION || 'us-east-1',
@@ -889,10 +921,17 @@ export class PythonExecutionService extends EventEmitter {
 
       // Emit any raw text preceding this structured event
       const preText = this.streamEventBuffer.slice(lastProcessedIndex, match.index);
-      if (preText && this.inToolExecution) {
-        // Buffer raw output; flush on tool end so it appears once per tool
-        this.toolOutputBuffer += preText;
-      }
+        if (preText && this.inToolExecution) {
+          // Buffer raw output; flush on tool end so it appears once per tool
+          this.toolOutputBuffer += preText;
+          // Clamp tool output buffer to prevent unbounded growth
+          const MAX_TOOL_OUTPUT = 1 * 1024 * 1024; // 1 MiB cap
+          if (this.toolOutputBuffer.length > MAX_TOOL_OUTPUT) {
+            this.toolOutputBuffer = this.toolOutputBuffer.slice(-MAX_TOOL_OUTPUT);
+          }
+          // Chunked emission to keep latency low
+          this.flushToolOutputChunks(false);
+        }
 
       try {
         const eventData = JSON.parse(match[1]);
@@ -902,24 +941,24 @@ export class PythonExecutionService extends EventEmitter {
           this.inToolExecution = true;
           this.toolOutputBuffer = '';
           this.sawBackendToolOutput = false; // reset per tool
+          // Remember the current tool name for proper attribution on flush
+          try { (this as any)._currentToolName = eventData.tool_name || eventData.toolName || eventData.tool || undefined; } catch {}
         } else if (
           eventData.type === 'tool_invocation_end' ||
           eventData.type === 'tool_result' ||
-          eventData.type === 'step_header'
+          eventData.type === 'step_header' ||
+          eventData.type === 'tool_end'
         ) {
           // Flush any remaining raw output when tool ends, but only if backend
           // did NOT send a consolidated tool output event. This avoids duplicates.
-          if (!this.sawBackendToolOutput && this.toolOutputBuffer.trim().length > 0) {
-            this.emit('event', { 
-              type: 'output', 
-              content: this.toolOutputBuffer, 
-              timestamp: Date.now(),
-              metadata: { fromToolBuffer: true }
-            });
+          if (!this.sawBackendToolOutput) {
+            // Flush remaining buffered output in chunks
+            this.flushToolOutputChunks(true);
           }
           this.toolOutputBuffer = '';
           this.inToolExecution = false;
           this.sawBackendToolOutput = false;
+          try { (this as any)._currentToolName = undefined; } catch {}
         }
 
         // Emit tool output immediately - backend already handles proper metadata and deduplication
@@ -1013,10 +1052,23 @@ export class PythonExecutionService extends EventEmitter {
       if (data) {
         if (this.inToolExecution) {
           this.toolOutputBuffer += data;
+          // Clamp tool output buffer to prevent unbounded growth
+          const MAX_TOOL_OUTPUT = 1 * 1024 * 1024; // 1 MiB cap
+          if (this.toolOutputBuffer.length > MAX_TOOL_OUTPUT) {
+            this.toolOutputBuffer = this.toolOutputBuffer.slice(-MAX_TOOL_OUTPUT);
+          }
+          // Chunk out as we accumulate
+          this.flushToolOutputChunks(false);
         }
         // Clear buffer regardless to avoid growth
         this.streamEventBuffer = '';
       }
+    }
+
+    // Always clamp stream buffer tail to avoid unbounded growth between chunks
+    const MAX_STREAM_BUFFER = 32 * 1024;
+    if (this.streamEventBuffer.length > MAX_STREAM_BUFFER) {
+      this.streamEventBuffer = this.streamEventBuffer.slice(-16 * 1024);
     }
   }
   

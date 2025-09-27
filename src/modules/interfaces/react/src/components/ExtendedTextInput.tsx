@@ -45,6 +45,23 @@ export const ExtendedTextInput: React.FC<ExtendedTextInputProps> = ({
     setCursorPosition(value.length);
   }, [value]);
 
+  // Bracketed paste handling and simple coalescing
+  const isPastingRef = useRef(false);
+  const pasteBufferRef = useRef('');
+  const pasteFlushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const flushPaste = (immediate = false) => {
+    const buf = pasteBufferRef.current;
+    if (!buf) return;
+    const append = (localValueRef.current || '') + buf;
+    localValueRef.current = append;
+    pasteBufferRef.current = '';
+    onChange(append);
+    if (immediate && pasteFlushTimerRef.current) {
+      clearTimeout(pasteFlushTimerRef.current);
+      pasteFlushTimerRef.current = null;
+    }
+  };
+
   useInput((input, key) => {
     try {
       if (!focus || disabled) return;
@@ -74,8 +91,42 @@ export const ExtendedTextInput: React.FC<ExtendedTextInputProps> = ({
         return;
       }
 
-      // Standard text input (including paste chunks)
+      // Bracketed paste start/end sequences
+      if (input === '\u001b[200~') { // start
+        isPastingRef.current = true;
+        pasteBufferRef.current = '';
+        return;
+      }
+      if (input === '\u001b[201~') { // end
+        isPastingRef.current = false;
+        flushPaste(true);
+        return;
+      }
+
+      // During bracketed paste: accumulate without re-rendering every chunk
+      if (isPastingRef.current && input && !key.ctrl && !key.meta) {
+        pasteBufferRef.current += input;
+        // Optional safety: flush occasionally in very long pastes
+        if (!pasteFlushTimerRef.current) {
+          pasteFlushTimerRef.current = setTimeout(() => {
+            flushPaste();
+            pasteFlushTimerRef.current = null;
+          }, 30);
+        }
+        return;
+      }
+
+      // Standard text input (including non-bracketed large chunks)
       if (input && !key.ctrl && !key.meta) {
+        // If this looks like a large paste chunk, coalesce briefly
+        if (input.length > 10) {
+          pasteBufferRef.current += input;
+          if (pasteFlushTimerRef.current) clearTimeout(pasteFlushTimerRef.current);
+          pasteFlushTimerRef.current = setTimeout(() => {
+            flushPaste(true);
+          }, 30);
+          return;
+        }
         const next = (localValueRef.current || '') + input;
         localValueRef.current = next;
         onChange(next);
