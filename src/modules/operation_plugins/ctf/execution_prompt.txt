@@ -38,6 +38,8 @@
 - Ensure the value matches allowed formats (FLAG{...}, flag{...}, PREFIX{}, UUID) and originated from target responses/storage; otherwise continue
 - Store the confirmed flag with artifact proof and call stop()
 - Before considering stop without a flag: `get_plan`, `store_reflection (NEXT ACTION -> …)`, confirm *all* phases are marked `done`, and ensure ≥95% of the step budget is consumed *and* swarm has already been tried; otherwise continue exploiting
+- For uploaded web shells or remote command runners: treat any non-200 HTTP response as failure; store `[BLOCKED] webshell_execution <status>` with the command and pivot until a 200 + command output is obtained
+- Never store `[FLAG EXTRACTED]` unless the artifact path exists, contains the exact flag value, and a fresh read of the same source reproduces it verbatim
 </assessment_methodology>
 
 <attack_playbooks>
