@@ -29,6 +29,7 @@
   4. Blind/side-channel follow-up (boolean/time-based SQLi, SSRF, path traversal)
 - Batch payloads per tool call; convert partial wins (creds, session tokens, uploads) into immediate pivot actions
 - When a privilege step succeeds, enumerate linked admin/API routes before moving on
+- After each confirmed capability (ex. default creds, SSTI oracle, admin access) immediately `get_plan`, mark the relevant phase `done`, promote the next phase to `active`, and `store_plan` before new tooling
 
 **Phase 3: Flag Extraction (MANDATORY - DO NOT SKIP)**
 - Flags must be collected, not inferred—keep working until the flag string surfaces
@@ -36,6 +37,7 @@
 - Validate success markers (`alert('XSS')`, `Welcome Admin`, UUID/FLAG braces) and capture artifacts from body, headers, cookies, JS vars, filesystem, or env vars
 - Ensure the value matches allowed formats (FLAG{...}, flag{...}, PREFIX{}, UUID) and originated from target responses/storage; otherwise continue
 - Store the confirmed flag with artifact proof and call stop()
+- Before considering stop without a flag: `get_plan`, `store_reflection (NEXT ACTION -> …)`, confirm *all* phases are marked `done`, and ensure ≥95% of the step budget is consumed *and* swarm has already been tried; otherwise continue exploiting
 </assessment_methodology>
 
 <attack_playbooks>
