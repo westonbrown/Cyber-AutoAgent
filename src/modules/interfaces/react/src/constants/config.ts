@@ -56,6 +56,9 @@ export const DISPLAY_LIMITS = {
   // Stream display limits
   REASONING_MAX_LINES: 30,  // Maximum lines to show for reasoning
   OUTPUT_MAX_LINES: 150,  // Maximum lines to show for output (increased for tool outputs)
+  // Char-based fallback truncation for single-line or minified outputs
+  OUTPUT_PREVIEW_CHARS: 2000,
+  OUTPUT_TAIL_CHARS: 500,
 } as const;
 
 // Token pricing (per million tokens)

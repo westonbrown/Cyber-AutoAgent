@@ -625,7 +625,9 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           const outEvt: DisplayStreamEvent = {
             type: 'output',
             content: event.content,
-            toolId: currentToolId
+            toolId: currentToolId,
+            // Preserve metadata so the renderer can identify tool-buffer outputs
+            ...(event.metadata ? { metadata: event.metadata } : {})
           } as DisplayStreamEvent;
           results.push(outEvt);
 

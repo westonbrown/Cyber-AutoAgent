@@ -1084,19 +1084,44 @@ const method = latestInput.method || 'GET';
                                (isOperationSummary ? DISPLAY_LIMITS.OPERATION_SUMMARY_LINES : 
                                 (fromToolBuffer ? DISPLAY_LIMITS.TOOL_OUTPUT_COLLAPSE_LINES : 
                                  DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES));
-      const shouldCollapse = dedupedLines.length > collapseThreshold;
+      let shouldCollapse = dedupedLines.length > collapseThreshold;
+      
+      // Fallback: if content is essentially one giant line (minified or escaped \n) and very large, apply char-based collapse
+      if (!shouldCollapse) {
+        const totalLen = contentStr.length;
+        const newlineCount = (contentStr.match(/\n/g) || []).length;
+        const needsCharCollapse = totalLen > (DISPLAY_LIMITS.OUTPUT_PREVIEW_CHARS + DISPLAY_LIMITS.OUTPUT_TAIL_CHARS + 200) && newlineCount < 5;
+        if (needsCharCollapse) {
+          shouldCollapse = true;
+        }
+      }
       
       let displayLines: string[];
       if (shouldCollapse && fromToolBuffer) {
         // For tool outputs, show generous head/tail with a continuation marker
-        displayLines = [
-          ...dedupedLines.slice(0, DISPLAY_LIMITS.TOOL_OUTPUT_PREVIEW_LINES),
-          '... (content continues)',
-          ...dedupedLines.slice(-DISPLAY_LIMITS.TOOL_OUTPUT_TAIL_LINES)
-        ];
+        if (dedupedLines.length > DISPLAY_LIMITS.TOOL_OUTPUT_COLLAPSE_LINES) {
+          displayLines = [
+            ...dedupedLines.slice(0, DISPLAY_LIMITS.TOOL_OUTPUT_PREVIEW_LINES),
+            '... (content continues)',
+            ...dedupedLines.slice(-DISPLAY_LIMITS.TOOL_OUTPUT_TAIL_LINES)
+          ];
+        } else {
+          // Char-based fallback when lines are not informative
+          const s = contentStr;
+          const head = s.slice(0, DISPLAY_LIMITS.OUTPUT_PREVIEW_CHARS);
+          const tail = s.slice(-DISPLAY_LIMITS.OUTPUT_TAIL_CHARS);
+          displayLines = [head, '... (content continues)', tail];
+        }
       } else if (shouldCollapse && !isReport && !isOperationSummary) {
-        // For normal output, show first 5 and last 3 lines
-        displayLines = [...dedupedLines.slice(0, 5), '... (content continues)', ...dedupedLines.slice(-3)];
+        // For normal output, prefer line-based collapse when there are lines; otherwise, use char-based collapse
+        if (dedupedLines.length > DISPLAY_LIMITS.DEFAULT_COLLAPSE_LINES) {
+          displayLines = [...dedupedLines.slice(0, 5), '... (content continues)', ...dedupedLines.slice(-3)];
+        } else {
+          const s = contentStr;
+          const head = s.slice(0, Math.min(DISPLAY_LIMITS.OUTPUT_PREVIEW_CHARS, Math.floor(s.length * 0.8)));
+          const tail = s.slice(-DISPLAY_LIMITS.OUTPUT_TAIL_CHARS);
+          displayLines = [head, '... (content continues)', tail];
+        }
       } else if (shouldCollapse && (isReport || isOperationSummary)) {
         // For reports and summaries, show much more content
         if (isReport) {
