@@ -5,11 +5,11 @@ import os
 import tempfile
 
 from modules.handlers.utils import (
+    analyze_objective_completion,
+    create_output_directory,
     get_output_path,
     sanitize_target_name,
     validate_output_path,
-    create_output_directory,
-    analyze_objective_completion,
 )
 
 
@@ -68,7 +68,12 @@ class TestSanitizeTargetName:
     def test_sanitize_url_with_port(self):
         """Test sanitizing URL with port."""
         result = sanitize_target_name("https://example.com:8080")
-        assert result == "example.com"
+        assert result == "example.com_8080"
+
+    def test_sanitize_localhost_with_port(self):
+        """Test sanitizing localhost URL with port."""
+        result = sanitize_target_name("http://localhost:64279")
+        assert result == "localhost_64279"
 
     def test_sanitize_url_with_path(self):
         """Test sanitizing URL with path."""
@@ -83,12 +88,12 @@ class TestSanitizeTargetName:
     def test_sanitize_ip_with_port(self):
         """Test sanitizing IP with port."""
         result = sanitize_target_name("192.168.1.1:8080")
-        assert result == "192.168.1.1"
+        assert result == "192.168.1.1_8080"
 
     def test_sanitize_special_characters(self):
         """Test sanitizing string with special characters."""
         result = sanitize_target_name("test@example.com:8080/path?query=value")
-        assert result == "test_example.com"
+        assert result == "test_example.com_8080"
 
     def test_sanitize_consecutive_underscores(self):
         """Test sanitizing string with consecutive special characters."""

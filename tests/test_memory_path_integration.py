@@ -7,11 +7,11 @@ across the entire system after the recent refactoring.
 
 import os
 import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from modules.tools.memory import Mem0ServiceClient
 from modules.config.environment import clean_operation_memory
-from modules.handlers.utils import sanitize_target_name, get_output_path
+from modules.handlers.utils import get_output_path, sanitize_target_name
+from modules.tools.memory import Mem0ServiceClient
 
 
 class TestMemoryPathIntegration:
@@ -45,7 +45,7 @@ class TestMemoryPathIntegration:
     def test_memory_path_with_sanitized_target_names(self):
         """Test memory paths with various target name formats."""
         test_cases = [
-            ("https://example.com:8080/path", "example.com"),  # Port removed
+            ("https://example.com:8080/path", "example.com_8080"),  # Port preserved with underscore
             ("192.168.1.1", "192.168.1.1"),
             ("sub.domain.com", "sub.domain.com"),
             ("http://test-site.org", "test-site.org"),
@@ -188,8 +188,8 @@ class TestMemoryPathIntegration:
         sanitized_target = sanitize_target_name(target)
         evidence_location = get_output_path(sanitized_target, operation_id, "", base_dir)
 
-        # Port is removed by sanitize_target_name
-        expected = "/app/outputs/example.com/OP_20250718_123456"
+        # Port is preserved with underscore
+        expected = "/app/outputs/example.com_8080/OP_20250718_123456"
         assert evidence_location == expected
 
 

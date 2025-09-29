@@ -1,17 +1,12 @@
 """Tools module for Cyber-AutoAgent."""
 
-from modules.tools.memory import (
-    mem0_memory,
-    initialize_memory_system,
-    get_memory_client,
-    Mem0ServiceClient
-)
-from modules.tools.report_generator import generate_security_report
+from modules.tools.memory import Mem0ServiceClient, get_memory_client, initialize_memory_system, mem0_memory
+from modules.tools.prompt_optimizer import prompt_optimizer
 
 __all__ = [
     "mem0_memory",
     "initialize_memory_system",
     "get_memory_client",
     "Mem0ServiceClient",
-    "generate_security_report"
+    "prompt_optimizer",
 ]

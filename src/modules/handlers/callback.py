@@ -12,14 +12,13 @@ import sys
 import threading
 import time
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from strands.handlers import PrintingCallbackHandler
 
+from ..handlers.events import get_emitter
 from .base import HandlerState, StepLimitReached
-from .utils import Colors
-from .tools import show_tool_execution, show_tool_result, track_tool_effectiveness
-from .reporting import generate_final_report
+from .utils import emit_event
 
 logger = logging.getLogger("CyberAutoAgent.handlers")
 
@@ -36,6 +35,9 @@ class ReasoningHandler(PrintingCallbackHandler):
         memory_config=None,
     ):  # pylint: disable=too-many-positional-arguments
         super().__init__()
+
+        # Initialize emitter for event emission
+        self.emitter = get_emitter(operation_id=operation_id)
 
         # Initialize handler state
         self.state = HandlerState(max_steps=max_steps)
@@ -54,13 +56,16 @@ class ReasoningHandler(PrintingCallbackHandler):
         self.state.start_time = time.time()
         timestamp = datetime.now().strftime("%H:%M:%S")
 
-        # Display operation header
-        print("\n%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
-        print("🔐 %s%sCyber Security Assessment%s" % (Colors.CYAN, Colors.BOLD, Colors.RESET))
-        print("   Operation: %s%s%s" % (Colors.DIM, self.state.operation_id, Colors.RESET))
-        print("   Started:   %s%s%s" % (Colors.DIM, timestamp, Colors.RESET))
-        print("%s%s%s" % (Colors.DIM, "─" * 80, Colors.RESET))
-        print()
+        # Emit structured banner event instead of direct print
+        emit_event(
+            "banner",
+            {
+                "title": "Cyber Security Assessment",
+                "operation_id": self.state.operation_id,
+                "timestamp": timestamp,
+                "icon": "🔐",
+            },
+        )
 
     def __call__(self, **kwargs):
         """Process callback events with proper step limiting and clean formatting"""
@@ -75,6 +80,12 @@ class ReasoningHandler(PrintingCallbackHandler):
         if self.state.step_limit_reached:
             return
 
+        # Process reasoning text (SDK native pattern)
+        if "reasoningText" in kwargs:
+            text = kwargs.get("reasoningText", "")
+            self._handle_text_block(text)
+            return
+
         # Process streaming text data
         if "data" in kwargs:
             text = kwargs.get("data", "")
@@ -87,9 +98,8 @@ class ReasoningHandler(PrintingCallbackHandler):
             if isinstance(message, dict):
                 content = message.get("content", [])
 
-                # Detect current swarm agent if in swarm operation
-                if self.state.in_swarm_operation:
-                    self._detect_current_swarm_agent(kwargs)
+                # Agent tracking handled through explicit handoff events only
+                # Text-based detection removed - it's unreliable
 
                 # Process text blocks
                 for block in content:
@@ -111,7 +121,24 @@ class ReasoningHandler(PrintingCallbackHandler):
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
                                 try:
-                                    show_tool_execution(tool_use, self.state)
+                                    # Emit tool start event
+                                    tool_name = tool_use.get("name", "unknown")
+                                    emit_event(
+                                        "tool_start",
+                                        tool_name,
+                                        tool_name=tool_name,
+                                        tool_id=tool_id,
+                                        tool_input=tool_input,
+                                        operation_id=self.state.operation_id,
+                                    )
+
+                                    emit_event(
+                                        "tool_invocation_start",
+                                        tool_name,
+                                        tool_name=tool_name,
+                                        operation_id=self.state.operation_id,
+                                    )
+
                                     self.state.last_was_tool = True
                                     self.state.last_was_reasoning = False
                                 except StepLimitReached:
@@ -127,13 +154,29 @@ class ReasoningHandler(PrintingCallbackHandler):
                         # Store result for later display
                         if tool_id in self.state.tool_use_map:
                             self.state.tool_results[tool_id] = tool_result
-                            show_tool_result(tool_id, tool_result, self.state)
 
-                            # Track tool effectiveness
-                            track_tool_effectiveness(tool_id, tool_result, self.state)
+                            # Emit tool end event
+                            tool_name = self.state.tool_use_map[tool_id].get("name", "")
+                            success = tool_result.get("status", "success") == "success"
+
+                            emit_event(
+                                "tool_end",
+                                tool_name,
+                                tool_name=tool_name,
+                                tool_id=tool_id,
+                                success=success,
+                                operation_id=self.state.operation_id,
+                            )
+
+                            emit_event(
+                                "tool_invocation_end",
+                                tool_name,
+                                tool_name=tool_name,
+                                success=success,
+                                operation_id=self.state.operation_id,
+                            )
 
                             # Track memory operations
-                            tool_name = self.state.tool_use_map[tool_id].get("name", "")
                             if tool_name == "mem0_memory":
                                 tool_input = self.state.tool_use_map[tool_id].get("input", {})
                                 if tool_input.get("action") == "store":
@@ -160,7 +203,24 @@ class ReasoningHandler(PrintingCallbackHandler):
                     self.state.shown_tools.add(tool_id)
                     self.state.tool_use_map[tool_id] = tool
                     try:
-                        show_tool_execution(tool, self.state)
+                        # Emit tool start event
+                        tool_name = tool.get("name", "unknown")
+                        emit_event(
+                            "tool_start",
+                            tool_name,
+                            tool_name=tool_name,
+                            tool_id=tool_id,
+                            tool_input=tool_input,
+                            operation_id=self.state.operation_id,
+                        )
+
+                        emit_event(
+                            "tool_invocation_start",
+                            tool_name,
+                            tool_name=tool_name,
+                            operation_id=self.state.operation_id,
+                        )
+
                         self.state.last_was_tool = True
                         self.state.last_was_reasoning = False
                     except StepLimitReached:
@@ -174,8 +234,26 @@ class ReasoningHandler(PrintingCallbackHandler):
             tool_id = tool_result.get("toolUseId", "")
 
             if tool_id in self.state.tool_use_map:
-                show_tool_result(tool_id, tool_result, self.state)
-                track_tool_effectiveness(tool_id, tool_result, self.state)
+                # Emit tool end event
+                tool_name = self.state.tool_use_map[tool_id].get("name", "")
+                success = tool_result.get("status", "success") == "success"
+
+                emit_event(
+                    "tool_end",
+                    tool_name,
+                    tool_name=tool_name,
+                    tool_id=tool_id,
+                    success=success,
+                    operation_id=self.state.operation_id,
+                )
+
+                emit_event(
+                    "tool_invocation_end",
+                    tool_name,
+                    tool_name=tool_name,
+                    success=success,
+                    operation_id=self.state.operation_id,
+                )
             return
 
         # Handle lifecycle events
@@ -230,123 +308,11 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Default validation
             return bool(tool_input)
 
-    def _detect_current_swarm_agent(self, event_data: Dict[str, Any]) -> None:
-        """Detect which agent is currently executing in a swarm operation.
-
-        This method analyzes callback event data to identify the current agent
-        in a swarm execution. It helps provide context in the UI by showing
-        which agent is performing each action.
-
-        Args:
-            event_data: The callback event data dictionary
-        """
-        # Method 1: Check for agent context in the event data directly
-        # The SDK might provide agent context in various places
-        if "agent_name" in event_data:
-            agent_name = event_data.get("agent_name", "")
-            if agent_name in self.state.swarm_agents:
-                self.state.current_swarm_agent = agent_name
-                return
-
-        # Check for node_id which might contain agent name
-        if "node_id" in event_data:
-            node_id = event_data.get("node_id", "")
-            for agent_name in self.state.swarm_agents:
-                if agent_name in node_id:
-                    self.state.current_swarm_agent = agent_name
-                    return
-
-        # Method 2: Check message events for agent context
-        if "message" in event_data:
-            message = event_data["message"]
-            if isinstance(message, dict):
-                # Check metadata for agent info
-                metadata = message.get("metadata", {})
-                if isinstance(metadata, dict):
-                    # Check for agent name in metadata
-                    for key in ["agent", "agent_name", "node", "node_id", "current_agent"]:
-                        if key in metadata:
-                            agent_value = metadata[key]
-                            if agent_value in self.state.swarm_agents:
-                                self.state.current_swarm_agent = agent_value
-                                return
-                            # Check if any agent name is contained in the value
-                            for agent_name in self.state.swarm_agents:
-                                if agent_name in str(agent_value):
-                                    self.state.current_swarm_agent = agent_name
-                                    return
-
-                # Check for role-based agent identification
-                role = message.get("role", "")
-                if role == "assistant":
-                    # Look for agent context in the message content
-                    content = message.get("content", [])
-                    for block in content:
-                        if isinstance(block, dict):
-                            # Check for agent identification in text blocks
-                            if block.get("type") == "text":
-                                text = block.get("text", "")
-                                # Look for explicit agent declarations
-                                if text.strip():
-                                    # Check for agent introductions or declarations
-                                    for agent_name in self.state.swarm_agents:
-                                        # Check various patterns for agent identification
-                                        agent_patterns = [
-                                            f"I am {agent_name}",
-                                            f"As {agent_name}",
-                                            f"This is {agent_name}",
-                                            f"{agent_name} here",
-                                            f"{agent_name} speaking",
-                                            # Also check for formatted names
-                                            f"I am {agent_name.replace('_', ' ')}",
-                                            f"As {agent_name.replace('_', ' ')}",
-                                            f"{agent_name.replace('_', ' ')} here",
-                                        ]
-                                        for pattern in agent_patterns:
-                                            if pattern.lower() in text.lower():
-                                                self.state.current_swarm_agent = agent_name
-                                                return
-
-                            # Check tool use for handoff patterns and complete_swarm_task
-                            elif "toolUse" in block:
-                                tool_use = block["toolUse"]
-                                tool_name = tool_use.get("name", "")
-
-                                if tool_name == "handoff_to_agent":
-                                    # Extract the target agent from handoff
-                                    tool_input = tool_use.get("input", {})
-                                    if isinstance(tool_input, dict):
-                                        next_agent = tool_input.get("agent_name", "")
-                                        if next_agent in self.state.swarm_agents:
-                                            # The next message will be from this agent
-                                            self.state.current_swarm_agent = next_agent
-                                            return
-
-                                elif tool_name == "complete_swarm_task":
-                                    # Swarm is completing, clear the swarm state
-                                    self.state.in_swarm_operation = False
-                                    self.state.current_swarm_agent = None
-                                    return
-
-        # Method 3: Track based on the execution flow
-        # If we're in swarm and no agent detected, cycle through agents
-        if self.state.in_swarm_operation and not self.state.current_swarm_agent:
-            # If this is the first step after swarm starts, use first agent
-            if self.state.swarm_step_count == 1 and self.state.swarm_agents:
-                self.state.current_swarm_agent = self.state.swarm_agents[0]
-            # Otherwise, we might have missed a handoff - use a simple rotation
-            # This is a fallback and may not be accurate
-            elif self.state.swarm_agents and self.state.swarm_step_count > 1:
-                # Rotate through agents based on step count
-                agent_index = (self.state.swarm_step_count - 1) % len(self.state.swarm_agents)
-                self.state.current_swarm_agent = self.state.swarm_agents[agent_index]
-
     def _handle_text_block(self, text: str) -> None:
         """Handle text blocks (reasoning/thinking) with proper formatting"""
         if text and not text.isspace():
             # Format output spacing
             if self.state.last_was_tool:
-                print()
                 self.state.last_was_tool = False
 
             # Normalize excessive leading spaces in agent output
@@ -363,7 +329,9 @@ class ReasoningHandler(PrintingCallbackHandler):
                     normalized_lines.append(line)
 
             normalized_text = "\n".join(normalized_lines)
-            print(normalized_text, end="", flush=True)
+
+            # Emit reasoning event instead of direct print
+            emit_event("reasoning", normalized_text, operation_id=self.state.operation_id, step=self.state.steps)
             self.state.last_was_reasoning = True
 
     def generate_report(self, agent: Any, objective: str) -> None:
@@ -373,23 +341,16 @@ class ReasoningHandler(PrintingCallbackHandler):
             agent: The agent instance
             objective: The operation objective
         """
-        generate_final_report(
-            handler_state=self,  # Pass the full handler instead of just state
-            agent=agent,
-            target=self.target,
-            objective=objective,
-            memory_config=self.memory_config,
-        )
+        pass
 
     def generate_final_report(self, agent: Any, target: str, objective: str) -> None:
-        """Generate comprehensive final report using LLM analysis (legacy method name).
+        """Generate comprehensive final report using LLM analysis.
 
         Args:
             agent: The agent instance
             target: The target system
             objective: The operation objective
         """
-        # Use the stored target if not provided
         if not target and self.target:
             target = self.target
         self.generate_report(agent, objective)
@@ -431,8 +392,7 @@ class ReasoningHandler(PrintingCallbackHandler):
         Returns:
             List of evidence summary strings
         """
-        # This would typically return actual evidence from memory
-        # For now, return empty list as placeholder
+        # Evidence retrieval not yet implemented
         return []
 
     def trigger_evaluation(self, agent_trace_id: str) -> None:
@@ -448,8 +408,14 @@ class ReasoningHandler(PrintingCallbackHandler):
         # Import here to avoid circular imports
         from modules.evaluation.evaluation import CyberAgentEvaluator
 
-        # Check if evaluation is enabled
-        if not os.getenv("ENABLE_AUTO_EVALUATION", "true").lower() == "true":
+        # Check if evaluation is enabled (application is source of truth when explicit)
+        ui_mode = os.getenv("CYBER_UI_MODE", "").lower()
+        if "ENABLE_AUTO_EVALUATION" in os.environ:
+            enabled = os.environ["ENABLE_AUTO_EVALUATION"].lower() == "true"
+        else:
+            # In React UI, default to false unless explicitly enabled by the app
+            enabled = os.getenv("ENABLE_AUTO_EVALUATION", "false" if ui_mode == "react" else "true").lower() == "true"
+        if not enabled:
             logger.info("Evaluation disabled - skipping")
             return
 
@@ -472,9 +438,10 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Don't use daemon thread - allow evaluation to complete
             self.state.evaluation_thread.daemon = False
             self.state.evaluation_thread.start()
-            
+
             # Wait a moment to ensure evaluation starts
-            import time
+            # time module already imported at module level
+
             time.sleep(1)
             logger.info("Evaluation thread started successfully (non-daemon mode)")
 

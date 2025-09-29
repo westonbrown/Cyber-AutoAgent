@@ -15,10 +15,9 @@ This module provides:
 import asyncio
 import logging
 import threading
-import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Any
+from typing import Any, Dict, List, Optional
 
 from .evaluation import CyberAgentEvaluator
 
@@ -161,19 +160,30 @@ class EvaluationManager:
                 # Use session_id for evaluation (Langfuse uses this for lookup)
                 scores = await self.evaluator.evaluate_trace(
                     trace_id=trace_info.session_id,
-                    max_retries=5,
+                    _max_retries=5,
                 )
 
                 if scores:
+                    # Normalize to floats for storage in manager (rubric metrics may be (value, metadata))
+                    numeric_scores = {}
+                    try:
+                        for k, v in (scores or {}).items():
+                            if isinstance(v, tuple) and len(v) >= 1:
+                                v = v[0]
+                            if isinstance(v, (int, float)):
+                                numeric_scores[k] = float(v)
+                    except Exception:
+                        numeric_scores = {k: (float(v[0]) if isinstance(v, tuple) else float(v)) for k, v in scores.items() if isinstance(v, (int, float)) or (isinstance(v, tuple) and len(v) >= 1)}
+
                     with self._lock:
                         self.traces[trace_info.trace_id].evaluated = True
-                        self.traces[trace_info.trace_id].evaluation_scores = scores
+                        self.traces[trace_info.trace_id].evaluation_scores = numeric_scores
 
-                    results[trace_info.trace_id] = scores
+                    results[trace_info.trace_id] = numeric_scores
                     logger.info(
                         "Successfully evaluated trace %s: %d metrics",
                         trace_info.trace_id,
-                        len(scores),
+                        len(numeric_scores),
                     )
                 else:
                     logger.warning(

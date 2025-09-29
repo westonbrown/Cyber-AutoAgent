@@ -1,0 +1,66 @@
+<module_report_configuration>
+Module: General Web Application Security Assessment
+Focus: OWASP Top 10, authentication flaws, input validation, configuration issues
+</module_report_configuration>
+
+<general_report_structure>
+Group findings by attack vector potential:
+1. **Immediate Risks**: Exploitable now, high impact
+2. **Systemic Issues**: Patterns indicating deeper problems
+3. **Strategic Concerns**: Architecture/design vulnerabilities
+</general_report_structure>
+
+<finding_organization>
+- Chain related vulnerabilities to show compound risk
+- Map technical findings to business processes
+- Highlight where multiple small issues create critical exposure
+</finding_organization>
+
+<audience_adaptation>
+General assessments serve diverse stakeholders:
+- **Executives**: Risk quantification, business impact, strategic priorities  
+- **Technical Teams**: Specific vulnerabilities, reproduction steps, patches
+- **Compliance**: Regulatory implications, audit findings, gap analysis
+</audience_adaptation>
+
+<remediation_framework>
+Structure fixes by effort vs impact:
+- **Quick Wins** (Hours): Patches, configuration changes, access controls
+- **Short Term** (Days): Service hardening, authentication upgrades, monitoring
+- **Strategic** (Weeks+): Architecture changes, segmentation, process improvements
+</remediation_framework>
+
+<domain_lens>
+DOMAIN_LENS:
+overview: Comprehensive web application security assessment identifying vulnerabilities across authentication, authorization, input validation, and system configuration. Focus on OWASP Top 10 attack vectors with emphasis on exploitable vulnerabilities that pose immediate business risk
+analysis: Analyze findings through the lens of OWASP Top 10 vulnerabilities, security misconfigurations, and potential attack chains. Prioritize findings by exploitability and business impact. Demonstrate how vulnerabilities can be chained for maximum impact
+immediate: Address critical authentication bypasses and input validation flaws within 48 hours. Implement Web Application Firewall (WAF) rules for active exploitation attempts. Patch all critical vulnerabilities with available fixes
+short_term: Deploy comprehensive security headers (CSP, HSTS, X-Frame-Options), enhance logging and monitoring capabilities, implement rate limiting on sensitive endpoints, conduct security code review for critical functions
+long_term: Adopt secure Software Development Life Cycle (SDLC) practices, implement automated security testing in CI/CD pipeline, establish comprehensive vulnerability management program, deploy runtime application self-protection (RASP)
+framework: OWASP Top 10 2021, NIST Cybersecurity Framework, CWE/SANS Top 25
+</domain_lens>
+
+<assessment_focus>
+- Web application vulnerabilities (XSS, SQL injection, CSRF, XXE)
+- Authentication and session management weaknesses  
+- API security and access control issues
+- Server and infrastructure misconfigurations
+- Third-party component vulnerabilities
+- Business logic flaws and data validation issues
+</assessment_focus>
+
+<evidence_requirements>
+- Clear reproduction steps for each finding
+- Proof-of-concept code demonstrating exploitability
+- Screenshots or output showing vulnerability confirmation
+- Risk ratings aligned with CVSS v3.1 scoring
+- Specific version numbers for vulnerable components
+</evidence_requirements>
+
+<report_emphasis>
+- Executive summary with business impact focus
+- Technical details with exploitation scenarios
+- Prioritized remediation roadmap
+- Compliance mapping (PCI-DSS, HIPAA, GDPR as applicable)
+- Metrics showing security posture improvement potential
+</report_emphasis>

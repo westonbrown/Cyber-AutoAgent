@@ -82,7 +82,7 @@ class CAATestHarnessStack(Stack):
             )
 
             # Store the private key in SSM Parameter Store
-            ssm_param = ssm.StringParameter(
+            ssm.StringParameter(
                 self,
                 "KaliKeyPrivate",
                 parameter_name="/caa-test-harness/ssh-key",
