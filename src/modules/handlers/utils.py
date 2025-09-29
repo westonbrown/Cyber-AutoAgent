@@ -6,11 +6,13 @@ This module contains general utility functions for file operations,
 output formatting, and message analysis.
 """
 
+import json
 import os
 import re
 import shutil
-from typing import List, Dict, Tuple, Optional
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 def get_terminal_width(default=80):
@@ -76,8 +78,13 @@ def sanitize_target_name(target: str) -> str:
     # Remove query parameters
     sanitized = sanitized.split("?")[0]
 
-    # Remove port numbers
-    sanitized = re.sub(r":\d+$", "", sanitized)
+    # Extract port if present for special handling
+    port = None
+    port_match = re.search(r":(\d+)$", sanitized)
+    if port_match:
+        port = port_match.group(1)
+        # Remove port temporarily for processing
+        sanitized = re.sub(r":\d+$", "", sanitized)
 
     # Replace unsafe characters with underscores
     sanitized = re.sub(r"[^\w\-.]", "_", sanitized)
@@ -87,6 +94,10 @@ def sanitize_target_name(target: str) -> str:
 
     # Remove leading/trailing underscores and dots
     sanitized = sanitized.strip("_.")
+
+    # Re-append port if it was present (using underscore separator for filesystem safety)
+    if port:
+        sanitized = f"{sanitized}_{port}"
 
     # Ensure non-empty result
     if not sanitized:
@@ -158,6 +169,16 @@ class Colors:
 
 def print_banner():
     """Display operation banner with clean, centered ASCII art."""
+    # Check if banner is disabled by environment variables
+    import os
+
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Banner disabled - return early (React UI mode suppresses banner)
+        return
+
     banner_lines = [
         r" ██████╗██╗   ██╗██████╗ ███████╗██████╗ ",
         r"██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗",
@@ -186,12 +207,23 @@ def print_banner():
     # Construct the full banner string
     full_banner = "\n".join(banner_lines) + "\n" + centered_subtitle
 
-    # Print the banner with color
+    # Print banner for CLI mode
     print("%s%s%s" % (Colors.CYAN, full_banner, Colors.RESET))
 
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
     """Print formatted section with optional emoji."""
+    # Check if output is disabled by environment variables
+    import os
+
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Output disabled - return early (React UI mode suppresses CLI sections)
+        return
+
+    # Print section for CLI mode
     print("\n%s" % ("─" * 60))
     print("%s %s%s%s%s" % (emoji, color, Colors.BOLD, title, Colors.RESET))
     print("%s" % ("─" * 60))
@@ -200,6 +232,17 @@ def print_section(title, content, color=Colors.BLUE, emoji=""):
 
 def print_status(message, status="INFO"):
     """Print status message with color coding and emojis."""
+    # Check if output is disabled by environment variables
+    import os
+
+    if (
+        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
+        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
+    ):
+        # Output disabled - return early (React UI mode suppresses CLI status lines)
+        return
+
+    # Print status for CLI mode
     status_config = {
         "INFO": (Colors.BLUE, "ℹ️"),
         "SUCCESS": (Colors.GREEN, "✅"),
@@ -311,3 +354,64 @@ def analyze_objective_completion(messages: List[Dict]) -> Tuple[bool, str, Dict]
                     )
 
     return False, "", {}
+
+
+@dataclass
+class CyberEvent:
+    """Structured event for terminal output."""
+
+    type: str  # 'step_start', 'command', 'command_array', 'output', 'error', 'status', 'complete'
+    content: Union[str, List[str]]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_json(self) -> str:
+        """Convert event to JSON with special markers for parsing."""
+        return f"__CYBER_EVENT__{json.dumps(asdict(self), separators=(',', ':'))}__CYBER_EVENT_END__"
+
+
+def emit_event(event_type: str, content: Union[str, List[str]], **metadata) -> None:
+    """Emit a structured event to stdout for React parsing.
+
+    This replaces direct print() calls to prevent garbled output.
+    Events are wrapped in special markers for reliable parsing.
+
+    Args:
+        event_type: Type of event (step_start, command, output, etc.)
+        content: Event content (string or list of strings)
+        **metadata: Additional metadata (step number, tool name, etc.)
+    """
+    event = CyberEvent(type=event_type, content=content, metadata=metadata)
+    # Use print with flush to ensure immediate output
+    print(event.to_json(), flush=True)
+
+
+def emit_step_start(step: int, total_steps: int, tool_name: str) -> None:
+    """Emit a step start event."""
+    emit_event("step_start", tool_name, step=step, total_steps=total_steps)
+
+
+def emit_command(command: Union[str, List[str]]) -> None:
+    """Emit a command execution event."""
+    if isinstance(command, list):
+        emit_event("command_array", command)
+    else:
+        emit_event("command", command)
+
+
+def emit_output(output: str) -> None:
+    """Emit tool output event."""
+    # Emit the entire output as a single event
+    # The UI will handle formatting and display
+    if output.strip():
+        emit_event("output", output.strip())
+
+
+def emit_error(error: str) -> None:
+    """Emit an error event."""
+    emit_event("error", error, level="error")
+
+
+def emit_status(message: str, level: str = "info") -> None:
+    """Emit a status message event."""
+    emit_event("status", message, level=level)

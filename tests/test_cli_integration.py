@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import pytest
 import argparse
-from unittest.mock import patch, Mock
-import sys
 import os
+import sys
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add src to path for imports
 
@@ -12,6 +13,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import cyberautoagent
+
 
 class TestCLIArguments:
     """Test command-line argument parsing"""
@@ -138,6 +140,7 @@ class TestCLIArguments:
         assert args.output_dir == "/custom/output"
         assert args.keep_memory is True  # Default is now True
 
+
 class TestMainFunction:
     """Test main function execution flow"""
 
@@ -148,7 +151,6 @@ class TestMainFunction:
     @patch("cyberautoagent.print_banner")
     @patch("cyberautoagent.print_section")
     @patch("cyberautoagent.print_status")
-    @patch("cyberautoagent.analyze_objective_completion")
     @patch(
         "sys.argv",
         [
@@ -163,7 +165,6 @@ class TestMainFunction:
     )
     def test_main_remote_flow(
         self,
-        mock_analyze,
         mock_print_status,
         mock_print_section,
         mock_print_banner,
@@ -191,7 +192,6 @@ class TestMainFunction:
         mock_create_agent.return_value = (mock_agent, mock_handler)
         mock_auto_setup.return_value = ["nmap", "nikto"]
         mock_get_prompt.return_value = "test prompt"
-        mock_analyze.return_value = (True, "Success", {"confidence": 95})
 
         # Mock agent execution to return immediately
         mock_agent.return_value = "Agent response"
@@ -210,7 +210,6 @@ class TestMainFunction:
     @patch("cyberautoagent.print_banner")
     @patch("cyberautoagent.print_section")
     @patch("cyberautoagent.print_status")
-    @patch("cyberautoagent.analyze_objective_completion")
     @patch(
         "sys.argv",
         [
@@ -225,7 +224,6 @@ class TestMainFunction:
     )
     def test_main_local_flow(
         self,
-        mock_analyze,
         mock_print_status,
         mock_print_section,
         mock_print_banner,
@@ -253,7 +251,6 @@ class TestMainFunction:
         mock_create_agent.return_value = (mock_agent, mock_handler)
         mock_auto_setup.return_value = []
         mock_get_prompt.return_value = "test prompt"
-        mock_analyze.return_value = (True, "Success", {"confidence": 95})
 
         # Mock agent execution to return normally, then trigger completion
         mock_agent.return_value = "Agent response"
@@ -282,6 +279,7 @@ class TestMainFunction:
             cyberautoagent.main()
 
         assert exc_info.value.code == 1
+
 
 class TestEnvironmentVariables:
     """Test environment variable handling"""
@@ -335,6 +333,7 @@ class TestEnvironmentVariables:
 
         # Without --confirmations, the env var should be set
         assert os.environ["BYPASS_TOOL_CONSENT"] == "true"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

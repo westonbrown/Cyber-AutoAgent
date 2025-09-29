@@ -1,0 +1,26 @@
+name: general
+version: 1.0.0
+description:  Generalized web application security assessment 
+author: Cyber-AutoAgent Team
+license: MIT
+configuration:
+  timeout: 900
+  max_depth: 10
+  approach: Intelligence-driven web application security assessment leveraging specialized external tools
+  confidence_threshold: 0.75
+capabilities:
+  - advanced_reconnaissance: Coordinates subfinder, assetfinder, httpx, katana for comprehensive recon
+  - intelligent_payload_testing: Orchestrates dalfox, arjun, corsy for sophisticated vulnerability testing  
+  - authentication_analysis: Deep analysis of JWT, OAuth, SAML, and session-based authentication flows
+supported_targets:
+  - web-application
+  - api-endpoint
+  - authentication-service
+tools:
+  - specialized_recon_orchestrator
+  - advanced_payload_coordinator  
+  - auth_chain_analyzer
+module_interface:
+  accepts_from: []
+  provides_to: []
+  finding_categories: ["web-vulnerabilities", "authentication-flaws", "business-logic", "injection-vulnerabilities"]

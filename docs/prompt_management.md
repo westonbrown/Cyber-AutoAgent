@@ -1,277 +1,293 @@
-# Prompt Management with Langfuse
+# Module-Based Prompt System
 
-This guide explains how to use Langfuse for dynamic prompt management in Cyber-AutoAgent.
+Cyber-AutoAgent uses a modular prompt architecture that enables specialized security assessments with domain-specific expertise, tools, and reporting.
 
-## Overview
+## Architecture Overview
 
-Cyber-AutoAgent supports two prompt management modes:
-
-1. **Hardcoded Prompts** (default): Prompts are embedded in the codebase
-2. **Langfuse Prompts**: Prompts are managed in Langfuse with version control
-
-## Benefits of Langfuse Prompt Management
-
-- **Version Control**: Track changes to prompts over time
-- **A/B Testing**: Test different prompt variations
-- **Hot Reload**: Change prompts without redeploying code
-- **Team Collaboration**: Non-developers can edit prompts via UI
-- **Environment Separation**: Different prompts for dev/staging/production
-
-## Setup
-
-### 1. Enable Langfuse Prompts
-
-Set the following environment variable:
-
-```bash
-ENABLE_LANGFUSE_PROMPTS=true
+```mermaid
+graph TD
+    A[React UI] --> B[Module Selection]
+    B --> C[DirectDockerService]
+    C --> D[--module parameter]
+    D --> E[Python Agent Creation]
+    E --> F[ModulePromptLoader]
+    F --> G[Load Module Prompts]
+    F --> H[Discover Module Tools]
+    G --> I[System Prompt Integration]
+    H --> I
+    I --> J[Agent Execution]
+    J --> K[Report Generation]
+    K --> L[Module Report Prompt]
 ```
 
-### 2. Configure Prompt Label (Optional)
+## Module Selection Flow
 
-Choose which prompt version to use:
-
-```bash
-# Options: production (default), staging, dev, or custom labels
-LANGFUSE_PROMPT_LABEL=production
+### 1. User Interface Selection
+```typescript
+// React UI - Module selection
+interface AssessmentParams {
+  module: string;  // 'general'
+  target: string;
+  objective?: string;
+}
 ```
 
-### 3. Configure Cache TTL (Optional)
-
-Set how long prompts are cached locally:
-
-```bash
-# Default: 300 seconds (5 minutes)
-LANGFUSE_PROMPT_CACHE_TTL=300
+### 2. Parameter Passing
+```typescript
+// DirectDockerService.ts - Docker execution
+const args = [
+  '--module', params.module,
+  '--objective', objective,
+  '--target', params.target,
+  '--iterations', String(config.iterations || 100),
+  '--provider', config.modelProvider || 'bedrock',
+];
 ```
 
-## Initial Setup
-
-### Automatic Prompt Creation
-
-When `ENABLE_LANGFUSE_PROMPTS=true` is set, the system automatically creates the required prompts in Langfuse on first startup:
-
-- `cyber-agent-system`: Main agent system prompt
-- `cyber-agent-initial`: Initial assessment prompt
-- `cyber-agent-continuation`: Step continuation prompt
-
-No manual migration is needed! The prompts are created automatically when:
-1. The PromptManager initializes
-2. Langfuse is accessible
-3. The prompts don't already exist
-
-### Verify in Langfuse UI
-
-1. Open Langfuse UI (http://localhost:3000)
-2. Navigate to Prompts section
-3. Verify all three prompts are created
-4. Review and edit as needed
-
-## Usage
-
-### Local Development
-
-When developing locally without Docker:
-
-```bash
-# Option 1: Use hardcoded prompts (default)
-python src/cyberautoagent.py --target example.com --objective "Test"
-
-# Option 2: Use Langfuse prompts
-ENABLE_LANGFUSE_PROMPTS=true python src/cyberautoagent.py --target example.com --objective "Test"
-```
-
-### Docker Usage
-
-```bash
-# With Langfuse prompts enabled
-docker run --rm \
-  -e ENABLE_LANGFUSE_PROMPTS=true \
-  -e LANGFUSE_HOST=http://langfuse-web:3000 \
-  -e LANGFUSE_PUBLIC_KEY=cyber-public \
-  -e LANGFUSE_SECRET_KEY=cyber-secret \
-  cyber-autoagent \
-  --target example.com \
-  --objective "Security assessment"
-```
-
-## Prompt Variables
-
-### System Prompt Variables
-
-| Variable | Description |
-|----------|-------------|
-| `agent_name` | Agent identifier (e.g., "Cyber-AutoAgent") |
-| `operation_id` | Unique operation ID |
-| `target` | Target system/URL |
-| `objective` | Assessment objective |
-| `max_steps` | Maximum execution steps |
-| `tools_context` | Available tools description |
-| `memory_context` | Memory system information |
-| `output_guidance` | Output directory guidance |
-| `available_tools` | List of available tools |
-
-### Initial Prompt Variables
-
-| Variable | Description |
-|----------|-------------|
-| `target` | Target system/URL |
-| `objective` | Assessment objective |
-| `max_steps` | Maximum execution steps |
-| `available_tools` | List of available tools |
-
-### Continuation Prompt Variables
-
-| Variable | Description |
-|----------|-------------|
-| `current_step` | Current step number |
-| `max_steps` | Total steps allowed |
-| `remaining_steps` | Steps remaining |
-| `urgency` | Urgency level (HIGH/MEDIUM/NORMAL) |
-
-## Editing Prompts
-
-### Via Langfuse UI
-
-1. Navigate to Prompts in Langfuse
-2. Click on the prompt to edit
-3. Modify the prompt template
-4. Save as new version
-5. Update labels as needed
-
-### Via API
-
+### 3. CLI Argument Processing
 ```python
-from langfuse import Langfuse
-
-langfuse = Langfuse()
-
-# Create new version
-langfuse.create_prompt(
-    name="cyber-agent-system",
-    prompt="Updated prompt content...",
-    labels=["staging"],  # Test in staging first
-    tags=["cyber-agent", "system", "v2"],
+# cyberautoagent.py - Command line parsing
+parser.add_argument(
+    "--module",
+    type=str,
+    default="general",
+    help="Security module to use (e.g., general)",
 )
 ```
 
-## Best Practices
+## Module Structure
 
-### 1. Use Labels for Deployment
-
-- `production`: Stable prompts for production use
-- `staging`: Test prompts before production
-- `dev`: Experimental prompts
-- Custom labels for A/B testing
-
-### 2. Version Testing
-
-```bash
-# Test staging prompts
-LANGFUSE_PROMPT_LABEL=staging python src/cyberautoagent.py ...
-
-# Test specific version
-LANGFUSE_PROMPT_VERSION=3 python src/cyberautoagent.py ...
+```
+modules/
+└── general/
+    ├── execution_prompt.txt    # Domain-specific system prompt
+    ├── report_prompt.txt       # Report generation guidance
+    ├── module.yaml            # Module metadata
+    └── tools/                 # Module-specific tools
+        ├── __init__.py
+        └── quick_recon.py
 ```
 
-### 3. Gradual Rollout
+## Prompt Loading System
 
-1. Create new prompt version
-2. Label as `staging`
-3. Test thoroughly
-4. Move label to `production`
-5. Monitor performance
-
-### 4. Fallback Strategy
-
-The system automatically falls back to hardcoded prompts if:
-- Langfuse is unavailable
-- Prompt not found
-- Network issues
-- Invalid configuration
-
-## Troubleshooting
-
-### Prompts Not Loading
-
-1. Check environment variables:
-   ```bash
-   echo $ENABLE_LANGFUSE_PROMPTS
-   echo $LANGFUSE_HOST
-   echo $LANGFUSE_PUBLIC_KEY
-   ```
-
-2. Verify Langfuse connectivity:
-   ```bash
-   curl http://localhost:3000/api/public/health
-   ```
-
-3. Check logs for errors:
-   ```
-   [WARNING] Failed to fetch prompt 'cyber-agent-system' from Langfuse: Connection error
-   ```
-
-### Cache Issues
-
-Clear the prompt cache:
+### ModulePromptLoader Class
 
 ```python
-from modules.prompts.manager import get_prompt_manager
-pm = get_prompt_manager()
-pm.invalidate_cache()
+# modules/prompts/module_loader.py
+class ModulePromptLoader:
+    def load_module_execution_prompt(self, module_name: str) -> Optional[str]
+    def load_module_report_prompt(self, module_name: str) -> Optional[str]
+    def discover_module_tools(self, module_name: str) -> List[str]
+    def get_available_modules(self) -> List[str]
+    def validate_module(self, module_name: str) -> bool
 ```
 
-### Performance
+### Loading Process
 
-- Prompts are cached for 5 minutes by default
-- First request after cache expiry may be slower
-- Adjust `LANGFUSE_PROMPT_CACHE_TTL` if needed
+```mermaid
+sequenceDiagram
+    participant A as Agent Creation
+    participant L as ModulePromptLoader
+    participant F as Filesystem
+    
+    A->>L: get_module_loader()
+    A->>L: load_module_execution_prompt('general')
+    L->>F: Read modules/general/execution_prompt.txt
+    F-->>L: Prompt content
+    L-->>A: Module execution prompt
+    
+    A->>L: discover_module_tools('general')
+    L->>F: Scan modules/general/tools/*.py
+    F-->>L: Tool file paths
+    L-->>A: ['quick_recon.py']
+```
 
-## Advanced Usage
+## System Prompt Integration
 
-### Custom Prompt Names
-
-Create specialized prompts for different scenarios:
+### Base + Module Prompt Composition
 
 ```python
-# In Langfuse, create prompts like:
-# - cyber-agent-web-assessment
-# - cyber-agent-network-scan
-# - cyber-agent-api-testing
-
-# Then use based on target type:
-prompt_name = f"cyber-agent-{target_type}"
+# modules/agents/cyber_autoagent.py - Agent creation
+def create_agent(module: str = "general"):
+    # Load module-specific execution prompt
+    module_loader = get_module_loader()
+    module_execution_prompt = module_loader.load_module_execution_prompt(module)
+    
+    # Discover module tools
+    module_tool_paths = module_loader.discover_module_tools(module)
+    tool_names = [Path(tool_path).stem for tool_path in module_tool_paths]
+    
+    # Build tools context
+    module_tools_context = f"""
+## MODULE-SPECIFIC TOOLS
+Available {module} module tools (use load_tool to activate):
+{", ".join(tool_names)}
+"""
+    
+    # Generate enhanced system prompt
+    system_prompt = get_system_prompt(
+        target=target,
+        objective=objective,
+        tools_context=full_tools_context,
+        module_context=module_execution_prompt,
+    )
 ```
 
-### Conditional Sections
+### Prompt Composition Flow
 
-Use Langfuse's conditional logic:
-
-```
-{{#if has_memory}}
-## MEMORY CONTEXT
-Previous findings: {{memory_overview}}
-{{/if}}
-```
-
-### Nested Prompts
-
-Reference other prompts:
-
-```
-{{> cyber-agent-tools-section}}
+```mermaid
+graph LR
+    A[Base Ghost Prompt] --> C[Combined System Prompt]
+    B[Module Execution Prompt] --> C
+    D[Environmental Tools] --> E[Full Tools Context]
+    F[Module Tools] --> E
+    E --> C
+    C --> G[Agent System Prompt]
 ```
 
-## Security Considerations
+### Example: General Module Integration
 
-1. **API Keys**: Keep Langfuse credentials secure
-2. **Prompt Injection**: Validate all variables before insertion
-3. **Access Control**: Use Langfuse RBAC for prompt permissions
-4. **Audit Trail**: All prompt changes are logged in Langfuse
+```text
+# Ghost - Cyber Operations Specialist
+[Base system prompt with core behaviors]
 
-## Migration Path
+## MODULE-SPECIFIC GUIDANCE
+<role>
+You are a comprehensive security assessment specialist conducting general penetration testing.
+</role>
 
-1. **Phase 1**: Enable for evaluation prompts only
-2. **Phase 2**: Enable for swarm agent prompts
-3. **Phase 3**: Enable for main system prompt
-4. **Phase 4**: Remove hardcoded prompts (optional)
+<assessment_methodology>
+1. Initial Reconnaissance
+2. Service Classification  
+3. Adaptive Testing Strategy
+</assessment_methodology>
+
+## MODULE-SPECIFIC TOOLS
+Available general module tools (use load_tool to activate):
+quick_recon
+
+Load these tools when needed: load_tool(tool_name="tool_name")
+```
+
+## Tool Discovery System
+
+### Discovery Process
+
+```python
+# modules/prompts/module_loader.py
+def discover_module_tools(self, module_name: str) -> List[str]:
+    tools_path = self.modules_path / module_name / "tools"
+    tools = []
+    
+    if tools_path.exists():
+        for tool_file in tools_path.glob("*.py"):
+            if tool_file.name != "__init__.py":
+                tools.append(str(tool_file))
+    
+    return tools
+```
+
+### Tool Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant S as System Prompt
+    participant T as load_tool
+    participant M as Module Tool
+    
+    Note over A,S: Agent sees available module tools in system prompt
+    A->>T: load_tool(tool_name="quick_recon")
+    T->>M: Import modules/general/tools/quick_recon.py
+    M-->>T: Tool registered
+    T-->>A: Tool available for use
+    A->>M: quick_recon(target="example.com")
+    M-->>A: Reconnaissance results
+```
+
+## Report Generation System
+
+### Module Report Prompt Integration
+
+```python
+# modules/tools/report_generator.py
+def generate_security_report(module: Optional[str] = None):
+    # Get module report prompt if available
+    module_report_prompt = _get_module_report_prompt(module)
+    
+    # Get the report prompt from centralized prompts
+    report_prompt = get_report_generation_prompt(
+        target=target,
+        objective=objective,
+        operation_id=operation_id,
+        steps_executed=steps_executed,
+        tools_text=tools_text,
+        evidence_text=evidence_text,
+        module_report_prompt=module_report_prompt
+    )
+```
+
+### Report Generation Flow
+
+```mermaid
+sequenceDiagram
+    participant E as Agent Execution
+    participant H as SDKNativeHandler
+    participant R as Report Generator
+    participant L as ModulePromptLoader
+    participant A as Report Agent
+    
+    E->>H: Operation complete
+    H->>R: generate_security_report(module="general")
+    R->>L: load_module_report_prompt("general")
+    L-->>R: Module report prompt
+    R->>A: Generate report with module context
+    A-->>R: Formatted report
+    R-->>H: Report content
+    H->>E: Emit report to UI
+```
+
+## Module Examples
+
+### General Security Module
+
+**Execution Prompt Features:**
+- Multi-domain security coverage (Network, Web, API, Infrastructure, Cloud)
+- Adaptive testing methodology based on discovered services
+- Risk-based vulnerability prioritization
+- Comprehensive reconnaissance approach
+
+**Available Tools:**
+- `quick_recon`: Basic reconnaissance and port scanning
+- `identify_technology`: Web technology fingerprinting
+
+**Report Characteristics:**
+- Multi-domain vulnerability grouping
+- Context-aware findings explanation
+- Vulnerability chaining analysis
+- Executive summary for business risk
+
+
+## Implementation Details
+
+### Agent Creation with Modules
+
+```python
+# modules/agents/cyber_autoagent.py
+agent, callback_handler = create_agent(
+    target=args.target,
+    objective=args.objective,
+    max_steps=args.iterations,
+    available_tools=available_tools,
+    op_id=local_operation_id,
+    model_id=args.model,
+    region_name=args.region,
+    provider=args.provider,
+    memory_path=args.memory_path,
+    memory_mode=args.memory_mode,
+    module=args.module,  # Module parameter passed through
+)
+```
+
+
+The module system provides a powerful way to specialize Cyber-AutoAgent for different security domains while maintaining consistent core functionality and user experience.

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add src to path for imports
 
@@ -10,6 +11,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modules.handlers.utils import analyze_objective_completion
+
 
 class TestMessageStructure:
     """Test message structure handling for proper content format"""
@@ -115,6 +117,7 @@ class TestMessageStructure:
         is_complete, summary, metadata = analyze_objective_completion(messages)
         assert is_complete is True
         assert "Handled malformed content" in summary
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

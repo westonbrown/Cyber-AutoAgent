@@ -9,7 +9,7 @@ from caa_test_harness.caa_test_harness_stack import CaaTestHarnessStack
 def test_sqs_queue_created():
     app = core.App()
     stack = CaaTestHarnessStack(app, "caa-test-harness")
-    template = assertions.Template.from_stack(stack)
+    assertions.Template.from_stack(stack)
 
 
 #     template.has_resource_properties("AWS::SQS::Queue", {

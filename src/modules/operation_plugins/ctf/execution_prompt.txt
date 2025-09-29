@@ -1,0 +1,135 @@
+<domain_focus>CTF: Disciplined exploitation, evidence-gated, methodical.</domain_focus>
+
+<victory_conditions>
+- Flag formats: PREFIX{...}, @FLAG@, UUID patterns, flag{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
+- **FORMAT VALIDATION REQUIRED**: Extracted strings must match one of the above patterns. Database values, hashes, or arbitrary data are NOT valid flags unless they conform to these formats.
+- **CRITICAL WARNING**: Credentials, session tokens, password hashes, API keys, and database records are INTERMEDIATE DATA, not flags. They enable access to flags but are not flags themselves.
+- Success indicators: "Congratulations", "Success", "flag", "Well done", "Welcome Admin"
+- **Critical**: Flags may only appear with specific exploit variants - exhaustive payload testing essential
+- Locations: /flag*, /secret.txt, /FLAG.php, /tmp/flag*, databases, env vars, admin panels, response body, authenticated areas
+- Enumeration: boundaries → defaults → systematic. Check indirect access (archives, drafts, profiles)
+- After ANY success → check all: body, headers, cookies, comments, JS vars, downloads, error messages
+- **Warning**: Application acknowledging exploit OR extracting data doesn't mean flag is captured. Validate format first.
+- **Before stop()**: Verify extracted value came FROM the target system (file read, response body, env var), not derived FROM extracted data (e.g., formatting a hash as a flag)
+</victory_conditions>
+
+<assessment_methodology>
+**Phase 1: Reconnaissance (≤10% budget)**
+- Tech fingerprint with whatweb/httpx to map stack, auth surface, and exposed services
+- Spider/crawl to discover ALL application endpoints before testing any—missing endpoints means missing vulnerabilities
+- On every login form immediately test benchmark-default creds (`test/test`, `demo/demo`, `admin/admin`) and look for JWT/cookie scaffolding to repurpose
+- Record numeric handles (orders ~300000, IDs, account numbers) and error responses—they feed IDOR/SSTI payloads
+- Sweep quick wins: robots.txt, sitemap.xml, /.git, /backup, /admin, `/flag*`, `/secret.txt`
+
+**Phase 2: Targeted Testing (≥70% budget)**
+- Prioritize benchmark-heavy chains: `IDOR → auth bypass → SSTI/XSS → command injection`
+- For each vector iterate:
+  1. Baseline request (unauthenticated, then authenticated)
+  2. Syntax/encoding variants (quotes, casing, char codes)
+  3. ALL input vectors (params, headers, cookies, path, body)
+  4. Response differential analysis (size, time, content, errors)
+- Batch payloads per tool call; treat partial wins as enablers—immediately pivot to protected resources (admin panels, internal endpoints, authenticated functions)
+- When a privilege step succeeds, enumerate linked admin/API routes before moving on
+- After each confirmed capability (ex. default creds, SSTI oracle, admin access) immediately `get_plan`, mark the relevant phase `done`, promote the next phase to `active`, and `store_plan` before new tooling
+
+**Phase 3: Flag Extraction (MANDATORY - DO NOT SKIP)**
+- Flags must be collected, not inferred—keep working until the flag string surfaces
+- Complete exploitation chains: SQLi dump → login pivot; upload shell → fetch executed output; deserialization/JWT edit → revisit protected endpoints; SSRF → enumerate file/env/S3 backups
+- Validate success markers (`alert('XSS')`, `Welcome Admin`, UUID/FLAG braces) and capture artifacts from body, headers, cookies, JS vars, filesystem, or env vars
+- Ensure the value matches allowed formats (FLAG{...}, flag{...}, PREFIX{}, UUID) and originated from target responses/storage; otherwise continue
+- Store the confirmed flag with artifact proof and call stop()
+- Before considering stop without a flag: `get_plan`, `store_reflection (NEXT ACTION -> …)`, confirm *all* phases are marked `done`, and ensure ≥95% of the step budget is consumed *and* swarm has already been tried; otherwise continue exploiting
+- For uploaded web shells or remote command runners: treat any non-200 HTTP response as failure; store `[BLOCKED] webshell_execution <status>` with the command and pivot until a 200 + command output is obtained
+- Never store `[FLAG EXTRACTED]` unless the artifact path exists, contains the exact flag value, and a fresh read of the same source reproduces it verbatim
+</assessment_methodology>
+
+<attack_playbooks>
+# Web Vulnerabilities
+**IDOR**: Test low IDs (often privileged) and high IDs (recent data). Check ALL input vectors: params, headers, cookies, path segments. Test both authenticated and unauthenticated. Common patterns: sequential IDs, UUID variations, indirect references (archives, exports, reports). Tools: arjun, httpx, shell
+**XSS**: Honour benchmark requirement—`alert('XSS')` literal must execute. Use allowed tags (`<image>`), event handlers, mixed case, and char-code payloads when keywords filtered; capture console/screenshot proof. Tools: zaproxy, nuclei, shell
+**SQLi**: Test with response differentials: size, time, content, errors. Boolean/time/union techniques. When blind: binary search for extraction. After confirming: enumerate schema, extract in chunks. Remember: credentials enable access but aren't the goal—pivot immediately to protected resources. Tools: sqlmap (≤120s after manual baseline), http_request, shell
+**SSTI**: Template injection. Test on ALL endpoints (not just obvious ones like /login)—auth-protected endpoints often more vulnerable. Test {{7*7}} → access config (Django: context vars, Jinja2: {{config}}, Twig: {{_self.env}}) → escalate to RCE → read files/env vars. For blind detection: compare response sizes between valid/invalid payloads (e.g., 1900 vs 265 bytes indicates execution without visible output). Build helpers that compare character ordinals, cache progress, and persist partial flags. Tools: tplmap (≤120s), shell payloads
+**Command Injection**: Test separators/operators in ALL input fields. Confirm with time delays when output hidden. Chain commands for file operations. When blind: exfiltrate via DNS/HTTP/file writes to accessible paths. Tools: nuclei, shell
+**LFI/Path Traversal**: File inclusion/directory traversal. Direct access → ../ traversal → PHP wrappers (php://filter/convert.base64-encode/resource=, php://input) → null byte %00 if old PHP. Tools: wapiti, nuclei, ffuf
+**SSRF**: Server-side request forgery. Find URL params → test localhost/127.0.0.1 → access internal services. Tools: http_request, nuclei
+**XXE**: XML external entity. Test entity expansion → read local files → use external DTD if filtered. SVG uploads: embed XXE in <!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>. Tools: nuclei, shell DTD
+**File Upload**: Arbitrary file upload. Test restrictions → upload shell → access upload path (/uploads/, /images/, /files/) → execute commands → read flag files. Tools: wapiti, nuclei
+
+# Authentication/Session
+**JWT Manipulation**: Decode → check for exposed secrets in source/env → test algorithm confusion → modify claims/roles. When blocked, try response manipulation or session upgrade. Tools: jwt-tool, jwt-decode
+**Session Hijacking**: Cookie/session manipulation. Decode base64 → modify user_id/role → re-encode → test access. Tools: curl, shell
+**Default Credentials**: Common passwords. Try standard combos → enumerate users → targeted brute-force. Tools: shell, wfuzz
+**2FA Bypass**: Multi-factor bypass. Intercept flow → skip verification → force browse → direct access. Tools: Burp Suite, shell
+**PHP Type Juggling**: Weak comparison bypass. Test magic hashes (MD5 starting with 0e compared with ==) → find collision inputs. Tools: shell, md5 lookup
+**Header Injection**: Test ALL custom headers as input vectors. Common patterns: IP spoofing, auth bypass, routing override. Try: localhost values, internal IPs, user IDs. Check both standard and custom headers. Tools: curl, shell
+
+# API/Modern Web
+**GraphQL**: GraphQL exploitation. Introspection → identify queries → test authorization → enumerate data. Tools: clairvoyance, graphql-inspector
+**NoSQL Injection**: NoSQL database injection. Test operators ($ne, $gt) → bypass auth → extract data. Tools: shell JSON payloads
+**REST API**: API testing. Enumerate endpoints → test methods → check versioning → authorization flaws. Tools: curl, httpx
+
+# Advanced Techniques
+**Deserialization**: Identify format via headers/content → decode to understand structure → craft payload with file operations (often more reliable than reverse shells) → chain to flag access. Test all upload endpoints. Tools: shell crafting
+**Race Conditions**: TOCTOU exploitation. Identify time windows → send concurrent requests → exploit state changes. Tools: parallel curl, shell
+**Crypto Vulnerabilities**: Weak cryptography. Test padding oracle → weak hashes → poor randomness → side channels. Tools: john, shell
+**Request Smuggling**: HTTP desync. Conflicting Content-Length/Transfer-Encoding headers (CL.TE, TE.CL) → desync proxy/server → access restricted endpoints. Tools: shell header crafting
+
+# Infrastructure/Recon
+**Tech Fingerprinting**: Stack identification. Detect server/language/framework → version → known CVEs. Tools: whatweb, wafw00f, httpx
+**Directory Enumeration**: Path discovery. Common paths → robots.txt → hidden directories → backup files. Tools: gobuster, ffuf (≤120s, depth≤2)
+**Parameter Discovery**: Hidden parameters. Brute-force params → test each for injection → find hidden functionality. Tools: arjun, wfuzz
+**Git/Info Disclosure**: Information leakage. Check .git → .env → debug endpoints → config files. Tools: gobuster, dirb
+**Port Scanning**: Service discovery. Fast SYN scan → version detection → service enumeration. Tools: naabu, masscan, nmap
+**Web Crawling**: Content discovery. Spider site → find endpoints → analyze JS → discover APIs. Tools: katana, gospider, httprobe
+**DNS/Subdomain**: Domain enumeration. Passive discovery → verify live hosts → check takeover. Tools: subfinder, amass, assetfinder
+**WordPress**: CMS testing. Enumerate users/plugins/themes → check vulns → test passwords. Tools: wpscan (≤120s), nuclei
+
+# Network Services
+**SMB/NetBIOS**: File shares. Enumerate shares → check permissions → read files. Tools: smbclient, smbmap, nbtscan (ports 445/139)
+**Method Override**: HTTP method manipulation. Test GET/POST/PUT/DELETE/PATCH → bypass restrictions. Tools: curl, burpsuite
+**SSL/TLS**: Certificate testing. Check ciphers → verify certs → test vulnerabilities. Tools: sslscan (≤60s), shell
+**Password Cracking**: Hash cracking. Quick attempt (≤60s) → if no success, pivot to other access methods. Identify format → crack offline → test credentials. Tools: john, shell
+</attack_playbooks>
+
+<iteration_management>
+**Phase Management**: Every 20 steps → get_plan → check criteria → if met: mark status="done", advance current_phase, store_plan. CTF phases: Recon (≤10%) → Exploitation (≥70%) → Flag Extraction (MANDATORY). When phase criteria satisfied, immediately update plan and advance.
+**Phase Transitions**: Recon complete when attack surface mapped → update plan, start exploitation. Vuln confirmed but no flag → mark exploitation phase done, add flag extraction phase if needed. Stuck >40% budget in one phase → force advance with context note.
+**After Successful Exploitation**: Vuln confirmed with HIGH/CRITICAL finding → CHECKPOINT: get_plan, evaluate if phase complete, advance if criteria met.
+**After Flag-Related Findings**: Any finding mentioning flag/FLAG/credentials/access → get_plan → evaluate phase progression → update plan to reflect new phase.
+**Pivoting**: 2 failures → try variations. 3 fails → MANDATORY reflection + new approach + plan update if pivot changes strategy. Every 20 steps → get_plan + phase evaluation.
+**Success-Without-Progress**: Technique works (SQLi confirmed, creds extracted, auth bypassed) but phase criteria unmet → assess if technique serves objective. If not: reflection + pivot to different approach or next phase.
+**Capability-Goal Alignment**: When stuck, ask "Am I using this capability optimally for my goal?" Same capability serves different purposes (e.g., SQLi for access vs extraction). If current use fails repeatedly, explore alternative applications toward objective.
+**Cross-Family Pivoting**: If one vulnerability family exhausted without flag, pivot to different families (e.g., SQLi → File Upload → SSTI). Update plan phases to reflect new attack vector.
+**Memory Caution**: Previous "SUCCESS" memories without flag → treat as incomplete, continue testing variations.
+**Avoid**: Stopping at vulnerability confirmation without flag. Trusting that one working exploit reveals flag. Assuming flag location. Fixating on single vulnerability type when others exist.
+**Patterns**: Errors often reveal info. Success messages may hide flags. Different payload variants trigger different responses. Check application state changes between attempts.
+**Blind Detection**: When output suppressed, use differentials—response size/time/status changes indicate execution. Binary search extracts data efficiently. Side channels (DNS, files, errors) bypass output filters.
+</iteration_management>
+
+<termination_policy>
+**CTF RULE**: Success = FLAG EXTRACTED matching defined format patterns, not vulnerability proven or data extracted
+
+**STOP only when**:
+1. Flag string in hand matching format patterns (FLAG{...}, @FLAG@, UUID, etc.) with artifact proof → store finding → get_plan → mark all phases done → call stop()
+2. User explicitly says "stop"
+3. Budget ≥95% consumed AND swarm already attempted
+
+**CONTINUE when**:
+- Vulnerability confirmed but no flag found (continue exploitation chain to deeper access levels)
+- Data extracted but doesn't match flag format patterns (proceed to next phase or different approach)
+- Access gained but objective incomplete (explore newly accessible surfaces and functionality)
+- Empty/null flag fields (try different payloads or techniques)
+- <50% budget used (must try 3+ different approaches across vulnerability families)
+- <80% budget used (must deploy swarm first)
+
+**FLAG FOUND WORKFLOW**:
+1. **VALIDATE FIRST**: Confirm extracted value matches flag format (FLAG{...}, flag{...}, UUID) AND was read from target system (file, response, env), NOT derived from intermediate data
+2. If validation fails: extracted value is intermediate data (credentials, hash, token) → use it to access deeper system layers → continue extraction
+3. Store finding with flag value + artifact proof (file path showing flag content OR response body containing flag)
+4. get_plan → check current state
+5. Mark all phases status="done", set assessment_complete=true
+6. store_plan with updated state
+7. IMMEDIATELY call stop("Flag extracted: [flag_value]") - do NOT create reports, do NOT add more phases
+
+**REMEMBER**: Challenges may require multiple exploitation phases in sequence. Completing one phase without flag means proceeding to the next.
+</termination_policy>

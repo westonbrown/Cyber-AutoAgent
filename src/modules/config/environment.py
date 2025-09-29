@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import atexit
 import logging
 import os
 import re
@@ -11,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from modules.handlers.utils import Colors
+from modules.handlers.utils import print_status
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
@@ -53,74 +54,198 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
                 os.remove(memory_path)
 
             logger.info("Cleaned up operation memory: %s", memory_path)
-            print(f"{Colors.GREEN}[*] Cleaned up operation memory: {memory_path}{Colors.RESET}")
+            print_status(f"Cleaned up operation memory: {memory_path}", "SUCCESS")
 
         except Exception as e:
             logger.error("Failed to clean %s: %s", memory_path, e)
-            print(f"{Colors.RED}[!] Failed to clean {memory_path}: {e}{Colors.RESET}")
+            print_status(f"Failed to clean {memory_path}: {e}", "ERROR")
     else:
         logger.debug("Memory path does not exist: %s", memory_path)
 
 
 def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
     """Setup directories and discover available cyber tools"""
+    # Disable Mem0 telemetry to prevent PostHog connection attempts
+    os.environ.setdefault("MEM0_TELEMETRY", "false")
+
     # Create necessary directories in proper locations
-    Path("tools").mkdir(exist_ok=True)  # Local tools directory for custom tools
+    try:
+        tools_path = Path("tools")
+        if tools_path.exists():
+            if not tools_path.is_dir():
+                # If 'tools' exists but is not a directory, remove it and create directory
+                print_status("Removing existing 'tools' file to create directory", "WARNING")
+                tools_path.unlink()
+                tools_path.mkdir(exist_ok=True)
+        else:
+            tools_path.mkdir(exist_ok=True)  # Local tools directory for custom tools
+    except PermissionError:
+        # If we can't access or create the tools directory, continue without it
+        print_status("Cannot create/access 'tools' directory - continuing without custom tools", "WARNING")
+    except Exception as e:
+        # Log any other issues but continue
+        print_status(f"Issue with tools directory: {e} - continuing", "WARNING")
 
     # Each operation uses its own isolated memory path: /tmp/mem0_{operation_id}
     if skip_mem0_cleanup:
-        print("%s[*] Using existing memory store%s" % (Colors.CYAN, Colors.RESET))
+        print_status("Using existing memory store", "INFO")
 
-    print("%s[*] Discovering cyber security tools...%s" % (Colors.CYAN, Colors.RESET))
+    print_status("Discovering cyber security tools...", "INFO")
 
-    # Just check which tools are available
+    # Emit structured event for React UI
+    import json
+
+    tool_discovery_event = {
+        "type": "tool_discovery_start",
+        "timestamp": datetime.now().isoformat(),
+        "message": "Starting cybersecurity tool discovery",
+    }
+    print(f"__CYBER_EVENT__{json.dumps(tool_discovery_event)}__CYBER_EVENT_END__")
+
+    # Check which tools are available and capture their binary paths
     cyber_tools = {
+        # Core scanners and recon
         "nmap": "Network discovery and security auditing",
         "nikto": "Web server scanner",
         "sqlmap": "SQL injection detection and exploitation",
         "gobuster": "Directory/file brute-forcer",
-        "netcat": "Network utility for reading/writing data",
-        "curl": "HTTP client for web requests",
+        "whatweb": "Web technology fingerprinting",
+        "wafw00f": "WAF fingerprinting",
+        # Web app scanners (GUI/CLI)
+        "zaproxy": "OWASP ZAP web scanner (CLI/API)",
+        "burpsuite": "Burp Suite (Community) web scanner",
+        # GraphQL-specific tools
+        "clairvoyance": "GraphQL schema enumeration and introspection",
+        "graphql-inspector": "GraphQL schema analysis and validation",
+        # JWT manipulation tools
+        "jwt-tool": "JWT analysis and manipulation toolkit",
+        "jwt-decode": "JWT token decoder and validator",
+        # Template injection tools
+        "tplmap": "Server-Side Template Injection scanner",
+        # Cookie/Session manipulation
+        "cookiecutter": "Cookie template generation tool",
+        # ProjectDiscovery ecosystem
+        "nuclei": "Templated vulnerability scanner",
+        "naabu": "Fast TCP port scanner (SYN/CONNECT)",
+        "amass": "In-depth DNS enumeration and attack surface mapping",
+        "subfinder": "Passive subdomain discovery",
+        # Web fuzzing & dirs
+        "ffuf": "Fast web fuzzer",
+        "feroxbuster": "Fast recursive content discovery",
+        "dirb": "HTTP(S) web content scanner",
+        "arjun": "HTTP parameter discovery suite",
+        "wapiti": "Web vulnerability scanner",
+        "wfuzz": "Web application bruteforcer",
+        "wpscan": "WordPress security scanner",
+        # Web recon helpers
+        "gospider": "Web spider for finding URLs and endpoints",
+        "httprobe": "Probes for working HTTP and HTTPS servers",
+        "subjack": "Subdomain takeover tool",
+        "knockpy": "DNS subdomain scanner",
+        "assetfinder": "Subdomain discovery (tomnomnom)",
+        "httpx": "HTTP probing and technology detection (ProjectDiscovery)",
+        "katana": "Fast web crawler (ProjectDiscovery)",
+        # DNS/Recon
+        "dnsrecon": "DNS reconnaissance",
+        "dnsenum": "DNS enumeration",
+        "theharvester": "Emails, subdomains, IPs and URLs OSINT",
+        # Network scanning
+        "masscan": "Very fast port scanner",
+        # SMB/NetBIOS
+        "smbclient": "Samba SMB/CIFS client",
+        "smbmap": "Enumerate Samba share drives across domains",
+        "nbtscan": "NetBIOS name network scanner",
+        # SNMP/Discovery
+        "arp-scan": "ARP scanning and fingerprinting",
+        "ike-scan": "VPN IKE scanner",
+        "onesixtyone": "Fast SNMP scanner",
+        "snmpcheck": "SNMP enumerator",
+        "netdiscover": "Active/passive ARP reconnaissance",
+        # Utilities
+        "hping3": "TCP/IP packet assembler/analyzer",
+        "socat": "Multipurpose relay (SOcket CAT)",
+        "proxychains4": "Force any TCP connection through proxy",
+        "sslscan": "SSL/TLS scanner",
+        # Frameworks and cracking
         "metasploit": "Penetration testing framework",
-        "tcpdump": "Network packet capture",
+        "msfvenom": "Payload generator for Metasploit",
+        "john": "John the Ripper password cracker",
+        # Networking suites
         "iproute2": "Provides modern networking tools (ip, ss, tc, etc.)",
         "net-tools": "Provides classic networking utilities (netstat, ifconfig, route, etc.)",
+        # Basics
+        "netcat": "Network utility for reading/writing data",
+        "curl": "HTTP client for web requests",
+        "tcpdump": "Network packet capture",
+    }
+
+    # Map tool names to their checkable binary names
+    tool_commands = {
+        "metasploit": "msfconsole",
+        "msfvenom": "msfvenom",
+        "iproute2": "ip",
+        "net-tools": "netstat",
+        # Explicit binary names for GUI scanners
+        "zaproxy": "zaproxy",
+        "burpsuite": "burpsuite",
+        # New security tools
+        "clairvoyance": "clairvoyance",
+        "graphql-inspector": "graphql-inspector",
+        "jwt-tool": "jwt-tool",
+        "jwt-decode": "jwt-decode",
+        "tplmap": "tplmap",
+        "cookiecutter": "cookiecutter",
     }
 
     available_tools = []
 
-    # Check existing tools using subprocess for security
+    # Check existing tools using shutil.which
     for tool_name, description in cyber_tools.items():
-        tool_commands = {
-            "metasploit": "msfconsole",
-            "iproute2": "ip",
-            "net-tools": "netstat",
-        }
-        check_cmd = ["which", tool_commands.get(tool_name, tool_name)]
-        try:
-            subprocess.run(check_cmd, capture_output=True, check=True, timeout=5)
-            available_tools.append(tool_name)
-            print("  %s✓%s %-12s - %s" % (Colors.GREEN, Colors.RESET, tool_name, description))
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-            FileNotFoundError,
-        ):
-            print(
-                "  %s○%s %-12s - %s %s(not available)%s"
-                % (
-                    Colors.YELLOW,
-                    Colors.RESET,
-                    tool_name,
-                    description,
-                    Colors.DIM,
-                    Colors.RESET,
-                )
-            )
+        binary = tool_commands.get(tool_name, tool_name)
+        tool_path = shutil.which(binary)
+        is_available = tool_path is not None
 
-    print(
-        "\n%s[+] Environment ready. %d cyber tools available.%s\n" % (Colors.GREEN, len(available_tools), Colors.RESET)
-    )
+        if is_available:
+            available_tools.append(tool_name)
+            print_status(f"✓ {tool_name:<12} - {description}", "SUCCESS")
+
+            # Emit structured event for React UI
+            tool_event = {
+                "type": "tool_available",
+                "timestamp": datetime.now().isoformat(),
+                "tool_name": tool_name,
+                "description": description,
+                "status": "available",
+                "binary": binary,
+                "path": tool_path,
+            }
+            print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
+        else:
+            print_status(f"○ {tool_name:<12} - {description} (not available)", "WARNING")
+
+            # Emit structured event for React UI
+            tool_event = {
+                "type": "tool_unavailable",
+                "timestamp": datetime.now().isoformat(),
+                "tool_name": tool_name,
+                "description": description,
+                "status": "unavailable",
+                "binary": binary,
+                "path": None,
+            }
+            print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
+
+    print_status(f"Environment ready. {len(available_tools)} cyber tools available.", "SUCCESS")
+
+    # Emit environment ready event
+    env_ready_event = {
+        "type": "environment_ready",
+        "timestamp": datetime.now().isoformat(),
+        "available_tools": available_tools,
+        "tool_count": len(available_tools),
+        "message": f"Environment ready with {len(available_tools)} cybersecurity tools",
+    }
+    print(f"__CYBER_EVENT__{json.dumps(env_ready_event)}__CYBER_EVENT_END__")
     return available_tools
 
 
@@ -219,22 +344,33 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     sys.stdout = TeeOutput(sys.stdout, log_file)
     sys.stderr = TeeOutput(sys.stderr, log_file)
 
+    # Register cleanup handler to ensure log files are properly closed
+    def cleanup_tee_outputs():
+        if isinstance(sys.stdout, TeeOutput):
+            sys.stdout.close()
+            sys.stdout = sys.__stdout__
+        if isinstance(sys.stderr, TeeOutput):
+            sys.stderr.close()
+            sys.stderr = sys.__stderr__
+
+    atexit.register(cleanup_tee_outputs)
+
     # Traditional logger setup for structured logging
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
-    # File handler - log everything to file
+    # File handler - log INFO and above to file
     file_handler = logging.FileHandler(log_file, mode="a")
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatter)
 
     # Console handler - only show warnings and above unless verbose
     console_handler = logging.StreamHandler(sys.__stdout__)  # Use original stdout
-    console_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    console_handler.setLevel(logging.INFO if verbose else logging.WARNING)
     console_handler.setFormatter(formatter)
 
     # Configure the logger specifically
     cyber_logger = logging.getLogger("CyberAutoAgent")
-    cyber_logger.setLevel(logging.DEBUG)
+    cyber_logger.setLevel(logging.INFO)
     cyber_logger.addHandler(file_handler)
     if verbose:
         cyber_logger.addHandler(console_handler)
@@ -251,5 +387,10 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     root_file_handler.setLevel(logging.INFO)
     root_file_handler.setFormatter(formatter)
     root_logger.addHandler(root_file_handler)
+
+    # Suppress verbose AWS credential detection messages
+    logging.getLogger("boto3").setLevel(logging.WARNING)
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     return cyber_logger

@@ -95,7 +95,7 @@ docker run --rm \
 
 ## Evaluation Metrics
 
-The system automatically evaluates 8 core metrics after each operation to assess cybersecurity agent performance:
+The system automatically evaluates 6 core metrics after each operation to assess cybersecurity agent performance:
 
 ### Core Metrics Overview
 
@@ -103,12 +103,10 @@ The system automatically evaluates 8 core metrics after each operation to assess
 |--------|------|------------------|--------------|--------------|
 | **Tool Selection Accuracy** | 0.0-1.0 | Strategic tool choice and sequencing | `nmap -sV` → `nikto` → `sqlmap` | Using `nmap` for SQL injection |
 | **Evidence Quality** | 0.0-1.0 | Vulnerability documentation completeness | Full exploit chain with payloads/outputs | "Found SQL injection" (no details) |
-| **Answer Relevancy** | 0.0-1.0 | Alignment with stated objectives | SQLi objective → SQLi testing | Web objective → only network scans |
-| **Context Precision** | 0.0-1.0 | Use of previous findings | Using nmap results for next tools | Repeating scans, ignoring versions |
 | **Goal Accuracy** | 0 or 1 | Binary - objective achieved | SQLi found when looking for SQLi | No findings despite thorough testing |
 | **Topic Adherence** | 0.0-1.0 | Security focus consistency | Consistent pentesting terminology | Drifting to non-security topics |
 | **Methodology Adherence** | 0.0-1.0 | Following penetration testing standards | PTES: recon→enum→exploit→report | Random testing without method |
-| **Penetration Test Quality** | 1-5 | Holistic assessment of entire operation | 5: Critical findings + remediation | 1: No findings or poor methodology |
+| **Penetration Test Quality** | 0.0-1.0 | Holistic assessment of entire operation | Critical findings with full evidence | No findings or poor methodology |
 
 ### Key Metric Details
 
@@ -116,7 +114,7 @@ The system automatically evaluates 8 core metrics after each operation to assess
 
 **Evidence Quality**: Assesses vulnerability documentation completeness. Excellent scores include full exploitation chains with URLs, payloads, outputs, and impact. Poor scores have vague statements without technical details.
 
-**Context Precision**: Measures effective use of previous findings. Excellent scores build exploits based on version numbers and use service discoveries. Poor scores ignore previous results and repeat scans.
+**Penetration Test Quality**: Comprehensive assessment requiring excellence in all areas - reconnaissance, vulnerability identification, validation, documentation, and remediation recommendations.
 
 ### Score Interpretation
 
@@ -130,7 +128,7 @@ The system automatically evaluates 8 core metrics after each operation to assess
 ### Common Score Patterns
 
 1. **High Tool Selection, Low Evidence Quality**: Agent uses correct tools but doesn't collect proper evidence → Improve memory storage after findings
-2. **Low Context Precision, High Other Scores**: Agent not leveraging previous findings effectively → Enhance memory retrieval logic
+2. **Low Methodology Adherence**: Agent skipping assessment phases → Ensure systematic progression through recon, enumeration, exploitation
 3. **Low Topic Adherence**: Agent drifting off-topic → Strengthen system prompts
 
 ## Configuration

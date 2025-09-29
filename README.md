@@ -276,7 +276,7 @@ Cyber-AutoAgent supports two model providers for maximum flexibility:
 ### Ollama Provider (Local)
 - **Best for**: Privacy, offline use, cost control, local development
 - **Requirements**: Local Ollama installation
-- **Default Models**: `llama3.2:3b` (LLM), `mxbai-embed-large` (embeddings)
+- **Default Models**: `qwen3-coder:30b-a3b-q4_K_M` (LLM), `mxbai-embed-large` (embeddings)
 - **Benefits**: No cloud dependencies, complete privacy, no API costs
 
 ### LiteLLM Provider (Universal)
@@ -368,6 +368,31 @@ LANGFUSE_ADMIN_PASSWORD=strong-password-here
 
 ### Prerequisites
 
+**System Requirements**
+- **Node.js**: Version 20+ required for React CLI interface
+- **Python**: Version 3.10+ for local installation
+- **Docker**: For containerized deployments
+- **macOS Users**: Xcode Command Line Tools required
+
+**React CLI Setup (Required for Interactive Mode)**
+```bash
+# Ensure Node.js 20+ is installed
+node --version  # Should show v20.x.x or higher
+
+# macOS users: Update Xcode tools if needed
+sudo softwareupdate --install -a
+sudo xcode-select --reset
+
+# Install React CLI dependencies
+cd src/modules/interfaces/react
+npm install
+
+# If installation fails, clear caches:
+npm cache clean --force
+rm -rf ~/.node-gyp
+npm install
+```
+
 **Bedrock Provider**
 ```bash
 # Option 1: Configure AWS credentials
@@ -417,7 +442,7 @@ curl -fsSL https://ollama.ai/install.sh | sh
 
 # Start service and pull models
 ollama serve
-ollama pull llama3.2:3b
+ollama pull qwen3-coder:30b-a3b-q4_K_M
 ollama pull mxbai-embed-large
 ```
 
@@ -456,14 +481,23 @@ cd cyber-autoagent
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install Python dependencies
 pip install -e .
+
+# Install React CLI interface
+cd src/modules/interfaces/react
+npm install
+cd ../../../..
 
 # Optional: Install security tools (non-exhaustive list)
 sudo apt install nmap nikto sqlmap gobuster  # Debian/Ubuntu
 brew install nmap nikto sqlmap gobuster      # macOS
 
-# Run
+# Run with React CLI
+cd src/modules/interfaces/react
+npm start
+
+# Or run Python directly
 python src/cyberautoagent.py \
   --target "http://testphp.vulnweb.com" \
   --objective "Comprehensive security assessment"
@@ -492,7 +526,7 @@ The unified structure organizes all artifacts under operation-specific directori
 **Optional Arguments**: 
 - `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
 - `--iterations`: Maximum tool executions before stopping, default: 100
-- `--model`: Model ID to use (default: remote=claude-sonnet, local=llama3.2:3b)
+- `--model`: Model ID to use (default: remote=claude-sonnet, local=qwen3-coder:30b-a3b-q4_K_M)
 - `--region`: AWS region for Bedrock, default: us-east-1
 - `--verbose`: Enable verbose output with detailed debug logging
 - `--confirmations`: Enable tool confirmation prompts (default: disabled)
@@ -664,6 +698,46 @@ cyber-autoagent/
 
 ### Common Issues
 
+#### React CLI Installation Issues
+
+**Node.js Version**
+```bash
+# Check Node.js version (must be 20+)
+node --version
+
+# Install Node.js 20+ via nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install 20
+nvm use 20
+```
+
+**macOS Build Errors**
+```bash
+# Update Xcode Command Line Tools
+sudo softwareupdate --install -a
+sudo xcode-select --reset
+
+# Clear npm and node-gyp caches
+npm cache clean --force
+rm -rf ~/.node-gyp
+
+# Reinstall
+cd src/modules/interfaces/react
+npm install
+```
+
+**Linux Build Errors**
+```bash
+# Install build essentials
+sudo apt-get update
+sudo apt-get install build-essential python3-dev
+
+# Clear caches and reinstall
+npm cache clean --force
+cd src/modules/interfaces/react
+npm install
+```
+
 #### AWS Credentials Not Found
 ```bash
 # Option 1: Configure AWS CLI
@@ -724,7 +798,7 @@ curl http://localhost:11434/api/version
 **Required Models Missing**
 ```bash
 # Pull required models
-ollama pull llama3.2:3b
+ollama pull qwen3-coder:30b-a3b-q4_K_M
 ollama pull mxbai-embed-large
 
 # List available models
@@ -736,7 +810,7 @@ ollama list
 # Check Ollama is accessible
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"model": "llama3.2:3b", "prompt": "test", "stream": false}'
+  -d '{"model": "qwen3-coder:30b-a3b-q4_K_M", "prompt": "test", "stream": false}'
 ```
 
 **Docker Networking (Local Mode)**
