@@ -24,6 +24,14 @@
   - Failed attempts: store("[BLOCKED] X at Y", metadata={"category": "adaptation", "retry_count": n})
   - Categories: finding|signal|decision|artifact|observation|plan|reflection
   - Memory hygiene: paths only, no large blobs
+- **prompt_optimizer**: Manage adaptive prompt overlays and optimize execution guidance.
+  - **optimize_execution**: Rewrite execution tactics based on learned patterns
+    - Remove techniques that failed 3+ times (e.g., blocked by WAF, no output)
+    - Emphasize exploit paths that succeeded
+    - Example: `prompt_optimizer(action="optimize_execution", learned_patterns="SQLi blocked by WAF, file upload works", remove_dead_ends=["sql_injection"], focus_areas=["file_upload"])`
+    - Apply when evidence stalls, plan phases pivot, or guardrail conditions require focus
+    - Keep minimal and goal-oriented (e.g., consolidate evidence, bias toward specific tools)
+    - Reset once resolved; do not spam updates
 - **Finding Storage**: Use format from EVIDENCE-BASED VALIDATION section
 - **swarm**: Parallel agents for verification and exploration
   - Format: STATE:[findings], GOAL:[objective], AVOID:[completed], FOCUS:[technique]
@@ -96,5 +104,3 @@ result = custom_exploit(target="example.com")
 - Example: swarm(task="...", agents=[...], max_iterations=8, node_timeout=1200)
 
 </critical_tool_protocols>
-
-

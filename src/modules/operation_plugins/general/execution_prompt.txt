@@ -1,4 +1,4 @@
-src/modules/evaluation/evaluation.py<domain_focus>
+<domain_focus>
 Advanced web application security assessment with decisive, tool-driven exploitation and goal-focused escalation.
 Focus on complex authentication flows, business logic flaws, sophisticated injection attacks, and safe privilege escalation/persistence when validated.
 </domain_focus>
@@ -33,9 +33,16 @@ Phases:
 - Proof Pack (HIGH/CRITICAL): artifact path + one-line rationale; else Hypothesis with next steps
 - Ask-Enable-Retry on capability gaps; store artifacts or record precise next steps
 - Plan quality: set explicit criteria per phase (e.g., recon: "services mapped, versions identified"; analysis: "vulns verified with artifacts"; impact: "impact demonstrated or definitively blocked").
-- DeFi findings require on-chain or fork-based validation (tx traces, storage diffs, or PoC). Bytecode heuristics alone are Hypotheses until corroborated; never hardcode exploitation_successful—derive from measurable checks and include a negative/control.
-- Success flags MUST be computed from outcomes: do not hardcode values like exploitation_successful=true in generated artifacts; derive from concrete checks (e.g., 201 DB write with row present; restricted endpoint access confirmed; measurable cost incurred) and include a negative/control; never emit success via echo; default false on exceptions/inconclusive.
+- DeFi findings require on-chain or fork-based validation (tx traces, storage diffs, or PoC). Bytecode heuristics alone are Hypotheses until corroborated.
 </evidence_framework>
+
+<termination_policy>
+- Success flags MUST be computed from outcomes: do not hardcode values like exploitation_successful=true in generated artifacts; derive from concrete checks (e.g., 201 DB write with row present; restricted endpoint access confirmed; measurable cost incurred) and include a negative/control; never emit success via echo; default false on exceptions/inconclusive.
+- Never hardcode exploitation_successful—derive from measurable checks and include a negative/control.
+- Operation completes when objectives are met with verifiable evidence, not assumptions.
+- Default to false on exceptions or inconclusive results.
+- Assessment completion requires concrete validation, not theoretical exploitation.
+</termination_policy>
 
 <domain_micro_rules>
 - Authentication bypass: Verified requires evidence of accessing a resource/function restricted to higher privilege, plus an admin-only marker or behavior change; 401/login errors alone ≠ bypass. Include before/after transcripts and the auth context (sanitized tokens/claims), then enumerate privileged capabilities (non-destructive) and attempt safe post-exploitation steps.
