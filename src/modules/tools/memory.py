@@ -194,6 +194,20 @@ class Mem0ServiceClient:
     """
 
     @staticmethod
+    def _normalise_results_list(payload: Any) -> List[Dict[str, Any]]:
+        """Best-effort conversion of Mem0 responses to a list of memory dicts."""
+        if payload is None:
+            return []
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            for key in ("results", "memories", "data"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return value
+        return []
+
+    @staticmethod
     def get_default_config(server: str = "bedrock") -> Dict:
         """Get default configuration from ConfigManager."""
         config_manager = get_config_manager()
@@ -473,7 +487,117 @@ class Mem0ServiceClient:
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
-        return self.mem0.search(query=query, user_id=user_id, agent_id=agent_id)
+        # Delegate to the compatibility search helper for normalized results
+        return self.search(
+            query=query,
+            filters=None,
+            limit=20,
+            user_id=user_id or "cyber_agent",
+            agent_id=agent_id,
+        )
+
+    def search(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 20,
+        *,
+        user_id: str = "cyber_agent",
+        agent_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Compatibility wrapper providing Mem0-style search with filter support."""
+
+        filters = filters or {}
+        top_k = max(int(limit or 20), 1)
+
+        def _coerce_entry(entry: Any) -> Dict[str, Any]:
+            """Ensure every entry behaves like a memory dict."""
+            if isinstance(entry, dict):
+                return entry
+            if isinstance(entry, str):
+                return {"memory": entry, "metadata": {}}
+            if entry is None:
+                return {"memory": "", "metadata": {}}
+            # Fallback stringify for unexpected types (lists/tuples/etc.)
+            try:
+                text = json.dumps(entry) if isinstance(entry, (list, tuple, set)) else str(entry)
+            except Exception:  # pragma: no cover - defensive conversion
+                text = str(entry)
+            return {"memory": text, "metadata": {}}
+
+        # Try native Mem0 search first (covers FAISS/OpenSearch/Platform backends)
+        if hasattr(self.mem0, "search"):
+            search_kwargs: Dict[str, Any] = {"user_id": user_id}
+            if agent_id:
+                search_kwargs["agent_id"] = agent_id
+            if filters:
+                search_kwargs["metadata"] = filters
+
+            for size_kw in ("top_k", "limit"):
+                try:
+                    search_kwargs[size_kw] = top_k
+                    results = self.mem0.search(query=query, **search_kwargs)
+                    normalised = self._normalise_results_list(results)
+                    if normalised:
+                        coerced = [_coerce_entry(entry) for entry in normalised]
+                        return coerced[:top_k]
+                    if isinstance(results, list):
+                        coerced = [_coerce_entry(entry) for entry in results]
+                        return coerced[:top_k]
+                except TypeError:
+                    search_kwargs.pop(size_kw, None)
+                except Exception as exc:  # pragma: no cover - backend specific
+                    logger.debug("Native Mem0 search failed (%s): %s", size_kw, exc)
+                    break
+
+        # Fallback: list memories and apply lightweight filtering locally
+        try:
+            all_memories = self.list_memories(user_id=user_id, agent_id=agent_id)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.warning("Fallback memory listing failed during search: %s", exc)
+            return []
+
+        raw_entries = self._normalise_results_list(all_memories)
+        if not raw_entries and isinstance(all_memories, list):
+            raw_entries = all_memories
+
+        raw_entries = [_coerce_entry(entry) for entry in raw_entries]
+
+        def _matches_filters(entry: Dict[str, Any]) -> bool:
+            metadata = entry.get("metadata", {}) or {}
+            for key, value in filters.items():
+                if str(metadata.get(key)) != str(value):
+                    return False
+            return True
+
+        if query:
+            terms = [term.lower() for term in re.split(r"\s+", query) if term]
+        else:
+            terms = []
+
+        results: List[Dict[str, Any]] = []
+        for entry in raw_entries:
+            if filters and not _matches_filters(entry):
+                continue
+
+            if terms:
+                text = " ".join(
+                    str(part)
+                    for part in (
+                        entry.get("memory"),
+                        entry.get("content"),
+                        json.dumps(entry.get("metadata", {}), default=str),
+                    )
+                    if part
+                ).lower()
+                if not all(term in text for term in terms):
+                    continue
+
+            results.append(entry)
+            if len(results) >= top_k:
+                break
+
+        return results
 
     def delete_memory(self, memory_id: str):
         """Delete a memory by ID."""

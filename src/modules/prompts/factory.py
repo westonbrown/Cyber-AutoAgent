@@ -46,6 +46,8 @@ _LF_TEMPLATE_TO_NAME = {
     "report_generation_prompt.md": "cyber/report/report_generation_prompt",
 }
 
+OVERLAY_FILENAME = "adaptive_prompt.json"
+
 
 def _lf_env_true(name: str) -> bool:
     return os.getenv(name, "false").lower() == "true"
@@ -210,6 +212,41 @@ def _lf_resolve_template_text(template_name: str) -> str:
         except Exception:
             return ""
     return ""
+
+
+def _get_overlay_file(
+    output_config: Optional[Dict[str, Any]], operation_id: str
+) -> Optional[Path]:
+    """Return path to the adaptive overlay file for an operation."""
+
+    if not isinstance(output_config, dict):
+        return None
+
+    base_dir = output_config.get("base_dir")
+    target_name = output_config.get("target_name")
+
+    if not base_dir or not target_name or not operation_id:
+        return None
+
+    return Path(base_dir) / target_name / operation_id / OVERLAY_FILENAME
+
+
+def _load_overlay_json(path: Path) -> Optional[Dict[str, Any]]:
+    """Load overlay JSON if it exists."""
+
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        logger.warning("Overlay file at %s is invalid JSON; removing", path)
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    except OSError as exc:
+        logger.debug("Unable to read overlay file %s: %s", path, exc)
+    return None
 
 
 def _lf_module_prompt_name(module_name: str, kind: str) -> str:
@@ -413,6 +450,85 @@ def get_memory_context_guidance(
 # --- Core System Prompt Builders (minimal, robust) ---
 
 
+def _format_overlay_directives(payload: Any) -> List[str]:
+    directives: List[str] = []
+    if isinstance(payload, dict):
+        raw_directives = payload.get("directives")
+        if isinstance(raw_directives, list):
+            directives.extend(str(item).strip() for item in raw_directives if str(item).strip())
+        for key, value in payload.items():
+            if key == "directives":
+                continue
+            if isinstance(value, (str, int, float)):
+                directives.append(f"{key}: {value}")
+            else:
+                try:
+                    directives.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
+                except (TypeError, ValueError):
+                    directives.append(f"{key}: {value}")
+    elif isinstance(payload, list):
+        directives.extend(str(item).strip() for item in payload if str(item).strip())
+    elif payload is not None:
+        directives.append(str(payload))
+    return directives
+
+
+def _render_overlay_block(
+    output_config: Optional[Dict[str, Any]],
+    operation_id: str,
+    current_step: int,
+) -> str:
+    overlay_path = _get_overlay_file(output_config, operation_id)
+    if not overlay_path:
+        return ""
+
+    overlay_data = _load_overlay_json(overlay_path)
+    if not overlay_data:
+        return ""
+
+    expires_after = overlay_data.get("expires_after_steps")
+    applied_step = overlay_data.get("current_step")
+
+    try:
+        if (
+            isinstance(expires_after, int)
+            and expires_after > 0
+            and isinstance(applied_step, int)
+            and current_step >= applied_step + expires_after
+        ):
+            overlay_path.unlink(missing_ok=True)
+            return ""
+    except Exception:
+        pass
+
+    directives = _format_overlay_directives(overlay_data.get("payload"))
+    note = overlay_data.get("note")
+    if note and not directives:
+        directives.append(str(note))
+
+    header_meta: List[str] = []
+    if overlay_data.get("origin"):
+        header_meta.append(f"origin={overlay_data['origin']}")
+    if overlay_data.get("reviewer"):
+        header_meta.append(f"reviewer={overlay_data['reviewer']}")
+    if isinstance(applied_step, int):
+        header_meta.append(f"applied_step={applied_step}")
+    if isinstance(expires_after, int):
+        header_meta.append(f"expires_after_steps={expires_after}")
+
+    title = "## ADAPTIVE DIRECTIVES"
+    if header_meta:
+        title += " (" + ", ".join(header_meta) + ")"
+
+    block_lines = [title]
+    if directives:
+        block_lines.extend(f"- {line}" for line in directives)
+    else:
+        block_lines.append("- Adaptive overlay active")
+
+    return "\n".join(block_lines)
+
+
 def get_system_prompt(
     target: str,
     objective: str,
@@ -475,7 +591,7 @@ def get_system_prompt(
         parts.append(f"Base directory: {base_dir}")
         parts.append(f"Target: {target_name}")
         parts.append(f"Target organization: {base_dir.rstrip('/')}/{target_name}/")
-        if tools_path:
+        if isinstance(tools_path, str) and tools_path:
             rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
             parts.append(f"Operation tools directory: {rel_tools}")
         parts.append("Evidence and logs will be stored under a unified operation path.")
@@ -503,6 +619,10 @@ def get_system_prompt(
             parts.append(f"⚠️ CHECKPOINT DUE: get_plan in {_steps_until} steps to evaluate phase criteria and update if satisfied")
     except Exception:
         pass
+
+    overlay_block = _render_overlay_block(output_config, operation_id, current_step)
+    if overlay_block:
+        parts.append(overlay_block)
 
     # Append explicit planning and reflection block from template if available
     try:
@@ -593,10 +713,16 @@ class ModulePromptLoader:
         self.last_loaded_execution_prompt_source: Optional[str] = None
         self.last_loaded_report_prompt_source: Optional[str] = None
 
-    def load_module_execution_prompt(self, module_name: str) -> str:
+    def load_module_execution_prompt(
+        self,
+        module_name: str,
+        operation_root: Optional[str] = None
+    ) -> str:
         """Load a module-specific execution prompt if available.
 
         Order of resolution:
+        0) Operation-specific optimized version (if operation_root provided):
+           <operation_root>/execution_prompt_optimized.txt
         1) Langfuse-managed module prompt (when enabled): cyber/module/<module>/execution_prompt
            - If missing remotely, seed from local file if present
         2) Local file under operation_plugins/<module>/execution_prompt.(md|txt)
@@ -606,7 +732,21 @@ class ModulePromptLoader:
         # Reset tracker
         self.last_loaded_execution_prompt_source = None
 
-        # 0) Try Langfuse remote first when enabled
+        # 0) Check for operation-specific optimized version FIRST
+        if operation_root:
+            try:
+                optimized_path = Path(operation_root) / "execution_prompt_optimized.txt"
+                if optimized_path.exists() and optimized_path.is_file():
+                    content = optimized_path.read_text(encoding="utf-8").strip()
+                    if content:
+                        self.last_loaded_execution_prompt_source = f"optimized:{optimized_path}"
+                        logger.debug("Loaded optimized execution prompt from %s", optimized_path)
+                        return content
+            except Exception as e:
+                logger.debug("Failed to load optimized execution prompt: %s", e)
+                # Continue to fallback options
+
+        # 1) Try Langfuse remote first when enabled
         if _lf_enabled():
             try:
                 rname = _lf_module_prompt_name(module_name, "execution")
@@ -619,7 +759,7 @@ class ModulePromptLoader:
                 # continue to local resolution
                 pass
 
-        # 1) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
+        # 2) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
         local_candidate: Optional[Path] = None
         try:
             for fname in ("execution_prompt.md", "execution_prompt.txt"):
@@ -648,15 +788,15 @@ class ModulePromptLoader:
                 # Seeding failed; fall through to local return
                 pass
 
-        # 2) Local candidate return
+        # 3) Local candidate return
         if local_candidate is not None:
             try:
                 self.last_loaded_execution_prompt_source = str(local_candidate)
                 return local_candidate.read_text(encoding="utf-8").strip()
             except Exception:
                 pass
-        
-        # 3) Fallback to templates directory candidates
+
+        # 4) Fallback to templates directory candidates
         candidates = [
             f"{module_name}_execution_prompt.md",
             f"module_{module_name}_execution_prompt.md",

@@ -642,12 +642,16 @@ class ConfigManager:
         server: str,
         target_name: str,
         operation_id: str,
+        module: str = "general",
         **overrides,
     ) -> Dict[str, str]:
         """Ensure operation output directories exist (root and artifacts).
 
         Creates ./outputs/<target>/<operation_id>/ and ./outputs/<target>/<operation_id>/artifacts
         using the configured base_dir. Safe to call multiple times.
+
+        Also copies master execution_prompt.txt to execution_prompt_optimized.txt for
+        agent-driven prompt optimization.
         """
         root = self.get_unified_output_path(server, target_name, operation_id, "", **overrides)
         artifacts = self.get_unified_output_path(server, target_name, operation_id, "artifacts", **overrides)
@@ -656,9 +660,79 @@ class ConfigManager:
             os.makedirs(root, exist_ok=True)
             os.makedirs(artifacts, exist_ok=True)
             os.makedirs(tools, exist_ok=True)
+
+            # Copy master execution prompt to operation folder for optimization
+            self._copy_execution_prompt(root, module)
+
         except Exception as e:
             logger.debug("ensure_operation_output_dirs: could not create dirs: %s", e)
         return {"root": root, "artifacts": artifacts, "tools": tools}
+
+    def _copy_execution_prompt(self, operation_root: str, module: str) -> None:
+        """Copy master execution prompt to operation folder if not already present.
+
+        Args:
+            operation_root: Root directory of the operation
+            module: Module name (e.g., 'general', 'ctf')
+        """
+        import shutil
+        from pathlib import Path
+
+        optimized_path = Path(operation_root) / "execution_prompt_optimized.txt"
+
+        # If optimized prompt already exists and has meaningful content, keep it
+        if optimized_path.exists():
+            file_size = optimized_path.stat().st_size
+            if file_size > 100:  # Anything over 100 bytes is likely real content
+                logger.debug("Execution prompt already exists at %s (size: %d bytes)",
+                            optimized_path, file_size)
+                return
+
+        # Use the existing ModulePromptLoader to get correct paths
+        from modules.prompts import get_module_loader
+
+        module_loader = get_module_loader()
+
+        # Try to find the execution prompt file using the loader's plugins directory
+        master_path = None
+        for fname in ("execution_prompt.txt", "execution_prompt.md"):
+            candidate = module_loader.plugins_dir / module / fname
+            if candidate.exists() and candidate.is_file():
+                master_path = candidate
+                break
+
+        # If module-specific prompt not found and not already trying general, fall back
+        if master_path is None and module != "general":
+            logger.warning("Module %s execution prompt not found, falling back to general", module)
+            for fname in ("execution_prompt.txt", "execution_prompt.md"):
+                candidate = module_loader.plugins_dir / "general" / fname
+                if candidate.exists() and candidate.is_file():
+                    master_path = candidate
+                    break
+
+        if master_path is None or not master_path.exists():
+            logger.error("No execution prompt found for module %s", module)
+            # Create a minimal prompt instead of failing silently
+            optimized_path.write_text(f"# {module.upper()} Module Execution Prompt\n# No master prompt found - using minimal template\n")
+            return
+
+        # Check if master file has meaningful content
+        master_size = master_path.stat().st_size
+        if master_size < 100:  # Less than 100 bytes is likely a placeholder
+            logger.error("Master execution prompt at %s appears to be empty or placeholder (size: %d bytes)",
+                        master_path, master_size)
+            # Create a minimal template instead
+            optimized_path.write_text(f"# {module.upper()} Module Execution Prompt\n"
+                                    f"# Master prompt appears empty - using minimal template\n")
+            return
+
+        try:
+            # Use shutil.copy() instead of copy2() to avoid preserving timestamps
+            # This ensures file modification time reflects when it was actually copied
+            shutil.copy(master_path, optimized_path)
+            logger.info("Copied master execution prompt from %s to %s", master_path, optimized_path)
+        except Exception as e:
+            logger.error("Failed to copy execution prompt: %s", e)
 
     def get_unified_memory_path(self, server: str, target_name: str, **overrides) -> str:
         """Get unified memory path for target.

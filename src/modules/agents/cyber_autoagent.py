@@ -23,6 +23,7 @@ from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
 from modules.handlers.utils import print_status, sanitize_target_name
 from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
+from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -371,11 +372,25 @@ def create_agent(
 
     # Ensure unified output directories (root + artifacts + tools) exist before any tools run
     try:
-        paths = config_manager.ensure_operation_output_dirs(config.provider, target_name, operation_id)
+        paths = config_manager.ensure_operation_output_dirs(
+            config.provider, target_name, operation_id, module=config.module
+        )
         print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
     except Exception:
         # Non-fatal: proceed even if directory creation logs an error
         pass
+
+    try:
+        if paths:
+            root_path = paths.get("root")
+            if isinstance(root_path, str) and root_path:
+                os.environ["CYBER_OPERATION_ROOT"] = root_path
+            if operation_id:
+                os.environ["CYBER_OPERATION_ID"] = operation_id
+            if target_name:
+                os.environ["CYBER_TARGET_NAME"] = target_name
+    except Exception:
+        logger.debug("Unable to set overlay environment context", exc_info=True)
 
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
@@ -509,7 +524,11 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     module_execution_prompt = None
     try:
         module_loader = prompts.get_module_loader()
-        module_execution_prompt = module_loader.load_module_execution_prompt(config.module)
+        # Pass operation root to enable loading optimized execution prompt
+        operation_root_path = paths.get("root") if paths else None
+        module_execution_prompt = module_loader.load_module_execution_prompt(
+            config.module, operation_root=operation_root_path
+        )
         if module_execution_prompt:
             print_status(f"Loaded module-specific execution prompt for '{config.module}'", "SUCCESS")
         else:
@@ -710,7 +729,23 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
     # Use the same emitter as the callback handler for consistency
     react_hooks = ReactHooks(emitter=callback_handler.emitter, operation_id=operation_id)
-    hooks = [react_hooks]
+
+    # Create prompt rebuild hook for intelligent prompt updates
+    from modules.handlers.prompt_rebuild_hook import PromptRebuildHook
+
+    prompt_rebuild_hook = PromptRebuildHook(
+        callback_handler=callback_handler,
+        memory_instance=memory_client,
+        config=config,
+        target=config.target,
+        objective=config.objective,
+        operation_id=operation_id,
+        max_steps=config.max_steps,
+        module=config.module,
+        rebuild_interval=20,  # Rebuild every 20 steps
+    )
+
+    hooks = [react_hooks, prompt_rebuild_hook]
 
     # Create model based on provider type
     try:
@@ -741,6 +776,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         editor,
         load_tool,
         mem0_memory,
+        prompt_optimizer,
         stop,
         http_request,
         python_repl,
