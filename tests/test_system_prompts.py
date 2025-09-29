@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import sys
 
@@ -122,6 +123,65 @@ class TestGetSystemPrompt:
 
         assert "OUTPUT DIRECTORY STRUCTURE" in prompt
         assert "/custom/output" in prompt
+
+    def test_get_system_prompt_with_overlay_block(self, tmp_path):
+        """Overlay file should render adaptive directives block."""
+        output_config = {
+            "base_dir": str(tmp_path),
+            "target_name": "test_target",
+        }
+        operation_id = "OP_20250101_000000"
+        overlay_dir = tmp_path / "test_target" / operation_id
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        overlay_payload = {
+            "version": 1,
+            "origin": "agent_reflection",
+            "current_step": 12,
+            "payload": {"directives": ["Focus on consolidation"]},
+        }
+        (overlay_dir / "adaptive_prompt.json").write_text(json.dumps(overlay_payload), encoding="utf-8")
+
+        prompt = get_system_prompt(
+            target="test.com",
+            objective="test objective",
+            max_steps=100,
+            operation_id=operation_id,
+            output_config=output_config,
+            current_step=20,
+        )
+
+        assert "## ADAPTIVE DIRECTIVES" in prompt
+        assert "Focus on consolidation" in prompt
+
+    def test_overlay_expires_after_steps(self, tmp_path):
+        output_config = {
+            "base_dir": str(tmp_path),
+            "target_name": "test_target",
+        }
+        operation_id = "OP_20250101_000000"
+        overlay_dir = tmp_path / "test_target" / operation_id
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        overlay_payload = {
+            "version": 1,
+            "origin": "agent_reflection",
+            "current_step": 5,
+            "expires_after_steps": 3,
+            "payload": {"directives": ["Temporary directive"]},
+        }
+        overlay_file = overlay_dir / "adaptive_prompt.json"
+        overlay_file.write_text(json.dumps(overlay_payload), encoding="utf-8")
+
+        prompt = get_system_prompt(
+            target="test.com",
+            objective="test objective",
+            max_steps=100,
+            operation_id=operation_id,
+            output_config=output_config,
+            current_step=10,
+        )
+
+        assert "ADAPTIVE DIRECTIVES" not in prompt
+        assert not overlay_file.exists()
 
     def test_get_system_prompt_different_servers(self):
         """Test system prompt generation for different server types"""
