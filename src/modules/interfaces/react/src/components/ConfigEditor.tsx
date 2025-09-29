@@ -146,6 +146,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   
   // Use ref to track timeout for cleanup
   const messageTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const messageIdRef = React.useRef(0);
+  const messagePriorityRef = React.useRef(-1);
+  const messageLockRef = React.useRef(0);
   
   // Use ref for handleSave to avoid stale closure issues
   const handleSaveRef = React.useRef<(() => void) | undefined>(undefined);
@@ -164,6 +167,36 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
     };
   }, []);
+
+  const showMessage = useCallback((text: string, type: 'success' | 'error' | 'info', ttl = 3000) => {
+    const priority = type === 'error' ? 2 : type === 'success' ? 1 : 0;
+    const now = Date.now();
+    if (messageLockRef.current > now && priority <= messagePriorityRef.current) {
+      return;
+    }
+    if (messagePriorityRef.current > priority) {
+      return;
+    }
+    if (messageTimeoutRef.current) {
+      clearTimeout(messageTimeoutRef.current);
+      messageTimeoutRef.current = null;
+    }
+    const nextId = messageIdRef.current + 1;
+    messageIdRef.current = nextId;
+    setMessage({ text, type });
+    messagePriorityRef.current = priority;
+    messageLockRef.current = ttl > 0 ? now + ttl : 0;
+    if (ttl > 0) {
+      messageTimeoutRef.current = setTimeout(() => {
+        if (messageIdRef.current === nextId) {
+          setMessage(null);
+          messageTimeoutRef.current = null;
+          messagePriorityRef.current = -1;
+          messageLockRef.current = 0;
+        }
+      }, ttl);
+    }
+  }, []);
   
   // Auto-adjust observability and evaluation based on deployment mode
   useEffect(() => {
@@ -174,15 +207,15 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       // Only update if not explicitly set by user (check if still at default true values)
       if (config.observability === true && !config.langfuseHostOverride) {
         updateConfig({ observability: false });
-        setMessage({ text: 'Observability disabled for local/single-container mode', type: 'info' });
+        showMessage('Observability disabled for local/single-container mode', 'info');
       }
       if (config.autoEvaluation === true) {
         updateConfig({ autoEvaluation: false });
-        setMessage({ text: 'Auto-evaluation disabled for local/single-container mode', type: 'info' });
+        showMessage('Auto-evaluation disabled for local/single-container mode', 'info');
       }
     }
     // For full-stack, these can remain enabled (user can still toggle)
-  }, [config.deploymentMode]);
+  }, [config.deploymentMode, updateConfig, showMessage]);
   
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
@@ -250,44 +283,22 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   const handleSave = useCallback(() => {
     // Clear any existing message timeout
-    if (messageTimeoutRef.current) {
-      clearTimeout(messageTimeoutRef.current);
-      messageTimeoutRef.current = null;
-    }
-    
-    // Show saving message
-    setMessage({ text: 'Saving configuration...', type: 'info' });
-    
-    // Do the ACTUAL save immediately (but don't update any state yet)
-    saveConfig().then(() => {
-      // After save succeeds, wait 2 seconds then update message and state
-      setTimeout(() => {
+    showMessage('Saving configuration...', 'info', 0);
+
+    (async () => {
+      try {
+        await saveConfig();
+
         const timestamp = new Date().toLocaleTimeString();
-        setMessage({ text: `Configuration saved at ${timestamp}`, type: 'success' });
-        
-        // NOW update the other state
+        showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
         updateConfig({ isConfigured: true });
         setUnsavedChanges(false);
-        
-        // Clear message after another 3 seconds
-        messageTimeoutRef.current = setTimeout(() => {
-          setMessage(null);
-          messageTimeoutRef.current = null;
-        }, 3000);
-      }, 2000);
-    }).catch((error) => {
-      // On error, show error message
-      setTimeout(() => {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        setMessage({ text: `Save failed: ${errorMessage}`, type: 'error' });
-        
-        messageTimeoutRef.current = setTimeout(() => {
-          setMessage(null);
-          messageTimeoutRef.current = null;
-        }, 5000);
-      }, 1000);
-    });
-  }, [saveConfig, updateConfig]);
+        showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
+      }
+    })();
+  }, [saveConfig, updateConfig, showMessage]);
   
   // Store handleSave in ref to avoid stale closures
   React.useEffect(() => {
@@ -320,12 +331,12 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         const now = Date.now();
         const withinWindow = lastEscTime && now - lastEscTime < 1200;
         if (unsavedChanges) {
-          setMessage({ text: 'Unsaved changes. Press Ctrl+S to save or Esc twice to exit without saving.', type: 'info' });
+          showMessage('Unsaved changes. Press Ctrl+S to save or Esc twice to exit without saving.', 'info');
           setLastEscTime(now);
         } else if (withinWindow) {
           onClose();
         } else {
-          setMessage({ text: 'Press Esc again to exit', type: 'info' });
+          showMessage('Press Esc again to exit', 'info');
           setLastEscTime(now);
         }
       }
@@ -371,7 +382,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
     }
     
-    if (key.ctrl && input === 's') {
+    if ((key.ctrl || key.meta) && (input?.toLowerCase?.() === 's')) {
+      showMessage('Saving configuration...', 'info', 0);
       handleSaveRef.current?.();
       return;
     }
@@ -399,8 +411,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   // Separate input handler for when editing to handle Ctrl+S and Ctrl+V
   useInput((input, key) => {
-    // Handle Ctrl+S for save
-    if (key.ctrl && input === 's') {
+    // Handle Ctrl/Cmd+S for save
+    if ((key.ctrl || key.meta) && (input?.toLowerCase?.() === 's')) {
       // Save the current editing value first
       if (editingField && tempValue) {
         const field = getCurrentSectionFields().find(f => f.key === editingField.field);
@@ -419,6 +431,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
       setEditingField(null);
       setTempValue('');
+      showMessage('Saving configuration...', 'info', 0);
       handleSaveRef.current?.();
       // Prevent the 's' from being added to the input
       return;
@@ -501,7 +514,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       
       updateConfig(updates);
       setUnsavedChanges(true);
-      setMessage({ text: `Switched to ${value} provider with default models`, type: 'info' });
+      showMessage(`Switched to ${value} provider with default models`, 'info');
       return;
     }
     
@@ -511,7 +524,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       const currentModelId = config.modelId;
       
       if (!currentModelId) {
-        setMessage({ text: 'No model selected to configure pricing', type: 'error' });
+        showMessage('No model selected to configure pricing', 'error');
         return;
       }
       
@@ -564,21 +577,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const startEditing = useCallback((field: ConfigField) => {
     // Prevent editing of read-only fields
     if (field.key === 'modelPricingInfo') {
-      setMessage({
-        text: 'Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"',
-        type: 'info'
-      });
-
-      // Clear existing timeout if any
-      if (messageTimeoutRef.current) {
-        clearTimeout(messageTimeoutRef.current);
-      }
-
-      // Set new timeout with cleanup
-      messageTimeoutRef.current = setTimeout(() => {
-        setMessage(null);
-        messageTimeoutRef.current = null;
-      }, 3000);
+      showMessage('Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"', 'info');
       return;
     }
 
@@ -605,18 +604,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       setTempValue('');
       if (currentValue) {
         // Show brief message that field is cleared for re-entry
-        setMessage({
-          text: 'Field cleared. Enter or paste new value (Cmd+V on Mac)',
-          type: 'info'
-        });
-        // Clear message after 2 seconds
-        if (messageTimeoutRef.current) {
-          clearTimeout(messageTimeoutRef.current);
-        }
-        messageTimeoutRef.current = setTimeout(() => {
-          setMessage(null);
-          messageTimeoutRef.current = null;
-        }, 2000);
+        showMessage('Field cleared. Enter or paste new value (Cmd+V on Mac)', 'info', 2000);
       }
     } else if (field.type === 'number') {
       setTempValue(String(currentValue || 0));
@@ -704,7 +692,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         }
         paddingX={1}
         marginBottom={1}
-        width="100%"
       >
         <Text 
           bold
@@ -780,29 +767,37 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
                     
                     return (
                       <Box key={field.key} marginY={0.25}>
-                        <Box width="40%">
-                          <Text 
-                            bold={isFieldSelected}
-                            color={isFieldSelected ? theme.accent : theme.muted}
-                          >
-                            {isFieldSelected ? '▸ ' : '  '}{field.label}:
-                            {field.required && <Text color={theme.danger}> *</Text>}
-                          </Text>
-                        </Box>
-                        <Box width="60%">
-                          {isEditing ? renderEditingField(field) : (
-                            <Text 
-                              bold={isFieldSelected}
-                              color={
-                                getValue(field.key) === 'Not set' ? theme.muted : 
-                                field.type === 'boolean' && getValue(field.key) === 'Enabled' ? theme.success :
-                                isFieldSelected ? theme.foreground : theme.primary
-                              }
-                            >
-                              {getValue(field.key)}
-                            </Text>
-                          )}
-                        </Box>
+                        {(() => {
+                          const cols = (() => { try { return Math.max(40, Math.min(Number((process as any)?.stdout?.columns || 80), 200)); } catch { return 80; } })();
+                          const labelWidth = Math.max(20, Math.min(48, Math.floor(cols * 0.38)));
+                          return (
+                            <>
+                              <Box width={labelWidth}>
+                                <Text 
+                                  bold={isFieldSelected}
+                                  color={isFieldSelected ? theme.accent : theme.muted}
+                                >
+                                  {isFieldSelected ? '▸ ' : '  '}{field.label}:
+                                  {field.required && <Text color={theme.danger}> *</Text>}
+                                </Text>
+                              </Box>
+                              <Box flexGrow={1}>
+                                {isEditing ? renderEditingField(field) : (
+                                  <Text 
+                                    bold={isFieldSelected}
+                                    color={
+                                      getValue(field.key) === 'Not set' ? theme.muted : 
+                                      field.type === 'boolean' && getValue(field.key) === 'Enabled' ? theme.success :
+                                      isFieldSelected ? theme.foreground : theme.primary
+                                    }
+                                  >
+                                    {getValue(field.key)}
+                                  </Text>
+                                )}
+                              </Box>
+                            </>
+                          );
+                        })()}
                       </Box>
                     );
                   })}
@@ -846,17 +841,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             setTempValue('');
 
             // Brief success message
-            setMessage({
-              text: `Token saved (${cleanedValue.length} chars)`,
-              type: 'success'
-            });
-            if (messageTimeoutRef.current) {
-              clearTimeout(messageTimeoutRef.current);
-            }
-            messageTimeoutRef.current = setTimeout(() => {
-              setMessage(null);
-              messageTimeoutRef.current = null;
-            }, 2000);
+            showMessage(`Token saved (${cleanedValue.length} chars)`, 'success', 2000);
           }}
         />
       );
@@ -981,6 +966,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             }
             paddingX={1}
             marginBottom={1}
+            width="100%"
           >
             <Text 
               bold

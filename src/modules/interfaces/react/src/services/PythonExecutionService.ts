@@ -99,23 +99,17 @@ export class PythonExecutionService extends EventEmitter {
     this.projectRoot = this.resolveProjectRoot(currentDir);
     this.venvPath = path.join(this.projectRoot, '.venv');
     this.srcPath = path.join(this.projectRoot, 'src');
-    
-    // Platform-specific paths
+
+    // Platform-specific binaries inside the venv
     const isWindows = process.platform === 'win32';
     const venvBinDir = isWindows ? 'Scripts' : 'bin';
     const pythonExecutable = isWindows ? 'python.exe' : 'python';
     const pipExecutable = isWindows ? 'pip.exe' : 'pip';
-    
+
     this.pythonPath = path.join(this.venvPath, venvBinDir, pythonExecutable);
     this.pipPath = path.join(this.venvPath, venvBinDir, pipExecutable);
     this.requirementsPath = path.join(this.projectRoot, 'pyproject.toml');
-    
-    this.logger.info('[OK] PythonExecutionService initialized', {
-      projectRoot: this.projectRoot,
-      venvPath: this.venvPath,
-      pythonPath: this.pythonPath,
-      srcPath: this.srcPath
-    });
+    // Note: Python version detection is performed in checkPythonVersion(), not in the constructor
   }
 
   /**
@@ -161,9 +155,10 @@ export class PythonExecutionService extends EventEmitter {
     this.logger.warn('Could not find pyproject.toml or setup.py; falling back to current directory', { currentDir });
     return path.resolve(currentDir);
   }
-  
+
   /**
-   * Check Python version and update pythonCommand
+   * Detect a suitable Python interpreter and set this.pythonCommand.
+   * Returns detection result for UI and setup use.
    */
   public async checkPythonVersion(): Promise<{ installed: boolean; version?: string; error?: string }> {
     // Allow explicit override via environment (takes absolute precedence)
@@ -175,20 +170,17 @@ export class PythonExecutionService extends EventEmitter {
     const condaPy = process.env.CONDA_PREFIX ? `${process.env.CONDA_PREFIX}/bin/python` : undefined;
 
     const versioned = ['3.12', '3.11', '3.10'];
-
     const baseNames = [
-      ...versioned.map(v => `python3.${v.split('.')[1]}`), // python3.12, 3.11, 3.10
+      ...versioned.map(v => `python3.${v.split('.')[1]}`),
       'python3',
       'python',
     ];
-
     const homebrew = [
       ...versioned.map(v => `/opt/homebrew/bin/python3.${v.split('.')[1]}`),
       ...versioned.map(v => `/usr/local/bin/python3.${v.split('.')[1]}`),
       '/opt/homebrew/bin/python3',
       '/usr/local/bin/python3',
     ];
-
     const pyenvShims = userHome
       ? [
           ...versioned.map(v => `${userHome}/.pyenv/shims/python3.${v.split('.')[1]}`),
@@ -196,7 +188,6 @@ export class PythonExecutionService extends EventEmitter {
           `${userHome}/.pyenv/shims/python`,
         ]
       : [];
-
     const asdfShims = userHome
       ? [
           ...versioned.map(v => `${userHome}/.asdf/shims/python3.${v.split('.')[1]}`),
@@ -204,10 +195,7 @@ export class PythonExecutionService extends EventEmitter {
           `${userHome}/.asdf/shims/python`,
         ]
       : [];
-
-    const windowsPy = isWindows
-      ? ['py -3.12', 'py -3.11', 'py -3.10', 'py -3', 'py']
-      : [];
+    const windowsPy = isWindows ? ['py -3.12', 'py -3.11', 'py -3.10', 'py -3', 'py'] : [];
 
     const candidates = [
       ...(override ? [override] : []),
@@ -223,6 +211,7 @@ export class PythonExecutionService extends EventEmitter {
     const seen = new Set<string>();
     const commands = candidates.filter(c => {
       const key = c.trim();
+      if (!key) return false;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -233,20 +222,19 @@ export class PythonExecutionService extends EventEmitter {
 
     for (const cmd of commands) {
       try {
-        const { stdout } = await execAsync(`${cmd} --version`, { timeout: 5000 });
-        const versionStr = stdout.trim();
-        const m = versionStr.match(/Python\s+(\d+)\.(\d+)/);
+        const { stdout, stderr } = await execAsync(`${cmd} --version`, { timeout: 5000 });
+        const versionLine = (stdout || stderr || '').toString().trim();
+        const m = versionLine.match(/Python\s+(\d+)\.(\d+)/);
         if (!m) {
-          detections.push({ cmd, versionStr, ok: false });
+          detections.push({ cmd, versionStr: versionLine, ok: false });
           continue;
         }
         const major = parseInt(m[1]);
         const minor = parseInt(m[2]);
         const ok = major > 3 || (major === 3 && minor >= 10);
-        detections.push({ cmd, versionStr, major, minor, ok });
+        detections.push({ cmd, versionStr: versionLine, major, minor, ok });
       } catch {
-        // Ignore failures
-        continue;
+        // Ignore failures and continue to next candidate
       }
     }
 
@@ -258,7 +246,7 @@ export class PythonExecutionService extends EventEmitter {
         best = d;
         continue;
       }
-      if (d.major > best.major! || (d.major === best.major && d.minor > best.minor!)) {
+      if (d.major > best.major! || (d.major === best.major && d.minor! > best.minor!)) {
         best = d;
       }
     }
@@ -706,6 +694,15 @@ export class PythonExecutionService extends EventEmitter {
         model: config.modelId
       });
       
+      // Emit startup thinking indicator BEFORE any output so the UI shows animation immediately
+      this.emit('event', {
+        type: 'thinking',
+        context: 'startup',
+        startTime: Date.now(),
+        metadata: {
+          message: 'Preparing Python security assessment environment'
+        }
+      });
       
       // Emit startup lifecycle as output so it appears in the operation stream (OLD behavior)
       this.emit('event', {
@@ -790,16 +787,6 @@ export class PythonExecutionService extends EventEmitter {
           timestamp: Date.now()
         });
       }, 1800);
-      
-      // Emit thinking indicator during tool setup
-      this.emit('event', {
-        type: 'thinking',
-        context: 'startup',
-        startTime: Date.now(),
-        metadata: {
-          message: 'Preparing Python security assessment environment'
-        }
-      });
       
       // Spawn Python process
       this.activeProcess = spawn(this.pythonPath, args, {

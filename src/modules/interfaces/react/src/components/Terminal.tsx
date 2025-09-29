@@ -7,7 +7,7 @@
  * artificial height constraints, preventing text overlap and cutoff issues.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Text } from 'ink';
 import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { ExecutionService } from '../services/ExecutionService.js';
@@ -58,6 +58,17 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   onMetricsUpdate,
   animationsEnabled = true
 }) => {
+  // Test marker utility for diagnosing spinner/timer behavior
+  const emitTestMarker = (msg: string) => {
+    try {
+      if (process.env.CYBER_TEST_MODE === 'true') {
+        const marker = `[TEST_EVENT] ${msg}`;
+        loggingService.info(marker);
+        // eslint-disable-next-line no-console
+        console.log(marker);
+      }
+    } catch {}
+  };
   // Direct event rendering without Static component
   // Limit event buffer to prevent memory leaks - events are already persisted to disk
 const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N events in memory (default 3000)
@@ -65,19 +76,45 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
   // Ring buffers to bound memory regardless of session length
   const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
-  const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(MAX_EVENT_BYTES, (e) => {
-    try {
-      if (!e) return 0;
-      let bytes = 64;
-      const any: any = e as any;
-      const add = (v: any) => { if (typeof v === 'string') bytes += v.length; };
-      add(any.content);
-      add(any.command);
-      add(any.message);
-      // Tool outputs are the largest; budget mostly on content
-      return bytes;
-    } catch { return 256; }
-  }));
+  const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(
+    MAX_EVENT_BYTES,
+    {
+      estimator: (e) => {
+        try {
+          if (!e) return 0;
+          let bytes = 64;
+          const any: any = e as any;
+          const add = (v: any) => { if (typeof v === 'string') bytes += v.length; };
+          add(any.content);
+          add(any.command);
+          add(any.message);
+          // Tool outputs are the largest; budget mostly on content
+          return bytes;
+        } catch { return 256; }
+      },
+      overflowReducer: (e) => {
+        // Summarize overly large events to preserve memory bounds
+        try {
+          const any: any = e as any;
+          if (any?.type === 'report_content' && typeof any.content === 'string') {
+            return { ...any, content: buildTrimmedReportContent(any.content) } as DisplayStreamEvent;
+          }
+          if (any?.type === 'output' && typeof any.content === 'string') {
+            const s = any.content as string;
+            const head = s.slice(0, DISPLAY_LIMITS.OUTPUT_PREVIEW_CHARS);
+            const tail = s.slice(-DISPLAY_LIMITS.OUTPUT_TAIL_CHARS);
+            return {
+              ...any,
+              content: `${head}\n... (content trimmed due to memory budget)\n${tail}`
+            } as DisplayStreamEvent;
+          }
+          return e;
+        } catch {
+          return e;
+        }
+      }
+    }
+  ));
   const activeBufRef = useRef(new RingBuffer<DisplayStreamEvent>(Math.min(200, Math.floor(MAX_EVENTS / 5))));
   const [metrics, setMetrics] = useState({
     tokens: 0,
@@ -108,16 +145,79 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const [currentToolId, setCurrentToolId] = useState<string | undefined>(undefined);
   const [lastOutputContent, setLastOutputContent] = useState('');
   const [lastOutputTime, setLastOutputTime] = useState(0);
+
+  // Per-step aggregated output (to display a single 'output' block per step)
+  const stepAggRef = useRef<{ step?: number | null; head: string; tail: string; omitted: number } | null>({ step: null, head: '', tail: '', omitted: 0 });
+  const appendToStepAgg = (fragment: string) => {
+    try {
+      if (!stepAggRef.current) stepAggRef.current = { step: null, head: '', tail: '', omitted: 0 };
+      const agg = stepAggRef.current!;
+      const s = String(fragment || '');
+      if (!s) return;
+      const HEAD_MAX = DISPLAY_LIMITS.OUTPUT_PREVIEW_CHARS || 2000;
+      const TAIL_MAX = DISPLAY_LIMITS.OUTPUT_TAIL_CHARS || 500;
+      // Fill head until full, then accumulate tail and omitted count
+      if (agg.head.length < HEAD_MAX) {
+        const remaining = HEAD_MAX - agg.head.length;
+        agg.head += s.slice(0, remaining);
+        const rest = s.slice(remaining);
+        if (rest.length > 0) {
+          // We have overflow; add to tail with rolling window
+          if (rest.length >= TAIL_MAX) {
+            agg.tail = rest.slice(-TAIL_MAX);
+          } else {
+            const combined = (agg.tail + rest);
+            agg.tail = combined.length > TAIL_MAX ? combined.slice(-TAIL_MAX) : combined;
+          }
+          agg.omitted += rest.length;
+        }
+      } else {
+        // Head full; maintain rolling tail window
+        if (s.length >= TAIL_MAX) {
+          agg.tail = s.slice(-TAIL_MAX);
+        } else {
+          const combined = (agg.tail + s);
+          agg.tail = combined.length > TAIL_MAX ? combined.slice(-TAIL_MAX) : combined;
+        }
+        agg.omitted += s.length;
+      }
+    } catch {}
+  };
+  const buildAggDisplayEvent = (): DisplayStreamEvent | null => {
+    try {
+      const agg = stepAggRef.current;
+      if (!agg) return null;
+      const parts: string[] = [];
+      if (agg.head) parts.push(agg.head);
+      if (agg.omitted > 0) parts.push(`... (content continues; ${agg.omitted} chars omitted)`);
+      if (agg.tail) parts.push(agg.tail);
+      const content = parts.join('\n');
+      if (!content) return null;
+      return { type: 'output', content, metadata: { aggregated: true, fromToolBuffer: true } } as any;
+    } catch { return null; }
+  };
+  const flushAggregatedOutput = (): DisplayStreamEvent | null => {
+    const agg = buildAggDisplayEvent();
+    resetStepAgg();
+    return agg;
+  };
+  const resetStepAgg = () => { stepAggRef.current = { step: null, head: '', tail: '', omitted: 0 }; };
   
   // Swarm operation tracking for proper event enhancement
   const [swarmActive, setSwarmActive] = useState(false);
   const [currentSwarmAgent, setCurrentSwarmAgent] = useState<string | null>(null);
   const swarmHandoffSequenceRef = useRef(0);
   const delayedThinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Timer to detect idle gaps after tool-buffer output when no explicit tool_end is emitted
+  const postToolIdleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Timer to bridge the gap AFTER reasoning completes and BEFORE next step/tool begins
+  const postReasoningIdleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const seenThinkingThisPhaseRef = useRef<boolean>(false);
   const suppressTerminationBannerRef = useRef<boolean>(false);
   // Track last reasoning text to prevent duplicate consecutive emissions
   const lastReasoningTextRef = useRef<string | null>(null);
+  // Timestamp of the most recent tool-buffered output chunk
+  const lastToolOutputTsRef = useRef<number>(0);
   // Duplicate emission resolved in ReactBridgeHandler
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -147,12 +247,155 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       }
     }, ACTIVE_EMIT_INTERVAL_MS);
   };
+
+  // Unified helpers for delayed thinking spinner scheduling/cancellation
+  const cancelDelayedThinking = () => {
+    if (delayedThinkingTimerRef.current) {
+      clearTimeout(delayedThinkingTimerRef.current);
+      delayedThinkingTimerRef.current = null;
+    }
+  };
+
+  const cancelPostToolIdleTimer = () => {
+    if (postToolIdleTimerRef.current) {
+      clearTimeout(postToolIdleTimerRef.current);
+      postToolIdleTimerRef.current = null;
+    }
+  };
+
+  const cancelPostReasoningIdleTimer = () => {
+    if (postReasoningIdleTimerRef.current) {
+      clearTimeout(postReasoningIdleTimerRef.current);
+      postReasoningIdleTimerRef.current = null;
+    }
+  };
+
+  const scheduleDelayedThinking = (opts?: { delay?: number; context?: string; toolName?: string; toolCategory?: string; addSpacer?: boolean; }) => {
+    // Always cancel any existing timer first to avoid overlap
+    cancelDelayedThinking();
+    if (!animationsEnabled) return;
+
+    const delay = Math.max(0, opts?.delay ?? 100);
+    emitTestMarker && emitTestMarker(`scheduleDelayedThinking request ctx=${opts?.context || 'tool_execution'} delay=${delay}`);
+    delayedThinkingTimerRef.current = setTimeout(() => {
+      // If a thinking spinner is already active AND visible in the active tail, do not schedule another
+      const activeHasThinking = (() => {
+        try {
+          const arr = activeBufRef.current.toArray();
+          return arr.some(e => e && (e as any).type === 'thinking');
+        } catch {
+          return false;
+        }
+      })();
+      if (activeThinkingRef.current && activeHasThinking) {
+        emitTestMarker && emitTestMarker('scheduleDelayedThinking skipped (already visible)');
+        delayedThinkingTimerRef.current = null;
+        return;
+      }
+
+      // Optional spacing before thinking animation to visually separate
+      if (opts?.addSpacer && animationsEnabled) {
+        completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
+        completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
+        setCompletedEvents(completedBufRef.current.toArray());
+      }
+
+      const thinkingEvent: DisplayStreamEvent = {
+        type: 'thinking',
+        context: opts?.context || 'tool_execution',
+        startTime: Date.now(),
+        ...(opts?.toolName ? { toolName: opts.toolName } : {}),
+        ...(opts?.toolCategory ? { toolCategory: opts.toolCategory } : {})
+      } as DisplayStreamEvent;
+
+      // Mark spinner active so backend 'thinking' doesn't duplicate it
+      setActiveThinking(true);
+      seenThinkingThisPhaseRef.current = true;
+
+      // Remove any existing thinking before adding a new one, but preserve
+      // existing active tail content (e.g., aggregated tool output) to avoid flicker.
+      // Insert thinking at the FRONT so the spinner is visible above output.
+      setActiveThrottled(() => {
+        const existing = activeBufRef.current.toArray().filter(e => e.type !== 'thinking');
+        activeBufRef.current.clear();
+        activeBufRef.current.push(thinkingEvent);
+        for (const e of existing) activeBufRef.current.push(e);
+        return activeBufRef.current.toArray();
+      });
+
+      emitTestMarker && emitTestMarker(`scheduleDelayedThinking fired ctx=${(thinkingEvent as any).context}`);
+      delayedThinkingTimerRef.current = null;
+    }, delay) as unknown as NodeJS.Timeout;
+  };
+  
+  const resetAllBuffers = useCallback((preserveEvents: DisplayStreamEvent[] = []) => {
+    cancelDelayedThinking();
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    if (activeUpdateTimerRef.current) {
+      clearTimeout(activeUpdateTimerRef.current);
+      activeUpdateTimerRef.current = null;
+    }
+
+    stepAggRef.current = { step: null, head: '', tail: '', omitted: 0 };
+    pendingReasoningsRef.current = [];
+    opSummaryBufferRef.current = [];
+    swarmAgentStepsRef.current = new Map();
+    seenThinkingThisPhaseRef.current = false;
+    suppressTerminationBannerRef.current = false;
+    lastReasoningTextRef.current = null;
+    perToolOutputSeenRef.current.clear();
+    globalOutputSeenRef.current.clear();
+    setCurrentToolId(undefined);
+    setActiveThinking(false);
+    setActiveReasoning(false);
+    setLastOutputContent('');
+    setLastOutputTime(0);
+    setSwarmActive(false);
+    setCurrentSwarmAgent(null);
+    swarmHandoffSequenceRef.current = 0;
+    pendingMetricsRef.current = null;
+    lastMetricsTsRef.current = 0;
+    lastEmitRef.current = 0;
+    setMetrics({ tokens: 0, cost: 0, duration: '0s', memoryOps: 0, evidence: 0 });
+
+    completedBufRef.current.clear();
+    activeBufRef.current.clear();
+    if (preserveEvents.length > 0) {
+      completedBufRef.current.pushMany(preserveEvents);
+    }
+    setCompletedEvents(completedBufRef.current.toArray());
+    setActiveEvents(activeBufRef.current.toArray());
+  }, [cancelDelayedThinking, setActiveEvents, setCompletedEvents, setActiveThinking, setActiveReasoning, setSwarmActive, setCurrentSwarmAgent]);
   
   // Constants for event processing
   const COMMAND_BUFFER_MS = 100;
   const OUTPUT_DEDUPE_TIME_MS = 500;
   const theme = themeManager.getCurrentTheme();
   
+  // Reset buffers when a new session starts to prevent memory growth across runs
+  React.useEffect(() => {
+    resetAllBuffers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Ensure immediate visual feedback at startup: schedule a lightweight spinner
+  // right after the execution begins, before any backend events (e.g., operation_init)
+  // are received. This avoids a black screen during initial 3–5s setup gaps.
+  React.useEffect(() => {
+    if (!executionService || !animationsEnabled) return;
+    if (collapsed) return;
+    // Only schedule if no spinner is active AND no events have rendered yet
+    if (!activeThinkingRef.current && !activeReasoning && activeEvents.length === 0 && completedEvents.length === 0) {
+      scheduleDelayedThinking({ delay: 150, context: 'startup', addSpacer: false });
+    }
+    // Cleanup is handled by the main effect's cleanup and cancelDelayedThinking()
+    // to avoid duplicate timers and ensure consistent teardown.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executionService, sessionId, animationsEnabled, collapsed]);
+
   // Fingerprint helper for deduplication
   const fingerprintContent = (s: string): string => {
     try {
@@ -221,6 +464,11 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         collector.push(mergedEvent as DisplayStreamEvent);
       }
       pendingReasoningsRef.current = [];
+      // Clear live reasoning preview now that it has been committed
+      setActiveThrottled(() => {
+        activeBufRef.current.clear();
+        return activeBufRef.current.toArray();
+      });
     }
   };
 
@@ -254,16 +502,22 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           operationIdRef.current = event.operation_id;
         }
         if (typeof event.target === 'string') {
-          targetRef.current = event.target;
-        }
-        // Reset counters at operation start
-        stepCounterRef.current = 0;
-        lastPushedTypeRef.current = null;
-        results.push(event as DisplayStreamEvent);
-        break;
+      targetRef.current = event.target;
+    }
+    // Reset counters at operation start
+    stepCounterRef.current = 0;
+    lastPushedTypeRef.current = null;
+    results.push(event as DisplayStreamEvent);
+    if (animationsEnabled) {
+      // Show a spinner immediately while the agent prepares the first step
+      scheduleDelayedThinking({ delay: 0, context: 'operation_init', addSpacer: false });
+    }
+    break;
 
       case 'step_header':
         emitTestMarker(`step_header step=${event.step} max=${event.maxSteps}`);
+        cancelDelayedThinking();
+        cancelPostReasoningIdleTimer();
         // End any active reasoning session
         setActiveReasoning(false);
         // Reset last reasoning dedupe on new step
@@ -309,6 +563,12 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         
       case 'reasoning':
         emitTestMarker('reasoning');
+        // Any pending post-tool idle spinner is no longer needed
+        cancelPostToolIdleTimer();
+        // Reset last tool output timestamp on entering reasoning
+        lastToolOutputTsRef.current = 0;
+        // Clear any pending post-reasoning timer before scheduling a new one
+        cancelPostReasoningIdleTimer();
         // Python backend sends complete reasoning blocks
         if (event.content && event.content.trim()) {
           // Clear any active thinking animations when reasoning is shown
@@ -317,10 +577,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             setActiveThinking(false);
           }
           // Cancel any pending delayed thinking and mark seen
-          if (delayedThinkingTimerRef.current) {
-            clearTimeout(delayedThinkingTimerRef.current);
-            delayedThinkingTimerRef.current = null;
-          }
+          cancelDelayedThinking();
           seenThinkingThisPhaseRef.current = true;
           
           // Update swarm agent if present in event
@@ -337,33 +594,61 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             ...(swarmActive && currentSwarmAgent ? { swarm_agent: currentSwarmAgent } : {})
           } as DisplayStreamEvent;
 
-          // Minimal rule for correctness: always queue reasoning
-          // We will flush after tool_end (preferred) or at the next step_header if needed.
+          // Queue reasoning for final placement under this step
           pendingReasoningsRef.current.push(reasoningEvent);
+
+          // Immediately reflect the merged reasoning in the active tail so the user sees it during this step
+          try {
+            const parts: string[] = [];
+            for (const r of pendingReasoningsRef.current) {
+              const s = (r as any).content ? String((r as any).content).trim() : '';
+              if (s) parts.push(s);
+            }
+            const merged = parts.join('\n\n');
+            if (merged) {
+              setActiveThrottled(prev => {
+                activeBufRef.current.clear();
+                activeBufRef.current.push({ type: 'reasoning', content: merged } as any);
+                return activeBufRef.current.toArray();
+              });
+              // After rendering reasoning, show a spinner shortly while the agent
+              // prepares the next step/tool selection to avoid a blank gap.
+              if (animationsEnabled) {
+                // Clear any existing timer and schedule a new one immediately
+                cancelPostReasoningIdleTimer();
+                postReasoningIdleTimerRef.current = setTimeout(() => {
+                  // End the visible reasoning session in the active tail and show spinner
+                  setActiveReasoning(false);
+                  if (!activeThinkingRef.current) {
+                    scheduleDelayedThinking({ delay: 0, context: 'reasoning', addSpacer: false });
+                  }
+                  postReasoningIdleTimerRef.current = null;
+                }, 120) as unknown as NodeJS.Timeout;
+              }
+            }
+          } catch {}
         }
         break;
         
       case 'thinking':
         // Handle thinking start without conflicting with reasoning
-        if (!activeReasoning && !activeThinkingRef.current) {
-          // If a delayed thinking timer is pending, cancel it to avoid duplicate spinner
-          if (delayedThinkingTimerRef.current) {
-            clearTimeout(delayedThinkingTimerRef.current);
-            delayedThinkingTimerRef.current = null;
-          }
-          // Cancel any pending delayed thinking
-          if (delayedThinkingTimerRef.current) {
-            clearTimeout(delayedThinkingTimerRef.current);
-            delayedThinkingTimerRef.current = null;
-          }
+        if (!activeReasoning) {
+          // Cancel any pending delayed spinner to avoid duplicates
+          cancelDelayedThinking();
+          cancelPostToolIdleTimer();
+          cancelPostReasoningIdleTimer();
           seenThinkingThisPhaseRef.current = true;
-          // Ensure no duplicate thinking events remain active
+          // Always clear any existing thinking item in the active tail
           setActiveThrottled(prev => prev.filter(e => e.type !== 'thinking'));
-          setActiveThinking(true);
+          // Ensure the internal flag is set (fallback: it may already be true)
+          if (!activeThinkingRef.current) {
+            setActiveThinking(true);
+          }
+          // Reinsert a thinking event so the spinner is visible even if our flag was already true
           results.push({
             type: 'thinking',
             context: event.context,
-            startTime: event.startTime,
+            startTime: event.startTime || Date.now(),
             metadata: event.metadata
           } as DisplayStreamEvent);
         }
@@ -392,6 +677,10 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         
       case 'tool_start':
         emitTestMarker(`tool_start tool=${event.toolName || event.tool_name}`);
+        cancelPostToolIdleTimer();
+        cancelPostReasoningIdleTimer();
+        // Reset last tool output timestamp for new tool
+        lastToolOutputTsRef.current = 0;
         // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
         // Get the tool ID from the event (support both camel/snake)
         let toolId: string | undefined = event.toolId || event.tool_id;
@@ -446,10 +735,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Show single unified thinking animation
         // Edge case fix: show spinner even if reasoning was active, since we just ended it above.
         if (!activeThinkingRef.current) {
-          if (delayedThinkingTimerRef.current) {
-            clearTimeout(delayedThinkingTimerRef.current);
-            delayedThinkingTimerRef.current = null;
-          }
+          cancelDelayedThinking();
           
           setActiveThinking(true);
           seenThinkingThisPhaseRef.current = true;
@@ -490,16 +776,22 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       case 'tool_invocation_end':
         // Some backends emit tool_invocation_end without a corresponding tool_end.
         // Ensure we stop any active thinking spinner and reset tool state to avoid "still running" UI.
+        cancelPostToolIdleTimer();
+        cancelPostReasoningIdleTimer();
+        // Mark end of tool streaming
+        lastToolOutputTsRef.current = Date.now();
         if (activeThinking) {
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           setActiveThinking(false);
         }
-        if (delayedThinkingTimerRef.current) {
-          clearTimeout(delayedThinkingTimerRef.current);
-          delayedThinkingTimerRef.current = null;
-        }
+        cancelDelayedThinking();
         seenThinkingThisPhaseRef.current = false;
         setCurrentToolId(undefined);
+        // Immediately show a spinner while the agent processes the tool result and prepares reasoning
+        if (animationsEnabled && !activeReasoning) {
+          setActiveThinking(true);
+          results.push({ type: 'thinking', context: 'waiting', startTime: Date.now() } as DisplayStreamEvent);
+        }
         // Optionally, we do not emit a separate tool_end display item here to avoid duplicates
         break;
         
@@ -520,9 +812,84 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Generic command event - don't add separate animations
         results.push(event as DisplayStreamEvent);
         break;
+
+      case 'prompt_change':
+        emitTestMarker(`prompt_change action=${event.action}`);
+        results.push(event as DisplayStreamEvent);
+        break;
         
+      case 'model_invocation_start':
+        // When the model is invoked (post-tool), show a spinner immediately to indicate
+        // the agent is preparing reasoning. This covers gaps before the first reasoning block.
+        cancelDelayedThinking();
+        cancelPostToolIdleTimer();
+        cancelPostReasoningIdleTimer();
+        if (!activeThinkingRef.current && animationsEnabled) {
+          setActiveThinking(true);
+          results.push({
+            type: 'thinking',
+            context: 'reasoning',
+            startTime: Date.now()
+          } as DisplayStreamEvent);
+        }
+        // Do not render the model event itself; UI shows spinner instead
+        break;
+
+      case 'model_stream_delta':
+      case 'reasoning_delta':
+        // Streaming deltas are handled by StreamDisplay or aggregated elsewhere; don't render here
+        break;
+
       case 'output':
         emitTestMarker('output');
+        // Normalize content to detect empty/whitespace-only lines
+        const rawOut = (event as any).content != null ? String((event as any).content) : '';
+        const isEmptyOut = rawOut.trim().length === 0;
+        // Determine whether this output belongs to a tool buffer regardless of content
+        const fromToolBufferFlag = !!(((event as any)?.metadata?.fromToolBuffer) || ((event as any)?.metadata?.tool) || Boolean(currentToolId));
+
+        // Maintain post-tool bridging behavior even for empty outputs
+        if (activeThinking && fromToolBufferFlag) {
+          results.push({ type: 'thinking_end' } as DisplayStreamEvent);
+          setActiveThinking(false);
+        }
+
+        if (fromToolBufferFlag) {
+          // Update last tool output timestamp and start idle timer to show spinner after output
+          lastToolOutputTsRef.current = Date.now();
+          cancelPostToolIdleTimer();
+          if (animationsEnabled) {
+            postToolIdleTimerRef.current = setTimeout(() => {
+              if (!activeThinkingRef.current && !activeReasoning) {
+                scheduleDelayedThinking({ delay: 0, context: 'waiting', addSpacer: false });
+              }
+              // Exit tool phase to avoid misclassifying subsequent non-tool output
+              setCurrentToolId(undefined);
+              postToolIdleTimerRef.current = null;
+            }, 60) as unknown as NodeJS.Timeout;
+          }
+        } else if (animationsEnabled) {
+          // If a non-tool output arrives shortly after tool output, bridge with a spinner
+          const sinceLastToolMs = Date.now() - (lastToolOutputTsRef.current || 0);
+          if (sinceLastToolMs > 0 && sinceLastToolMs < 1500 && !activeThinkingRef.current && !activeReasoning) {
+            setActiveThinking(true);
+            results.push({ type: 'thinking', context: 'waiting', startTime: Date.now() } as DisplayStreamEvent);
+            // Also exit tool phase since we've transitioned to waiting for reasoning
+            setCurrentToolId(undefined);
+          }
+        }
+
+        // Only cancel post-reasoning spinner if we have meaningful output
+        if (!isEmptyOut) {
+          cancelPostReasoningIdleTimer();
+        }
+
+        // If we are still before operation_init, keep a startup spinner visible even as
+        // status/output lines arrive. This avoids a dead UI during initial setup.
+        if (!operationIdRef.current && !activeThinkingRef.current && animationsEnabled) {
+          scheduleDelayedThinking({ delay: 0, context: 'startup', addSpacer: false });
+        }
+
         // Output should not be held; but ensure we don't have stale pending reasoning lingering
         // If output appears, we do NOT auto-flush pending reasoning; it may belong under the next header
         // Handle tool output or general output with deduplication
@@ -593,14 +960,10 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           setLastOutputContent(contentStr);
           setLastOutputTime(currentTime);
           
-          // Clear any active thinking when output appears
-          if (activeThinking) {
-            results.push({ type: 'thinking_end' } as DisplayStreamEvent);
-            setActiveThinking(false);
-          }
-          
+          // above we already handled spinner transitions irrespective of content
+
           // Reorder operation summary vs report preview/content: buffer op-summary and flush after report
-          const fromToolBuffer = !!((event as any).metadata && (event as any).metadata.fromToolBuffer);
+          const fromToolBuffer = fromToolBufferFlag;
           const isReportPreview = contentStr.includes('# SECURITY ASSESSMENT REPORT') || contentStr.includes('# CTF Challenge Assessment Report') || contentStr.includes('EXECUTIVE SUMMARY') || contentStr.includes('KEY FINDINGS') || contentStr.includes('REMEDIATION ROADMAP');
           const isOperationSummary = !fromToolBuffer && (
             contentStr.includes('Outputs stored in:') ||
@@ -621,10 +984,21 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             break;
           }
 
+          // Clean placeholder tokens sometimes prefixed in combined output blocks
+          let cleanedContent = contentStr;
+          if (/^(output|reasoning)(\s*\[[^\]]+\])?\s*\n/i.test(cleanedContent)) {
+            cleanedContent = cleanedContent.replace(/^(output|reasoning)(\s*\[[^\]]+\])?\s*\n/i, '');
+          }
+          // If after cleaning this is a pure placeholder, skip it entirely
+          const trimmedClean = cleanedContent.trim();
+          if (/^(output|reasoning)(\s*\[[^\]]+\])?$/i.test(trimmedClean)) {
+            break;
+          }
+
           // Push normal output
           const outEvt: DisplayStreamEvent = {
             type: 'output',
-            content: event.content,
+            content: cleanedContent,
             toolId: currentToolId,
             // Preserve metadata so the renderer can identify tool-buffer outputs
             ...(event.metadata ? { metadata: event.metadata } : {})
@@ -636,10 +1010,15 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             results.push(...opSummaryBufferRef.current);
             opSummaryBufferRef.current = [];
           }
+        } else {
+          // For empty/whitespace-only output, we already handled spinner transitions.
+          // Skip rendering to avoid blank gaps in the UI.
         }
         break;
         
       case 'tool_end':
+        cancelPostToolIdleTimer();
+        cancelPostReasoningIdleTimer();
         // Update swarm agent if present in event
         if (event.swarm_agent && swarmActive) {
           setCurrentSwarmAgent(event.swarm_agent);
@@ -650,11 +1029,15 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           results.push({ type: 'thinking_end' } as DisplayStreamEvent);
           setActiveThinking(false);
         }
-        // Reset flags and cancel pending delayed thinking
-        if (delayedThinkingTimerRef.current) {
-          clearTimeout(delayedThinkingTimerRef.current);
-          delayedThinkingTimerRef.current = null;
+        // Exit tool phase on tool_end
+        setCurrentToolId(undefined);
+        // Immediately show a short waiting spinner while transitioning to reasoning
+        if (animationsEnabled && !activeReasoning) {
+          setActiveThinking(true);
+          results.push({ type: 'thinking', context: 'waiting', startTime: Date.now() } as DisplayStreamEvent);
         }
+        // Reset flags and cancel pending delayed thinking
+        cancelDelayedThinking();
         seenThinkingThisPhaseRef.current = false;
         
         // Flush any pending reasoning so it appears below the outputs of this tool call
@@ -671,6 +1054,11 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Clear per-tool dedup set when tool ends
         try { if (event.toolId) perToolOutputSeenRef.current.delete(String(event.toolId)); } catch {}
         setCurrentToolId(undefined);
+        // Between tool output and the next reasoning block, show a lightweight spinner
+        // to indicate the agent is thinking about the result and preparing the next step.
+        if (animationsEnabled) {
+          scheduleDelayedThinking({ delay: 0, context: 'post_tool_idle', addSpacer: false });
+        }
         break;
 
       case 'operation_complete':
@@ -876,79 +1264,107 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       if (processedEvents.length > 0) {
         const regularEvents: DisplayStreamEvent[] = [];
 
+        let currentAggDisplayEvent: DisplayStreamEvent | null = null;
         for (const processedEvent of processedEvents) {
           if (processedEvent.type === 'delayed_thinking_start') {
             // Skip entirely when animations are disabled
             if (!animationsEnabled) {
               continue;
             }
-            // Clear any existing delayed thinking timer
-            if (delayedThinkingTimerRef.current) {
-              clearTimeout(delayedThinkingTimerRef.current);
-            }
-            // Set timer to start thinking animation after delay
+            // Use unified scheduler for delayed spinner; include spacing for this path
             const delay = (processedEvent as any).delay || 100;
-            delayedThinkingTimerRef.current = setTimeout(() => {
-              // If a thinking spinner is already active, do not schedule another
-              if (activeThinkingRef.current) {
-                delayedThinkingTimerRef.current = null;
-                return;
-              }
-              // Optional spacing before thinking animation to visually separate
-              if (animationsEnabled) {
-                // Add a tiny spacer into the completed ring buffer without unbounded growth
-                completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
-                completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
-                setCompletedEvents(completedBufRef.current.toArray());
-              }
-              const thinkingEvent: DisplayStreamEvent = {
-                type: 'thinking',
-                context: (processedEvent as any).context || 'tool_execution',
-                startTime: (processedEvent as any).startTime || Date.now(),
-                toolName: (processedEvent as any).toolName,
-                toolCategory: (processedEvent as any).toolCategory
-              } as DisplayStreamEvent;
-              // Mark spinner active so backend 'thinking' doesn't duplicate it
-              setActiveThinking(true);
-              seenThinkingThisPhaseRef.current = true;
-              // Remove any existing thinking before adding a new one (belt-and-braces)
-activeBufRef.current.clear();
-              activeBufRef.current.push(thinkingEvent);
-              setActiveEvents(activeBufRef.current.toArray());
-              delayedThinkingTimerRef.current = null;
-            }, delay);
+            scheduleDelayedThinking({
+              delay,
+              context: (processedEvent as any).context || 'tool_execution',
+              toolName: (processedEvent as any).toolName,
+              toolCategory: (processedEvent as any).toolCategory,
+              addSpacer: true,
+            });
             continue;
           }
 
           if (processedEvent.type === 'thinking_end') {
-            // Move thinking events to static when done
-setActiveThrottled(prev => {
+            // End spinner but keep aggregated output visible in active tail
+            setActiveThrottled(prev => {
               activeBufRef.current.clear();
+              const aggEv = buildAggDisplayEvent();
+              if (aggEv) activeBufRef.current.push(aggEv);
               return activeBufRef.current.toArray();
             });
             continue;
           }
 
+          // Aggregate tool buffer output fragments per step, but DO NOT aggregate system/status outputs
+          if (processedEvent.type === 'output') {
+            try {
+              const any: any = processedEvent as any;
+              // Consider output as tool-buffered if metadata says so OR we have an active toolId
+              const isToolBuffer = Boolean(any?.metadata?.fromToolBuffer || any?.metadata?.tool || Boolean(currentToolId));
+              if (isToolBuffer) {
+                let contentStr = '';
+                if (typeof any.content === 'string') contentStr = any.content;
+                else if (any.content) contentStr = JSON.stringify(any.content);
+                appendToStepAgg(contentStr);
+                currentAggDisplayEvent = buildAggDisplayEvent();
+                // Skip pushing this output into completed; we'll show one per step
+                continue;
+              }
+            } catch {}
+          }
+          
           regularEvents.push(processedEvent);
         }
 
         if (regularEvents.length > 0) {
-          // Move non-thinking items to completed
-          const newCompletedEvents = regularEvents.filter(e => e.type !== 'thinking');
+          // Before anything else, if a new step header arrived, flush current aggregated output into completed
+          const stepHeaders = regularEvents.filter(e => e.type === 'step_header');
+          if (stepHeaders.length > 0) {
+            const aggEv = buildAggDisplayEvent();
+            if (aggEv) {
+              completedBufRef.current.push(aggEv as any);
+              setCompletedEvents(completedBufRef.current.toArray());
+              resetStepAgg();
+            }
+            // Clear any live tail from previous step (reasoning/output) to prevent leakage
+            setActiveThrottled(() => {
+              activeBufRef.current.clear();
+              return activeBufRef.current.toArray();
+            });
+            // End any active thinking/reasoning state at step boundary
+            if (activeThinkingRef.current) setActiveThinking(false);
+            setActiveReasoning(false);
+            // Schedule a brief delayed spinner for the new step while waiting for tool/tool args
+            cancelDelayedThinking();
+            if (animationsEnabled) {
+              scheduleDelayedThinking({ delay: 0, context: 'tool_execution', addSpacer: false });
+            }
+          }
+
+          // Move non-thinking items to completed (excluding output fragments handled above)
+          const newCompletedEvents = regularEvents.filter(e => e.type !== 'thinking' && e.type !== 'output');
           if (newCompletedEvents.length > 0) {
 completedBufRef.current.pushMany(newCompletedEvents);
             setCompletedEvents(completedBufRef.current.toArray());
           }
 
-          // Keep current thinking (if any) in active tail without duplication
+          // Keep current thinking (if any) and aggregated output in active tail without duplication
           const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
-          if (thinkingEvents.length > 0) {
-setActiveThrottled(prev => {
-            // Keep only latest thinking in active tail
-            activeBufRef.current.clear();
-            for (const t of thinkingEvents) activeBufRef.current.push(t);
-            return activeBufRef.current.toArray();
-          });
+          if (thinkingEvents.length > 0 || currentAggDisplayEvent) {
+            setActiveThrottled(prev => {
+              // Preserve any existing thinking if none were added in this batch
+              const existingThinking = activeBufRef.current.toArray().filter(e => e.type === 'thinking');
+              const thinkingToKeep = thinkingEvents.length > 0 ? thinkingEvents : existingThinking;
+              // Rebuild active tail: keep thinking, then aggregated output if present
+              activeBufRef.current.clear();
+              // Deduplicate thinking entries by identity (type-only for safety)
+              const uniqueThinking: DisplayStreamEvent[] = [];
+              for (const t of thinkingToKeep) {
+                if (!uniqueThinking.some(u => u.type === t.type)) uniqueThinking.push(t);
+              }
+              for (const t of uniqueThinking) activeBufRef.current.push(t);
+              if (currentAggDisplayEvent) activeBufRef.current.push(currentAggDisplayEvent);
+              return activeBufRef.current.toArray();
+            });
           }
         }
       }
@@ -971,35 +1387,29 @@ setActiveThrottled(prev => {
     
     // Handle completion to reset state
     const handleComplete = () => {
-      // Clear any delayed thinking timers
-      if (delayedThinkingTimerRef.current) {
-        clearTimeout(delayedThinkingTimerRef.current);
-      }
-      
-      // No need to flush events - they are processed immediately
-      
-      // Clear any active events
-      setActiveThrottled(() => []);
+      const preserved: DisplayStreamEvent[] = [];
+      const aggEv = flushAggregatedOutput();
+      if (aggEv) preserved.push(aggEv as any);
+      resetAllBuffers(preserved);
     };
     
     executionService.on('complete', handleComplete);
     // Use a stable function reference so we can remove it in cleanup
     const handleStopped = () => {
-      // Mark that we should suppress verbose termination block lines
       suppressTerminationBannerRef.current = true;
-      // Emit a concise stop summary event
-completedBufRef.current.push({ type: 'stop_summary', timestamp: new Date().toISOString() } as unknown as DisplayStreamEvent);
-      setCompletedEvents(completedBufRef.current.toArray());
-      handleComplete();
+      const preserved: DisplayStreamEvent[] = [];
+      const aggEv = flushAggregatedOutput();
+      if (aggEv) preserved.push(aggEv as any);
+      resetAllBuffers(preserved);
     };
     executionService.on('stopped', handleStopped);
 
     // Cleanup
     return () => {
       // Clean up any delayed thinking timers
-      if (delayedThinkingTimerRef.current) {
-        clearTimeout(delayedThinkingTimerRef.current);
-      }
+      cancelDelayedThinking();
+      cancelPostToolIdleTimer();
+      cancelPostReasoningIdleTimer();
       if (pendingTimerRef.current) {
         clearTimeout(pendingTimerRef.current);
         pendingTimerRef.current = null;
@@ -1012,7 +1422,7 @@ completedBufRef.current.push({ type: 'stop_summary', timestamp: new Date().toISO
       executionService.off('complete', handleComplete);
       executionService.off('stopped', handleStopped);
     };
-  }, [executionService, onEvent, metrics, onMetricsUpdate, sessionId]);
+  }, [executionService, onEvent, metrics, onMetricsUpdate, sessionId, resetAllBuffers]);
 
   if (collapsed) {
     return null;

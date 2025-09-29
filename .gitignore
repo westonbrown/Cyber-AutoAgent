@@ -222,6 +222,7 @@ test-results/
 src/modules/interfaces/react/tests/fixtures/captures/
 src/modules/interfaces/react/tests/fixtures/test-results/
 src/modules/interfaces/react/tests/fixtures/coverage/
+repl_state/
 
 # Development artifacts
 test-*.js

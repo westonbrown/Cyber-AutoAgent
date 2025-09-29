@@ -56,11 +56,7 @@ function sanitizeTargetName(target: string): string {
  */
 const logger = createLogger('DirectDockerService');
 export class DirectDockerService extends EventEmitter {
-  private autoExecuteTimer?: NodeJS.Timeout;
-  private autoExecuteInterval?: NodeJS.Timeout;
-  private autoExecuteAttempts: number = 0;
   private autoExecuteSent: boolean = false;
-  private progressDetected: boolean = false;
   private readonly dockerClient: Dockerode;
   private activeContainer?: Dockerode.Container;
   private containerStream?: any;
@@ -128,7 +124,6 @@ export class DirectDockerService extends EventEmitter {
     // Reset per-run state to ensure clean behavior when reusing the service in the same app session
     this.resetSessionState();
     this.abortController = new AbortController();
-    this.progressDetected = false;
     if (this.isExecutionActive) {
       throw new Error('Assessment already running');
     }
@@ -516,6 +511,18 @@ export class DirectDockerService extends EventEmitter {
       // Use the same deployment mode already retrieved earlier
       const deploymentMode = currentDeploymentMode;
       
+      // Emit startup thinking indicator BEFORE any output so the UI shows animation immediately
+      this.emit('event', {
+        type: 'thinking',
+        context: 'startup',
+        startTime: Date.now(),
+        metadata: {
+          message: deploymentMode === 'local-cli'
+            ? 'Preparing Python security assessment environment'
+            : 'Preparing security assessment environment'
+        }
+      });
+
       // Start container with progressive status updates based on deployment mode
       if (deploymentMode === 'local-cli') {
         this.emit('event', {
@@ -606,17 +613,7 @@ export class DirectDockerService extends EventEmitter {
         }
       }, 1800);
 
-      // Emit thinking indicator during tool setup
-      this.emit('event', {
-        type: 'thinking',
-        context: 'startup',
-        startTime: Date.now(),
-        metadata: {
-          message: deploymentMode === 'local-cli' 
-            ? 'Preparing Python security assessment environment'
-            : 'Preparing security assessment environment'
-        }
-      });
+      // (startup thinking emitted earlier to avoid gaps)
       
       this.emit('started');
 
@@ -745,8 +742,6 @@ export class DirectDockerService extends EventEmitter {
             timestamp: Date.now()
           });
         } else if (event.type === 'environment_ready') {
-          // Schedule a fallback auto-execute shortly after environment is ready
-          this.scheduleAutoExecuteFallback(1500);
           this.emit('event', {
             type: 'output',
             content: `◆ Environment ready - ${eventData.tool_count} cybersecurity tools loaded`,
@@ -790,13 +785,11 @@ export class DirectDockerService extends EventEmitter {
             this.sawBackendToolOutput = true;
           }
         } else if (event.type === 'operation_complete') {
-          this.cancelAutoExecuteFallback();
-          // Backend signaled completion; mark and emit complete once
+              // Backend signaled completion; mark and emit complete once
           this.seenOperationComplete = true;
           this.emit('complete');
         } else if (event.type === 'assessment_complete') {
-          this.cancelAutoExecuteFallback();
-          // React backend emits assessment_complete after final report generation
+              // React backend emits assessment_complete after final report generation
           this.seenOperationComplete = true;
           this.emit('complete');
         } else if (event.type === 'user_handoff') {
@@ -822,15 +815,6 @@ export class DirectDockerService extends EventEmitter {
           }
         }
         
-        // Cancel fallback on signs of forward progress where execute is no longer needed
-        if (event.type === 'step_header' || event.type === 'tool_start') {
-          this.progressDetected = true;
-          this.cancelAutoExecuteFallback();
-        }
-        // After operation_init, schedule a near-term fallback since the prompt typically appears next
-        if (event.type === 'operation_init') {
-          this.scheduleAutoExecuteFallback(1000);
-        }
         this.emit('event', event);
         
         // Remove only the matched event from buffer, preserve any surrounding non-event content
@@ -895,8 +879,6 @@ export class DirectDockerService extends EventEmitter {
     const executePromptPattern = /Press\s+Enter\s+or\s+type\s+["']?execute["']?\s+to\s+start\s+assessment|Type\s+["']?execute["']?\s*\(default\)|^\s*execute\s*:\s*press\s+enter/ims;
 
     if (executePromptPattern.test(this.streamEventBuffer)) {
-      // Cancel any pending fallback; we will send immediately
-      this.cancelAutoExecuteFallback();
       logger.info('Prompt detected: auto-sending Enter', { bufferLength: this.streamEventBuffer.length });
       // Give a brief delay to ensure the container is ready for input
       setTimeout(() => {
@@ -932,8 +914,6 @@ export class DirectDockerService extends EventEmitter {
    * Stop the running assessment - forcefully kills container and job
    */
   async stop(): Promise<void> {
-    // Ensure any pending auto-execute fallback is cleared
-    this.cancelAutoExecuteFallback();
     if (!this.isExecutionActive) {
       return;
     }
@@ -1034,88 +1014,15 @@ export class DirectDockerService extends EventEmitter {
    * Reset lightweight per-run flags and buffers
    */
   private resetSessionState(): void {
-    // Clear any pending fallback timers/flags
-    if (this.autoExecuteTimer) {
-      try { clearTimeout(this.autoExecuteTimer); } catch {}
-      this.autoExecuteTimer = undefined;
-    }
     this.autoExecuteSent = false;
     this.seenOperationComplete = false;
     this.streamEventBuffer = '';
   }
 
   /**
-   * Schedule a timed fallback to send "execute" if prompt detection is missed.
-   */
-  private scheduleAutoExecuteFallback(delayMs: number = 1500) {
-    try {
-      if (this.autoExecuteSent || !this.isExecutionActive) return;
-      // Clear any existing timers
-      if (this.autoExecuteTimer) { clearTimeout(this.autoExecuteTimer); this.autoExecuteTimer = undefined; }
-      if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
-      this.autoExecuteAttempts = 0;
-      // Initial single delay before starting retries
-      this.autoExecuteTimer = setTimeout(() => {
-        // Start a bounded retry loop: try up to 3 times every 1.5s unless progress is detected
-        if (!this.isExecutionActive || this.autoExecuteSent || this.progressDetected) return;
-        this.trySendExecute('fallback');
-        this.autoExecuteAttempts = 1;
-        this.autoExecuteInterval = setInterval(() => {
-          if (!this.isExecutionActive || this.autoExecuteSent || this.progressDetected || this.autoExecuteAttempts >= 3) {
-            if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
-            return;
-          }
-          this.trySendExecute('fallback');
-          this.autoExecuteAttempts += 1;
-        }, 1500) as unknown as NodeJS.Timeout;
-      }, delayMs) as unknown as NodeJS.Timeout;
-    } catch {}
-  }
-
-  /** Cancel any pending auto-execute fallback timer */
-  private cancelAutoExecuteFallback() {
-    try {
-      if (this.autoExecuteTimer) { clearTimeout(this.autoExecuteTimer); this.autoExecuteTimer = undefined; }
-      if (this.autoExecuteInterval) { clearInterval(this.autoExecuteInterval); this.autoExecuteInterval = undefined; }
-    } catch {}
-  }
-
-  /** Attempt to send execute to the container stdin */
-  private trySendExecute(reason: 'fallback'|'prompt') {
-    try {
-      if (!this.containerStream || !this.isExecutionActive) return;
-      if (this.autoExecuteSent) return;
-      // Emit a visible marker only in debug mode to aid investigation
-      if (process.env.CYBER_DEBUG === 'true' || process.env.DEBUG === 'true') {
-        this.emit('event', {
-          type: 'output',
-          content: `[auto-execute ${reason} fired]`,
-          timestamp: Date.now()
-        });
-      }
-      // Send a robust sequence to satisfy various prompt states
-      this.containerStream.write('execute\r\n');
-      logger.info('stdin write sent', { reason, data: 'execute\\r\\n' });
-      // Follow up with an extra Enter shortly after
-      setTimeout(() => {
-        try {
-          if (!this.containerStream || !this.isExecutionActive) return;
-          this.containerStream.write('\r\n');
-          logger.info('stdin write sent', { reason, data: '\\r\\n' });
-        } catch {}
-      }, 150);
-      this.autoExecuteSent = true;
-    } catch (err) {
-      logger.error('stdin write error (auto-execute)', err as any);
-    }
-  }
-
-  /**
    * Cleanup resources and remove all event listeners
    */
   cleanup(): void {
-    // Cancel fallback timers
-    this.cancelAutoExecuteFallback();
     // Stop any active container
     if (this.activeContainer) {
       this.stopContainer().catch(error => {
@@ -1212,9 +1119,7 @@ export class DirectDockerService extends EventEmitter {
     // Reset per-run state at the beginning of a new exec session
     this.resetSessionState();
     this.abortController = new AbortController();
-    this.progressDetected = false;
     // Fallback auto-execute in exec reuse path
-    this.scheduleAutoExecuteFallback(2500);
     this.isExecutionActive = true;
     
     // Prepare command (python entrypoint + args) to align with container Entrypoint

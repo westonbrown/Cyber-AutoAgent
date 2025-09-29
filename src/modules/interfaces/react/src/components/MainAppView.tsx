@@ -233,10 +233,10 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               executionService={appState.executionService}
               sessionId={appState.activeOperation!.id}
               terminalWidth={appState.terminalDisplayWidth}
-              collapsed={false}
+              collapsed={activeModal !== ModalType.NONE}
               onEvent={(e:any) => { handleStreamEvent(e); handleLifecycleEvent(e); }}
               onMetricsUpdate={(metrics) => actions.updateMetrics?.(metrics)}
-              animationsEnabled={isAutoScrollEnabled}
+              animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
             />
           )
         )}

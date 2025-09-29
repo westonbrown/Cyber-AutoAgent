@@ -128,6 +128,52 @@ function normalizeToolInput(toolName: string, input: any): any {
     return cloneInput;
   }
 
+  if (name === 'prompt_optimizer') {
+    const cloneInput: any = { ...toolInput };
+    const normalized: any = {};
+    const action = cloneInput.action ?? cloneInput.Action;
+    normalized.action = action ? String(action) : 'apply';
+
+    if (cloneInput.trigger) normalized.trigger = String(cloneInput.trigger);
+    if (cloneInput.reviewer) normalized.reviewer = String(cloneInput.reviewer);
+    if (cloneInput.note) normalized.note = clampString(String(cloneInput.note), 400);
+    if (cloneInput.context) normalized.context = clampString(String(cloneInput.context), 400);
+    if (cloneInput.prompt) normalized.prompt = clampString(String(cloneInput.prompt), 400);
+    if (cloneInput.current_step != null) normalized.current_step = Number(cloneInput.current_step);
+    if (cloneInput.expires_after_steps != null) {
+      normalized.expires_after_steps = Number(cloneInput.expires_after_steps);
+    }
+
+    const overlayRaw = cloneInput.overlay;
+    let overlayObj: any = overlayRaw;
+    if (typeof overlayRaw === 'string') {
+      try { overlayObj = JSON.parse(overlayRaw); } catch { overlayObj = undefined; }
+    }
+    if (overlayObj && typeof overlayObj === 'object') {
+      const payload = overlayObj.payload && typeof overlayObj.payload === 'object' ? overlayObj.payload : overlayObj;
+      const directives = payload.directives;
+      if (Array.isArray(directives) && directives.length > 0) {
+        const cleaned = directives
+          .map((item: any) => String(item).trim())
+          .filter((item: string) => Boolean(item));
+        if (cleaned.length > 0) {
+          const slice = cleaned.slice(0, 4);
+          const preview = slice.join(', ');
+          normalized.directives = cleaned.length > 4
+            ? `${preview}, ... (+${cleaned.length - 4} more)`
+            : preview;
+        }
+      }
+      if (payload.trajectory) normalized.trajectory = sanitizeAllStrings(payload.trajectory);
+      if (payload.metadata && typeof payload.metadata === 'object') {
+        normalized.metadata = sanitizeAllStrings(payload.metadata);
+      }
+    }
+
+    return normalized;
+  }
+
+
   // editor/python_repl/etc.: leave as-is except shallow clone done above
   return toolInput;
 }
@@ -139,7 +185,7 @@ function normalizeToolName(e: AnyEvent): string {
 // Clamp and sanitize string fields to keep UI stable
 function clampString(s: unknown, max = 32768): unknown {
   if (typeof s !== 'string') return s;
-  return s.length > max ? s.slice(0, max) + `… (truncated ${s.length - max} chars)` : s;
+  return s.length > max ? s.slice(0, max) + `... (truncated ${s.length - max} chars)` : s;
 }
 
 function sanitizeAllStrings(obj: any): any {
@@ -209,6 +255,26 @@ export function normalizeEvent(event: AnyEvent): AnyEvent {
       if (!e.status) e.status = 'success';
       return e;
     }
+
+    case 'prompt_change': {
+      if (typeof e.overlay === 'string') {
+        try { e.overlay = JSON.parse(e.overlay); } catch { e.overlay = undefined; }
+      }
+      if (e.overlay && typeof e.overlay === 'object') {
+        e.overlay = sanitizeAllStrings(e.overlay);
+      }
+      if (Array.isArray(e.directives)) {
+        e.directives = e.directives.map((item: any) => clampString(String(item)));
+      }
+      if (e.summary) {
+        e.summary = clampString(String(e.summary));
+      }
+      if (e.note) {
+        e.note = clampString(String(e.note));
+      }
+      return e;
+    }
+
 
     default:
       break;

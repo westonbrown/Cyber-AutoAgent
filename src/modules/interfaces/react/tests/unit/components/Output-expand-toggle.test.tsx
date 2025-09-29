@@ -18,7 +18,7 @@ describe('EventLine tool output collapsing', () => {
     };
     const { lastFrame } = render(<EventLine event={evt} animationsEnabled={false} />);
     const frame = lastFrame();
-    expect(frame.includes('... (content continues)')).toBe(true);
+    expect(/\.\.\. \(content continues(?:;\s*\d+\s+lines omitted)?\)/.test(frame)).toBe(true);
     expect(frame.includes('line 999')).toBe(true); // tail present
     expect(frame.includes('line 500')).toBe(false); // middle omitted
     expect(frame.toLowerCase()).not.toContain('press ctrl+s');

@@ -228,12 +228,36 @@ export class AssessmentFlow {
       case 'objective':
         return this.processObjectiveSettingInput(sanitizedInput);
       
-      case 'ready':
+      case 'ready': {
+        const lower = sanitizedInput.toLowerCase();
+        // Allow overriding objective at the final stage using "execute <objective>"
+        if (lower.startsWith('execute ')) {
+          const objective = sanitizedInput.substring(8).trim();
+          this.assessmentState.objective = objective || this.generateDefaultObjective(this.assessmentState.module!);
+          return {
+            success: true,
+            message: `Custom objective configured: ${this.assessmentState.objective}`,
+            nextPrompt: 'Ready to execute - Press Enter to start assessment',
+            readyToExecute: true
+          };
+        }
+        // Also allow updating the objective without immediate execution
+        if (lower.startsWith('objective ')) {
+          const objective = sanitizedInput.substring('objective '.length).trim();
+          this.assessmentState.objective = objective || this.generateDefaultObjective(this.assessmentState.module!);
+          return {
+            success: true,
+            message: `Objective updated: ${this.assessmentState.objective}`,
+            nextPrompt: 'Press Enter or type "execute" to start assessment'
+          };
+        }
+        // Default guidance at ready state
         return {
           success: false,
           message: 'Assessment configuration complete. Press Enter to start or type "reset" to reconfigure.',
           nextPrompt: 'Ready to execute security assessment'
         };
+      }
       
       default:
         return {

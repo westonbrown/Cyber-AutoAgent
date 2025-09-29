@@ -3,18 +3,26 @@ export class ByteBudgetRingBuffer<T> {
   private byteLimit: number;
   private currentBytes = 0;
   private estimator: (item: T) => number;
+  private overflowReducer?: (item: T) => T;
 
-  constructor(byteLimit: number, estimator?: (item: T) => number) {
+  constructor(
+    byteLimit: number,
+    estimatorOrOptions?:
+      | ((item: T) => number)
+      | { estimator?: (item: T) => number; overflowReducer?: (item: T) => T }
+  ) {
     this.byteLimit = Math.max(1024, byteLimit | 0);
-    this.estimator = estimator || ((item: any) => {
+    const defaultEstimator = (item: any) => {
       // Roughly estimate size focusing on common fields
       try {
         if (item == null) return 0;
         let bytes = 64; // base overhead per item
         if (typeof item === 'string') return bytes + item.length;
         if (typeof item === 'object') {
-          const s = (item as any);
-          const addStr = (v: any) => { if (typeof v === 'string') bytes += v.length; };
+          const s = item as any;
+          const addStr = (v: any) => {
+            if (typeof v === 'string') bytes += v.length;
+          };
           addStr(s.content);
           addStr(s.command);
           addStr(s.message);
@@ -30,7 +38,16 @@ export class ByteBudgetRingBuffer<T> {
       } catch {
         return 128;
       }
-    });
+    };
+
+    if (typeof estimatorOrOptions === 'function') {
+      this.estimator = estimatorOrOptions;
+    } else if (estimatorOrOptions && typeof estimatorOrOptions === 'object') {
+      this.estimator = estimatorOrOptions.estimator || defaultEstimator;
+      this.overflowReducer = estimatorOrOptions.overflowReducer;
+    } else {
+      this.estimator = defaultEstimator;
+    }
   }
 
   clear() {
@@ -39,8 +56,26 @@ export class ByteBudgetRingBuffer<T> {
   }
 
   push(item: T) {
-    const size = this.estimator(item);
-    this.items.push(item);
+    let toStore = item;
+    let size = this.estimator(toStore);
+
+    // If a single item exceeds the budget, attempt to reduce it.
+    if (size > this.byteLimit && this.overflowReducer) {
+      try {
+        toStore = this.overflowReducer(toStore);
+        size = this.estimator(toStore);
+      } catch {
+        // If reducer fails, skip storing this item entirely
+        return;
+      }
+    }
+
+    // If still over budget, skip storing to preserve memory bounds
+    if (size > this.byteLimit) {
+      return;
+    }
+
+    this.items.push(toStore);
     this.currentBytes += size;
     this.enforceBudget();
   }

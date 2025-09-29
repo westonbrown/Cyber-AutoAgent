@@ -237,6 +237,15 @@ export function useOperationManager({
           // Fallback: emit stop event to the service
           appState.executionService.emit('stop');
         }
+
+        // Proactively detach listeners and cleanup the execution service to avoid leaks
+        try {
+          const svc: any = appState.executionService;
+          if (svc) {
+            svc.removeAllListeners?.();
+            svc.cleanup?.();
+          }
+        } catch {}
         
         // Then update the operation manager state
         operationManager.pauseOperation(appState.activeOperation.id);

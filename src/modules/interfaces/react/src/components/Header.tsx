@@ -55,13 +55,22 @@ export const Header: React.FC<HeaderProps> = React.memo(({
       {/* Logo - ASCII art or text */}
       {isAsciiArt ? (
         <Box key="ascii-logo">
-          {useGradient && theme.gradientColors ? (
-            <Gradient colors={theme.gradientColors}>
-              <Text>{logo}</Text>
-            </Gradient>
-          ) : (
-            <Text color={theme.primary}>{logo}</Text>
-          )}
+          {(() => {
+            // Clamp ASCII art to terminal width to avoid Yoga WASM overflows on narrow terminals
+            const cols = (typeof process !== 'undefined' && (process as any).stdout && (process as any).stdout.columns) ? (process as any).stdout.columns : terminalWidth;
+            const maxWidth = Math.max(20, Math.min(Number(cols || terminalWidth || 80), 200));
+            const clamped = logo
+              .split('\n')
+              .map(line => line.slice(0, maxWidth))
+              .join('\n');
+            return (useGradient && theme.gradientColors) ? (
+              <Gradient colors={theme.gradientColors}>
+                <Text>{clamped}</Text>
+              </Gradient>
+            ) : (
+              <Text color={theme.primary}>{clamped}</Text>
+            );
+          })()}
         </Box>
       ) : (
         <Box

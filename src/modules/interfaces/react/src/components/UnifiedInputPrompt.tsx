@@ -138,6 +138,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         case 'ready':
           suggestions.push(
             { text: 'execute', description: '▶ Start security assessment', type: 'command' },
+            { text: 'execute focus on OWASP Top 10', description: 'Start and override objective', type: 'command' },
             { text: '', description: '⏎ Press Enter to start assessment', type: 'command' },
             { text: 'reset', description: 'Change configuration', type: 'command' },
             { text: '/help', description: 'Show commands and tips', type: 'command' }
@@ -245,7 +246,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       case 'objective':
         return 'Type "execute" (default) or "execute <your objective>" (custom) to start';
       case 'ready':
-        return 'Press Enter or type "execute" to start assessment';
+        return 'Press Enter, type "execute", or "execute <objective>" to start';
       default:
         // If we have a module loaded (by default 'general'), prompt for target
         if (currentModule) {
@@ -464,7 +465,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
                 } else if (value.length === 0 && flowState.step === 'objective') {
                   return `Type 'execute' to start with default objective, or 'execute <your objective>' for custom`;
                 } else if (value.length === 0 && flowState.step === 'ready') {
-                  return `Press Enter or type \"execute\" to start assessment`;
+                  return `Press Enter, type 'execute', or 'execute <objective>' to start`;
                 } else if (value.length === 0) {
                   return `Quick start: target <url> or use /help for all commands`;
                 }

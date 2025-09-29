@@ -68,7 +68,17 @@ interface ToolState {
   startTime: number;
 }
 
-const DIVIDER = '─'.repeat(process.stdout.columns || 80);
+// Compute divider dynamically to avoid stale or zero-width when terminal resizes
+const getDivider = (): string => {
+  try {
+    const cols = (process.stdout && (process.stdout as any).columns) ? (process.stdout as any).columns : 80;
+    // Ensure a sensible minimum so the line is visible even in constrained environments
+    const width = Math.max(60, Number(cols) || 80);
+    return '─'.repeat(width);
+  } catch {
+    return '─'.repeat(80);
+  }
+};
 
 // Operation context used to locate artifacts like the final report
 type OperationContext = {
@@ -283,7 +293,7 @@ export const EventLine: React.FC<{
               {stepDisplay}
             </Text>
           </Box>
-          <Text color="#45475A">{DIVIDER.slice(0, Math.max(0, DIVIDER.length - 20))}</Text>
+          <Text color="#45475A">{getDivider()}</Text>
           {/* If this is the FINAL REPORT and we have operation context, render the report inline */}
           {event.step === 'FINAL REPORT' && operationContext && (
             <InlineReportViewer ctx={operationContext} />
@@ -941,9 +951,9 @@ const method = latestInput.method || 'GET';
       // Backend now sends clean content without ANSI codes
       const plain = normalized;
 
-      // Skip only exact placeholder tokens (not content that starts with them)
+      // Skip only placeholder tokens if the entire content is just a token
       const plainTrimmed = plain.trim();
-      if (plainTrimmed === 'output' || plainTrimmed === 'reasoning') {
+      if (/^(output|reasoning)(\s*\[[^\]]+\])?$/i.test(plainTrimmed)) {
         return null;
       }
       
@@ -975,8 +985,8 @@ const method = latestInput.method || 'GET';
         if (l.startsWith('Event loop cycle stop requested')) return false;
         // Remove python_repl success banner lines
         if (/^Code executed successfully\.?$/i.test(l)) return false;
-        // Drop only standalone placeholder lines (not JSON content)
-        if (l === 'output' || l === 'reasoning') return false;
+        // Drop placeholder lines, including forms like "output [11 lines]"
+        if (/^(output|reasoning)(\s*\[[^\]]+\])?$/i.test(l)) return false;
         // Drop empty Error: labels
         if (/^Error:\s*$/.test(l)) return false;
         // For tool outputs (JSON), keep all content

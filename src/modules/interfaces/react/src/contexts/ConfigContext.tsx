@@ -457,7 +457,12 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
   };
 
   const updateConfig = useCallback((updates: Partial<Config>) => {
-    setConfig(prevConfig => deepMerge(prevConfig, updates));
+    setConfig(prevConfig => {
+      const next = deepMerge(prevConfig, updates);
+      // Keep ref in sync immediately so saveConfig sees latest values
+      configRef.current = next;
+      return next;
+    });
   }, []);
 
   // Persist confirmations/autoApprove changes immediately to survive app restarts
@@ -481,14 +486,14 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
   const saveConfig = useCallback(async () => {
     try {
       await fs.mkdir(path.dirname(configFilePath), { recursive: true });
-      // Use the actual config state instead of configRef to ensure we save the latest
-      await fs.writeFile(configFilePath, JSON.stringify(config, null, 2));
+      // Always save the most up-to-date config from ref to avoid stale writes
+      await fs.writeFile(configFilePath, JSON.stringify(configRef.current, null, 2));
       loggingService.info('Config saved successfully to:', configFilePath);
     } catch (error) {
       loggingService.error('Failed to save config:', error);
       throw error; // Re-throw so ConfigEditor can show error message
     }
-  }, [configFilePath, config]);
+  }, [configFilePath]);
 
   const loadConfig = useCallback(async () => {
     setIsConfigLoading(true);
