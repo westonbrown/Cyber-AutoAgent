@@ -58,6 +58,13 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
     // Forward container manager progress with stable reference for cleanup
     this.containerProgressHandler = (message: string) => this.emit('progress', message);
     this.containerManager.on('progress', this.containerProgressHandler);
+
+    // Fallback kill-switch: if UI emits 'stop' before handle is returned, forward to service
+    this.on('stop', async () => {
+      try {
+        await this.dockerService.stop();
+      } catch {}
+    });
   }
 
   getMode(): ExecutionMode {

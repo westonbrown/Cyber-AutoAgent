@@ -788,6 +788,15 @@ export class PythonExecutionService extends EventEmitter {
         });
       }, 1800);
       
+      // If aborted before process start, resolve immediately as stopped
+      if (this.abortController?.signal?.aborted) {
+        this.logger.info('Abort received before Python process spawn; stopping execution');
+        this.isExecutionActive = false;
+        try { this.emit('stopped'); } catch {}
+        resolve();
+        return;
+      }
+
       // Spawn Python process
       this.activeProcess = spawn(this.pythonPath, args, {
         cwd: this.projectRoot,

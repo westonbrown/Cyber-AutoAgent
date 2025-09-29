@@ -42,6 +42,13 @@ export class PythonExecutionServiceAdapter extends EventEmitter implements Execu
     this.pythonService.on('stopped', () => this.emit('stopped'));
     this.pythonService.on('error', (error) => this.emit('error', error));
     this.pythonService.on('progress', (message) => this.emit('progress', message));
+
+    // Fallback kill-switch: if UI emits 'stop' before handle is returned, forward to service
+    this.on('stop', async () => {
+      try {
+        await this.pythonService.stop();
+      } catch {}
+    });
   }
 
   getMode(): ExecutionMode {
