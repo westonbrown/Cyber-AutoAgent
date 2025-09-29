@@ -124,10 +124,10 @@ def test_auto_optimization_triggers_at_step_20(
             mock_optimize.assert_called_once()
 
 
-def test_auto_optimization_extracts_patterns(
+def test_auto_optimization_retrieves_memories(
     mock_callback_handler, mock_memory, mock_config, setup_operation_folder
 ):
-    """Test that auto-optimization correctly extracts patterns from memory."""
+    """Test that auto-optimization correctly retrieves memories without pattern extraction."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
         memory_instance=mock_memory,
@@ -138,32 +138,18 @@ def test_auto_optimization_extracts_patterns(
         max_steps=100,
     )
 
-    # Test pattern extraction
-    patterns = hook._extract_learned_patterns()
-    assert "SQL Injection" in patterns
-
-    # Test dead end identification
-    mock_memory.search.return_value = [
-        {"memory": "[BLOCKED] xss attempt 1", "metadata": {"category": "adaptation"}},
-        {"memory": "[BLOCKED] xss attempt 2", "metadata": {"category": "adaptation"}},
-        {"memory": "[BLOCKED] xss attempt 3", "metadata": {"category": "adaptation"}},
+    # Mock memory responses
+    mock_memory.list_memories.return_value = [
+        {"memory": "[SQLI CONFIRMED] SQL injection successful", "metadata": {"severity": "high"}},
+        {"memory": "[BLOCKED] xss attempt blocked by WAF", "metadata": {"category": "adaptation"}},
+        {"memory": "Found SSTI vulnerability allowing code execution", "metadata": {"severity": "critical"}},
     ]
-    dead_ends = hook._identify_dead_ends()
-    assert "xss" in dead_ends
 
-    # Test working tactics identification
-    mock_memory.search.return_value = [
-        {
-            "memory": "Found SSTI vulnerability allowing code execution",
-            "metadata": {"severity": "critical", "validation_status": "confirmed"}
-        },
-        {
-            "memory": "SQL injection successful with UNION SELECT",
-            "metadata": {"severity": "high", "validation_status": "confirmed"}
-        }
-    ]
-    tactics = hook._identify_working_tactics()
-    assert "ssti" in tactics or "sql_injection" in tactics
+    # Test memory retrieval for overview
+    overview = hook._query_memory_overview()
+    assert overview is not None
+    assert overview["total_count"] == 3
+    assert len(overview["sample"]) == 3
 
 
 def test_auto_optimization_rewrites_prompt(
@@ -193,18 +179,13 @@ def test_auto_optimization_rewrites_prompt(
 - XSS attempts blocked by WAF (failed 3+ times)
 """
 
-        # Set up memory responses
-        mock_memory.search.side_effect = [
-            # For pattern extraction
-            [{"memory": "[VULNERABILITY] SSTI confirmed", "metadata": {"severity": "critical"}}],
-            # For dead ends
-            [
-                {"memory": "[BLOCKED] xss test 1"},
-                {"memory": "[BLOCKED] xss test 2"},
-                {"memory": "[BLOCKED] xss test 3"}
-            ],
-            # For working tactics
-            [{"memory": "ssti works", "metadata": {"validation_status": "confirmed"}}]
+        # Set up memory responses using list_memories
+        mock_memory.list_memories.return_value = [
+            {"memory": "[VULNERABILITY] SSTI confirmed", "metadata": {"severity": "critical"}},
+            {"memory": "[BLOCKED] xss test 1"},
+            {"memory": "[BLOCKED] xss test 2"},
+            {"memory": "[BLOCKED] xss test 3"},
+            {"memory": "ssti works", "metadata": {"validation_status": "confirmed"}}
         ]
 
         # Call auto-optimization
@@ -234,7 +215,7 @@ def test_auto_optimization_handles_no_patterns_gracefully(
     )
 
     # Mock empty memory responses
-    mock_memory.search.return_value = []
+    mock_memory.list_memories.return_value = []
 
     # Should not crash and should log appropriately
     hook._auto_optimize_execution_prompt()
