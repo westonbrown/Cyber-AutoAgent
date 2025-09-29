@@ -587,40 +587,12 @@ OPTIMIZATION GUIDELINES:
 Return ONLY the optimized prompt text."""
 
     try:
-        # Add timeout to prevent hanging on LLM call
-        import signal
-        from contextlib import contextmanager
-
-        @contextmanager
-        def timeout_handler(seconds):
-            def timeout_func(signum, frame):
-                raise TimeoutError(f"LLM rewrite timed out after {seconds} seconds")
-
-            # Only use signal-based timeout on Unix systems
-            if hasattr(signal, 'SIGALRM'):
-                old_handler = signal.signal(signal.SIGALRM, timeout_func)
-                signal.alarm(seconds)
-                try:
-                    yield
-                finally:
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
-            else:
-                # On non-Unix systems, just proceed without timeout
-                yield
-
-        # Use 60 second timeout for LLM rewrite
-        with timeout_handler(60):
-            logger.debug("Calling LLM rewriter with %d char prompt", len(request))
-            result = rewriter(request)
-            rewritten = str(result).strip()
-            logger.debug("LLM rewrite returned %d chars", len(rewritten))
-
+        # Call LLM rewriter directly without signal-based timeout (doesn't work in threads)
+        logger.debug("Calling LLM rewriter with %d char prompt", len(request))
+        result = rewriter(request)
+        rewritten = str(result).strip()
+        logger.debug("LLM rewrite returned %d chars", len(rewritten))
         return rewritten
-    except TimeoutError as te:
-        logger.error("LLM rewrite timed out: %s", te)
-        # Fallback: return current prompt with a note
-        return f"{current_prompt}\n\n# [Auto-optimization timed out at step - using original prompt]"
     except Exception as e:
         logger.error("LLM rewrite failed: %s", e)
         # Fallback: return current prompt with a note
