@@ -586,18 +586,20 @@ def get_system_prompt(
     if isinstance(output_config, dict) and output_config:
         base_dir = output_config.get("base_dir") or output_config.get("base") or "./outputs"
         target_name = output_config.get("target_name") or target
+        artifacts_path = output_config.get("artifacts_path", "")
         tools_path = output_config.get("tools_path", "")
         parts.append("## OUTPUT DIRECTORY STRUCTURE")
         parts.append(f"Base directory: {base_dir}")
         parts.append(f"Target: {target_name}")
         parts.append(f"Operation: {operation_id}")
+        if isinstance(artifacts_path, str) and artifacts_path:
+            rel_artifacts = artifacts_path.replace("/app/", "") if "/app/" in artifacts_path else artifacts_path
+            parts.append(f"\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):")
+            parts.append(f"  → {rel_artifacts}")
         if isinstance(tools_path, str) and tools_path:
-            # Show absolute path for meta-tooling - critical for editor+load_tool workflow
             rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
             parts.append(f"\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
             parts.append(f"  → {rel_tools}")
-            parts.append(f'  Example: editor(command="create", path="{rel_tools}/tool_name.py", ...)')
-        parts.append("\nArtifacts and evidence will be stored under the unified operation path.")
 
     # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
     try:
