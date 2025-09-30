@@ -590,11 +590,14 @@ def get_system_prompt(
         parts.append("## OUTPUT DIRECTORY STRUCTURE")
         parts.append(f"Base directory: {base_dir}")
         parts.append(f"Target: {target_name}")
-        parts.append(f"Target organization: {base_dir.rstrip('/')}/{target_name}/")
+        parts.append(f"Operation: {operation_id}")
         if isinstance(tools_path, str) and tools_path:
+            # Show absolute path for meta-tooling - critical for editor+load_tool workflow
             rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
-            parts.append(f"Operation tools directory: {rel_tools}")
-        parts.append("Evidence and logs will be stored under a unified operation path.")
+            parts.append(f"\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
+            parts.append(f"  → {rel_tools}")
+            parts.append(f'  Example: editor(command="create", path="{rel_tools}/tool_name.py", ...)')
+        parts.append("\nArtifacts and evidence will be stored under the unified operation path.")
 
     # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
     try:
@@ -652,10 +655,12 @@ def get_system_prompt(
     try:
         tools_guide = load_prompt_template("tools_guide.md")
         if tools_guide:
-            # Substitute operation tools directory path if available
-            tools_path = output_config.get("tools_path", "tools") if isinstance(output_config, dict) else "tools"
-            tools_guide = tools_guide.replace("{{operation_tools_dir}}", tools_path)
-            parts.append(tools_guide.strip())
+            # Substitute operation tools directory path from OUTPUT DIRECTORY STRUCTURE section
+            tools_path = output_config.get("tools_path", "") if isinstance(output_config, dict) else ""
+            # Only append tools_guide if we have a valid absolute path to inject
+            if tools_path:
+                tools_guide = tools_guide.replace("{{operation_tools_dir}}", tools_path)
+                parts.append(tools_guide.strip())
     except Exception:
         pass
 
