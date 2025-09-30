@@ -296,6 +296,7 @@ class ConfigManager:
             "us.anthropic.claude-opus-4-1-20250805-v1:0",
             "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         ]
 
     def is_thinking_model(self, model_id: str) -> bool:
@@ -307,18 +308,27 @@ class ConfigManager:
         # Base beta flags for thinking models
         beta_flags = ["interleaved-thinking-2025-05-14"]
 
-        # Add 1M context flag for Claude Sonnet 4
-        if "claude-sonnet-4-20250514" in model_id:
+        # Add 1M context flag for Claude Sonnet 4 and 4.5
+        if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             beta_flags.append("context-1m-2025-08-07")
+
+        # Claude Sonnet 4.5 has different output token limit
+        # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
+        if "claude-sonnet-4-5-20250929" in model_id:
+            max_tokens = 16000  # Sufficient for 10000 thinking budget + 6000 output
+            thinking_budget = 10000
+        else:
+            max_tokens = 32000
+            thinking_budget = 10000
 
         return {
             "model_id": model_id,
             "region_name": region_name,
             "temperature": 1.0,
-            "max_tokens": 32000,
+            "max_tokens": max_tokens,
             "additional_request_fields": {
                 "anthropic_beta": beta_flags,
-                "thinking": {"type": "enabled", "budget_tokens": 10000},
+                "thinking": {"type": "enabled", "budget_tokens": thinking_budget},
             },
         }
 
@@ -335,8 +345,8 @@ class ConfigManager:
             "top_p": llm_config.top_p,
         }
 
-        # Add 1M context support for Claude Sonnet 4
-        if "claude-sonnet-4-20250514" in model_id:
+        # Add 1M context support for Claude Sonnet 4 and 4.5
+        if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             config["additional_request_fields"] = {
                 "anthropic_beta": ["context-1m-2025-08-07"]
             }
@@ -395,9 +405,9 @@ class ConfigManager:
             "bedrock": {
                 "llm": LLMConfig(
                     provider=ModelProvider.AWS_BEDROCK,
-                    model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+                    model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     temperature=0.95,
-                    max_tokens=32000,
+                    max_tokens=8192,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -430,9 +440,9 @@ class ConfigManager:
             "litellm": {
                 "llm": LLMConfig(
                     provider=ModelProvider.LITELLM,
-                    model_id="bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",  # Default to Bedrock via LiteLLM
+                    model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=32000,
+                    max_tokens=8192,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -645,14 +655,23 @@ class ConfigManager:
         module: str = "general",
         **overrides,
     ) -> Dict[str, str]:
-        """Ensure operation output directories exist (root and artifacts).
+        """Ensure operation output directories exist and return absolute paths.
 
-        Creates ./outputs/<target>/<operation_id>/ and ./outputs/<target>/<operation_id>/artifacts
-        using the configured base_dir. Safe to call multiple times.
+        Creates operation-specific directories using configured base_dir:
+        - root: outputs/<target>/<operation_id>/
+        - artifacts: outputs/<target>/<operation_id>/artifacts/
+        - tools: outputs/<target>/<operation_id>/tools/ (for editor+load_tool meta-tooling)
 
-        Also copies master execution_prompt.txt to execution_prompt_optimized.txt for
-        agent-driven prompt optimization.
+        Safe to call multiple times. Also copies master execution_prompt.txt for optimization.
+
+        Returns:
+            Dict[str, str]: Absolute paths to {'root', 'artifacts', 'tools'}
         """
+        # Pull configured output base directory to ensure consistency
+        output_config = self.get_output_config(server, **overrides)
+        base_dir = output_config.base_dir
+
+        # Build operation-specific paths from config
         root = self.get_unified_output_path(server, target_name, operation_id, "", **overrides)
         artifacts = self.get_unified_output_path(server, target_name, operation_id, "artifacts", **overrides)
         tools = self.get_unified_output_path(server, target_name, operation_id, "tools", **overrides)

@@ -204,7 +204,7 @@ const deploymentDefaults = getDeploymentDefaults();
 export const defaultConfig: Config = {
   // Model Provider Settings
   modelProvider: 'bedrock',
-  modelId: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', // Latest Sonnet 4.5 as default
   embeddingModel: 'amazon.titan-embed-text-v2:0',
   evaluationModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
   swarmModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
@@ -241,6 +241,11 @@ export const defaultConfig: Config = {
       description: 'MXBAI Embeddings - Local Ollama model (free)'
     },
     // Anthropic Claude Models (Verified AWS CLI pricing)
+    'us.anthropic.claude-sonnet-4-5-20250929-v1:0': {
+      inputCostPer1k: 0.003,
+      outputCostPer1k: 0.015,
+      description: 'Claude Sonnet 4.5 - Latest model (AWS Bedrock pricing)'
+    },
     'us.anthropic.claude-sonnet-4-20250514-v1:0': {
       inputCostPer1k: 0.006,
       outputCostPer1k: 0.030,
