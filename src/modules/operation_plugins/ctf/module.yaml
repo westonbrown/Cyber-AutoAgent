@@ -5,10 +5,7 @@ author: Cyber-AutoAgent Team
 license: MIT
 cognitive_level: 4
 configuration:
-  timeout: 1200
-  max_depth: 15
   approach: Family-driven discovery and exploitation with curated-first probes and explicit success-state termination
-  confidence_threshold: 0.70
 capabilities:
   - flag_pattern_recognition: Recognize common flag formats (UUID-like, hash-like, generic tokens)
   - xss_strategy_and_state_detection: Execute sink-oriented tests and detect success-state transitions

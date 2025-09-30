@@ -4,10 +4,7 @@ description:  Generalized web application security assessment
 author: Cyber-AutoAgent Team
 license: MIT
 configuration:
-  timeout: 900
-  max_depth: 10
   approach: Intelligence-driven web application security assessment leveraging specialized external tools
-  confidence_threshold: 0.75
 capabilities:
   - advanced_reconnaissance: Coordinates subfinder, assetfinder, httpx, katana for comprehensive recon
   - intelligent_payload_testing: Orchestrates dalfox, arjun, corsy for sophisticated vulnerability testing  
