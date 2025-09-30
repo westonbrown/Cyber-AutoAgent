@@ -389,6 +389,9 @@ def create_agent(
                 os.environ["CYBER_OPERATION_ID"] = operation_id
             if target_name:
                 os.environ["CYBER_TARGET_NAME"] = target_name
+
+        # Fix python_repl race condition by disabling PTY mode
+        os.environ["PYTHON_REPL_INTERACTIVE"] = "false"
     except Exception:
         logger.debug("Unable to set overlay environment context", exc_info=True)
 
