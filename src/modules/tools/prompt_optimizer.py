@@ -492,7 +492,7 @@ def _llm_rewrite_execution_prompt(
     )
     from strands import Agent
 
-    # Get provider and model configuration from active environment / config
+    # Load active provider configuration
     config_manager = get_config_manager()
     provider = (
         os.getenv("PROVIDER")
@@ -510,49 +510,153 @@ def _llm_rewrite_execution_prompt(
     region_name = os.getenv("AWS_REGION") or config_manager.get_default_region()
     model_id = server_config.llm.model_id
 
-    # Create model using existing helper functions
+    # Set max_tokens=8000 for rewriter to handle full prompt output
     if provider == "ollama":
-        model = _create_local_model(model_id, provider)
+        from strands.models.ollama import OllamaModel
+        config = config_manager.get_local_model_config(model_id, provider)
+        model = OllamaModel(
+            host=config["host"],
+            model_id=config["model_id"],
+            temperature=config["temperature"],
+            max_tokens=8000,
+        )
     elif provider == "bedrock":
-        model = _create_remote_model(model_id, region_name, provider)
+        from strands.models.bedrock import BedrockModel
+        config = config_manager.get_standard_model_config(model_id, region_name, provider)
+        model = BedrockModel(
+            model_id=config["model_id"],
+            region_name=config["region_name"],
+            temperature=config["temperature"],
+            max_tokens=8000,
+        )
     elif provider == "litellm":
-        model = _create_litellm_model(model_id, region_name, provider)
+        from strands.models.litellm import LiteLLMModel
+        config = config_manager.get_standard_model_config(model_id, region_name, provider)
+        client_args = {}
+        params = {
+            "temperature": config["temperature"],
+            "max_tokens": 8000,
+        }
+        if model_id.startswith("bedrock/"):
+            client_args["aws_region_name"] = region_name
+            # Bedrock models don't support both temperature and top_p
+        else:
+            # Non-Bedrock models can use top_p
+            params["top_p"] = config.get("top_p", 0.95)
+        model = LiteLLMModel(
+            client_args=client_args,
+            model_id=config["model_id"],
+            params=params,
+        )
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
-    # Create a specialized rewriter agent
-    system_prompt = f"""You are a prompt optimization specialist focused on operational methodology.
+    # Limit evidence input to 5K chars
+    max_evidence_chars = 5000
+    truncated_patterns = learned_patterns[:max_evidence_chars] if len(learned_patterns) > max_evidence_chars else learned_patterns
+    evidence_note = "\n... (evidence truncated for brevity)" if len(learned_patterns) > max_evidence_chars else ""
 
-Your task: Optimize the execution prompt based on operational progress toward objectives.
+    system_prompt = f"""You are a universal prompt optimizer that extracts FIRST-PRINCIPLES REASONING from operational evidence across ANY domain (CTF, bug bounty, pentesting, threat emulation, etc.).
 
-**PROTECTED SECTIONS (PRESERVE VERBATIM)**:
-- ALL XML-tagged sections (<tag>...</tag>) must be copied CHARACTER-FOR-CHARACTER
-- Termination conditions and success criteria
-- Budget thresholds and percentage allocations
-- Workflow conditions and mandatory policies
+<evidence>
+OPERATION DATA:
+{truncated_patterns}{evidence_note}
 
-**OPTIMIZATION FOCUS**:
-- Align methodology with current objective and phase
-- Prioritize tactics that advance toward the goal
-- Remove approaches that have proven ineffective
-- Emphasize techniques showing progress
+FAILED APPROACHES: {remove_tactics}
+WORKING APPROACHES: {focus_tactics}
+</evidence>
 
-**OPTIMIZABLE CONTENT**:
-Content OUTSIDE of XML tags:
-- Methodology descriptions and approach priorities
-- Tool recommendations and execution guidance
-- Tactical sequences and technique descriptions
-- Phase-specific strategies
+<core_mission>
+Extract transferable reasoning principles that improve decision-making in ANY security operation type. This optimizer will persist across plugin changes - extract UNIVERSAL patterns, not domain-specific techniques.
+</core_mission>
 
-CONSTRAINTS:
-- Remove ineffective tactics: {remove_tactics}
-- Emphasize successful approaches: {focus_tactics}
-- Maintain actionable guidance aligned with objectives
-- Preserve ALL XML structure
-- Maintain markdown formatting
-- Be concise and focused
+<length_constraint>
+Input: {len(current_prompt)} chars, ~{len(current_prompt.split(chr(10)))} lines
+Output: MUST be ≤ {len(current_prompt) + 300} chars (5% tolerance)
+Method: For each principle added, compress equal content elsewhere
 
-Current prompt length: {len(current_prompt)} chars"""
+Compression Strategies:
+1. Merge duplicates: "X ≠ progress. Y ≠ progress" → "Progress ≠ intermediate data (X, Y)"
+2. Remove verbosity: "Before you proceed" → "Before" | "You should always" → "" | "In order to" → "To"
+3. Compact notation: Multi-line bullets → "A | B | C" where logical
+4. Remove transitions: "Let's now discuss", "Next we'll cover" → delete
+5. Dead-end removal: If FAILED APPROACHES confirmed, remove entire related section
+</length_constraint>
+
+<universal_reasoning>
+Extract these meta-patterns (domain-agnostic):
+
+1. Information Extraction from Feedback
+   - Evidence: Agent ignored error messages, constraints, response differentials
+   - Extract: "Responses encode constraints on [element type] → analyze what [feedback signal] reveals"
+   - NEVER: Specific error messages or response content
+
+2. Hypothesis Formation & Testing
+   - Evidence: Random variations without clear hypothesis
+   - Extract: "When [condition] blocks → form hypothesis about [element] → test via minimal variation"
+   - NEVER: Specific hypotheses or test sequences
+
+3. Incremental Complexity Control
+   - Evidence: Wrong complexity level for situation
+   - Extract: "Start [simplicity level] → if [evidence type] shows [pattern] → escalate to [complexity level]"
+   - NEVER: Specific techniques or complexity levels
+
+4. Necessary vs Sufficient Decision Logic
+   - Evidence: Unnecessary conversions or intermediate steps
+   - Extract: "When [outcome A] directly achievable via [method X], skip conversion unless X exhausted"
+   - NEVER: Specific capabilities or conversion paths
+
+5. Pivot Timing & Escalation
+   - Evidence: Pivoted too early or stuck too long
+   - Extract: "Variation N fails → [escalation M] | After [threshold] → pivot | [Budget %] → [collaboration]"
+   - NEVER: Specific counts or percentages
+
+6. Progress vs Busywork Distinction
+   - Evidence: Confused intermediate artifacts with objective completion
+   - Extract: "[Artifact X] ≠ progress unless enables [outcome Y]. Progress = [outcome category] achieved"
+   - NEVER: Specific artifacts or outcomes
+
+7. Constraint-Driven Simplification
+   - Evidence: Added complexity when constraint indicated simplification
+   - Extract: "Constraint '[type]' indicates [element] rejected → simplify by removing [component type]"
+   - NEVER: Specific constraints or components
+</universal_reasoning>
+
+<protected_content>
+NEVER modify, compress, or remove these critical sections:
+- Anti-patterns containing "After extraction" pipeline (extraction→usage guidance)
+- Any content between <!-- PROTECTED --> comment tags
+- Recent fixes addressing trajectory failures (hash cracking, data extraction)
+These are critical fixes that prevent known failure modes.
+</protected_content>
+
+<educational_vs_prescriptive>
+KEEP (educational scaffolding - technique CLASSES):
+- "Injection types: command, SQL, template, etc." (shows categories)
+- "Bypass methods: encoding, case variation, delimiter removal" (shows approach classes)
+- "Validation: timing differential, boolean responses, side channels" (shows verification methods)
+
+REMOVE (prescriptive solutions - challenge ANSWERS):
+- "Try payload {{{{7*7}}}}" (specific to one challenge)
+- "Use endpoint /amortization?term=" (target-specific)
+- "Hash format: 7d39307ae..." (challenge data)
+- "Flag location: /FLAG.txt" (challenge-specific)
+
+DISTINCTION: Educational = reusable patterns. Prescriptive = challenge solutions.
+</educational_vs_prescriptive>
+
+<validation_checklist>
+Before returning, verify:
+1. Length: output ≤ input + 300 chars
+2. Lines: output ≤ input + 5 lines
+3. Anti-cheat scan: zero specific payloads/errors/paths/commands
+4. XML structure: all tags preserved exactly
+5. Abstraction level: all additions domain-agnostic (plugin-independent)
+6. Compression applied: verbose phrasing removed where content added
+7. Educational examples: technique categories preserved
+
+Current prompt: {len(current_prompt)} chars
+</validation_checklist>"""
 
     rewriter = Agent(model=model, system_prompt=system_prompt)
 
@@ -560,40 +664,77 @@ Current prompt length: {len(current_prompt)} chars"""
     remove_str = ", ".join(remove_tactics) if remove_tactics else "none"
     focus_str = ", ".join(focus_tactics) if focus_tactics else "none"
 
-    request = f"""Optimize this execution prompt based on operational progress:
+    request = f"""Extract UNIVERSAL reasoning principles from evidence and optimize the prompt for ANY security operation type.
 
-CURRENT PROMPT:
+<current_prompt>
+Length: {len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
+Content:
 {current_prompt}
+</current_prompt>
 
-OPERATIONAL CONTEXT:
-{learned_patterns}
+<evidence>
+{truncated_patterns}{evidence_note}
 
-INEFFECTIVE APPROACHES: {remove_str}
-SUCCESSFUL APPROACHES: {focus_str}
+DEAD ENDS: {remove_str}
+WORKING: {focus_str}
+</evidence>
 
-OPTIMIZATION RULES:
-1. PRESERVE all XML-tagged sections (<tag>...</tag>) exactly as written
-2. Maintain termination conditions and success criteria unchanged
-3. Keep budget thresholds and workflow conditions intact
+<task>
+Apply meta-pattern extraction (7 categories from system prompt) to improve decision-making across ALL domains.
+</task>
 
-OPTIMIZATION GUIDELINES:
-- Adjust methodology to align with current objective and phase
-- De-emphasize or remove ineffective approaches (outside XML tags)
-- Highlight and expand on successful techniques
-- Incorporate operational learnings into tactical guidance
-- Focus on actionable guidance that advances objectives
-- Maintain concise, focused content
+<process>
+1. Identify meta-patterns from evidence (information extraction failures, hypothesis formation gaps, complexity control issues)
+2. Scan current prompt for compression targets (verbose phrasing, redundancy, dead-end content from DEAD ENDS list)
+3. For each meta-pattern to add, compress equal content elsewhere using compression strategies
+4. Add abstracted principles (use [placeholders] for domain-specific terms, e.g., "[capability type]" not "AUTH_BYPASS")
+5. Validate: length ≤ {len(current_prompt) + 300} chars, lines ≤ {len(current_prompt.split(chr(10))) + 5}, zero anti-cheat violations
+6. Return optimized prompt ONLY (no preamble, no explanation)
+</process>
 
-Return ONLY the optimized prompt text."""
+<critical_requirements>
+- Domain-agnostic: works for CTF, bug bounty, pentesting, threat emulation, ANY future plugin
+- First-principles: teaches reasoning PROCESS not specific techniques
+- Length-constrained: output ≤ input + 300 chars (compress before adding)
+- Educational scaffolding preserved: keep technique CLASS examples (remove challenge SOLUTIONS)
+- XML structure intact: all tags exactly preserved
+- No anti-cheat violations: zero specific payloads/errors/commands/paths/data
+</critical_requirements>
+
+<output_format>
+Return ONLY the optimized prompt (no additional text, no preamble, no explanation)
+</output_format>"""
+
+    if not hasattr(_llm_rewrite_execution_prompt, '_failure_count'):
+        _llm_rewrite_execution_prompt._failure_count = 0
+
+    if _llm_rewrite_execution_prompt._failure_count >= 3:
+        logger.warning("Too many rewrite failures (%d), using original prompt", _llm_rewrite_execution_prompt._failure_count)
+        return current_prompt
 
     try:
-        # Call LLM rewriter directly without signal-based timeout (doesn't work in threads)
         logger.debug("Calling LLM rewriter with %d char prompt", len(request))
         result = rewriter(request)
         rewritten = str(result).strip()
         logger.debug("LLM rewrite returned %d chars", len(rewritten))
+
+        # Basic length sanity check (allow reasonable expansion for improvements)
+        max_allowed_length = len(current_prompt) * 1.5
+        if len(rewritten) > max_allowed_length:
+            logger.warning(
+                "Rewritten prompt too large (%d chars vs %d original, max %d allowed) - rejecting",
+                len(rewritten), len(current_prompt), max_allowed_length
+            )
+            _llm_rewrite_execution_prompt._failure_count += 1
+            return current_prompt
+
+        logger.info(
+            "Prompt optimization completed: %d → %d chars (%+d)",
+            len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt)
+        )
+        _llm_rewrite_execution_prompt._failure_count = 0
         return rewritten
     except Exception as e:
         logger.error("LLM rewrite failed: %s", e)
-        # Fallback: return current prompt with a note
-        return f"{current_prompt}\n\n<!-- Optimization attempted but failed: {e} -->"
+        _llm_rewrite_execution_prompt._failure_count += 1
+        return current_prompt
