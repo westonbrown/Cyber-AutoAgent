@@ -508,9 +508,24 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     stepCounterRef.current = 0;
     lastPushedTypeRef.current = null;
     results.push(event as DisplayStreamEvent);
-    if (animationsEnabled) {
-      // Show a spinner immediately while the agent prepares the first step
-      scheduleDelayedThinking({ delay: 0, context: 'operation_init', addSpacer: false });
+    if (animationsEnabled && !activeThinkingRef.current) {
+      // Show spinner immediately after operation init
+      setActiveThinking(true);
+      seenThinkingThisPhaseRef.current = true;
+
+      const thinkingEvent: DisplayStreamEvent = {
+        type: 'thinking',
+        context: 'startup',
+        startTime: Date.now(),
+        urgent: true  // Bypass throttle for immediate display
+      } as DisplayStreamEvent;
+
+      results.push(thinkingEvent);
+
+      // CRITICAL: Update active buffer immediately to show spinner without delay
+      activeBufRef.current.clear();
+      activeBufRef.current.push(thinkingEvent);
+      setActiveEvents(activeBufRef.current.toArray());
     }
     break;
 
@@ -558,6 +573,26 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           stepCounterRef.current = event.step;
         }
         lastPushedTypeRef.current = 'step_header';
+
+        // Show thinking spinner while waiting for tool selection after step header
+        if (animationsEnabled && !activeThinkingRef.current) {
+          setActiveThinking(true);
+          seenThinkingThisPhaseRef.current = true;
+
+          const thinkingEvent: DisplayStreamEvent = {
+            type: 'thinking',
+            context: 'tool_preparation',
+            startTime: Date.now(),
+            urgent: true  // Bypass throttle for immediate display
+          } as DisplayStreamEvent;
+
+          results.push(thinkingEvent);
+
+          // CRITICAL: Update active buffer immediately to show spinner without delay
+          activeBufRef.current.clear();
+          activeBufRef.current.push(thinkingEvent);
+          setActiveEvents(activeBufRef.current.toArray());
+        }
         break;
         
         
@@ -611,19 +646,34 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
                 activeBufRef.current.push({ type: 'reasoning', content: merged } as any);
                 return activeBufRef.current.toArray();
               });
-              // After rendering reasoning, show a spinner shortly while the agent
+              // After rendering reasoning, briefly show a spinner while the agent
               // prepares the next step/tool selection to avoid a blank gap.
               if (animationsEnabled) {
-                // Clear any existing timer and schedule a new one immediately
+                // Clear any existing timer and schedule a new one with minimal delay
                 cancelPostReasoningIdleTimer();
                 postReasoningIdleTimerRef.current = setTimeout(() => {
-                  // End the visible reasoning session in the active tail and show spinner
+                  // End the visible reasoning session
                   setActiveReasoning(false);
                   if (!activeThinkingRef.current) {
-                    scheduleDelayedThinking({ delay: 0, context: 'reasoning', addSpacer: false });
+                    setActiveThinking(true);
+                    seenThinkingThisPhaseRef.current = true;
+
+                    // Add thinking to active buffer, preserving any existing content
+                    const thinkingEvent: DisplayStreamEvent = {
+                      type: 'thinking',
+                      context: 'reasoning',
+                      startTime: Date.now(),
+                      urgent: true  // Bypass throttle to avoid post-reasoning gaps
+                    } as DisplayStreamEvent;
+
+                    const existing = activeBufRef.current.toArray().filter(e => e.type !== 'thinking' && e.type !== 'reasoning');
+                    activeBufRef.current.clear();
+                    activeBufRef.current.push(thinkingEvent);
+                    for (const e of existing) activeBufRef.current.push(e);
+                    setActiveEvents(activeBufRef.current.toArray());  // Immediate update
                   }
                   postReasoningIdleTimerRef.current = null;
-                }, 120) as unknown as NodeJS.Timeout;
+                }, 10) as unknown as NodeJS.Timeout;
               }
             }
           } catch {}
@@ -679,6 +729,23 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         emitTestMarker(`tool_start tool=${event.toolName || event.tool_name}`);
         cancelPostToolIdleTimer();
         cancelPostReasoningIdleTimer();
+
+        // Keep spinner showing during tool execution, just change context
+        if (!activeThinking && animationsEnabled) {
+          setActiveThinking(true);
+          const thinkingEvent: DisplayStreamEvent = {
+            type: 'thinking',
+            context: 'tool_execution',
+            startTime: Date.now(),
+            urgent: true
+          } as DisplayStreamEvent;
+
+          results.push(thinkingEvent);
+          activeBufRef.current.clear();
+          activeBufRef.current.push(thinkingEvent);
+          setActiveEvents(activeBufRef.current.toArray());
+        }
+
         // Reset last tool output timestamp for new tool
         lastToolOutputTsRef.current = 0;
         // Do not flush pending reasoning here; wait for step_header to ensure correct attribution
@@ -790,7 +857,19 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Immediately show a spinner while the agent processes the tool result and prepares reasoning
         if (animationsEnabled && !activeReasoning) {
           setActiveThinking(true);
-          results.push({ type: 'thinking', context: 'waiting', startTime: Date.now() } as DisplayStreamEvent);
+          const thinkingEvent: DisplayStreamEvent = {
+            type: 'thinking',
+            context: 'waiting',
+            startTime: Date.now(),
+            urgent: true  // Bypass throttle for immediate display
+          } as DisplayStreamEvent;
+
+          results.push(thinkingEvent);
+
+          // CRITICAL: Update active buffer immediately to show spinner without delay
+          activeBufRef.current.clear();
+          activeBufRef.current.push(thinkingEvent);
+          setActiveEvents(activeBufRef.current.toArray());
         }
         // Optionally, we do not emit a separate tool_end display item here to avoid duplicates
         break;
@@ -1034,7 +1113,19 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Immediately show a short waiting spinner while transitioning to reasoning
         if (animationsEnabled && !activeReasoning) {
           setActiveThinking(true);
-          results.push({ type: 'thinking', context: 'waiting', startTime: Date.now() } as DisplayStreamEvent);
+          const thinkingEvent: DisplayStreamEvent = {
+            type: 'thinking',
+            context: 'waiting',
+            startTime: Date.now(),
+            urgent: true  // Bypass throttle for immediate display
+          } as DisplayStreamEvent;
+
+          results.push(thinkingEvent);
+
+          // CRITICAL: Update active buffer immediately to show spinner without delay
+          activeBufRef.current.clear();
+          activeBufRef.current.push(thinkingEvent);
+          setActiveEvents(activeBufRef.current.toArray());
         }
         // Reset flags and cancel pending delayed thinking
         cancelDelayedThinking();
@@ -1350,7 +1441,10 @@ completedBufRef.current.pushMany(newCompletedEvents);
           // Keep current thinking (if any) and aggregated output in active tail without duplication
           const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
           if (thinkingEvents.length > 0 || currentAggDisplayEvent) {
-            setActiveThrottled(prev => {
+            // Check if any thinking event is marked urgent - needs immediate rendering
+            const hasUrgent = thinkingEvents.some(e => (e as any).urgent === true);
+
+            const updateActiveBuf = () => {
               // Preserve any existing thinking if none were added in this batch
               const existingThinking = activeBufRef.current.toArray().filter(e => e.type === 'thinking');
               const thinkingToKeep = thinkingEvents.length > 0 ? thinkingEvents : existingThinking;
@@ -1364,7 +1458,15 @@ completedBufRef.current.pushMany(newCompletedEvents);
               for (const t of uniqueThinking) activeBufRef.current.push(t);
               if (currentAggDisplayEvent) activeBufRef.current.push(currentAggDisplayEvent);
               return activeBufRef.current.toArray();
-            });
+            };
+
+            // Bypass throttle for urgent events (startup, post-reasoning) to ensure immediate visibility
+            if (hasUrgent) {
+              const events = updateActiveBuf();
+              setActiveEvents(events);
+            } else {
+              setActiveThrottled(updateActiveBuf);
+            }
           }
         }
       }

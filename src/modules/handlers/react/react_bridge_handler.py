@@ -80,6 +80,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.tool_start_times = {}  # Track start times for duration calculation
         self.announced_tools = set()
         self.tool_input_buffer = {}
+        self.tool_name_buffer = {}  # Map tool_id -> tool_name for correct attribution
         self.tools_used = set()
         # Track per-tool usage counts for accurate reporting
         self.tool_counts = {}
@@ -469,6 +470,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             )
 
             if has_tool_use:
+                # Reset batch tracking for new assistant response with tools
+                # This allows multiple tools in the same response to share one step header
+                if hasattr(self, '_step_header_emitted_for_batch'):
+                    delattr(self, '_step_header_emitted_for_batch')
+                if hasattr(self, '_tools_in_current_step'):
+                    # Clear the list but keep the attribute to signal we're in a step
+                    self._tools_in_current_step = []
+
                 if initial_assistant:
                     # Do not emit header yet; let the first tool announcement emit Step 1
                     # Ensure a header will be emitted on tool announcement
@@ -610,17 +619,30 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Only process new tools
         if tool_id and tool_id not in self.announced_tools:
             # Ensure a step header will be emitted for each new tool (non-swarm)
+            # IMPORTANT: Only emit header for the FIRST tool in a multi-tool response
+            # Claude 4.5 can invoke multiple tools in parallel within the same response
             if not self.in_swarm_operation:
-                self.pending_step_header = True
-                # Emit accumulated reasoning first (for non-swarm or if not already emitted)
-                self._emit_accumulated_reasoning()
+                # Check if this is the first tool announcement since the last step header
+                if self.current_step == 0 or not hasattr(self, '_tools_in_current_step'):
+                    self._tools_in_current_step = []
+                    self.pending_step_header = True
+                    # Emit accumulated reasoning first (for non-swarm or if not already emitted)
+                    self._emit_accumulated_reasoning()
 
-            # Emit step header if pending or first tool
-            if self.pending_step_header or (self.current_step == 0 and tool_id):
-                if self.current_step == 0 or self.pending_step_header:
-                    # Only increment global step count when not in swarm operation
+                # Track this tool as part of current step
+                self._tools_in_current_step.append(tool_id)
+
+            # Emit step header ONLY if pending (i.e., this is the first tool in the response)
+            if self.pending_step_header and (self.current_step == 0 or self.pending_step_header):
+                if self.current_step == 0:
+                    # First tool ever - increment step
                     if not self.in_swarm_operation:
                         self.current_step += 1
+                elif self.pending_step_header and not hasattr(self, '_step_header_emitted_for_batch'):
+                    # First tool in this batch - increment step
+                    if not self.in_swarm_operation:
+                        self.current_step += 1
+                    self._step_header_emitted_for_batch = True
 
                 # Check if step limit exceeded BEFORE emitting confusing header
                 # Don't enforce step limit for swarm agents - they have their own limits
@@ -650,6 +672,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Defensive: never allow metrics to break streaming
                 pass
             self.tool_input_buffer[tool_id] = tool_input
+            self.tool_name_buffer[tool_id] = tool_name  # Track tool name for correct attribution
 
             # Intelligently detect which swarm agent is active based on tool usage
             if self.in_swarm_operation and tool_name != "swarm":
@@ -942,6 +965,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         set_tool_execution_state(False)
         buffered_output = get_buffered_output()
 
+        # Convert result to dict format early to extract tool_use_id
+        if hasattr(tool_result, "__dict__"):
+            tool_result_dict = tool_result.__dict__
+        elif isinstance(tool_result, dict):
+            tool_result_dict = tool_result
+        else:
+            tool_result_dict = {"content": [{"text": str(tool_result)}], "status": "success"}
+
+        # Extract tool_use_id and get correct tool name early for proper attribution
+        tool_use_id = tool_result_dict.get("toolUseId") or self.last_tool_id
+        tool_name = self.tool_name_buffer.get(tool_use_id, self.last_tool_name)
+
         # Do not flush reasoning here; for swarm we want reasoning to follow tool output
 
         # Ensure we have proper tracking for swarm agents
@@ -951,7 +986,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             logger.info(f"Swarm operation started with agent: {self.current_swarm_agent}")
 
         # Parse swarm output for agent events if this is the swarm tool completing
-        if self.last_tool_name == "swarm" and buffered_output:
+        if tool_name == "swarm" and buffered_output:
             self._parse_swarm_output_for_events(buffered_output)
 
         # Also check for swarm timeout or failure patterns
@@ -970,16 +1005,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Stop thinking animation
         self._emit_ui_event({"type": "thinking_end"})
 
-        # Convert result to dict format
-        if hasattr(tool_result, "__dict__"):
-            tool_result_dict = tool_result.__dict__
-        elif isinstance(tool_result, dict):
-            tool_result_dict = tool_result
-        else:
-            tool_result_dict = {"content": [{"text": str(tool_result)}], "status": "success"}
-
         # Debug logging for shell tool results
-        if self.last_tool_name == "shell":
+        if tool_name == "shell":
             logger.debug(
                 "Shell tool result structure: %s",
                 tool_result_dict.keys() if isinstance(tool_result_dict, dict) else type(tool_result_dict),
@@ -992,11 +1019,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Extract result details
         content_items = tool_result_dict.get("content", [])
         status = tool_result_dict.get("status", "success")
-        tool_use_id = tool_result_dict.get("toolUseId") or self.last_tool_id
 
         # If python_repl produced stdout/stderr, emit a brief preview so it's not lost
         try:
-            if self.last_tool_name == "python_repl":
+            if tool_name == "python_repl":
                 # Stdout preview
                 if buffered_output and str(buffered_output).strip():
                     lines = str(buffered_output).splitlines()
@@ -1059,7 +1085,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # For stop tool, emit termination after tool header (below where output would go)
         try:
-            if self.last_tool_name == "stop" and not self._termination_emitted:
+            if tool_name == "stop" and not self._termination_emitted:
                 # Use tool input reason if available
                 reason_msg = "Stop tool used - terminating"
                 try:
@@ -1073,7 +1099,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Update live metrics for memory operations and evidence collection
         try:
-            if self.last_tool_name == "mem0_memory" and success:
+            if tool_name == "mem0_memory" and success:
                 # Increment memory operation count on successful store actions
                 if isinstance(tool_input, dict):
                     action = tool_input.get("action") or tool_input.get("Action")
@@ -1097,7 +1123,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Defer tool_end emission until after output so reasoning can appear below output
         _deferred_tool_end = {
-            "tool_name": self.last_tool_name,
+            "tool_name": tool_name,
             "tool_id": tool_use_id or self.last_tool_id,
             "success": success,
         }
@@ -1110,7 +1136,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Check if we're exiting THE swarm tool specifically (not just any tool during swarm operation)
         # Compare tool IDs to ensure we're detecting the swarm tool itself ending
         is_swarm_tool_ending = (
-            (tool_use_id == self.swarm_tool_id) if self.swarm_tool_id else (self.last_tool_name == "swarm")
+            (tool_use_id == self.swarm_tool_id) if self.swarm_tool_id else (tool_name == "swarm")
         )
 
         if is_swarm_tool_ending and self.in_swarm_operation:
@@ -1137,9 +1163,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     combined_output = buffered_output + "\n"
 
                 # Process errors through tool-specific handlers for cleaner display
-                if self.last_tool_name == "shell":
+                if tool_name == "shell":
                     clean_error = self._parse_shell_tool_output(error_text.strip())
-                elif self.last_tool_name == "http_request":
+                elif tool_name == "http_request":
                     clean_error = self._parse_http_tool_output(error_text.strip())
                 else:
                     clean_error = error_text.strip()
@@ -1185,7 +1211,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             "content": "\n".join(friendly_msg_lines),
                             "metadata": {
                                 "type": "timeout",
-                                "tool": self.last_tool_name,
+                                "tool": tool_name,
                                 "timeout": timeout_seconds or requested_timeout,
                             },
                         }
@@ -1196,13 +1222,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     {
                         "type": "output",
                         "content": combined_output.strip(),
-                        "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name},
+                        "metadata": {"fromToolBuffer": True, "tool": tool_name},
                     }
                 )
 
                 # Now emit tool completion after consolidated output is sent
                 self._emit_ui_event(
-                    {"type": "tool_invocation_end", "success": success, "tool_name": self.last_tool_name}
+                    {"type": "tool_invocation_end", "success": success, "tool_name": tool_name}
                 )
                 # Emit tool_end after output and invocation_end
                 self._emit_ui_event({"type": "tool_end", **_deferred_tool_end})
@@ -1235,11 +1261,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             output_text = str(tool_result_dict)
 
         # Clean/parse known tool outputs
-        if self.last_tool_name == "shell":
+        if tool_name == "shell":
             output_text = self._parse_shell_tool_output(output_text)
-        elif self.last_tool_name == "editor":
+        elif tool_name == "editor":
             output_text = self._parse_editor_tool_output(output_text)
-        elif self.last_tool_name == "swarm" and "Status.FAILED" in output_text:
+        elif tool_name == "swarm" and "Status.FAILED" in output_text:
             # Override SDK's incorrect timeout metrics with cached actual metrics
             if hasattr(self, "last_swarm_metrics"):
                 metrics = self.last_swarm_metrics
@@ -1259,7 +1285,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if not output_text.strip():
             # For python_repl with no textual output, emit executed code and suppress generic message if a preview was shown
             try:
-                if self.last_tool_name == "python_repl":
+                if tool_name == "python_repl":
                     preview_emitted = bool(tool_use_id and tool_use_id in getattr(self, "_python_preview_emitted", set()))
                     code_input = self.tool_input_buffer.get(tool_use_id or self.last_tool_id, {})
                     code_text = self._extract_code_from_input(code_input)
@@ -1277,7 +1303,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         if tool_use_id:
                             self.tool_use_output_emitted[tool_use_id] = True
                         # Emit tool completion without generic placeholder
-                        self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": self.last_tool_name})
+                        self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": tool_name})
                         return
             except Exception:
                 pass
@@ -1287,13 +1313,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 {
                     "type": "output",
                     "content": "Command completed",
-                    "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name},
+                    "metadata": {"fromToolBuffer": True, "tool": tool_name},
                 }
             )
             if tool_use_id:
                 self.tool_use_output_emitted[tool_use_id] = True
             # Emit tool completion
-            self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": self.last_tool_name})
+            self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": tool_name})
             # Emit tool_end after output and invocation_end
             self._emit_ui_event({"type": "tool_end", **_deferred_tool_end})
             if self.in_swarm_operation and self.reasoning_buffer:
@@ -1322,12 +1348,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             {
                 "type": "output",
                 "content": output_text.strip(),
-                "metadata": {"fromToolBuffer": True, "tool": self.last_tool_name},
+                "metadata": {"fromToolBuffer": True, "tool": tool_name},
             }
         )
 
         # Emit tool completion with swarm context
-        tool_inv_end_event = {"type": "tool_invocation_end", "success": success, "tool_name": self.last_tool_name}
+        tool_inv_end_event = {"type": "tool_invocation_end", "success": success, "tool_name": tool_name}
         if self.in_swarm_operation and self.current_swarm_agent:
             tool_inv_end_event["swarm_agent"] = self.current_swarm_agent
         self._emit_ui_event(tool_inv_end_event)
@@ -2265,8 +2291,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 event["max_handoffs"] = tool_input.get("max_handoffs")
             if tool_input.get("max_iterations") is not None:
                 event["max_iterations"] = tool_input.get("max_iterations")
+            if tool_input.get("node_timeout") is not None:
+                event["node_timeout"] = tool_input.get("node_timeout")
             if tool_input.get("execution_timeout") is not None:
-                event["timeout"] = tool_input.get("execution_timeout")
+                event["execution_timeout"] = tool_input.get("execution_timeout")
             logger.debug(f"Emitting swarm_start event with {len(agent_names)} agents")
             self._emit_ui_event(event)
             logger.debug("=== SWARM START TRACKING COMPLETE ===")

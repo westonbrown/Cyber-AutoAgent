@@ -18,21 +18,52 @@ interface ThinkingIndicatorProps {
   enabled?: boolean;
 }
 
+// Fun thinking phrases that cycle through
+const THINKING_PHRASES = [
+  'Thinking',
+  'Analyzing',
+  'Processing',
+  'Computing',
+  'Hacking away',
+  'Exploring paths',
+  'Crafting strategy',
+  'Brewing ideas',
+  'Pondering options',
+  'Weighing approaches',
+  'Scanning possibilities',
+  'Plotting next move',
+  'Connecting dots',
+  'Crunching data',
+  'Running scenarios',
+  'Mapping vectors',
+  'Testing theories',
+  'Building game plan',
+  'Evaluating angles',
+  'Synthesizing intel',
+  'Formulating tactics',
+  'Calibrating approach',
+  'Piecing together',
+  'Calculating odds',
+  'Assembling strategy',
+  'Decoding patterns',
+  'Triangulating path',
+  'Optimizing route',
+  'Spinning up ideas',
+  'Cooking up plan'
+];
+
 // Context-aware messages
-const getContextMessage = (context?: string): string => {
+const getContextMessage = (context?: string, phraseIndex?: number): string => {
   switch (context) {
     case 'startup':
       return 'Initializing';
     case 'reasoning':
-      return 'Analyzing';
     case 'tool_preparation':
-      return 'Preparing';
     case 'tool_execution':
-      return 'Executing';
     case 'waiting':
-      return 'Waiting';
     default:
-      return 'Thinking';
+      // Cycle through fun phrases for non-startup contexts
+      return THINKING_PHRASES[phraseIndex || 0];
   }
 };
 
@@ -44,6 +75,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
 }) => {
   const theme = themeManager.getCurrentTheme();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [phraseIndex, setPhraseIndex] = useState(Math.floor(Math.random() * THINKING_PHRASES.length));
 
   // Elapsed time tracking (single interval)
   useEffect(() => {
@@ -59,6 +91,17 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
     return () => clearInterval(interval);
   }, [startTime, enabled]);
 
+  // Cycle through phrases every 18 seconds (only for non-startup contexts)
+  useEffect(() => {
+    if (context === 'startup' || !enabled) return;
+
+    const interval = setInterval(() => {
+      setPhraseIndex(prev => (prev + 1) % THINKING_PHRASES.length);
+    }, 18000);
+
+    return () => clearInterval(interval);
+  }, [context, enabled]);
+
   // Format elapsed time
   const formatElapsed = (seconds: number): string => {
     if (seconds < 60) {
@@ -69,7 +112,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
     return `${minutes}m ${secs}s`;
   };
 
-  const displayMessage = message || getContextMessage(context);
+  const displayMessage = message || getContextMessage(context, phraseIndex);
 
   return (
     <Box>
