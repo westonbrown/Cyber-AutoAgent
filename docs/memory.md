@@ -1,124 +1,146 @@
 # Memory System
 
-Cyber-AutoAgent uses an advanced memory system powered by Mem0 with automatic reflection, plan management, and cyber-specific enhancements.
+Cyber-AutoAgent implements persistent memory using Mem0 with automatic reflection, strategic planning, and evidence categorization. The system supports multiple backend configurations for different deployment scenarios.
 
 ## Architecture
 
 ```mermaid
 graph LR
-    A[Ghost Agent] --> B[mem0_memory Tool]
+    A[Agent] --> B[mem0_memory Tool]
     B --> C{Backend Selection}
-    
+
     C -->|MEM0_API_KEY set| D[Mem0 Platform]
     C -->|OPENSEARCH_HOST set| E[OpenSearch + AWS]
     C -->|Default| F[FAISS Local]
-    
+
     D --> G[Cloud Vector Store]
     E --> H[OpenSearch + Bedrock]
     F --> I[Local FAISS Store]
-    
-    B --> J[Auto-Reflection Engine]
-    J --> K{Trigger Check}
+
+    B --> J[Reflection Engine]
+    J --> K{Trigger Evaluation}
     K -->|Critical Finding| L[Immediate Reflection]
-    K -->|3+ Findings| L
-    K -->|Phase Complete| L
-    
-    style B fill:#f96,stroke:#333,stroke-width:2px
-    style F fill:#9f9,stroke:#333,stroke-width:2px
-    style J fill:#ff9,stroke:#333,stroke-width:2px
+    K -->|Threshold Reached| L
+    K -->|Phase Transition| L
+
+    style B fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style F fill:#e8f5e8,stroke:#333,stroke-width:2px
+    style J fill:#fff3e0,stroke:#333,stroke-width:2px
 ```
 
 ## Backend Selection
 
-Mem0 automatically chooses backend based on environment:
+Backend configuration follows environment-based precedence:
 
-1. **Mem0 Platform** (if `MEM0_API_KEY` set) - Cloud service
-2. **OpenSearch** (if `OPENSEARCH_HOST` set) - AWS managed
-3. **FAISS** (default) - Local file storage
+**Priority Order:**
+1. **Mem0 Platform**: `MEM0_API_KEY` configured - Cloud-hosted service
+2. **OpenSearch**: `OPENSEARCH_HOST` configured - AWS managed search
+3. **FAISS**: Default - Local vector storage
+
+Backend selection occurs at memory initialization and remains fixed for operation duration.
 
 ## Memory Operations
 
 ```mermaid
 sequenceDiagram
     participant Agent
-    participant mem0_tool
+    participant Tool
     participant Backend
     participant Storage
-    
-    Agent->>mem0_tool: store(content, metadata)
-    mem0_tool->>Backend: Generate embedding
-    Backend->>Storage: Store vector + metadata
-    
-    Agent->>mem0_tool: retrieve(query)
-    mem0_tool->>Backend: Search similar vectors
-    Backend->>Storage: Query vectors
-    Storage-->>Agent: Return matches
+
+    Agent->>Tool: store(content, metadata)
+    Tool->>Backend: Generate embedding
+    Backend->>Storage: Persist vector + metadata
+    Storage-->>Tool: Confirmation
+
+    Agent->>Tool: retrieve(query)
+    Tool->>Backend: Vector similarity search
+    Backend->>Storage: Query execution
+    Storage-->>Backend: Matching vectors
+    Backend-->>Agent: Ranked results
 ```
 
-## Default Configuration
+## Backend Configurations
 
-### FAISS Backend (Default)
-- **Storage**: `./outputs/<target-name>/memory/
-- **Embedder**: AWS Bedrock Titan (1024 dims)
+### FAISS Backend
+**Default Configuration:**
+- **Storage Location**: `./outputs/<target>/memory/`
+- **Embedder**: AWS Bedrock Titan Text v2 (1024 dimensions)
 - **LLM**: Claude 3.5 Sonnet
-- **Benefits**: Fully local, no cloud dependencies
+- **Characteristics**: Local persistence, no external dependencies
 
 ### OpenSearch Backend
+**AWS Managed Configuration:**
 - **Storage**: AWS OpenSearch Service
-- **Embedder**: AWS Bedrock Titan (1024 dims) 
+- **Embedder**: AWS Bedrock Titan Text v2 (1024 dimensions)
 - **LLM**: Claude 3.5 Sonnet
-- **Benefits**: Scalable, managed service
+- **Characteristics**: Scalable search, managed infrastructure
 
 ### Mem0 Platform
-- **Storage**: Mem0 cloud service
-- **Configuration**: Managed by Mem0
-- **Benefits**: Fully managed, no setup
+**Cloud Service Configuration:**
+- **Storage**: Mem0 managed infrastructure
+- **Configuration**: Platform-managed
+- **Characteristics**: Zero-setup, fully managed
 
-## Memory Categories
+## Memory Categorization
 
-Evidence is automatically categorized with cyber-specific metadata:
+Evidence storage employs structured metadata for efficient retrieval and analysis:
 
 ```python
-# Findings stored with rich metadata
+# Finding storage with metadata
 mem0_memory(
     action="store",
     content="[WHAT] SQL injection [WHERE] /login [IMPACT] Auth bypass [EVIDENCE] payload",
-    user_id="cyber_agent", 
+    user_id="cyber_agent",
     metadata={
         "category": "finding",
-        "severity": "critical",      # critical/high/medium/low
-        "confidence": "95%",         # Confidence level
-        "module": "web_security",    # Source module
+        "severity": "critical",
+        "confidence": "95%",
+        "module": "web_security",
         "created_at": "2024-01-15T10:30:00Z"
     }
 )
 ```
 
-### Core Categories
-- **finding**: Security discoveries with severity and confidence
-- **plan**: Strategic assessment plans (active/inactive)
-- **reflection**: Analysis of findings and plan progress
-- **vulnerability**: Confirmed vulnerabilities
-- **exploit**: Successful exploits  
-- **reconnaissance**: Scan results
+### Category Taxonomy
 
-### Advanced Memory Features
+**Core Categories:**
+- **finding**: Security discoveries with severity assessment
+- **plan**: Strategic assessment roadmaps
+- **reflection**: Tactical analysis and pivot decisions
+- **vulnerability**: Confirmed security weaknesses
+- **exploit**: Successful exploitation evidence
+- **reconnaissance**: Target enumeration results
 
-#### 1. Automatic Reflection
-The system automatically triggers reflection after:
-- Critical or high severity findings
-- Every 3 findings (configurable threshold)
-- Major phase transitions
+**Severity Levels:**
+- Critical: Immediate exploitation risk
+- High: Significant security impact
+- Medium: Moderate risk exposure
+- Low: Minor security concerns
+
+## Advanced Features
+
+### Automatic Reflection
+
+Reflection triggers activate based on operational conditions:
+
+**Trigger Conditions:**
+- Critical or high severity findings detected
+- Finding count threshold reached (default: 3)
+- Phase transition events
 
 ```python
-# Auto-reflection example
+# Reflection trigger evaluation
 if metadata.get("severity") in ["critical", "high"]:
-    self._should_reflect = True  # Triggers reflection prompt
+    self._should_reflect = True
 ```
 
-#### 2. Strategic Plan Management
+### Strategic Plan Management
+
+Hierarchical planning with phase tracking:
+
 ```python
-# Store hierarchical plans
+# Plan storage
 mem0_memory(
     action="store_plan",
     content={
@@ -131,15 +153,17 @@ mem0_memory(
     }
 )
 
-# Retrieve active plan
-mem0_memory(action="get_plan")
+# Plan retrieval
+current_plan = mem0_memory(action="get_plan")
 ```
 
-#### 3. Reflection System
+### Reflection Analysis
+
+Context-aware tactical analysis:
+
 ```python
-# Generate reflection prompt based on findings
-mem0_memory(action="reflect")  
-# Returns analysis prompt considering recent findings and current plan
+# Generate reflection prompt
+reflection_prompt = mem0_memory(action="reflect")
 
 # Store reflection insights
 mem0_memory(
@@ -147,24 +171,25 @@ mem0_memory(
     content="Pivoting to API testing based on auth bypass finding"
 )
 
-## Storage Locations
+## Storage Structure
 
-### FAISS (Local)
+### FAISS Backend Layout
 ```
-./outputs/example.com/memory/
-├── config.json
-├── graph_data/
-├── key_value_data/
-├── sqlite.db
-└── vector_data/
+./outputs/<target>/memory/
+├── config.json           # Backend configuration
+├── graph_data/          # Relationship graphs
+├── key_value_data/      # Metadata storage
+├── sqlite.db            # Structured data
+└── vector_data/         # Embeddings
 ```
 
-### Evidence Files
+### Operation Output Structure
 ```
-./evidence/evidence_OP_20250712_155132/
-├── final_report_*.md
-├── scan_outputs/
-└── custom_tools/
+./outputs/<target>/OP_<timestamp>/
+├── report.md            # Final assessment report
+├── logs/               # Operation logs
+│   └── cyber_operations.log
+└── utils/              # Operation artifacts
 ```
 
 ## Memory Tool Usage
@@ -247,47 +272,74 @@ config = {
 }
 ```
 
-## Best Practices
+## Operational Guidelines
 
-### 1. Finding Storage Format
-Always use the structured format for findings:
+### Finding Documentation Format
+
+Structured finding format ensures consistent evidence collection:
+
 ```
-[WHAT] Vulnerability type
-[WHERE] Exact location
-[IMPACT] Business/technical impact
-[EVIDENCE] Proof or reproduction
+[WHAT] Vulnerability classification
+[WHERE] Precise location identifier
+[IMPACT] Business and technical impact
+[EVIDENCE] Reproduction steps and proof
 ```
 
-### 2. Metadata Consistency
-- **category**: Use standard categories (finding, plan, reflection)
-- **severity**: critical, high, medium, low
-- **confidence**: Percentage (e.g., "95%")
-- **module**: Source module name
+### Metadata Standards
 
-### 3. Plan Management
-- Store plans at operation start
-- Update plan status as phases complete
-- Use reflection to adapt strategy
+**Required Fields:**
+- **category**: Taxonomy classification
+- **severity**: Risk level (critical/high/medium/low)
+- **confidence**: Assessment certainty (percentage)
+- **module**: Source module identifier
 
-### 4. Automatic Features
-- Let auto-reflection guide assessment flow
-- Trust the 3-finding reflection threshold
-- Use reflection prompts for strategic pivots
+### Plan Management
 
-### 5. Memory Optimization
-- Search before storing to avoid duplicates
-- Use specific queries for better retrieval
-- Leverage metadata for filtering
+**Lifecycle:**
+1. Initialize plan at operation start
+2. Update phase status during execution
+3. Adapt strategy through reflection
 
-## Command Line Options
+### Reflection System
+
+**Operational Flow:**
+- Automatic triggering based on findings
+- Configurable threshold (default: 3 findings)
+- Strategic pivot recommendations
+
+### Query Optimization
+
+**Efficiency Techniques:**
+- Pre-query deduplication checks
+- Metadata-based filtering
+- Specific query construction
+- Result ranking utilization
+
+## Configuration Options
+
+### Command Line Arguments
 
 ```bash
-# Use existing memory store
---memory-path ./outputs/example.com/memory/mem0_faiss_example.com
+# Specify memory path
+--memory-path ./outputs/<target>/memory/
 
-# Keep memory after operation (default: true)
+# Memory persistence (default: enabled)
 --keep-memory
 
-# Memory will be at: ./outputs/<target-name>/memory/mem0_faiss_<target-name>/
-# Note: Memory is now per-target and persists across operations by default
+# Memory storage location
+# Format: ./outputs/<target>/memory/
 ```
+
+### Memory Persistence
+
+**Default Behavior:**
+- Memory persists per-target across operations
+- Cross-operation learning enabled
+- Historical context maintained
+
+**Storage Path Pattern:**
+```
+./outputs/<target>/memory/
+```
+
+Memory isolation ensures target-specific knowledge remains separated while enabling cumulative learning across multiple assessment operations against the same target.

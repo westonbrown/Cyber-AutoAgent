@@ -50,6 +50,43 @@ graph TB
     style H fill:#e8f5e9,stroke:#333,stroke-width:3px
 ```
 
+## Tool Actions and Operations
+
+The `prompt_optimizer` tool supports 9 distinct actions:
+
+| Action | Purpose | Use Case |
+|--------|---------|----------|
+| `view` | Display current overlay | Check active directives |
+| `apply` | Apply JSON overlay payload | Programmatic overlay updates |
+| `update`/`rewrite` | Replace overlay with free-form text | Natural language optimization |
+| `add_context`/`append` | Extend existing overlay | Add new directives |
+| `reset` | Remove overlay completely | Clear all customizations |
+| `refresh` | Re-emit current overlay | Reload without changes |
+| `optimize_execution` | Rewrite execution_prompt_optimized.txt | Automatic optimization |
+
+### Tool Invocation Examples
+
+```python
+# View current overlay
+prompt_optimizer(action="view")
+
+# Apply structured overlay
+prompt_optimizer(
+    action="apply",
+    overlay={"directives": ["Focus on SQL injection", "Deprioritize XSS attempts"]},
+    trigger="agent_reflection",
+    note="WAF blocking XSS payloads"
+)
+
+# Optimize execution prompt based on learning
+prompt_optimizer(
+    action="optimize_execution",
+    learned_patterns="SQLi working on /search.php, XSS blocked by WAF",
+    remove_dead_ends=["XSS in forms"],
+    focus_areas=["SQL injection exploitation"]
+)
+```
+
 ## Invocation Flow
 
 ### 1. Hook Registration
@@ -64,7 +101,7 @@ hook_instance = PromptRebuildHook(
     target=target,
     objective=objective,
     operation_id=operation_id,
-    rebuild_interval=20  # Optimization frequency
+    rebuild_interval=20  # Optimization frequency (steps)
 )
 
 strands_sdk = StrandsSDK(
@@ -99,23 +136,31 @@ def _auto_optimize_execution_prompt(self):
         limit=30
     )
 
-    # Phase 2: Load current execution prompt
+    # Phase 2: Load current execution prompt from operation directory
+    # Path: outputs/<target>/OP_<id>/execution_prompt_optimized.txt
     current_prompt = self.exec_prompt_path.read_text()
 
-    # Phase 3: Prepare raw memory context for LLM
-    memory_context = json.dumps(recent_memories)[:5000]
+    # Phase 3: Prepare raw memory context for LLM (limited to 5000 chars)
+    memory_context = json.dumps(recent_memories, indent=2)[:5000]
 
-    # Phase 4: Execute LLM-based optimization
-    optimized = _llm_rewrite_execution_prompt(
-        current_prompt=current_prompt,
+    # Phase 4: Execute LLM-based optimization via prompt_optimizer tool
+    result = prompt_optimizer(
+        action="optimize_execution",
         learned_patterns=memory_context,
-        remove_tactics=[],  # LLM-driven decision
-        focus_tactics=[]    # LLM-driven decision
+        remove_dead_ends=[],  # LLM-driven decision from memory analysis
+        focus_areas=[]        # LLM-driven decision from memory analysis
     )
 
-    # Phase 5: Persist optimized prompt
-    self.exec_prompt_path.write_text(optimized)
+    # Phase 5: Persist optimized prompt to operation directory
+    # The tool writes directly to execution_prompt_optimized.txt
+    # Next agent reload will use the optimized version
 ```
+
+**Key Implementation Details**:
+- Optimization operates on `execution_prompt_optimized.txt` in the operation directory
+- Original module templates remain unchanged
+- Each operation maintains independent optimization history
+- Memory retrieval uses `list_memories()` with limit=30 for recent context
 
 ## Input/Output Specification
 
@@ -289,29 +334,49 @@ The system processes raw memories without pattern extraction:
 
 ## Triggers and Timing
 
-| Trigger | When | Action |
-|---------|------|--------|
-| **Interval** | Every 20 steps | Auto-optimize + context refresh |
-| **Phase Change** | Phase transition detected | Rebuild with new phase context |
-| **File Modified** | Agent modifies prompt | Reload from disk |
-| **Manual** | Force rebuild flag set | Immediate optimization |
+| Trigger | When | Action | Configuration |
+|---------|------|--------|---------------|
+| **Interval** | Every N steps (default: 20) | Auto-optimize + context refresh | `rebuild_interval` |
+| **Phase Change** | Phase transition detected in plan | Rebuild with new phase context | Automatic |
+| **File Modified** | execution_prompt_optimized.txt changed | Reload from disk | Automatic |
+| **Manual** | Force rebuild flag set | Immediate optimization | `force_rebuild=True` |
 
 ### Trigger Implementation
 ```python
-# Automatic trigger every 20 steps
-if current_step % 20 == 0 and current_step > 0:
+# Automatic trigger every N steps
+if (current_step - self.last_rebuild_step) >= self.rebuild_interval:
     self._auto_optimize_execution_prompt()
+    self.last_rebuild_step = current_step
 
-# Phase transition detection
+# Phase transition detection (checks memory for plan changes)
 if self._phase_changed():
-    logger.info("Phase transition detected")
+    logger.info("Phase transition detected - triggering prompt rebuild")
     self.force_rebuild = True
 
-# File modification detection
-if self._execution_prompt_modified():
-    logger.info("Execution prompt modified")
+# File modification detection (monitors mtime of execution_prompt_optimized.txt)
+current_mtime = self.exec_prompt_path.stat().st_mtime
+if current_mtime != self.last_exec_prompt_mtime:
+    logger.info("Execution prompt modified externally - reloading")
     self.last_exec_prompt_mtime = current_mtime
 ```
+
+### Cooldown and TTL Mechanisms
+
+**Overlay TTL**:
+```python
+# Apply overlay with expiration
+prompt_optimizer(
+    action="apply",
+    overlay={"directives": ["Focus on authentication bypass"]},
+    current_step=45,
+    expires_after_steps=20  # Expires at step 65
+)
+```
+
+**Rebuild Cooldown**:
+- Minimum interval enforced via `last_rebuild_step` tracking
+- Prevents excessive optimization overhead
+- Default: 20 steps between automatic optimizations
 
 ## Performance Metrics
 
@@ -333,16 +398,27 @@ if self._execution_prompt_modified():
 
 ```
 outputs/<target>/OP_<id>/
-├── execution_prompt_optimized.txt  # Evolves during operation
-├── report.md
-└── logs/
-    └── cyber_operations.log
+├── execution_prompt_optimized.txt  # Copied from module template, then evolves
+├── adaptive_prompt.json            # Optional overlay directives
+├── report.md                       # Final assessment report
+├── cyber_operations.log            # Operation log with all events
+├── artifacts/                      # Ad-hoc files created during operation
+└── tools/                          # Custom tools created by agent
+
+outputs/<target>/memory/
+├── mem0.faiss                      # FAISS vector index
+└── mem0.pkl                        # FAISS metadata
+
+src/modules/operation_plugins/<module>/
+├── execution_prompt.txt            # Master template (never modified)
+└── report_prompt.txt               # Report generation template
 ```
 
 ### Isolation Model
-- Each operation maintains independent prompt optimization
-- Master templates remain unmodified
-- Cross-operation learning through memory system
+- **Operation Isolation**: Each operation gets a copy of execution_prompt.txt as execution_prompt_optimized.txt
+- **Template Preservation**: Master templates in `operation_plugins/` remain unchanged
+- **Cross-Operation Learning**: Memory system provides context across operations for the same target
+- **Overlay System**: Optional `adaptive_prompt.json` provides temporary directive overlays with TTL support
 
 ## Implementation Components
 
@@ -370,11 +446,34 @@ outputs/<target>/OP_<id>/
 
 ## Configuration
 
+### Environment Variables
+
 ```bash
-# Environment Variables
-CYBER_PROMPT_REBUILD_INTERVAL=20      # Optimization frequency
-CYBER_ENABLE_PROMPT_OPTIMIZATION=true  # Enable/disable
-CYBER_MEMORY_QUERY_LIMIT=30           # Memory query limit
+# Prompt optimization control
+CYBER_PROMPT_REBUILD_INTERVAL=20           # Steps between automatic optimizations
+CYBER_ENABLE_PROMPT_OPTIMIZATION=true      # Enable/disable optimization
+CYBER_MEMORY_QUERY_LIMIT=30               # Number of recent memories to retrieve
+
+# Operation root directory (set automatically)
+CYBER_OPERATION_ROOT=/path/to/outputs/<target>/OP_<id>
+
+# Overlay deduplication
+REASONING_DEDUPE_TTL_S=20                  # Seconds for reasoning deduplication
+```
+
+### Hook Configuration
+
+```python
+# In agent creation
+PromptRebuildHook(
+    callback_handler=callback_handler,
+    memory_instance=memory_instance,
+    config=config,
+    target=target,
+    objective=objective,
+    operation_id=operation_id,
+    rebuild_interval=20  # Override default interval
+)
 ```
 
 ## Best Practices

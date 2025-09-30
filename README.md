@@ -40,27 +40,49 @@
 ## Table of Contents
 
 - [Important Disclaimer](#important-disclaimer)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Model Providers](#model-providers)
 - [Observability](#observability)
 - [Installation & Deployment](#installation--deployment)
-- [Quick Start](#quick-start)
+- [Configuration](#configuration)
 - [Development & Testing](#development--testing)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Documentation
+## Important Disclaimer
 
-- **[Agent Architecture](docs/architecture.md)** - Strands framework, tools, and metacognitive design
-- **[Memory System](docs/memory.md)** - Mem0 backends, storage, and evidence management  
-- **[Observability & Evaluation](docs/observability-evaluation.md)** - Langfuse tracing, Ragas metrics, and performance monitoring
-- **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
+**THIS TOOL IS FOR EDUCATIONAL AND AUTHORIZED SECURITY TESTING PURPOSES ONLY.**
 
----
+| Requirement | Description |
+|-------------|-------------|
+| Authorization | Use only on systems you own or have explicit written permission to test |
+| Legal Compliance | Ensure compliance with all applicable laws and regulations |
+| Sandboxed Environment | Deploy in safe, sandboxed environments isolated from production systems |
+| Responsibility | Never use on unauthorized systems or networks - users are fully responsible for legal and ethical use |
 
 ## Quick Start
+
+### React Interface (Recommended)
+
+The React-based terminal interface provides interactive configuration, real-time operation monitoring, and guided setup.
+
+```bash
+# Install and start
+cd src/modules/interfaces/react
+npm install
+npm run build
+npm start
+```
+
+First launch guides you through Docker environment setup, deployment mode selection, model provider configuration, and first assessment.
+
+> **[Complete User Guide](docs/user-instructions.md)** - Detailed setup, configuration, operation modules, troubleshooting, and examples
+
+### Docker Deployment
 
 ```bash
 # Using Docker (Recommended)
@@ -70,7 +92,11 @@ docker run --rm \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify SQL injection vulnerabilities"
+```
 
+### Python Direct
+
+```bash
 # Using Python
 git clone https://github.com/cyber-autoagent/cyber-autoagent.git
 cd cyber-autoagent
@@ -78,15 +104,15 @@ pip install -e .
 python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive security assessment"
 ```
 
-## Important Disclaimer
+## Documentation
 
-**THIS TOOL IS FOR EDUCATIONAL AND AUTHORIZED SECURITY TESTING PURPOSES ONLY.**
-
-- [+] Use only on systems you own or have explicit written permission to test
-- [+] Deploy in safe, sandboxed environments isolated from production systems  
-- [+] Ensure compliance with all applicable laws and regulations
-- [-] Never use on unauthorized systems or networks
-- [-] Users are fully responsible for legal and ethical use
+- **[User Guide](docs/user-instructions.md)** - Complete usage, configuration, and examples
+- **[Agent Architecture](docs/architecture.md)** - Strands framework, tools, and metacognitive design
+- **[Memory System](docs/memory.md)** - Mem0 backends, storage, and evidence management
+- **[Observability & Evaluation](docs/observability-evaluation.md)** - Langfuse tracing, Ragas metrics, and performance monitoring
+- **[Deployment Guide](docs/deployment.md)** - Docker, Kubernetes, and production setup
+- **[Terminal Frontend](docs/terminal-frontend.md)** - React interface architecture and event protocol
+- **[Prompt Management](docs/prompt_management.md)** - Module system and prompt loading
 
 ## Features
 
@@ -96,8 +122,10 @@ python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive
 - **Evidence Collection**: Automatically stores findings with Mem0 memory (category="finding")
 - **Meta-Tool Creation**: Dynamically creates custom exploitation tools when needed
 - **Adaptive Execution**: Metacognitive assessment guides strategy based on confidence levels
-- **Professional Reporting**: Generates comprehensive assessment reports
+- **Assessment Reporting**: Generates comprehensive reports with findings and remediation
 - **Swarm Intelligence**: Deploy parallel agents with shared memory for complex tasks
+- **Real-Time Monitoring**: React interface displays live agent reasoning and tool execution
+- **Observability**: Built-in Langfuse tracing and Ragas evaluation metrics
 
 ## Architecture
 
@@ -109,15 +137,15 @@ python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive
 graph LR
     A[User Input<br/>Target & Objective] --> B[Cyber-AutoAgent]
     B --> C[AI Models<br/>Remote/Local]
-    B --> D[Agent Tools<br/>shell, swarm, editior, etc.]
+    B --> D[Agent Tools<br/>shell, swarm, editor, etc.]
     B --> E[Evidence Storage<br/>Memory System]
     B --> O[Observability<br/>Langfuse + Ragas]
-    
+
     C --> B
     D --> E
     E --> F[Final Report<br/>AI Generated]
     O --> G[Performance<br/>Metrics]
-    
+
     style A fill:#e3f2fd
     style F fill:#e8f5e8
     style B fill:#f3e5f5
@@ -127,9 +155,9 @@ graph LR
 ```
 
 **Key Components:**
-- **User Interface**: Command-line interface with target and objective specification
+- **User Interface**: React-based terminal interface or command-line with target and objective specification
 - **Agent Core**: Strands framework orchestration with metacognitive reasoning and tool selection
-- **AI Models**: GenAI tool use models (AWS Bedrock remote) or local models (Ollama) 
+- **AI Models**: GenAI tool use models (AWS Bedrock remote) or local models (Ollama)
 - **Security Tools**: Pentesting tools (nmap, sqlmap, nikto, metasploit, custom tools, etc.)
 - **Evidence Storage**: Persistent memory with FAISS, OpenSearch, or Mem0 Platform backends
 - **Observability**: Real-time tracing with Langfuse and automated evaluation with Ragas metrics
@@ -149,7 +177,7 @@ sequenceDiagram
     U->>A: Start Assessment
     A->>L: Initialize Trace
     A->>E: Initialize Storage
-    
+
     loop Assessment Steps
         A->>M: Analyze Situation
         M-->>A: Next Action
@@ -159,23 +187,23 @@ sequenceDiagram
         A->>L: Log Tool Execution
         A->>E: Store Findings
         A->>L: Log Evidence Storage
-        
+
         alt Critical Discovery
             A->>T: Exploit Immediately
             T-->>A: Access Gained
             A->>E: Store Evidence
             A->>L: Log Exploitation
         end
-        
+
         A->>A: Check Progress
-        
+
         alt Success
             break Complete
                 A->>U: Report Success
             end
         end
     end
-    
+
     A->>M: Generate Report
     M-->>A: Final Analysis
     A->>L: Complete Trace
@@ -191,38 +219,38 @@ sequenceDiagram
 - **Evidence Collection**: All discoveries stored in persistent memory with categorization
 - **Immediate Exploitation**: Critical vulnerabilities trigger immediate exploitation attempts
 - **Automated Evaluation**: System scores tool selection, evidence quality, and methodology
-- **Comprehensive Reporting**: Final analysis combines findings with performance metrics
+- **Report Generation**: Final analysis combines findings with performance metrics
 
 ### Metacognitive Assessment Cycle
 
 ```mermaid
 flowchart TD
     A[Think: Analyze Current State] --> B{Select Tool Type}
-    
+
     B --> |Basic Task| C[Shell Commands]
     B --> |Security Task| D[Cyber Tools via Shell]
     B --> |Complex Task| E[Create Meta-Tool]
     B --> |Parallel Task| P[Swarm Orchestration]
-    
+
     C --> F[Reflect: Evaluate Results]
     D --> F
     E --> F
     P --> F
-    
+
     F --> G{Findings?}
-    
+
     G --> |Critical| H[Exploit Immediately]
     G --> |Informational| I[Store & Continue]
     G --> |None| J[Try Different Approach]
-    
+
     H --> K[Document Evidence]
     I --> L{Objective Met?}
     J --> A
     K --> L
-    
+
     L --> |Yes| M[Complete Assessment]
     L --> |No| A
-    
+
     style A fill:#e3f2fd
     style C fill:#e8f5e8
     style D fill:#fff3e0
@@ -240,18 +268,18 @@ At the core of Cyber-AutoAgent is a "meta-everything" design philosophy that ena
 - **Meta-Agent**: The swarm capability deploys dynamic agents as tools, each tailored for specific subtasks with their own reasoning loops
 - **Meta-Tooling**: Through the editor and load_tool capabilities, the agent can create, modify, and deploy new tools at runtime to address novel challenges
 - **Meta-Learning**: Continuous memory storage and retrieval enables cross-session learning, building expertise over time
-- **Meta-Cognition**: Self-reflection and confidence assessment drives strategic decisions about tool selection and approach (Note: This aspect is still being expanded for deeper reasoning capabilities)
+- **Meta-Cognition**: Self-reflection and confidence assessment drives strategic decisions about tool selection and approach
 
 This meta-architecture allows the system to transcend static tool limitations and evolve its capabilities during execution.
 
 **Process Flow:**
 - **Assess Confidence**: Evaluate current knowledge and confidence level (High >80%, Medium 50-80%, Low <50%)
-- **Adaptive Strategy**: 
-  - High confidence → Use specialized tools directly
-  - Medium confidence → Deploy swarm for parallel exploration
-  - Low confidence → Gather more information, try alternatives
+- **Adaptive Strategy**:
+  - High confidence: Use specialized tools directly
+  - Medium confidence: Deploy swarm for parallel exploration
+  - Low confidence: Gather more information, try alternatives
 - **Execute**: Tool hierarchy based on confidence:
-  - Professional security tools for known vulnerabilities (sqlmap, nikto, nmap)
+  - Specialized security tools for known vulnerabilities (sqlmap, nikto, nmap)
   - Swarm deployment when multiple approaches needed (with memory access)
   - Parallel shell for rapid reconnaissance (up to 7 commands)
   - Meta-tool creation only when no existing tool suffices
@@ -265,12 +293,12 @@ This meta-architecture allows the system to transcend static tool limitations an
 
 ## Model Providers
 
-Cyber-AutoAgent supports two model providers for maximum flexibility:
+Cyber-AutoAgent supports multiple model providers for maximum flexibility:
 
 ### Bedrock Provider (Direct AWS)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
-- **Default Model**: Claude Sonnet 4 (us.anthropic.claude-sonnet-4-20250514-v1:0)
+- **Default Model**: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929-v1:0)
 - **Benefits**: Latest models, reliable performance, managed infrastructure
 
 ### Ollama Provider (Local)
@@ -323,6 +351,7 @@ When running with Docker Compose, observability and evaluation are enabled by de
 
 ```bash
 # Start with observability and evaluation
+cd docker
 docker-compose up -d
 
 # Access Langfuse UI at http://localhost:3000
@@ -348,7 +377,7 @@ export ENABLE_AUTO_EVALUATION=true
 The system automatically evaluates four key metrics after each operation:
 
 1. **Tool Selection Accuracy** (0.0-1.0): Strategic tool choice and sequencing
-2. **Evidence Quality** (0.0-1.0): Comprehensive vulnerability documentation  
+2. **Evidence Quality** (0.0-1.0): Comprehensive vulnerability documentation
 3. **Answer Relevancy** (0.0-1.0): Alignment with security objectives
 4. **Context Precision** (0.0-1.0): Effective use of previous findings
 
@@ -454,7 +483,7 @@ git clone https://github.com/cyber-autoagent/cyber-autoagent.git
 cd cyber-autoagent
 
 # Build image
-docker build -t cyber-autoagent .
+docker build -f docker/Dockerfile -t cyber-autoagent .
 
 # Using environment variables
 docker run --rm \
@@ -523,14 +552,16 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--objective`: Security assessment objective
 - `--target`: Target system/network to assess (ensure you have permission!)
 
-**Optional Arguments**: 
+**Optional Arguments**:
 - `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
+- `--module`: Security module - `general` (web apps) or `ctf` (challenges), default: general
 - `--iterations`: Maximum tool executions before stopping, default: 100
-- `--model`: Model ID to use (default: remote=claude-sonnet, local=qwen3-coder:30b-a3b-q4_K_M)
+- `--model`: Model ID to use (default: remote=claude-sonnet-4-5, local=qwen3-coder:30b-a3b-q4_K_M)
 - `--region`: AWS region for Bedrock, default: us-east-1
 - `--verbose`: Enable verbose output with detailed debug logging
 - `--confirmations`: Enable tool confirmation prompts (default: disabled)
-- `--memory-path`: Path to existing FAISS memory store to load past memories
+- `--memory-path`: Path to existing memory store to load past memories
+- `--memory-mode`: Memory initialization mode - `auto` (loads existing) or `fresh` (starts new), default: auto
 - `--keep-memory`: Keep memory data after operation completes (default: true)
 - `--output-dir`: Custom output directory (default: ./outputs)
 
@@ -554,7 +585,7 @@ python src/cyberautoagent.py \
 
 # Docker with full observability, evaluation and root access (for package installation)
 docker run --rm \
-  --user root \ 
+  --user root \
   --network cyber-autoagent_default \
   -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
   -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
@@ -590,7 +621,7 @@ The agent uses a **centralized configuration system** defined in `src/modules/co
 - **Modular architecture** with organized agents/, config/, tools/, prompts/, and evaluation/ directories
 - **Langfuse prompt management** for dynamic prompt loading and versioning
 - **Unified output structure** for better organization (enabled by default)
-- **Standardized paths** for logs, reports, and evidence collection  
+- **Standardized paths** for logs, reports, and evidence collection
 - **Enhanced memory management** with cross-operation persistence
 - **Dedicated report agent** for improved report generation
 
@@ -603,7 +634,7 @@ cp .env.example .env
 The `.env.example` file contains detailed configuration options with inline comments for all supported features including model providers, memory systems, and observability settings. Key environment variables include:
 
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEARER_TOKEN_BEDROCK`, `AWS_REGION` for remote mode (AWS Bedrock)
-- `OLLAMA_HOST` for local mode (Ollama)  
+- `OLLAMA_HOST` for local mode (Ollama)
 - `CYBER_AGENT_OUTPUT_DIR`, `CYBER_AGENT_ENABLE_UNIFIED_OUTPUT` for output management
 - `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` for observability
 - `MEM0_API_KEY` or `OPENSEARCH_HOST` for memory backends
@@ -650,31 +681,37 @@ cyber-autoagent/
 │       │   └── manager.py     # Langfuse prompt management
 │       ├── evaluation/        # Evaluation system
 │       │   └── evaluation.py  # Ragas evaluation metrics
-│       └── handlers/          # Callback handling and UI utilities
-│           ├── base.py        # Base classes and constants
-│           ├── callback.py    # Main ReasoningHandler class
-│           ├── display.py     # Result display formatting
-│           ├── tools.py       # Tool execution handling
-│           ├── reporting.py   # Report generation utilities
-│           └── utils.py       # UI utilities and analysis
+│       ├── handlers/          # Callback handling and UI utilities
+│       │   ├── base.py        # Base classes and constants
+│       │   ├── callback.py    # Main ReasoningHandler class
+│       │   ├── display.py     # Result display formatting
+│       │   ├── tools.py       # Tool execution handling
+│       │   ├── reporting.py   # Report generation utilities
+│       │   └── utils.py       # UI utilities and analysis
+│       ├── interfaces/
+│       │   └── react/         # React terminal interface
+│       └── operation_plugins/ # Security modules (general, ctf)
 ├── docs/                      # Documentation
 │   ├── architecture.md       # Agent architecture and tools
 │   ├── memory.md             # Memory system (Mem0 backends)
 │   ├── observability.md      # Langfuse monitoring setup
 │   └── deployment.md         # Docker and production deployment
-├── docker-compose.yml        # Full stack (agent + Langfuse)
-├── Dockerfile                # Agent container build
+├── docker/                   # Docker deployment files
+│   ├── docker-compose.yml    # Full stack (agent + Langfuse)
+│   └── Dockerfile            # Agent container build
 ├── pyproject.toml            # Dependencies and project config
 ├── uv.lock                   # Dependency lockfile
 ├── .env.example              # Environment configuration template
 ├── outputs/                  # Unified output directory (auto-created)
-│   ├── <target>/            # Target-specific organization
-│   │   ├── OP_<id>/        # Operation-specific files
-│   │   │   ├── report.md   # Security findings
-│   │   │   ├── utils/      # Ad-hoc files
-│   │   │   └── logs.log    # Operation logs
-│   │   └── memory/         # Cross-operation memory
-│   └── tools/              # Custom tools created by agent
+│   └── <target>/            # Target-specific organization
+│       ├── OP_<id>/        # Operation-specific files
+│       │   ├── report.md   # Security findings (when generated)
+│       │   ├── cyber_operations.log  # Operation log
+│       │   ├── artifacts/  # Ad-hoc files
+│       │   └── tools/      # Custom tools created by agent
+│       └── memory/         # Cross-operation memory
+│           ├── mem0.faiss
+│           └── mem0.pkl
 └── README.md                 # This file
 ```
 
@@ -691,7 +728,8 @@ cyber-autoagent/
 | `src/modules/prompts/system.py` | AI prompts and configurations |
 | `src/modules/prompts/manager.py` | Langfuse prompt management |
 | `.env.example` | Environment configuration template |
-| `docker-compose.yml` | Complete observability stack |
+| `docker/docker-compose.yml` | Complete observability stack |
+| `docker/Dockerfile` | Agent container build |
 | `docs/architecture.md` | Technical architecture deep dive |
 
 ## Troubleshooting

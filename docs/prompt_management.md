@@ -58,15 +58,32 @@ parser.add_argument(
 ## Module Structure
 
 ```
-modules/
-└── general/
-    ├── execution_prompt.txt    # Domain-specific system prompt
-    ├── report_prompt.txt       # Report generation guidance
-    ├── module.yaml            # Module metadata
-    └── tools/                 # Module-specific tools
-        ├── __init__.py
-        └── quick_recon.py
+src/modules/operation_plugins/
+├── general/
+│   ├── execution_prompt.txt    # Domain-specific system prompt
+│   ├── report_prompt.txt       # Report generation guidance
+│   ├── module.yaml            # Module configuration
+│   └── tools/                 # Module-specific tools
+│       ├── __init__.py
+│       └── quick_recon.py
+└── ctf/
+    ├── execution_prompt.txt
+    ├── report_prompt.txt
+    ├── module.yaml
+    └── tools/
+        └── __init__.py
 ```
+
+**Module Configuration** (module.yaml):
+```yaml
+cognitive_level: 4
+configuration:
+  approach: Family-driven discovery and exploitation with curated-first probes and explicit success-state termination
+```
+
+**Available Modules**:
+- **general**: Comprehensive web application and network security testing
+- **ctf**: CTF challenge solving with flag recognition and success detection
 
 ## Prompt Loading System
 
@@ -89,18 +106,26 @@ sequenceDiagram
     participant A as Agent Creation
     participant L as ModulePromptLoader
     participant F as Filesystem
-    
+    participant P as Operation Directory
+
     A->>L: get_module_loader()
-    A->>L: load_module_execution_prompt('general')
-    L->>F: Read modules/general/execution_prompt.txt
-    F-->>L: Prompt content
+    A->>L: load_module_execution_prompt('general', operation_root)
+    L->>P: Check operation_root/execution_prompt_optimized.txt
+    alt Optimized Prompt Exists
+        P-->>L: Optimized prompt content
+    else No Optimized Prompt
+        L->>F: Read modules/general/execution_prompt.txt
+        F-->>L: Template prompt content
+    end
     L-->>A: Module execution prompt
-    
+
     A->>L: discover_module_tools('general')
     L->>F: Scan modules/general/tools/*.py
     F-->>L: Tool file paths
     L-->>A: ['quick_recon.py']
 ```
+
+The loader checks for operation-specific optimized prompts first (created by the prompt optimizer), falling back to the module template if not found.
 
 ## System Prompt Integration
 
@@ -137,7 +162,7 @@ Available {module} module tools (use load_tool to activate):
 
 ```mermaid
 graph LR
-    A[Base Ghost Prompt] --> C[Combined System Prompt]
+    A[Base System Prompt] --> C[Combined System Prompt]
     B[Module Execution Prompt] --> C
     D[Environmental Tools] --> E[Full Tools Context]
     F[Module Tools] --> E
@@ -210,21 +235,43 @@ sequenceDiagram
 ### Module Report Prompt Integration
 
 ```python
-# modules/tools/report_generator.py
-def generate_security_report(module: Optional[str] = None):
-    # Get module report prompt if available
-    module_report_prompt = _get_module_report_prompt(module)
-    
-    # Get the report prompt from centralized prompts
-    report_prompt = get_report_generation_prompt(
+# modules/tools/report_builder.py
+@tool
+def build_report_sections(
+    operation_id: str,
+    target: str,
+    objective: str,
+    module: str = "general",
+    steps_executed: int = 0,
+    tools_used: List[str] = None,
+) -> Dict[str, Any]:
+    """Build structured sections for the security assessment report.
+
+    Retrieves operation-scoped evidence and plan, summarizes findings,
+    and returns preformatted sections for the final report template.
+    """
+    # Load module report prompt for domain lens
+    module_loader = get_module_loader()
+    module_prompt = module_loader.load_module_report_prompt(module)
+    domain_lens = _extract_domain_lens(module_prompt)
+
+    # Transform evidence to content using domain lens
+    report_content = _transform_evidence_to_content(
+        evidence=evidence,
+        domain_lens=domain_lens,
         target=target,
-        objective=objective,
-        operation_id=operation_id,
-        steps_executed=steps_executed,
-        tools_text=tools_text,
-        evidence_text=evidence_text,
-        module_report_prompt=module_report_prompt
+        objective=objective
     )
+
+    # Return structured sections for report generation
+    return {
+        "overview": report_content.get("overview", ""),
+        "evidence_text": evidence_text,
+        "findings_table": findings_table,
+        "analysis": report_content.get("analysis", ""),
+        "recommendations": report_content.get("immediate", ""),
+        # ... additional sections
+    }
 ```
 
 ### Report Generation Flow
@@ -232,20 +279,26 @@ def generate_security_report(module: Optional[str] = None):
 ```mermaid
 sequenceDiagram
     participant E as Agent Execution
-    participant H as SDKNativeHandler
-    participant R as Report Generator
+    participant T as build_report_sections Tool
+    participant M as Memory System
     participant L as ModulePromptLoader
     participant A as Report Agent
-    
-    E->>H: Operation complete
-    H->>R: generate_security_report(module="general")
-    R->>L: load_module_report_prompt("general")
-    L-->>R: Module report prompt
-    R->>A: Generate report with module context
-    A-->>R: Formatted report
-    R-->>H: Report content
-    H->>E: Emit report to UI
+
+    E->>T: build_report_sections(operation_id, target, objective, module)
+    T->>M: Retrieve evidence with category="finding"
+    M-->>T: Evidence list with metadata
+    T->>M: Retrieve active plan
+    M-->>T: Plan with phases and criteria
+    T->>L: load_module_report_prompt(module)
+    L-->>T: Domain lens and report guidance
+    T->>T: Transform evidence using domain lens
+    T-->>A: Structured report sections
+    A->>A: Generate final report markdown
+    A-->>E: Complete report with findings
+    E->>E: Write report.md to operation directory
 ```
+
+The report generation uses a dedicated `build_report_sections` tool that retrieves evidence from memory, applies module-specific domain lenses, and produces structured sections for the report agent to format.
 
 ## Module Examples
 
@@ -256,16 +309,33 @@ sequenceDiagram
 - Adaptive testing methodology based on discovered services
 - Risk-based vulnerability prioritization
 - Comprehensive reconnaissance approach
+- Evidence-driven exploitation with artifact validation
 
 **Available Tools:**
 - `quick_recon`: Basic reconnaissance and port scanning
-- `identify_technology`: Web technology fingerprinting
+- Module tools can be pre-loaded or loaded dynamically via `load_tool()`
 
 **Report Characteristics:**
 - Multi-domain vulnerability grouping
 - Context-aware findings explanation
 - Vulnerability chaining analysis
 - Executive summary for business risk
+- Structured findings with severity-based prioritization
+
+### CTF Module
+
+**Execution Prompt Features:**
+- Flag recognition patterns and success detection
+- Family-driven vulnerability discovery
+- Curated-first probes for common CTF patterns
+- Explicit success-state termination
+- Challenge-specific exploitation strategies
+
+**Report Characteristics:**
+- Challenge solution documentation
+- Flag extraction methodology
+- Tool usage and command sequences
+- Lessons learned and technique breakdown
 
 
 ## Implementation Details

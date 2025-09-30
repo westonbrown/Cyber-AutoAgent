@@ -1,38 +1,112 @@
-# Cyber-AutoAgent Documentation
+# Documentation
 
-This directory contains comprehensive documentation for the Cyber-AutoAgent project. Each document provides detailed technical information and guides for different aspects of the system.
+This directory contains comprehensive technical documentation for Cyber-AutoAgent. Each document covers specific aspects of the system architecture, operation, and deployment.
 
-## 📚 Documentation Index
+## Documentation Structure
 
-### Core Architecture & Design
-- **[architecture.md](architecture.md)** - Agent architecture, Strands framework integration, tools system, and metacognitive design patterns
+### Core Architecture
+
+**[architecture.md](architecture.md)**
+- Single agent meta-everything architecture
+- Strands framework integration
+- Tool hierarchy and selection
+- Metacognitive decision-making patterns
+- Memory integration
 
 ### System Components
-- **[memory.md](memory.md)** - Memory system backends (FAISS, OpenSearch, Mem0 Platform), evidence storage, and data management
-- **[observability-evaluation.md](observability-evaluation.md)** - Langfuse tracing setup, Ragas evaluation metrics, and performance monitoring
-- **[prompt_management.md](prompt_management.md)** - Prompt system overview, templates, and configuration
-- **[prompt_optimizer.md](prompt_optimizer.md)** - Dynamic prompt optimization with meta-prompting, adaptive learning, and XML tag preservation
 
-### Deployment & Operations
-- **[deployment.md](deployment.md)** - Docker deployment, Kubernetes setup, production configuration, and troubleshooting guides
+**[memory.md](memory.md)**
+- Memory system architecture
+- Backend configurations (FAISS, OpenSearch, Mem0 Platform)
+- Evidence categorization and storage
+- Reflection and planning systems
+- Query optimization
 
-## 🎯 Quick Navigation
+**[prompt_management.md](prompt_management.md)**
+- Module-based prompt system
+- Prompt loading and composition
+- Tool discovery mechanisms
+- Report generation integration
 
-| Need | Document | Description |
-|------|----------|-------------|
-| **Understanding the Agent** | [architecture.md](architecture.md) | How the agent thinks, selects tools, and makes decisions |
-| **Setting up Storage** | [memory.md](memory.md) | Configure memory backends and evidence collection |
-| **Monitoring Operations** | [observability-evaluation.md](observability-evaluation.md) | Track performance and evaluate agent effectiveness |
-| **Prompt Optimization** | [prompt_optimizer.md](prompt_optimizer.md) | Dynamic prompt optimization with adaptive learning |
-| **Prompt Configuration** | [prompt_management.md](prompt_management.md) | Module-based prompt system and templates |
-| **Production Deployment** | [deployment.md](deployment.md) | Deploy and scale in production environments |
+**[prompt_optimizer.md](prompt_optimizer.md)**
+- Dynamic prompt optimization
+- Meta-prompting approach
+- Automatic optimization triggers
+- XML tag preservation
+- Performance improvements
 
-## 🔗 Related Resources
+### Interface and User Experience
 
-- **Main README**: [../README.md](../README.md) - Project overview, quick start, and usage examples
-- **Source Code**: [../src/](../src/) - Implementation details and modules
-- **Demo**: [agent_demo.gif](agent_demo.gif) - Visual demonstration of the agent in action
+**[terminal-frontend.md](terminal-frontend.md)**
+- React-based terminal interface
+- Event-driven architecture
+- Service layer implementation
+- State management patterns
 
----
+**[user-instructions.md](user-instructions.md)**
+- Command line operation
+- Module selection
+- Provider configuration
+- Output management
+- Troubleshooting
 
-Each document is self-contained but cross-references other relevant sections where appropriate. Start with the architecture document to understand the overall system design, then dive into specific areas based on your needs.
+### Operations
+
+**[observability-evaluation.md](observability-evaluation.md)**
+- Langfuse tracing integration
+- Ragas evaluation metrics
+- Performance monitoring
+- Automated scoring
+
+**[deployment.md](deployment.md)**
+- Docker deployment
+- Production configuration
+- Security considerations
+- Troubleshooting guides
+
+## Quick Navigation
+
+| Documentation Need | Recommended Document |
+|-------------------|---------------------|
+| Understanding agent design | [architecture.md](architecture.md) |
+| Running assessments | [user-instructions.md](user-instructions.md) |
+| Configuring memory | [memory.md](memory.md) |
+| Creating custom modules | [prompt_management.md](prompt_management.md) |
+| Monitoring operations | [observability-evaluation.md](observability-evaluation.md) |
+| Production deployment | [deployment.md](deployment.md) |
+| Understanding UI architecture | [terminal-frontend.md](terminal-frontend.md) |
+| Optimizing prompts | [prompt_optimizer.md](prompt_optimizer.md) |
+
+## Getting Started
+
+1. **New Users**: Start with [user-instructions.md](user-instructions.md) for operational guidance
+2. **Developers**: Review [architecture.md](architecture.md) for system design
+3. **Operations**: Consult [deployment.md](deployment.md) for production setup
+4. **Module Developers**: See [prompt_management.md](prompt_management.md) for custom modules
+
+## Document Conventions
+
+**Code Examples**: All code examples use actual file paths and verified commands
+**Diagrams**: Mermaid diagrams illustrate architecture and flow patterns
+**Configuration**: Examples include realistic configuration values
+**Cross-References**: Links connect related concepts across documents
+
+## Additional Resources
+
+**Main Project README**: [../README.md](../README.md) - Project overview and quick start
+**Source Code**: [../src/](../src/) - Implementation details
+**Operation Modules**: [../src/modules/operation_plugins/](../src/modules/operation_plugins/) - Available modules
+
+## Contributing to Documentation
+
+When updating documentation:
+- Maintain professional technical tone
+- Verify all code examples
+- Update cross-references
+- Include diagrams where helpful
+- Document actual implementation, not planned features
+- Follow existing style and structure
+
+## Documentation Status
+
+This documentation reflects the current implementation state. Features marked as "future" or "planned" are explicitly noted. All examples and configurations have been verified against the codebase.
