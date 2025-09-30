@@ -1,39 +1,71 @@
-# Cyber-AutoAgent React CLI
+# React Terminal Interface
 
-A minimal terminal interface for Cyber-AutoAgent that provides direct streaming of Python agent output without parsing or interpretation.
+Cyber-AutoAgent's React-based terminal interface provides real-time streaming of agent operations with event-driven architecture and minimal parsing overhead.
 
-## Overview
+## Architecture Overview
 
-This React-based CLI wraps the Python Cyber-AutoAgent implementation, providing:
-- Simple module → target → objective flow
-- Direct output streaming from Python Docker container
-- No parsing or interpretation of agent output
-- Minimal, focused UI following modern CLI design principles
-- Elegant ASCII logo with real-time status indicators
-- Slash commands for quick configuration access
+The interface implements a thin presentation layer over the Python agent core, maintaining separation between execution logic and user interface concerns.
 
-## Architecture
+```mermaid
+graph TB
+    A[React CLI Layer] --> B[Event Parser]
+    B --> C[Docker Service]
+    C --> D[Python Agent Container]
 
+    D --> E[stdout Stream]
+    E --> F[Event Protocol]
+    F --> B
+
+    B --> G[State Manager]
+    G --> H[UI Components]
+
+    style A fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style D fill:#fff3e0,stroke:#333,stroke-width:2px
+    style G fill:#e8f5e8,stroke:#333,stroke-width:2px
 ```
-┌─────────────────────┐
-│   React CLI (Ink)   │
-│  ┌───────────────┐  │
-│  │ AssessmentFlow│  │  State machine for module/target/objective
-│  └───────┬───────┘  │
-│          │          │
-│  ┌───────▼───────┐  │
-│  │ DockerService │  │  Spawns Python CLI in Docker
-│  └───────┬───────┘  │
-└──────────┼──────────┘
-           │
-    ┌──────▼──────┐
-    │   Docker    │
-    │ ┌─────────┐ │
-    │ │ Python  │ │     Actual agent execution
-    │ │  Agent  │ │
-    │ └─────────┘ │
-    └─────────────┘
+
+## Core Components
+
+### Event Protocol
+
+The interface communicates with the Python agent through structured events emitted via stdout:
+
+```typescript
+interface CyberEvent {
+  type: 'tool_start' | 'tool_output' | 'reasoning' | 'step_header';
+  timestamp: string;
+  data: EventData;
+}
 ```
+
+### State Management
+
+Application state follows a unidirectional data flow pattern:
+
+```mermaid
+sequenceDiagram
+    participant Docker
+    participant Parser
+    participant Store
+    participant UI
+
+    Docker->>Parser: stdout events
+    Parser->>Store: dispatch(event)
+    Store->>UI: state update
+    UI->>UI: re-render
+```
+
+### Service Layer
+
+**DirectDockerService**: Spawns and manages Python agent containers
+- Process lifecycle management
+- Stream buffering and event extraction
+- Error handling and recovery
+
+**PythonExecutionService**: Alternative local execution adapter
+- Direct Python subprocess execution
+- Development mode support
+- Identical event protocol
 
 ## Installation
 
@@ -44,164 +76,104 @@ npm install
 # Build TypeScript
 npm run build
 
-# Run the CLI
+# Run interface
 npm start
 ```
 
-## Usage
-
-### Interactive Mode
-
-```bash
-# Start interactive CLI
-cyber-react
-
-# Flow:
-# 1. Load a module
-module general
-
-# 2. Set target
-target example.com
-
-# 3. Set objective (or press Enter for default)
-SQL injection testing
-
-# 4. Press Enter to start assessment
-```
-
-### Direct Execution
-
-```bash
-# Run assessment directly with CLI arguments
-cyber-react --module general --target example.com --objective "SQL injection testing"
-```
-
-### Available Commands
-
-- `module <name>` - Load a security module
-- `target <url|ip>` - Set assessment target
-- `help` - Show context-aware help
-- `clear` - Clear terminal
-- `reset` - Reset assessment flow
-- `exit` - Exit application
-
-### Slash Commands
-
-- `/module <name>` - Quick module loading
-- `/target <url|ip>` - Quick target setting
-- `/config` - Open configuration editor
-- `/memory` - Search past assessments
-- `/help` - Show all commands
-- `/clear` - Clear screen
-- `/exit` - Exit application
-
-## Modules
-
-Available modules are dynamically loaded from `/app/modules`:
-- `general` - General security assessment
-
 ## Configuration
 
-First-time setup will guide you through provider configuration:
-- AWS Bedrock (recommended)
-- Ollama (local)
-- LiteLLM (universal)
+Configuration persists to `~/.cyber-autoagent/config.json`:
 
-Configuration is stored in `~/.cyber-autoagent/config.json`
+**Provider Options:**
+- AWS Bedrock (remote execution)
+- Ollama (local models)
+- LiteLLM (universal gateway)
 
-### Configuration Options
+**Runtime Parameters:**
+- Maximum iterations (default: 100)
+- Model selection
+- Memory persistence mode
+- Observability endpoints
 
-- **Model Provider**: bedrock, ollama, litellm
-- **Model ID**: Specific model to use
-- **AWS Region**: For Bedrock provider
-- **Iterations**: Maximum assessment iterations (1-100)
-- **Memory Mode**: auto or fresh
-- **Max Threads**: Thread limit for parallel operations
-- **Auto Approve**: Skip tool confirmation prompts
-- **Verbose**: Enable debug output
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 src/
-├── App.tsx                    # Main application component
-├── index.tsx                  # CLI entry point
 ├── components/
-│   ├── Terminal.tsx          # Output display
-│   ├── Prompt.tsx            # Input handling
-│   ├── MainScreen.tsx        # Main UI with logo
-│   ├── WelcomeScreen.tsx     # Welcome screen
-│   ├── ConfigEditor.tsx      # Configuration UI
-│   └── MemorySearch.tsx      # Memory browser
+│   ├── Terminal.tsx          # Event rendering
+│   ├── StreamDisplay.tsx     # Output formatting
+│   └── ConfigEditor.tsx      # Configuration UI
 ├── services/
-│   ├── AssessmentFlow.ts     # State machine
-│   ├── DockerService.ts      # Docker execution
-│   └── MemoryService.ts      # Memory interface
+│   ├── DirectDockerService.ts    # Container execution
+│   ├── PythonExecutionService.ts # Local execution
+│   └── MemoryService.ts          # Memory queries
+├── stores/
+│   └── configStore.ts        # Persistent configuration
 └── types/
-    └── Assessment.ts         # TypeScript interfaces
+    └── events.ts             # Event definitions
 ```
 
-### Key Design Decisions
+## Design Principles
 
-1. **No Output Parsing**: All Python output streams directly to terminal
-2. **Minimal State**: Only tracks module/target/objective flow
-3. **Docker Execution**: Uses spawn() for real-time streaming
-4. **Simple Commands**: No complex parsing, just basic commands
-5. **Split View**: Main screen remains visible with terminal output below
-6. **Slash Commands**: Quick access inspired by modern CLI tools
-7. **No Target Sanitization**: Accept any user input without validation
+**Minimal Parsing**: Events stream from Python with minimal interpretation
+- Structured JSON events via `__CYBER_EVENT__` protocol
+- Direct passthrough of tool outputs
+- No business logic in presentation layer
 
-### Testing
+**State Isolation**: React state limited to UI concerns
+- Agent execution state remains in Python
+- Interface reflects rather than controls
+- Configuration persists independently
+
+**Performance**: Optimized for long-running operations
+- Event buffering and batch processing
+- Efficient re-render patterns
+- Memory-bounded output retention
+
+## Event Protocol
+
+The Python agent emits structured events through stdout:
+
+```
+__CYBER_EVENT__{"type":"tool_start","tool_name":"shell","tool_input":{...}}__CYBER_EVENT_END__
+```
+
+Event types handled by interface:
+- `tool_start`: Tool invocation with parameters
+- `tool_output`: Tool execution results
+- `reasoning`: Agent decision-making context
+- `step_header`: Iteration counter and timing
+- `metrics_update`: Token usage and costs
+
+## Testing
 
 ```bash
-# Run all tests
+# Run test suite
 npm test
 
-# Run tests in watch mode
+# Watch mode for development
 npm run test:watch
 
-# Generate coverage report
+# Coverage report
 npm run test:coverage
+
+# Type checking
+npm run typecheck
 ```
 
-## Environment Variables
+## Environment Integration
 
-The CLI passes these to the Python Docker container:
-- `CYBERAGENT_MODULE` - Selected module
-- `CYBERAGENT_MODULE_PATH` - Module directory path
-- `AWS_REGION` - AWS region for Bedrock
-- `PYTHONUNBUFFERED=1` - Ensure real-time output
-- `FORCE_COLOR=1` - Preserve ANSI colors
+Environment variables passed to Python container:
+
+| Variable | Purpose |
+|----------|---------|
+| `AWS_REGION` | Bedrock provider region |
+| `PYTHONUNBUFFERED=1` | Immediate stdout flush |
+| `FORCE_COLOR=1` | ANSI color preservation |
+| `LANGFUSE_HOST` | Observability endpoint |
 
 ## Troubleshooting
 
-### Docker not found
-Ensure Docker is installed and running:
-```bash
-docker --version
-```
-
-### No modules found
-Verify modules are mounted correctly:
-```bash
-ls /app/modules
-```
-
-### Assessment not starting
-Check Docker logs:
-```bash
-docker logs cyber-assessment-*
-```
-
-## Contributing
-
-1. Keep the UI minimal - no complex features
-2. Don't parse Python output - let it stream
-3. Test all changes with actual Python agent
-4. Follow existing code style
-
-## License
-
-See main project LICENSE file.
+**Docker connectivity**: Verify Docker daemon is running and accessible
+**Module loading**: Check module paths are correctly mounted to container
+**Event parsing**: Ensure Python agent uses matching event protocol version

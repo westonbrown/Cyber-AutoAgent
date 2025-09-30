@@ -1,148 +1,331 @@
-# Cyber-AutoAgent User Guide
+# User Guide
 
-## Quick Start
+Cyber-AutoAgent is an autonomous security assessment tool with a React-based terminal interface providing real-time operation monitoring and interactive configuration.
 
-Cyber-AutoAgent is an autonomous cybersecurity assessment tool with React CLI interface.
+## Prerequisites
 
-### First Launch
+| Requirement | Purpose |
+|-------------|---------|
+| Node.js 20+ | React interface runtime |
+| Docker Desktop | Containerized agent execution |
+| AWS credentials or Ollama | Model provider access |
+| Authorization | Written permission to test targets |
 
-Select deployment mode:
-1. **Local CLI** - Direct Python execution
-2. **Single Container** - Docker without observability  
-3. **Full Stack** - Complete monitoring stack (recommended)
+**Legal Notice:** Only test systems you own or have explicit written permission to assess. Unauthorized testing is illegal. Users assume full responsibility for legal and ethical use.
 
-### Basic Usage
+## Installation
 
 ```bash
-◆ general > target https://testphp.vulnweb.com
-◆ general > execute focus on SQL injection
+cd src/modules/interfaces/react
+npm install
+npm run build
+npm start
 ```
 
-Module selection: `/plugins` → arrow keys → Enter
+First launch guides you through Docker setup, deployment mode selection, and provider configuration.
 
-## Common Workflows
+## Deployment Modes
 
-**First Assessment:**
-1. Launch → select deployment mode
-2. `target https://authorized-target.com`  
-3. `execute` → confirm authorization (y/y)
+| Mode | Execution | Observability | Use Case |
+|------|-----------|---------------|----------|
+| Local CLI | Direct Python | None | Development |
+| Single Container | Docker isolated | None | Basic assessments |
+| Full Stack | Docker Compose | Langfuse included | Production |
 
-**Targeted Testing:**
-1. `target https://api.example.com`
-2. `execute focus on authentication bypass`
+Select during setup or change via `/setup` command.
 
-**Configuration:**
-`/config` → `/config edit` → `/provider ollama` → `/iterations 50`
+## Configuration
 
-## ⚠️ Authorization Required
+Configuration persists to `~/.cyber-autoagent/config.json`.
 
-**CRITICAL**: Only test authorized systems.
+### Model Providers
 
-**Authorization Flow:**
-1. Target confirmation → 'y'
-2. Final confirmation → 'y'
-
-**Authorized Targets:**
-- https://testphp.vulnweb.com
-- Your own systems
-- Systems with written agreements
-
-## Commands
-
-**Assessment:**
-- `target <url>` - Set target
-- `execute [objective]` - Start assessment
-- `reset` - Clear config
-
-**Configuration:**
-- `/config` - View/edit config
-- `/provider <bedrock|ollama|litellm>` - Switch provider
-- `/iterations <number>` - Set max executions
-
-**Utility:**
-- `/plugins` - Security modules
-- `/health` - System status
-- `/help` `/clear` `/exit`
-
-## Best Practices
-
-**Effective Assessments:**
-1. Start broad → focus on findings
-2. Monitor for high-severity issues
-3. Review operation outputs for patterns
-
-**Performance:**
-- Ollama: faster, cheaper
-- Iterations: 25-200 based on complexity
-
-**Examples:**
+**AWS Bedrock:**
 ```bash
-# Web app
-target https://testphp.vulnweb.com
-execute focus on OWASP Top 10
-
-# API testing
-target https://authorized-api.com  
-execute test authentication
-
-# Network scan
-target 192.168.1.0/24
-execute network reconnaissance
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=us-east-1
 ```
 
-## Output Guide
+**Ollama (Local):**
+```bash
+ollama serve
+ollama pull qwen3-coder:30b-a3b-q4_K_M
+ollama pull mxbai-embed-large
+```
 
-**Progress:** `▶ Initializing` → `◆ Loading` → `🤔 Thinking` → `🔧 Executing` → `💾 Storing`
+**LiteLLM:**
+```bash
+export OPENAI_API_KEY=your_key
+# or
+export ANTHROPIC_API_KEY=your_key
+```
 
-**Severity:** `[CRITICAL]` → `[HIGH]` → `[MEDIUM]` → `[LOW]` → `[INFO]`
+### Configuration Commands
 
-## Results
+| Command | Function |
+|---------|----------|
+| `/config` | View current settings |
+| `/config edit` | Interactive editor |
+| `/provider` | Change model provider |
+| `/setup` | Re-run initial setup |
+| `/health` | System status check |
 
-**Locations:**
-- UI operation history
-- `./outputs/<target>/OP_<id>/reports/`
-- Langfuse UI: http://localhost:3000
+## Running Assessments
 
-**Reports:** Auto-generated markdown with findings and remediation
+### Interactive Mode
+
+```bash
+# In interface
+/module              # Select general or ctf
+target: https://testphp.vulnweb.com
+objective: Identify SQL injection vulnerabilities
+execute              # Start assessment
+```
+
+### Command Line Mode
+
+```bash
+cyber-react \
+  --target "https://testphp.vulnweb.com" \
+  --objective "Identify OWASP Top 10 vulnerabilities" \
+  --module general \
+  --iterations 50 \
+  --auto-run
+```
+
+### Command Line Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--target, -t` | Required | Target system URL or IP |
+| `--objective, -o` | Required | Assessment objective |
+| `--module, -m` | `general` | Security module: general, ctf |
+| `--iterations, -i` | `100` | Maximum tool executions |
+| `--provider` | `bedrock` | Model provider |
+| `--auto-run` | `false` | Skip interactive prompts |
+| `--auto-approve` | `false` | Auto-approve tool executions |
+| `--memory-mode` | `auto` | Memory: auto or fresh |
+| `--deployment-mode` | Auto | local-cli, single-container, full-stack |
+
+## Operation Modules
+
+| Module | Purpose | Key Features |
+|--------|---------|--------------|
+| **general** | Web application security | Advanced recon, payload testing, auth analysis |
+| **ctf** | CTF challenges | Flag recognition, exploit chains, success detection |
+
+## Monitoring
+
+### Interface Display
+
+| Section | Information |
+|---------|-------------|
+| Header | Operation ID, target, module, deployment mode |
+| Main | Agent reasoning, tool executions, outputs, findings |
+| Footer | Step progress, tokens, costs, memory ops, time |
+
+### Observability (Full Stack)
+
+```
+URL: http://localhost:3000
+Login: admin@cyber-autoagent.com / changeme
+```
+
+## Output Structure
+
+```
+outputs/
+└── <target>/
+    ├── OP_<timestamp>/
+    │   ├── report.md              # Assessment report
+    │   ├── logs/
+    │   │   └── cyber_operations.log
+    │   └── utils/
+    └── memory/                    # Persistent across operations
+```
+
+## Memory System
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| **auto** | Loads existing memory, stores new findings | Iterative testing |
+| **fresh** | Empty memory, no historical context | Baseline assessments |
+
+Control via `/config edit` or `--memory-mode` flag.
+
+## Docker Management
+
+```bash
+# Start full stack
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+
+# Reset all data
+docker-compose down -v
+```
+
+## Alternative Execution
+
+### Python Direct
+
+```bash
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "SQL injection assessment" \
+  --provider bedrock \
+  --module general \
+  --iterations 50
+```
+
+Requirements: Python 3.10+, dependencies installed
+
+### Docker Standalone
+
+```bash
+docker build -t cyber-autoagent .
+
+docker run --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -v $(pwd)/outputs:/app/outputs \
+  cyber-autoagent \
+  --target "http://example.com" \
+  --objective "Security assessment"
+```
 
 ## Troubleshooting
 
-**Docker issues:** Start Docker Desktop → `docker-compose up -d`
+### Application Issues
 
-**Model errors:** 
-- Ollama: `ollama pull llama3.2:3b`
-- Bedrock: Check AWS credentials
-- LiteLLM: Verify API keys
+| Problem | Solution |
+|---------|----------|
+| React app won't start | `rm -rf node_modules && npm install && npm run build` |
+| Configuration errors | `rm ~/.cyber-autoagent/config.json && cyber-react` |
+| Docker connectivity | `docker info` to verify daemon running |
+| Node version issues | Verify Node.js 20+ with `node --version` |
 
-**Stuck assessment:** `Ctrl+C` pause → `Esc` cancel → `/health` status
+### Provider Issues
 
-## More Info
+| Provider | Verification Command |
+|----------|---------------------|
+| Bedrock | `aws sts get-caller-identity` |
+| Ollama | `curl http://localhost:11434/api/version` |
+| LiteLLM | `echo $OPENAI_API_KEY` |
 
-- `/docs` - Browse documentation
-- `/help` - Command reference  
-- GitHub for updates
+### Operation Issues
 
-## Keyboard Shortcuts
+| Issue | Resolution |
+|-------|------------|
+| Assessment not starting | Check provider credentials, Docker status, target accessibility |
+| Assessment stuck | Review step in footer, check tool outputs for errors |
+| Out of memory | Reduce iterations, use fresh memory mode, clear old outputs |
+| Port conflicts | Change ports in docker-compose.yml or stop conflicting services |
 
-**Assessment:** `Ctrl+C` pause → `Esc` cancel → `Ctrl+L` clear
+## Examples
 
-**Config:** `Tab` next → `Shift+Tab` previous → `Enter` save → `Esc` cancel
+### Web Application Assessment
 
-## Quick Reference
-
+```bash
+cyber-react \
+  -m general \
+  -t "https://testphp.vulnweb.com" \
+  -o "OWASP Top 10 assessment" \
+  -i 50
 ```
-FLOW                 SHORTCUTS
-====                 =========
-target example.com   Tab - Autocomplete
-execute [objective]  ↑↓ - Navigate
-                     Enter - Select
 
-COMMANDS            ASSESSMENT
-========            ==========
-/help    - Help     Ctrl+C - Pause
-/config  - Settings Esc - Cancel
-/health  - Status   Ctrl+L - Clear
-/plugins - Modules
+### API Security Testing
+
+```bash
+cyber-react \
+  -m general \
+  -t "https://api.example.com" \
+  -o "Authentication testing" \
+  -i 75 \
+  --auto-approve
 ```
 
-**⚠️ Always ensure proper authorization before testing!**
+### CTF Challenge
+
+```bash
+cyber-react \
+  -m ctf \
+  -t "http://challenge.ctf:8080" \
+  -o "Extract flag" \
+  -i 100
+```
+
+### Automated Scan
+
+```bash
+cyber-react \
+  -t "192.168.1.100" \
+  -o "Network security assessment" \
+  --auto-run \
+  --auto-approve \
+  --headless
+```
+
+## Best Practices
+
+### Assessment Workflow
+
+| Phase | Actions |
+|-------|---------|
+| **Before** | Obtain written authorization, verify Docker running, check provider connectivity, test target accessibility |
+| **During** | Monitor real-time outputs, review tool effectiveness, track token usage, check finding severity |
+| **After** | Review complete report, verify findings accuracy, document methodology, archive outputs |
+
+### Configuration Guidelines
+
+| Setting | Recommendation |
+|---------|---------------|
+| Iterations | Start with 25-50, increase to 100-200 for comprehensive testing |
+| Module | Use general for web apps, ctf for competitions |
+| Auto-approve | Only for trusted environments |
+| Observability | Enable for production assessments |
+| Memory mode | Auto for iterative testing, fresh for baselines |
+
+## Legal and Ethical Use
+
+### Required Before Use
+
+| Requirement | Description |
+|-------------|-------------|
+| Written authorization | Explicit permission to test target systems |
+| Legal compliance | Understanding of applicable laws and regulations |
+| Impact assessment | Ensure testing won't affect production services |
+| Scope documentation | Clearly defined testing boundaries |
+| Disclosure practices | Responsible vulnerability reporting procedures |
+
+### Responsible Disclosure
+
+If vulnerabilities are discovered during authorized testing:
+
+| Step | Action |
+|------|--------|
+| 1 | Report to system owner promptly with clear reproduction steps |
+| 2 | Allow reasonable remediation time (typically 90 days) |
+| 3 | Do not publicly disclose until patched |
+| 4 | Follow coordinated disclosure practices |
+
+**Open Source Notice:** This software is provided "as is" without warranty. Contributors and maintainers assume no liability for misuse or damages.
+
+## Additional Resources
+
+| Resource | Location |
+|----------|----------|
+| Architecture Guide | [architecture.md](architecture.md) |
+| Memory System | [memory.md](memory.md) |
+| Deployment Guide | [deployment.md](deployment.md) |
+| Module Development | [../src/modules/operation_plugins/README.md](../src/modules/operation_plugins/README.md) |
+| Terminal Architecture | [terminal-frontend.md](terminal-frontend.md) |
+| GitHub Issues | Report bugs and request features |

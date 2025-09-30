@@ -1,263 +1,300 @@
-# Cyber-AutoAgent Modules
+# Operation Modules
 
-## Overview
+Operation modules extend Cyber-AutoAgent capabilities through domain-specific prompts, tools, and reporting templates. Each module specializes the agent's behavior for particular security assessment scenarios.
 
-Modules are specialized security assessment components that extend Cyber-AutoAgent's capabilities. Each module provides domain-specific expertise, tools, and reporting formats while maintaining consistency through a unified architecture.
-
-## Module Architecture
+## Architecture
 
 ```mermaid
 graph TD
-    A[User Objective] --> B[Module Loader]
-    B --> C[Module Selection]
-    C --> D[Load module.yaml]
-    D --> E[Inject execution_prompt.txt]
-    E --> F[Ghost + Module Context]
-    F --> G[Tool Discovery]
-    G --> H[Assessment Execution]
-    H --> I[Load report_prompt.txt]
-    I --> J[Generate Report]
+    A[Agent Creation] --> B[Module Loader]
+    B --> C[Load module.yaml]
+    C --> D[Inject execution_prompt.txt]
+    D --> E[System Prompt Composition]
+    E --> F[Tool Discovery]
+    F --> G[Agent Execution]
+    G --> H[Load report_prompt.txt]
+    H --> I[Report Generation]
+
+    style B fill:#e3f2fd,stroke:#333,stroke-width:2px
+    style E fill:#fff3e0,stroke:#333,stroke-width:2px
+    style G fill:#e8f5e8,stroke:#333,stroke-width:2px
 ```
 
 ## Module Structure
 
-Each module contains:
-
 ```
-module_name/
-├── module.yaml           # Module configuration and metadata
-├── execution_prompt.txt  # Prompt for Ghost during assessment
-├── report_prompt.txt     # Prompt for report generation
-├── requirements.txt      # Python dependencies (optional)
-└── tools/               # Module-specific tools
-    ├── __init__.py
-    └── tool_name.py     # @tool decorated functions
+operation_plugins/
+└── <module_name>/
+    ├── module.yaml           # Metadata and configuration
+    ├── execution_prompt.txt  # Domain-specific system prompt
+    ├── report_prompt.txt     # Report generation guidance
+    └── tools/               # Module-specific tools
+        ├── __init__.py
+        └── custom_tool.py   # @tool decorated functions
 ```
 
-## How Modules Work
+## Component Functions
 
-### 1. Module Discovery
-The system searches for modules in:
-- Built-in modules: `./modules/`
-- User modules: `~/.cyberagent/modules/`
-- Custom paths: `CYBERAGENT_MODULE_PATHS` environment variable
+### module.yaml
+Defines module metadata and capabilities:
 
-### 2. Module Loading
-When a module is selected:
-1. `module.yaml` is parsed for configuration
-2. Tools in `tools/` directory are dynamically loaded
-3. `execution_prompt.txt` is injected into Ghost's context
-4. Module-specific objectives are composed with user objectives
+```yaml
+name: module_name
+display_name: Human Readable Name
+description: Module purpose and scope
+version: 1.0.0
+cognitive_level: 4              # Sophistication rating (1-5)
+capabilities:
+  - capability_description
+tools:
+  - tool_name
+supported_targets:
+  - web-application
+  - api-endpoint
+configuration:
+  approach: Assessment methodology description
+```
 
-### 3. Execution Flow
+### execution_prompt.txt
+Specialized instructions injected into agent system prompt during operation. Defines domain expertise, methodology, and tool usage patterns specific to the module's security domain.
+
+### report_prompt.txt
+Report generation template specifying structure, visual elements, and domain-specific analysis sections for final assessment reports.
+
+### tools/
+Optional directory containing module-specific tool implementations using Strands `@tool` decorator.
+
+## Loading Process
+
+```mermaid
+sequenceDiagram
+    participant A as Agent Factory
+    participant L as ModulePromptLoader
+    participant F as Filesystem
+    participant T as Tool Registry
+
+    A->>L: load_module(name)
+    L->>F: Read module.yaml
+    F-->>L: Metadata
+    L->>F: Read execution_prompt.txt
+    F-->>L: Prompt content
+    L->>T: Discover tools/*.py
+    T-->>L: Tool paths
+    L-->>A: Module context
+    A->>A: Compose system prompt
+```
+
+## Prompt Composition
+
+Module execution prompts integrate with base agent instructions:
+
 ```python
-# Simplified flow
-module_prompt = load_module_execution_prompt(module_name)
+# System prompt assembly
 system_prompt = f"""
-{ghost_base_prompt}
+{base_agent_prompt}
 
-[MODULE DOMAIN CONTEXT]
-{module_prompt}
+## MODULE CONTEXT
+{module_execution_prompt}
 
-[ASSESSMENT OBJECTIVE]
+## AVAILABLE TOOLS
+{discovered_module_tools}
+
+## ASSESSMENT OBJECTIVE
 {user_objective}
 """
 ```
 
-### 4. Report Generation
-After assessment completion:
-1. Findings are collected from memory
-2. `report_prompt.txt` guides report structure
-3. Visual elements (Mermaid diagrams, tables) are generated
-4. Module-specific sections are included
+## Module Discovery
 
-## Module Configuration (module.yaml)
+Modules are discovered from multiple sources:
 
-```yaml
-name: module_name                # Unique identifier
-display_name: Human Readable     # Display name
-description: Brief description   # Module purpose
-version: 1.0.0                  # Semantic version
-author: Cyber-AutoAgent Team    # Author info
-license: MIT                    # License type
+**Search Paths:**
+1. Built-in: `src/modules/operation_plugins/`
+2. User-defined: `~/.cyberagent/modules/`
+3. Custom: `CYBERAGENT_MODULE_PATHS` environment variable
 
-# Module sophistication (1-5 scale)
-cognitive_level: 4              
+**Validation Requirements:**
+- Valid `module.yaml` file
+- At least one prompt file (execution or report)
+- Proper directory structure
 
-# Dependencies on other modules
-dependencies: []                
+## Tool Integration
 
-# Core capabilities
-capabilities:
-  - capability_1: Description
-  - capability_2: Description
+Module tools extend agent capabilities for specific domains:
 
-# Tools used by this module
-tools:
-  - tool_name_1
-  - tool_name_2
+```python
+# Example module tool
+from strands import tool
 
-# Module chaining configuration
-module_interface:
-  accepts_from: [module1, module2]
-  provides_to: [module3, module4]
-  finding_categories: [category1, category2]
-
-# Supported target types
-supported_targets:
-  - web-application
-  - api-endpoint
-
-# Runtime configuration
-configuration:
-  timeout: 900                  # Max execution time (seconds)
-  max_depth: 10                # Analysis depth limit
-  approach: Assessment approach description
-  confidence_threshold: 0.75   # Minimum confidence for findings
+@tool
+def domain_scanner(target: str, options: dict = None) -> str:
+    """Domain-specific security scanner."""
+    # Implementation
+    return "Scan results"
 ```
 
-## Prompts
+Tools discovered from `tools/*.py` are made available via `load_tool`:
 
-### Execution Prompt (execution_prompt.txt)
-Defines the module's operational context during assessment:
-
-```
-<role>
-Specialized role description
-</role>
-
-<cognitive_architecture>
-Working Memory: Current operational context
-Episodic Memory: Finding storage patterns
-Semantic Memory: Domain knowledge
-Procedural Memory: Available tools
-</cognitive_architecture>
-
-<confidence_framework>
-Ghost's Confidence Assessment:
->80% Confidence: Execute specialized tools
-50-80% Confidence: Enhanced reconnaissance
-<50% Confidence: Gather more intel
-</confidence_framework>
-
-<domain_expertise>
-Module-specific expertise areas
-</domain_expertise>
-
-<assessment_methodology>
-Step-by-step methodology
-</assessment_methodology>
+```python
+# Agent runtime
+load_tool(tool_name="domain_scanner")
+result = domain_scanner(target="example.com")
 ```
 
-### Report Prompt (report_prompt.txt)
-Guides report generation with consistent structure:
+## Report Generation
 
+Report generation integrates module-specific guidance:
+
+```mermaid
+sequenceDiagram
+    participant A as Agent Completion
+    participant R as Report Generator
+    participant L as Module Loader
+    participant M as Report Agent
+
+    A->>R: generate_report()
+    R->>L: load_module_report_prompt(module)
+    L-->>R: Report template
+    R->>M: Generate with findings
+    M-->>R: Formatted report
+    R-->>A: Final report
 ```
-## Report Structure
 
-### 1. Executive Summary (3 sentences max)
-### 2. Attack Flow Visualization (Mermaid)
-### 3. Findings Summary Table
-### 4. Detailed Findings
-### 5. Attack Timeline (Sequence Diagram)
-### 6. Module-Specific Analysis
-### 7. Remediation Priority Matrix
-### 8. Evidence and Reproduction
-```
-
-## Available Modules
-
-| Module | Cognitive Level | Primary Focus | Key Tools |
-|--------|-----------------|---------------|-----------|
-| **general** | 2 | Comprehensive security assessment | Quick recon |
+Report prompts guide structure and emphasis:
+- Executive summary focus
+- Visual element requirements
+- Domain-specific analysis sections
+- Remediation guidance format
 
 ## Creating Custom Modules
 
-### 1. Create Module Directory
+### Directory Setup
+
 ```bash
-mkdir ~/.cyberagent/modules/custom_module
+mkdir -p ~/.cyberagent/modules/custom_module/tools
+cd ~/.cyberagent/modules/custom_module
 ```
 
-### 2. Create module.yaml
-Use the template and customize for your domain.
+### Minimal Module
 
-### 3. Write Execution Prompt
-Define the specialized role and methodology.
+**module.yaml:**
+```yaml
+name: custom_module
+display_name: Custom Security Module
+description: Specialized assessment for custom domain
+version: 1.0.0
+cognitive_level: 3
+capabilities:
+  - Domain-specific vulnerability detection
+supported_targets:
+  - custom-application
+```
 
-### 4. Write Report Prompt
-Follow the unified structure with module-specific sections.
+**execution_prompt.txt:**
+```xml
+<role>
+Specialized security assessor for [domain]
+</role>
 
-### 5. Add Tools (Optional)
+<assessment_methodology>
+1. Initial reconnaissance
+2. Vulnerability identification
+3. Exploitation validation
+</assessment_methodology>
+```
+
+### Tool Implementation
+
 ```python
 # tools/custom_tool.py
 from strands import tool
 
 @tool
-def custom_scanner(target: str, options: dict = None) -> str:
-    """Custom security scanner for specific vulnerability."""
-    # Implementation
-    return "Scanner results"
+def custom_scanner(target: str, depth: int = 3) -> str:
+    """Execute domain-specific security scan."""
+    # Scanner implementation
+    return f"Scan completed: {target}"
 ```
 
-## Best Practices
+## Development Guidelines
 
-### 1. Maintain Consistency
-- Follow the confidence framework pattern
-- Use standardized report sections
-- Keep Ghost's terse communication style
+**Prompt Design:**
+- Use XML tags for critical sections
+- Follow confidence-based decision framework
+- Maintain concise, technical language
+- Include specific tool usage guidance
 
-### 2. Tool Integration
-- All tools must use `@tool` decorator
-- Return structured data for report generation
-- Handle errors gracefully
+**Memory Integration:**
+- Store findings with standardized metadata
+- Use consistent category taxonomy
+- Include confidence scores
+- Reference module name in metadata
 
-### 3. Memory Usage
-- Store findings with proper metadata:
-  ```python
-  metadata = {
-      "category": "finding",
-      "module": "module_name",
-      "severity": "critical",
-      "confidence": "95%"
-  }
-  ```
+**Tool Development:**
+- Implement error handling
+- Return structured results
+- Document parameters and return types
+- Follow Strands tool conventions
 
-### 4. Visual Documentation
-- Include Mermaid diagrams for attack flows
-- Use tables for findings summaries
-- Add sequence diagrams for complex attacks
+## Module Validation
 
-## Module Development Workflow
+Validate module structure before deployment:
 
-1. **Plan**: Define module scope and capabilities
-2. **Configure**: Create module.yaml with metadata
-3. **Prompt**: Write execution and report prompts
-4. **Tool**: Develop specialized tools if needed
-5. **Test**: Validate module with sample targets
-6. **Document**: Update capabilities and examples
+```python
+from modules.prompts.factory import ModulePromptLoader
 
-## Troubleshooting
+loader = ModulePromptLoader()
+if loader.validate_module("custom_module"):
+    print("Module valid")
+```
 
-### Module Not Loading
-- Check module.yaml syntax
-- Verify module name is unique
-- Ensure proper directory structure
+## Available Modules
 
-### Tools Not Found
-- Confirm tools have `@tool` decorator
-- Check __init__.py exists in tools/
-- Verify tool names match module.yaml
+| Module | Cognitive Level | Domain | Key Capabilities | Tools |
+|--------|-----------------|--------|------------------|-------|
+| **ctf** | 4 | CTF challenges and competitions | Flag extraction, vulnerability exploitation, success-state detection | None |
+| **general** | 3 | Web application security assessment | Advanced reconnaissance, payload coordination, authentication analysis | 3 specialized tools |
 
-### Report Generation Issues
-- Validate report_prompt.txt format
-- Check for required visual elements
-- Ensure finding metadata is complete
+### CTF Module
 
-## Future Enhancements
+**Purpose:** Specialized for Capture The Flag competitions and challenge environments
 
-- Module chaining protocols
-- Inter-module communication
-- Automated module selection
-- Module marketplace integration
+**Key Features:**
+- Flag pattern recognition (UUID, hash, token formats)
+- Curated-first endpoint discovery
+- Family-driven vulnerability exploitation
+- XSS sink-oriented testing with state detection
+- IDOR parameter tampering with context variation
+- Authentication chain analysis
+- Multi-class injection strategies (SQLi, SSTI)
+- File upload and path traversal validation
+- SSRF and network probing
+- GraphQL introspection and API abuse testing
 
-For more information, see the [main documentation](../README.md).
+**Configuration:**
+- Approach: Family-driven discovery with curated-first probes
+
+### General Module
+
+**Purpose:** Comprehensive web application security assessments
+
+**Key Features:**
+- Coordinated reconnaissance (subfinder, assetfinder, httpx, katana)
+- Intelligent payload testing (dalfox, arjun, corsy)
+- Deep authentication flow analysis (JWT, OAuth, SAML)
+- Business logic vulnerability detection
+- Injection vulnerability identification
+
+**Module Tools:**
+- `specialized_recon_orchestrator`: Coordinates external recon tools
+- `advanced_payload_coordinator`: Orchestrates payload testing tools
+- `auth_chain_analyzer`: Analyzes authentication mechanisms
+
+**Configuration:**
+- Approach: Intelligence-driven assessment with specialized tools
+
+## Implementation Reference
+
+**Module Loading:** `src/modules/prompts/factory.py:ModulePromptLoader`
+**Agent Integration:** `src/modules/agents/cyber_autoagent.py:create_agent`
+**Report Generation:** `src/modules/tools/report_generator.py`

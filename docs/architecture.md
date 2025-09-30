@@ -197,30 +197,90 @@ Tools discovered via `which` command:
 graph TB
     A[Agent Actions] --> B[Finding Discovered]
     B --> C[mem0_memory store]
-    C --> D[Categorized Storage]
-    
-    D --> E[category: finding]
-    D --> F[category: vulnerability]
-    D --> G[category: exploit]
-    
-    H[Future Decisions] --> I[mem0_memory retrieve]
-    I --> J[Historical Context]
-    J --> A
-    
+    C --> D[Backend Selection]
+
+    D --> E[Mem0 Platform<br/>MEM0_API_KEY]
+    D --> F[OpenSearch<br/>OPENSEARCH_HOST]
+    D --> G[FAISS<br/>Default]
+
+    E --> H[Categorized Storage]
+    F --> H
+    G --> H
+
+    H --> I[category: finding]
+    H --> J[category: plan]
+    H --> K[category: reflection]
+
+    L[Future Decisions] --> M[mem0_memory retrieve]
+    M --> N[Historical Context]
+    N --> A
+
     style C fill:#f96,stroke:#333,stroke-width:2px
+    style D fill:#e3f2fd,stroke:#333,stroke-width:2px
+```
+
+**Memory Backend Selection**:
+1. **Mem0 Platform** - If `MEM0_API_KEY` environment variable is set
+2. **OpenSearch** - If `OPENSEARCH_HOST` environment variable is set
+3. **FAISS** - Default local vector storage if neither is configured
+
+**Evidence Storage Format**:
+```
+[VULNERABILITY] SQL Injection
+[WHERE] /login.php?id=1
+[IMPACT] Database access, credential extraction
+[EVIDENCE] Request/response pairs, command outputs
+[STEPS] Reproduction steps
+[REMEDIATION] Use parameterized queries
+[CONFIDENCE] 95% - Verified
 ```
 
 ## Model Providers
 
-### Remote Mode (AWS Bedrock)
-- **Primary**: Any AWS Bedrock model
-- **Embeddings**: Titan Text v2
-- **Benefits**: Latest models, managed infrastructure
+### Bedrock Provider (AWS)
+- **Primary**: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929-v1:0)
+- **Embeddings**: Titan Text v2 (amazon.titan-embed-text-v2:0)
+- **Region**: us-east-1 (default, configurable)
+- **Benefits**: Latest models, managed infrastructure, reliable performance
 
-### Local Mode (Ollama)  
-- **Primary**: llama3.2:3b (default)
+### Ollama Provider (Local)
+- **Primary**: qwen3-coder:30b-a3b-q4_K_M (default)
 - **Embeddings**: mxbai-embed-large
-- **Benefits**: Privacy, offline, no API costs
+- **Benefits**: Privacy, offline, no API costs, local control
+
+### LiteLLM Provider (Universal)
+- **Primary**: 100+ models supported (OpenAI, Anthropic, Cohere, etc.)
+- **Configuration**: Provider-specific API keys
+- **Benefits**: Multi-provider flexibility, unified interface
+
+## Event System and UI Integration
+
+**ReactBridgeHandler** extends the Strands SDK's callback system to emit structured events for the React terminal interface:
+
+```python
+# Event types emitted during operation
+- tool_start: Tool invocation with parameters
+- tool_end: Tool completion with results
+- reasoning: Agent decision-making context
+- step_header: Iteration tracking (step X/max_steps)
+- metrics_update: Token usage, cost, duration
+- operation_init: Operation metadata and configuration
+```
+
+Events flow from the Python agent through stdout using the `__CYBER_EVENT__` protocol, enabling real-time monitoring without tight coupling between backend and frontend.
+
+## Evaluation System
+
+**Automated Performance Assessment** using Ragas metrics integrated with Langfuse:
+
+| Metric | Range | Purpose |
+|--------|-------|---------|
+| tool_selection_accuracy | 0.0-1.0 | Strategic tool choice and sequencing |
+| evidence_quality | 0.0-1.0 | Comprehensive vulnerability documentation |
+| methodology_adherence | 0.0-1.0 | Defensible methodology alignment |
+| penetration_test_quality | 0.0-1.0 | Holistic assessment quality |
+
+Evaluation triggers automatically after operation completion when `ENABLE_AUTO_EVALUATION=true`, providing continuous feedback for system improvement.
 
 ## Key Design Principles
 
@@ -230,5 +290,6 @@ graph TB
 4. **Evidence-Focused**: Centralized knowledge management with automatic categorization and storage
 5. **Swarm Intelligence**: Deploy specialized sub-agents as tools while maintaining primary agent control
 6. **Tool Agnostic**: Access any system tool via shell interface, with runtime tool installation capabilities
+7. **Continuous Evaluation**: Automated performance metrics for operational improvement
 
 This **Single Agent Meta-Everything Architecture** enables autonomous operation while maintaining coherent strategic control and avoiding the coordination complexity of traditional multi-agent systems.
