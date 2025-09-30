@@ -49,6 +49,8 @@ export interface SwarmState {
   failedAgents?: string[];
   maxHandoffs?: number;
   maxIterations?: number;
+  nodeTimeout?: number;
+  executionTimeout?: number;
 }
 
 interface SwarmDisplayProps {
@@ -179,6 +181,18 @@ export const SwarmDisplay: React.FC<SwarmDisplayProps> = ({ swarmState, collapse
           <>
             <Text color={theme.muted}> | Max handoffs: </Text>
             <Text color={theme.info}>{swarmState.maxHandoffs}</Text>
+          </>
+        )}
+        {swarmState.nodeTimeout && (
+          <>
+            <Text color={theme.muted}> | Node timeout: </Text>
+            <Text color={theme.info}>{swarmState.nodeTimeout}s</Text>
+          </>
+        )}
+        {swarmState.executionTimeout && (
+          <>
+            <Text color={theme.muted}> | Total timeout: </Text>
+            <Text color={theme.info}>{swarmState.executionTimeout}s</Text>
           </>
         )}
         {swarmState.totalTokens !== undefined && swarmState.totalTokens > 0 && (

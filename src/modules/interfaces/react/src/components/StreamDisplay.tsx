@@ -19,7 +19,7 @@ import * as path from 'path';
 export type AdditionalStreamEvent = 
   | { type: 'step_header'; step: number | string; maxSteps?: number; operation?: string; duration?: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
-  | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; [key: string]: any }
+  | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; urgent?: boolean; [key: string]: any }
   | { type: 'thinking_end'; [key: string]: any }
   | { type: 'delayed_thinking_start'; context?: string; startTime?: number; delay?: number; [key: string]: any }
   | { type: 'tool_start'; tool_name: string; tool_input: any; [key: string]: any }
@@ -1359,7 +1359,9 @@ const method = latestInput.method || 'GET';
         startTime: Date.now(),
         totalTokens: 0,
         maxHandoffs: swarmEvent.max_handoffs,
-        maxIterations: swarmEvent.max_iterations
+        maxIterations: swarmEvent.max_iterations,
+        nodeTimeout: swarmEvent.node_timeout,
+        executionTimeout: swarmEvent.execution_timeout
       };
       
       return (
