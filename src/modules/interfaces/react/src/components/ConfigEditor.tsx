@@ -499,8 +499,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         updates.evaluationModel = 'qwen3-coder:30b-a3b-q4_K_M';
         updates.swarmModel = 'qwen3-coder:30b-a3b-q4_K_M';
       } else if (value === 'bedrock') {
-        // Set AWS Bedrock defaults
-        updates.modelId = 'us.anthropic.claude-sonnet-4-20250514-v1:0';
+        // Set AWS Bedrock defaults - Latest Sonnet 4.5 with 1M context + thinking
+        updates.modelId = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
         updates.embeddingModel = 'amazon.titan-embed-text-v2:0';
         updates.evaluationModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';
         updates.swarmModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';

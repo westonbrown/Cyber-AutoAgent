@@ -105,6 +105,7 @@ export class OperationManager {
   // Helper to get display names for models
   private getModelDisplayName(modelId: string): string {
     const nameMap: { [key: string]: string } = {
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0': 'Claude Sonnet 4.5',
       'us.anthropic.claude-sonnet-4-20250514-v1:0': 'Claude Sonnet 4',
       'us.anthropic.claude-opus-4-1-20250805-v1:0': 'Claude Opus 4.1',
       'claude-3-5-sonnet-20241022-v2:0': 'Claude 3.5 Sonnet v2',
@@ -139,6 +140,7 @@ export class OperationManager {
   // Helper to get context limits for models
   private getModelContextLimit(modelId: string): number {
     const contextLimits: { [key: string]: number } = {
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0': 1000000, // 1M context with beta flag (context-1m-2025-08-07)
       'us.anthropic.claude-sonnet-4-20250514-v1:0': 1000000, // 1M context with beta flag
       'us.anthropic.claude-opus-4-1-20250805-v1:0': 200000,
       'claude-3-5-sonnet-20241022-v2:0': 200000,

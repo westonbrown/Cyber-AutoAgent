@@ -161,7 +161,9 @@ class ToolEventEmitter:
                         "agent_names": agent_names,
                         "agent_details": agent_details,
                         "max_handoffs": tool_input.get("max_handoffs", 20),
-                        "timeout": tool_input.get("execution_timeout", 900),
+                        "max_iterations": tool_input.get("max_iterations", 20),
+                        "node_timeout": tool_input.get("node_timeout", 300),
+                        "execution_timeout": tool_input.get("execution_timeout", 900),
                     }
                 )
 

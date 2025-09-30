@@ -89,7 +89,7 @@ export const ENV_DETECTION = {
 
 // Default model settings
 export const MODEL_DEFAULTS = {
-  BEDROCK_MODEL: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  BEDROCK_MODEL: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', // Latest Sonnet 4.5 as default
   BEDROCK_REGION: 'us-east-1',
   OPENAI_MODEL: 'gpt-4',
   OLLAMA_MODEL: 'llama2',
