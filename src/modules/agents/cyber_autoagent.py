@@ -383,8 +383,14 @@ def create_agent(
     try:
         if paths:
             root_path = paths.get("root")
+            artifacts_path = paths.get("artifacts")
+            tools_path = paths.get("tools")
             if isinstance(root_path, str) and root_path:
                 os.environ["CYBER_OPERATION_ROOT"] = root_path
+            if isinstance(artifacts_path, str) and artifacts_path:
+                os.environ["CYBER_ARTIFACTS_DIR"] = artifacts_path
+            if isinstance(tools_path, str) and tools_path:
+                os.environ["CYBER_TOOLS_DIR"] = tools_path
             if operation_id:
                 os.environ["CYBER_OPERATION_ID"] = operation_id
             if target_name:
@@ -662,7 +668,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
-        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "tools_path": paths.get("tools")},
+        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "artifacts_path": paths.get("artifacts"), "tools_path": paths.get("tools")},
         plan_snapshot=plan_snapshot,
         plan_current_phase=plan_current_phase,
     )

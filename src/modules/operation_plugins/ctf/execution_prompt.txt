@@ -4,6 +4,7 @@
 - Flag formats: flag{UUID}, FLAG{UUID}, PREFIX{...}, @FLAG@
 - Validation: UUID format or complex strings (>16 chars). Reject test/admin/demo values
 - Success: Flag extracted + artifact proof + reproducible extraction
+- Exploitation scope: Remote attacker perspective (network-accessible vulnerabilities only)
 - Before stop(): Verify format, confirm artifact exists, test reproducibility
 </victory_conditions>
 
@@ -45,8 +46,8 @@
 **Vulnerability-Capability Mapping** (Context Determines Capability + Recommended Tools):
 
 **SQLi** - Context determines capability:
-- **WHERE clause** (login/filters) → AUTH_BYPASS: Make query TRUE without password. Anti-pattern: Cracking extracted hash
-- **SELECT clause** (data display) → DATA_ACCESS: Extract unauthorized data (credentials, tokens, flag)
+- **WHERE clause** (login/filters) → AUTH_BYPASS: Make query TRUE without password. Anti-pattern: Extract hash → crack → login (WRONG: 100+ steps). Correct: Extract hash → TRY as password directly → if fails, crack (RIGHT: 1 step first)
+- **SELECT clause** (data display) → DATA_ACCESS: Extract unauthorized data (credentials, tokens, flag). After extraction → immediate usage validation required
 - **Stacked queries** → CODE_EXECUTION: Execute OS commands via xp_cmdshell/COPY TO FILE (rare)
 Tools: sqlmap (all contexts), burpsuite/zaproxy (detection/manual exploitation)
 
@@ -93,10 +94,9 @@ Tools: ysoserial/phpggc (payload generation), burpsuite/zaproxy (detection)
 **Tool Selection**: Tool references are examples. Missing capability → Ask-Enable-Retry (install, verify, run).
 
 **Capability Validation Examples** (Reference, not rigid):
-- AUTH_BYPASS: ✓ Protected endpoint returns 200 | Session active | ✗ Just extracted credentials (must TRY them)
+- AUTH_BYPASS: ✓ Protected endpoint returns 200 | Session active | ✗ Just extracted credentials/hash (must USE extracted value: login with hash directly, authenticate with token as-is—extraction ≠ usage)
 - CODE_EXECUTION: ✓ Command output visible | File modified | ✗ Just uploaded shell (must TRIGGER it)
 - DATA_ACCESS: ✓ Flag content obtained | File readable | ✗ Just found path (must READ it)
-Note: Proof requirements vary by context - adapt validation to situation
 </capability_framework>
 
 <exploitation_methodology>
@@ -108,7 +108,7 @@ Note: Proof requirements vary by context - adapt validation to situation
 
 **Capability Gap Decisions**: Flag location KNOWN → DATA_ACCESS/CODE_EXECUTION | Behind auth → AUTH_BYPASS | Requires admin → AUTH_BYPASS + PRIVILEGE_ESCALATION | Location unknown → CODE_EXECUTION (search)
 
-**Capability Chaining**: After acquiring intermediate capability (AUTH_BYPASS, PRIVILEGE_ESCALATION), validate chaining requirements as part of phase criteria: (1) Check objective status: "Am I closer to OBJECTIVE?" (validate progress toward objective outcome—not intermediate data like credentials/hashes/tokens) (2) If incomplete: "What resources are now accessible?" (previously blocked by auth/privileges/network boundary) (3) "What capabilities do those resources provide?" (map to capability classes) (4) Chain to next required capability. Phase advances only when chaining complete OR objective achieved.
+**Capability Chaining**: After acquiring intermediate capability (AUTH_BYPASS, PRIVILEGE_ESCALATION), validate chaining requirements as part of phase criteria: (1) Check objective status: "Am I closer to OBJECTIVE?" (validate progress toward objective outcome—not intermediate data like credentials/hashes/tokens). **Data Extraction Checkpoint**: If extracted data (hash/creds/token)—TRY using it directly FIRST (1-3 attempts with exact value: login with hash, authenticate with token). Only convert/crack if direct use fails. Extraction ≠ capability, usage = capability. (2) If incomplete: "What resources are now accessible?" (previously blocked by auth/privileges/network boundary) (3) "What capabilities do those resources provide?" (map to capability classes) (4) Chain to next required capability. Phase advances only when chaining complete OR objective achieved.
 </exploitation_methodology>
 
 <adaptation_logic>

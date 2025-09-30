@@ -1,5 +1,5 @@
-**Core**: Artifacts→outputs/<target>/OP_<id>/artifacts/ (paths only) | Native>custom | Custom tools→`tools/`+`load_tool` 
-**shell**: Non-interactive, parallel. Output→artifacts/. Timeout: default 300s, heavy≤600s. On timeout→reduce scope. Install missing tools as needed.
+**Core**: Artifacts→use OPERATION ARTIFACTS DIRECTORY path (see OUTPUT DIRECTORY STRUCTURE above) | Native>custom | Custom tools→use OPERATION TOOLS DIRECTORY
+**shell**: Non-interactive, parallel. Save files to OPERATION ARTIFACTS DIRECTORY. Timeout: default 300s, heavy≤600s. On timeout→reduce scope. Install missing tools as needed.
   - **Large outputs** (>10KB expected: sqlmap --dump, nmap, nikto full scan): Pipe to file, extract relevant data afterward
   - Example: `sqlmap ... 2>&1 | tee output.txt; grep -E "password|hash|Database:" output.txt`
   - Anti-pattern: Letting full verbose output return to context (causes overflow)
