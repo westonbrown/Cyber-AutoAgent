@@ -24,6 +24,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-yellow?logo=python&style=for-the-badge)](https://www.python.org)
 [![AWS Bedrock](https://img.shields.io/badge/AWS-Bedrock-orange?logo=amazon-aws&style=for-the-badge)](https://aws.amazon.com/bedrock/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local_AI-green?style=for-the-badge)](https://ollama.ai)
+[![Discord](https://img.shields.io/badge/Discord-Join_Us-5865F2?logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/WNHhsnkTc3)
 
 </div>
 
