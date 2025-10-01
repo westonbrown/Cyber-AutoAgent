@@ -1257,6 +1257,12 @@ def mem0_memory(
     - Store atomic, reproducible evidence and findings; aggregation happens at report generation.
     - Never store executive summaries/final reports in memory.
 
+    Planning and Checkpoints (MANDATORY for long operations):
+    - Step 0: store_plan with phases ({"status": "active/pending/done/partial_failure/blocked"})
+    - At checkpoints (20%/40%/60%/80% budget): MUST get_plan → evaluate criteria vs evidence → store_plan with updated status
+    - Pivot triggers: Phase marked 'partial_failure' or 'blocked' → switch to alternative capability (don't retry exhausted approach)
+    - Status values: 'active' (current), 'pending' (not started), 'done' (criteria met), 'partial_failure' (stuck, need pivot), 'blocked' (dependency failed)
+
     Failure-mode hardening (validation first):
     - High/Critical findings require metadata.proof_pack with existing artifact paths; missing/invalid proof_pack → auto-downgrade validation_status to "hypothesis" and cap confidence.
     - Pattern-only signals are capped at low confidence and marked as "pattern_match" evidence_type.
@@ -1269,7 +1275,7 @@ def mem0_memory(
 
     Args:
         action: One of store|get|list|retrieve|delete|store_plan|get_plan
-        content: Content to store (for store action) — use structured format for findings
+        content: Content to store (for store action) — use structured format for findings/plans
         memory_id: Memory ID (for get, delete actions)
         query: Search query (for retrieve action)
         user_id: User ID for memory operations (defaults to 'cyber_agent')

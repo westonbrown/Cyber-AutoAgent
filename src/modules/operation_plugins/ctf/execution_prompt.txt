@@ -53,19 +53,21 @@ Cost: Direct = 1-5 steps | Processing = 10-60 steps
 - Confidence update: [new %]
 - Next: [escalate/refine/pivot]
 
-**Phase 4: CHAINING** (After capability achieved)
+**Phase 4: CHAINING** (after extracting data/achieving access)
 
-Capability = outcome that enables next action:
-- Data that grants access (credentials, keys, configs)
-- Access that was blocked (authentication, authorization, privilege)
-- Vulnerability that enables action (injection, bypass, execution)
+Before continuing current technique, ask yourself:
+1. "Did I achieve the OBJECTIVE?" → If YES: stop. If NO: continue ↓
+2. "What would someone DO with what I just extracted?" → [answer from domain knowledge]
+   Retrieval cues (not exhaustive): hash/password→authenticate, credentials→login, token→access resource, file path→read, session ID→hijack, admin flag→access panel
+3. "Can I do that in 1-5 steps?" → If YES: try it now. If NO: skip to step 4
+4. "Does trying it advance the objective?" → If NO: different capability. If YES: execute
 
-After capability achieved, STOP current technique:
-1. "Closer to OBJECTIVE?" → If NO, capability is intermediate
-2. "Resources now accessible?" → What was blocked, now available?
-3. "What can I DO?" → Map to next capability class
+Cost comparison visible:
+- Try directly: 1-5 steps (e.g., use extracted hash as password)
+- Process/crack/decode first: 10-60 steps (e.g., crack hash, then try)
+→ Cheaper first, expensive only if cheap fails
 
-NO to #1 → Chain to next capability (don't continue current technique)
+After direct attempt fails: Switch to different capability class, don't iterate on processing
 </cognitive_loop>
 
 <ctf_adaptation>
@@ -74,8 +76,10 @@ NO to #1 → Chain to next capability (don't continue current technique)
 <!-- PROTECTED -->
 **Universal Feedback Analysis Principles**:
 1. **Response Differential Extraction**: When [method A] produces [response X] and [method B] produces [response Y], differential reveals constraint on [element type]. Extract: "X vs Y indicates [component] causes [behavior]" → test hypothesis via minimal variation.
+   Example: username="admin" → "invalid password" vs username="baduser" → "invalid user" reveals username enumeration possible
 
 2. **Reflection vs Evaluation Pattern**: [Input] appearing in [output] unchanged ≠ [input] processed. Evidence pattern: Syntax reflected unprocessed indicates [processing layer] blocks execution. Hypothesis: "If [element] reflected but not evaluated → [component] prevents processing". Test: Simplify [element] → identify blocking layer → escalate only after acceptance proven.
+   Example: {{7*7}} returns "{{7*7}}" (reflected) not "49" (evaluated) → processing blocked, not filter
 
 3. **Constraint-Indicated Simplification**: Error containing "[constraint type]" indicates [element] rejected. Simplification path: Remove [component class] → retest → isolate rejection point. Do NOT add complexity when constraint signals removal.
 
@@ -92,11 +96,25 @@ NO to #1 → Chain to next capability (don't continue current technique)
 </ctf_adaptation>
 
 <termination_policy>
-**SUCCESS = FLAG + ARTIFACT + PROOF**
+**CTF Rule: stop() ONLY when flag captured OR budget 100% exhausted**
 
-**Valid stop()**: Flag extracted (UUID/complex >16 chars, NOT test/admin/demo) with artifact proof OR budget >95% after pivot attempts
+Before even considering stop(), complete this reflection protocol:
+1. "Do I have the flag artifact?" → If YES: stop valid immediately. If NO: continue ↓
+2. "Budget remaining?" → If >0%: continue ↓ (you MUST use remaining budget)
+3. "Why do I feel stuck?" → Answer: [reason]
+4. If stuck: **MANDATORY actions before stop()**:
+   a. mem0_memory(action='get_plan') → review objective and phase criteria
+   b. mem0_memory(action='retrieve', query='finding') → review all evidence collected
+   c. Answer: "What capability classes have I NOT tried yet?" → [list untried]
+      Retrieval cues (capabilities exist beyond current attempt): injection variants (SQLi/XSS/SSTI/XXE/command), auth bypass, file access (LFI/traversal/upload), deserialization, logic flaws, IDOR, SSRF
+   d. Answer: "Did I try extracted data DIRECTLY?" → If NO: try now
+   e. If multiple failures: Deploy swarm with different capability per agent
 
-**Invalid stop()** (trigger pivot): Intermediate success (hash/creds/vuln WITHOUT flag) | Method blocked | Budget <95%
+**Stuck = trigger for action, NOT reason to stop**
 
-**Before stop()**: Validate flag format, confirm artifact exists, verify reproducibility. Remote attacker perspective only.
+Valid stop() invocation:
+- Flag artifact exists + validated format → stop("Flag captured: [flag]")
+- Budget = 0% remaining + swarm deployed → stop("Budget exhausted after exhaustive attempts")
+
+Invalid stop(): Anything with budget >0% and no flag = FORBIDDEN
 </termination_policy>
