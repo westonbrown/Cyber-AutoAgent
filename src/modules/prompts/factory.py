@@ -625,14 +625,14 @@ def get_system_prompt(
             _last_checkpoint = _overdue_checkpoints[-1]
             _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
             parts.append(f"\n{'='*60}")
-            parts.append(f"⚠️ CHECKPOINT {_checkpoint_pct_hit}% ⚠️")
+            parts.append(f"⚠️ CHECKPOINT GATE {_checkpoint_pct_hit}% ⚠️")
             parts.append(f"{'='*60}")
-            parts.append(f"Before next action, retrieve plan and answer:")
-            parts.append(f'1. "Does evidence meet current phase criteria?" → YES/NO')
-            parts.append(f'2. If NO: "Did technique fail 3+ times?" → If YES: mark partial_failure')
-            parts.append(f'3. If partial_failure: "What DIFFERENT capability could I try?"')
-            parts.append(f"")
-            parts.append(f"Action: mem0_memory(action='get_plan') → answer above → update plan")
+            parts.append(f"Complete protocol BEFORE next tool:")
+            parts.append(f"1. mem0_memory(action='get_plan')")
+            parts.append(f"2. Answer: Criteria met? Current confidence? <50%?")
+            parts.append(f"3. If confidence <50%: MUST pivot to different method OR deploy swarm")
+            parts.append(f"4. store_plan (update status, mark partial_failure if pivoting)")
+            parts.append(f"5. AFTER 1-4: Select next tool")
             parts.append(f"{'='*60}")
         # Approaching checkpoint warnings
         elif _steps_until <= 5 and _steps_until > 0:
