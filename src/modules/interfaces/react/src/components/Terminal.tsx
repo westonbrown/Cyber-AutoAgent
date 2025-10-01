@@ -513,30 +513,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     lastPushedTypeRef.current = null;
     results.push(event as DisplayStreamEvent);
 
-    console.error('[DEBUG] operation_init: animationsEnabled=', animationsEnabled, 'activeThinkingRef=', activeThinkingRef.current);
-
-    if (animationsEnabled && !activeThinkingRef.current) {
-      // Show spinner immediately after operation init
-      setActiveThinking(true);
-      seenThinkingThisPhaseRef.current = true;
-
-      const thinkingEvent: DisplayStreamEvent = {
-        type: 'thinking',
-        context: 'startup',
-        startTime: Date.now(),
-        urgent: true  // Bypass throttle for immediate display
-      } as DisplayStreamEvent;
-
-      results.push(thinkingEvent);
-
-      // CRITICAL: Update active buffer immediately to show spinner without delay
-      activeBufRef.current.clear();
-      activeBufRef.current.push(thinkingEvent);
-      setActiveEvents(activeBufRef.current.toArray());
-      console.error('[DEBUG] operation_init: Created and set thinking spinner in activeBufRef');
-    } else {
-      console.error('[DEBUG] operation_init: SKIPPED thinking creation - animations disabled or thinking already active');
-    }
+    // Python backend emits thinking(startup, urgent=true) immediately after this
     break;
 
       case 'step_header':
@@ -598,7 +575,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
 
           results.push(thinkingEvent);
 
-          // CRITICAL: Update active buffer immediately to show spinner without delay
+          // Update active buffer immediately to show spinner without delay
           activeBufRef.current.clear();
           activeBufRef.current.push(thinkingEvent);
           setActiveEvents(activeBufRef.current.toArray());
@@ -691,7 +668,6 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         break;
         
       case 'thinking':
-        console.error('[DEBUG] thinking event received: context=', event.context, 'urgent=', (event as any).urgent, 'activeReasoning=', activeReasoning);
         // Handle thinking start without conflicting with reasoning
         if (!activeReasoning) {
           // Cancel any pending delayed spinner to avoid duplicates
@@ -702,7 +678,6 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           // Ensure the internal flag is set (fallback: it may already be true)
           if (!activeThinkingRef.current) {
             setActiveThinking(true);
-            console.error('[DEBUG] thinking: Set activeThinking to true');
           }
           // Create thinking event with urgent flag preserved
           const thinkingEvent: DisplayStreamEvent = {
@@ -715,18 +690,13 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
 
           results.push(thinkingEvent);
 
-          // CRITICAL: For urgent thinking, immediately update active buffer (no throttle)
+          // For urgent thinking, immediately update active buffer (no throttle)
           // This ensures startup/post-reasoning spinners appear without delay
           if ((event as any).urgent) {
             activeBufRef.current.clear();
             activeBufRef.current.push(thinkingEvent);
             setActiveEvents(activeBufRef.current.toArray());
-            console.error('[DEBUG] thinking: URGENT - immediately updated activeBufRef, array length=', activeBufRef.current.toArray().length);
-          } else {
-            console.error('[DEBUG] thinking: NOT urgent, will be preserved via standard flow');
           }
-        } else {
-          console.error('[DEBUG] thinking: SKIPPED - activeReasoning is true');
         }
         break;
         
@@ -892,7 +862,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
 
           results.push(thinkingEvent);
 
-          // CRITICAL: Update active buffer immediately to show spinner without delay
+          // Update active buffer immediately to show spinner without delay
           activeBufRef.current.clear();
           activeBufRef.current.push(thinkingEvent);
           setActiveEvents(activeBufRef.current.toArray());
@@ -1148,7 +1118,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
 
           results.push(thinkingEvent);
 
-          // CRITICAL: Update active buffer immediately to show spinner without delay
+          // Update active buffer immediately to show spinner without delay
           activeBufRef.current.clear();
           activeBufRef.current.push(thinkingEvent);
           setActiveEvents(activeBufRef.current.toArray());
@@ -1433,7 +1403,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         }
 
         // Keep current thinking (if any) and aggregated output in active tail without duplication
-        // IMPORTANT: This runs on EVERY event to preserve thinking across all events
+        // This runs on EVERY event to preserve thinking across all events
         const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
         // Preserve existing thinking even if no new events - prevents thinking from disappearing
         const existingThinking = activeBufRef.current.toArray().filter(e => e.type === 'thinking');
