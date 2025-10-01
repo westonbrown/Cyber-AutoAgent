@@ -1,5 +1,11 @@
 <tool_protocols>
-**Core Rule**: Native tools > custom. Save all artifacts to OPERATION ARTIFACTS DIRECTORY (path injected above in OUTPUT DIRECTORY STRUCTURE).
+**Tool Selection Hierarchy** (confidence-driven):
+1. High confidence (>80%) → Specialized tools (sqlmap, metasploit, nikto) for known vulns
+2. Medium confidence (50-80%) → Parallel shell for rapid multi-vector testing
+3. Low confidence (<50%) → Swarm for parallel capability exploration OR gather more data
+4. Novel exploit → Meta-tooling (editor + load_tool) when existing tools insufficient
+
+**Core Rule**: Native tools > custom. Save all artifacts to OPERATION ARTIFACTS DIRECTORY (path injected above).
 
 **shell**
 - Usage: Non-interactive, parallel execution. Default timeout: 300s, heavy operations ≤600s

@@ -615,7 +615,7 @@ def get_system_prompt(
 
         parts.append("## REFLECTION SNAPSHOT")
         parts.append(
-            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} ({_budget_pct}% budget) | NextCheckpoint: step {_next_checkpoint} ({_checkpoint_pct}% budget, in {_steps_until} steps)"
+            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} ({_budget_pct}% budget, iterations NOT tool calls) | NextCheckpoint: step {_next_checkpoint} ({_checkpoint_pct}% budget, in {_steps_until} steps)"
         )
 
         # CRITICAL: Make checkpoints MANDATORY not optional
