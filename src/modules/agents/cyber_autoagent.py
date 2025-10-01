@@ -222,14 +222,23 @@ def _create_litellm_model(
     if model_id.startswith("bedrock/"):
         client_args["aws_region_name"] = region_name
 
+    # Build params dict with optional reasoning parameters
+    params = {
+        "temperature": config["temperature"],
+        "max_tokens": config["max_tokens"],
+        "top_p": config.get("top_p", 0.95),
+    }
+
+    # Add reasoning parameters if set (O1/GPT-5 support)
+    if os.getenv("REASONING_EFFORT"):
+        params["reasoning_effort"] = os.getenv("REASONING_EFFORT")
+    if os.getenv("MAX_COMPLETION_TOKENS"):
+        params["max_completion_tokens"] = int(os.getenv("MAX_COMPLETION_TOKENS"))
+
     return LiteLLMModel(
         client_args=client_args,
         model_id=config["model_id"],
-        params={
-            "temperature": config["temperature"],
-            "max_tokens": config["max_tokens"],
-            "top_p": config.get("top_p", 0.95),
-        },
+        params=params,
     )
 
 

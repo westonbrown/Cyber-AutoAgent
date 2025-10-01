@@ -315,11 +315,15 @@ class ConfigManager:
         # Claude Sonnet 4.5 supports extended thinking with higher token limits
         # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
-            max_tokens = 64000      
-            thinking_budget = 62000  
+            default_max_tokens = 64000
+            default_thinking_budget = 60000
         else:
-            max_tokens = 32000
-            thinking_budget = 10000
+            default_max_tokens = 32000
+            default_thinking_budget = 10000
+
+        # Allow override via environment variables
+        max_tokens = int(os.getenv("MAX_TOKENS", default_max_tokens))
+        thinking_budget = int(os.getenv("THINKING_BUDGET", default_thinking_budget))
 
         return {
             "model_id": model_id,
@@ -1175,6 +1179,12 @@ class ConfigManager:
                 raise EnvironmentError(
                     "COHERE_API_KEY not configured for LiteLLM Cohere models. "
                     "Set COHERE_API_KEY environment variable."
+                )
+        elif model_id.startswith("azure/"):
+            if not os.getenv("AZURE_API_KEY"):
+                raise EnvironmentError(
+                    "AZURE_API_KEY not configured for LiteLLM Azure models. "
+                    "Set AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION environment variables."
                 )
         # LiteLLM will handle other provider validations internally
 
