@@ -625,15 +625,14 @@ def get_system_prompt(
             _last_checkpoint = _overdue_checkpoints[-1]
             _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
             parts.append(f"\n{'='*60}")
-            parts.append(f"! CHECKPOINT {_checkpoint_pct_hit}% - ACTION REQUIRED ⚠️")
+            parts.append(f"⚠️ CHECKPOINT {_checkpoint_pct_hit}% ⚠️")
             parts.append(f"{'='*60}")
-            parts.append(f"YOUR NEXT ACTION MUST BE:")
-            parts.append(f"  mem0_memory(action='get_plan', user_id='cyber_agent')")
-            parts.append(f"\nPurpose: Evaluate phase criteria vs evidence")
-            parts.append(f"Then: Continue current phase OR advance to next phase OR pivot")
-            parts.append(f"{'='*60}")
-            parts.append(f"Phase {plan_current_phase if plan_current_phase else '?'}: Retrieve plan -> Evaluate criteria -> Update progress")
-            parts.append("THEN: Criteria met? store_plan(current_phase+1, status='done') | Stuck? pivot/swarm | Partial? continue")
+            parts.append(f"Before next action, retrieve plan and answer:")
+            parts.append(f'1. "Does evidence meet current phase criteria?" → YES/NO')
+            parts.append(f'2. If NO: "Did technique fail 3+ times?" → If YES: mark partial_failure')
+            parts.append(f'3. If partial_failure: "What DIFFERENT capability could I try?"')
+            parts.append(f"")
+            parts.append(f"Action: mem0_memory(action='get_plan') → answer above → update plan")
             parts.append(f"{'='*60}")
         # Approaching checkpoint warnings
         elif _steps_until <= 5 and _steps_until > 0:
