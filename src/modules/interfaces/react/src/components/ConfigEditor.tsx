@@ -713,10 +713,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     return (
       <Box marginBottom={1} flexDirection="column">
         <Box>
-          <Text bold color={theme.primary}>Configuration Editor</Text>
-          {unsavedChanges && <Text color={theme.warning}> [Unsaved]</Text>}
+          <Text bold color={theme.primary} wrap="wrap">Configuration Editor</Text>
+          {unsavedChanges && <Text color={theme.warning} wrap="wrap"> [Unsaved]</Text>}
         </Box>
-        <Text color={theme.muted}>
+        <Text color={theme.muted} wrap="wrap">
           {navigationMode === 'sections'
             ? 'Navigate with ↑↓ arrows • Enter to expand section • Ctrl+S to save • Esc to continue and exit'
             : 'Navigate with ↑↓ arrows • Enter to edit field • Cmd+V to paste (Mac) • Ctrl+S to save • Esc to collapse section'}
@@ -740,22 +740,23 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             <Box key={section.name} flexDirection="column" marginBottom={1}>
               {/* Section Header */}
               <Box>
-                <Text 
+                <Text
                   bold={isSelected}
                   color={isSelected ? theme.accent : theme.foreground}
+                  wrap="wrap"
                 >
                   {isSelected ? '▸ ' : '  '}
                   {section.expanded ? '▼ ' : '▶ '}
                   {section.label}
                 </Text>
-                <Text color={theme.muted}>
+                <Text color={theme.muted} wrap="wrap">
                   {' '}({configuredCount}/{fields.length} configured)
                 </Text>
               </Box>
-              
+
               {/* Section Description */}
               <Box paddingLeft={4}>
-                <Text color={theme.muted}>{section.description}</Text>
+                <Text color={theme.muted} wrap="wrap">{section.description}</Text>
               </Box>
               
               {/* Fields (if expanded) */}
@@ -947,17 +948,17 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   // Main render logic
   return (
     <Box flexDirection="column">
-      <Box 
+      <Box
         flexDirection="column"
-        borderStyle="single" 
+        borderStyle="single"
         borderColor={theme.primary}
         padding={1}
-        width="100%"
         marginTop={1}
+        width="100%"
       >
         {/* Notification appears INSIDE the main border at the very top */}
         {message && (
-          <Box 
+          <Box
             borderStyle="double"
             borderColor={
               message.type === 'success' ? theme.success :
@@ -966,10 +967,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             }
             paddingX={1}
             marginBottom={1}
-            width="100%"
           >
-            <Text 
+            <Text
               bold
+              wrap="wrap"
               color={
                 message.type === 'success' ? theme.success :
                 message.type === 'error' ? theme.danger :
@@ -988,19 +989,22 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       
       {/* Status bar */}
       <Box marginBottom={1} flexDirection="column">
-        <Text color={
-          status.status === 'success' ? theme.success :
-          status.status === 'warning' ? theme.warning :
-          theme.danger
-        }>
+        <Text
+          wrap="wrap"
+          color={
+            status.status === 'success' ? theme.success :
+            status.status === 'warning' ? theme.warning :
+            theme.danger
+          }
+        >
           Status: {status.message}
         </Text>
-        <Text color={theme.muted}>
-          Deployment: {deploymentStatus.mode} | 
-          Observability: {deploymentStatus.observability} | 
+        <Text color={theme.muted} wrap="wrap">
+          Deployment: {deploymentStatus.mode} |
+          Observability: {deploymentStatus.observability} |
           Evaluation: {deploymentStatus.evaluation}
         </Text>
-        <Text color={theme.muted}>
+        <Text color={theme.muted} wrap="wrap">
           {deploymentStatus.description}
         </Text>
       </Box>
@@ -1011,20 +1015,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       </Box>
       
         {/* Footer with shortcuts */}
-        <Box marginTop={1} borderStyle="single" borderColor={unsavedChanges ? theme.warning : theme.muted} paddingX={1}>
-          <Box justifyContent="space-between">
-            <Text color={theme.muted}>
-              {navigationMode === 'sections'
-                ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
-                : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
-              }
+        <Box marginTop={1} borderTop borderColor={unsavedChanges ? theme.warning : theme.muted} paddingTop={1}>
+          <Text color={theme.muted} wrap="wrap">
+            {navigationMode === 'sections'
+              ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
+              : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
+            }
+          </Text>
+          {unsavedChanges && (
+            <Text color={theme.warning} bold wrap="wrap">
+              {' '}[Unsaved Changes]
             </Text>
-            {unsavedChanges && (
-              <Text color={theme.warning} bold>
-                [Unsaved Changes]
-              </Text>
-            )}
-          </Box>
+          )}
         </Box>
       </Box>
     </Box>

@@ -17,7 +17,7 @@ import * as path from 'path';
 // Extended event types for UI-specific events not covered by the core SDK events
 // These events are used for UI state management and display formatting
 export type AdditionalStreamEvent = 
-  | { type: 'step_header'; step: number | string; maxSteps?: number; operation?: string; duration?: string; [key: string]: any }
+  | { type: 'step_header'; step: number | string; maxSteps?: number; totalTools?: number; operation?: string; duration?: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
   | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; urgent?: boolean; [key: string]: any }
   | { type: 'thinking_end'; [key: string]: any }
@@ -60,6 +60,9 @@ interface StreamDisplayProps {
   showPerformanceInfo?: boolean;
   enableCostTracking?: boolean;
   animationsEnabled?: boolean;
+  // Terminal dimensions for layout calculations
+  terminalWidth?: number;
+  availableHeight?: number;
 }
 
 // Tool execution state tracking
@@ -282,8 +285,13 @@ export const EventLine: React.FC<{
         // Generic swarm operation without specific agent
         stepDisplay = `[SWARM • STEP ${event.step}/${event.maxSteps}]`;
       } else {
-        // Regular step header
-        stepDisplay = `[STEP ${event.step}/${event.maxSteps}]`;
+        // Regular step header with tool count for budget transparency
+        const toolCount = (event as any)['totalTools'];
+        if (toolCount && toolCount > 0) {
+          stepDisplay = `[STEP ${event.step}/${event.maxSteps} | ${toolCount} tools]`;
+        } else {
+          stepDisplay = `[STEP ${event.step}/${event.maxSteps}]`;
+        }
       }
       
       return (
@@ -432,11 +440,13 @@ export const EventLine: React.FC<{
       switch (event.tool_name) {
         case 'swarm':
           // Simplified swarm tool header to avoid duplication
-          const agentCount = latestInput?.agents?.length || 0;
-          const agentNames = latestInput?.agents?.map((a: any) => 
-            typeof a === 'string' ? a : a.name
+          // Ensure agents is an array before processing
+          const agents = Array.isArray(latestInput?.agents) ? latestInput.agents : [];
+          const agentCount = agents.length || 0;
+          const agentNames = agents.map((a: any) =>
+            typeof a === 'string' ? a : (a?.name || 'agent')
           ).filter(Boolean).slice(0, 4).join(', ') || 'agents';
-          
+
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="yellow" bold>tool: swarm</Text>
@@ -1846,7 +1856,9 @@ import { Static } from 'ink';
 
 export const StaticStreamDisplay: React.FC<{
   events: DisplayStreamEvent[];
-}> = React.memo(({ events }) => {
+  terminalWidth?: number;
+  availableHeight?: number;
+}> = React.memo(({ events, terminalWidth, availableHeight }) => {
   const groups = React.useMemo(() => computeDisplayGroups(events), [events]);
 
   // Flatten groups into discrete render items with stable keys
