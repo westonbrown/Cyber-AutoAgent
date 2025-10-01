@@ -699,6 +699,7 @@ export class PythonExecutionService extends EventEmitter {
         type: 'thinking',
         context: 'startup',
         startTime: Date.now(),
+        urgent: true,  // Mark as urgent for immediate rendering bypass throttling
         metadata: {
           message: 'Preparing Python security assessment environment'
         }
