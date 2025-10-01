@@ -589,6 +589,7 @@ def get_system_prompt(
         tools_path = output_config.get("tools_path", "")
         parts.append("## OUTPUT DIRECTORY STRUCTURE")
         parts.append(f"Base directory: {base_dir}")
+        parts.append(f"Target organization: {base_dir}/{target_name}/")
         parts.append(f"Target: {target_name}")
         parts.append(f"Operation: {operation_id}")
         if isinstance(tools_path, str) and tools_path:
