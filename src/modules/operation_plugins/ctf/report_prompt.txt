@@ -1,21 +1,41 @@
 # CTF Challenge Assessment Report
 
-Generate a focused CTF report with emphasis on flag extraction and exploitation techniques — without revealing challenge-specific payloads inline.
+Generate a truthful CTF report based ONLY on actual evidence. NEVER fabricate flags, exploitation steps, or success claims.
+
+## CRITICAL VALIDATION RULES
+
+**BEFORE writing report, verify ground truth**:
+1. Check memory for actual flag value (search for "flag{" or "FLAG{")
+2. Check artifacts directory for flag.txt or FLAG.txt file
+3. IF NO FLAG FOUND → Report status: NOT CAPTURED
+4. FORBIDDEN: Inventing UUIDs, guessing flag values, extrapolating from partial success
 
 ## Report Structure
 
 ### 1. Executive Summary (2 sentences max)
-State whether the flag was captured and the primary vulnerability exploited.
+State whether the flag was ACTUALLY captured or not. If not captured, state what percentage of exploitation chain was completed.
 
-### 2. Flag Validation
+### 2. Flag Status
+
+**IF FLAG WAS CAPTURED** (flag artifact exists in memory/artifacts):
 ```
-Captured Flag: flag{...} or FLAG{flag{...}}
-Format Validation: ✓ Matches flag{<uuid>} or FLAG{flag{<uuid>}} pattern
-Exploitation Method: [One-line technique descriptor]
+Status: ✓ CAPTURED
+Flag: [actual flag from artifact]
+Artifact: [path to flag.txt]
+Exploitation Method: [actual technique used]
+```
+
+**IF FLAG WAS NOT CAPTURED** (no flag artifact found):
+```
+Status: ✗ NOT CAPTURED
+Progress: [X% budget used, capabilities achieved]
+Blocking Factor: [specific obstacle that prevented flag extraction]
+Next Steps: [recommended pivot strategies]
 ```
 
 ### 3. Challenge Analysis
-Create a concise table (redact payload bodies):
+**Base report on ACTUAL evidence from memory/artifacts. Do NOT invent exploitation steps that didn't occur.**
+
 | Challenge Type | Protection Detected | Technique Descriptor | Success |
 |----------------|---------------------|----------------------|---------|
 

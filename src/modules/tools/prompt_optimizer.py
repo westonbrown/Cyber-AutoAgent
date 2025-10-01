@@ -556,78 +556,100 @@ def _llm_rewrite_execution_prompt(
     truncated_patterns = learned_patterns[:max_evidence_chars] if len(learned_patterns) > max_evidence_chars else learned_patterns
     evidence_note = "\n... (evidence truncated for brevity)" if len(learned_patterns) > max_evidence_chars else ""
 
-    system_prompt = f"""You are a universal prompt optimizer that extracts FIRST-PRINCIPLES REASONING from operational evidence across ANY domain (CTF, bug bounty, pentesting, threat emulation, etc.).
+    system_prompt = f"""You are a meta-learning optimizer that STRENGTHENS existing cognitive framework based on operational evidence.
+
+<current_framework>
+Prompt: {len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
+Contains:
+- 4-phase cognitive loop (Discovery → Hypothesis → Validation → Chaining)
+- Confidence tracking (0-100% with +20/-30/-10 update rules)
+- Progressive complexity (atomic → functional → complex)
+- 8 PROTECTED Universal Feedback Analysis Principles
+- Validation gates after every action
+</current_framework>
 
 <evidence>
-OPERATION DATA:
 {truncated_patterns}{evidence_note}
 
-FAILED APPROACHES: {remove_tactics}
-WORKING APPROACHES: {focus_tactics}
+FAILED: {remove_tactics}
+WORKED: {focus_tactics}
 </evidence>
 
-<core_mission>
-Extract transferable reasoning principles that improve decision-making in ANY security operation type. This optimizer will persist across plugin changes - extract UNIVERSAL patterns, not domain-specific techniques.
-</core_mission>
+<mission>
+STRENGTHEN existing patterns (not add new ones). If evidence shows framework violation → make guidance MORE explicit/mandatory.
+</mission>
 
 <length_constraint>
-Input: {len(current_prompt)} chars, ~{len(current_prompt.split(chr(10)))} lines
-Output: MUST be ≤ {len(current_prompt) + 300} chars (5% tolerance)
-Method: For each principle added, compress equal content elsewhere
+CRITICAL: Output ≤ {len(current_prompt)} chars (ZERO growth, STRICT)
+Method: ONLY modify sections with evidence of violation
 
-Compression Strategies:
-1. Merge duplicates: "X ≠ progress. Y ≠ progress" → "Progress ≠ intermediate data (X, Y)"
-2. Remove verbosity: "Before you proceed" → "Before" | "You should always" → "" | "In order to" → "To"
-3. Compact notation: Multi-line bullets → "A | B | C" where logical
-4. Remove transitions: "Let's now discuss", "Next we'll cover" → delete
-5. Dead-end removal: If FAILED APPROACHES confirmed, remove entire related section
+Strengthening Rules (SELECTIVE, not universal):
+1. Dead-end removal: FAILED list → delete related guidance entirely
+2. Evidence-based specificity: "multiple" → "3" if evidence confirms exact threshold
+3. Violated patterns ONLY: If framework violation detected → strengthen THAT section only
+4. Working sections: NO CHANGES (if not violated, leave alone)
+5. Compress verbose: Replace multi-line with compact equivalents
+
+FORBIDDEN: Adding MANDATORY/REQUIRED/FORBIDDEN universally
+REQUIRED: Only strengthen sections with evidence of violation
+ZERO NET GROWTH: Output length MUST equal input length (strict enforcement)
 </length_constraint>
 
-<universal_reasoning>
-Extract these meta-patterns (domain-agnostic):
+<framework_violations_to_strengthen>
+If evidence shows these violations, STRENGTHEN (not add) existing guidance:
 
-1. Information Extraction from Feedback
-   - Evidence: Agent ignored error messages, constraints, response differentials
-   - Extract: "Responses encode constraints on [element type] → analyze what [feedback signal] reveals"
-   - NEVER: Specific error messages or response content
+1. **Skipped Discovery Phase**
+   - Evidence: Jumped to exploitation without enumeration
+   - Strengthen: Make "Completeness check" MANDATORY, add consequence if skipped
 
-2. Hypothesis Formation & Testing
-   - Evidence: Random variations without clear hypothesis
-   - Extract: "When [condition] blocks → form hypothesis about [element] → test via minimal variation"
-   - NEVER: Specific hypotheses or test sequences
+2. **No Explicit Hypothesis**
+   - Evidence: Actions without stated hypothesis/confidence
+   - Strengthen: Add REQUIRED before Phase 2 steps, make confidence tracking explicit
 
-3. Incremental Complexity Control
-   - Evidence: Wrong complexity level for situation
-   - Extract: "Start [simplicity level] → if [evidence type] shows [pattern] → escalate to [complexity level]"
-   - NEVER: Specific techniques or complexity levels
+3. **Skipped Validation Gates**
+   - Evidence: Continued without extracting constraint/updating confidence
+   - Strengthen: Make validation questions MANDATORY after every action
 
-4. Necessary vs Sufficient Decision Logic
-   - Evidence: Unnecessary conversions or intermediate steps
-   - Extract: "When [outcome A] directly achievable via [method X], skip conversion unless X exhausted"
-   - NEVER: Specific capabilities or conversion paths
+4. **Progressive Complexity Violation**
+   - Evidence: Started with complex before testing atomic
+   - Strengthen: Add FORBIDDEN markers, make atomic-first REQUIRED
 
-5. Pivot Timing & Escalation
-   - Evidence: Pivoted too early or stuck too long
-   - Extract: "Variation N fails → [escalation M] | After [threshold] → pivot | [Budget %] → [collaboration]"
-   - NEVER: Specific counts or percentages
+5. **Confidence Not Updated**
+   - Evidence: Same confidence despite confirming/refuting evidence
+   - Strengthen: Make +20/-30/-10 rules explicit in validation phase
 
-6. Progress vs Busywork Distinction
-   - Evidence: Confused intermediate artifacts with objective completion
-   - Extract: "[Artifact X] ≠ progress unless enables [outcome Y]. Progress = [outcome category] achieved"
-   - NEVER: Specific artifacts or outcomes
+6. **Premature Pivot**
+   - Evidence: Switched approach after 1-2 failures (should be 3+)
+   - Strengthen: Specify exact threshold based on evidence
 
-7. Constraint-Driven Simplification
-   - Evidence: Added complexity when constraint indicated simplification
-   - Extract: "Constraint '[type]' indicates [element] rejected → simplify by removing [component type]"
-   - NEVER: Specific constraints or components
-</universal_reasoning>
+7. **Late Pivot**
+   - Evidence: Repeated same technique >5 times
+   - Strengthen: Add hard limit, make swarm deployment MANDATORY at threshold
+
+8. **Intermediate Success Confusion**
+   - Evidence: Stopped after extracting data without using it
+   - Strengthen: Make "TRY immediately" REQUIRED, add examples of correct flow
+
+9. **Chaining Skipped**
+   - Evidence: Achieved capability but didn't ask "Closer to OBJECTIVE?"
+   - Strengthen: Make Phase 4 questions MANDATORY after every capability
+
+10. **PROTECTED Principles Ignored**
+   - Evidence: Violated principles 1-8 from PROTECTED section
+   - Strengthen: Move violated principle to prominent position, add CRITICAL marker
+</framework_violations_to_strengthen>
 
 <protected_content>
 NEVER modify, compress, or remove these critical sections:
-- Anti-patterns containing "After extraction" pipeline (extraction→usage guidance)
 - Any content between <!-- PROTECTED --> comment tags
-- Recent fixes addressing trajectory failures (hash cracking, data extraction)
-These are critical fixes that prevent known failure modes.
+- XML-tagged sections (preserve structure exactly)
+- Stop conditions and termination policies
+
+LEARNABLE BUT STRENGTHEN (not delete):
+- "After extraction" pipeline guidance (can be enhanced based on evidence, never weakened)
+- Capability validation patterns (can be made more explicit, never removed)
+- Coverage protocols (can be strengthened, never deleted)
+If evidence shows these patterns violated, STRENGTHEN them (add emphasis, move to prominent position, add explicit REQUIRED markers).
 </protected_content>
 
 <educational_vs_prescriptive>
@@ -647,15 +669,16 @@ DISTINCTION: Educational = reusable patterns. Prescriptive = challenge solutions
 
 <validation_checklist>
 Before returning, verify:
-1. Length: output ≤ input + 300 chars
-2. Lines: output ≤ input + 5 lines
-3. Anti-cheat scan: zero specific payloads/errors/paths/commands
-4. XML structure: all tags preserved exactly
-5. Abstraction level: all additions domain-agnostic (plugin-independent)
-6. Compression applied: verbose phrasing removed where content added
-7. Educational examples: technique categories preserved
+1. **Length: output ≤ {len(current_prompt)} chars** (ZERO growth, not +300)
+2. Lines: output ≤ {len(current_prompt.split(chr(10)))} lines (no growth)
+3. Strengthening applied: FAILED → deleted, WORKED → promoted to MANDATORY
+4. Framework intact: 4 phases, confidence rules, progressive complexity preserved
+5. PROTECTED content: Untouched between <!-- PROTECTED --> tags
+6. XML structure: All tags preserved exactly
+7. No anti-cheat violations: Zero specific payloads/paths/commands/errors
+8. Swap verification: For every strengthening added, equal content removed
 
-Current prompt: {len(current_prompt)} chars
+CRITICAL: Output must be ≤ {len(current_prompt)} chars. This is STRICT.
 </validation_checklist>"""
 
     rewriter = Agent(model=model, system_prompt=system_prompt)
@@ -664,11 +687,10 @@ Current prompt: {len(current_prompt)} chars
     remove_str = ", ".join(remove_tactics) if remove_tactics else "none"
     focus_str = ", ".join(focus_tactics) if focus_tactics else "none"
 
-    request = f"""Extract UNIVERSAL reasoning principles from evidence and optimize the prompt for ANY security operation type.
+    request = f"""STRENGTHEN existing cognitive framework based on operational evidence.
 
 <current_prompt>
-Length: {len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
-Content:
+{len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
 {current_prompt}
 </current_prompt>
 
@@ -676,29 +698,35 @@ Content:
 {truncated_patterns}{evidence_note}
 
 DEAD ENDS: {remove_str}
-WORKING: {focus_str}
+WORKED: {focus_str}
 </evidence>
 
 <task>
-Apply meta-pattern extraction (7 categories from system prompt) to improve decision-making across ALL domains.
+1. Delete DEAD ENDS: Remove any guidance related to FAILED approaches
+2. Strengthen WORKED: Promote working approaches to MANDATORY/REQUIRED
+3. Strengthen violations: Use framework_violations_to_strengthen list from system prompt
+4. ZERO GROWTH: Every char added = equal chars removed
+
+DO NOT add new patterns. STRENGTHEN existing framework.
 </task>
 
 <process>
-1. Identify meta-patterns from evidence (information extraction failures, hypothesis formation gaps, complexity control issues)
-2. Scan current prompt for compression targets (verbose phrasing, redundancy, dead-end content from DEAD ENDS list)
-3. For each meta-pattern to add, compress equal content elsewhere using compression strategies
-4. Add abstracted principles (use [placeholders] for domain-specific terms, e.g., "[capability type]" not "AUTH_BYPASS")
-5. Validate: length ≤ {len(current_prompt) + 300} chars, lines ≤ {len(current_prompt.split(chr(10))) + 5}, zero anti-cheat violations
-6. Return optimized prompt ONLY (no preamble, no explanation)
+1. Scan for DEAD ENDS → delete related guidance entirely (free up chars)
+2. Scan for framework violations in evidence → identify which of 10 violations occurred
+3. For each violation: STRENGTHEN existing guidance (add MANDATORY, move to top, specify threshold)
+4. Promote WORKED approaches: Change "should" → "MUST", add REQUIRED markers
+5. Compress verbose: Remove hedging, merge bullets, compact notation
+6. Validate: output ≤ {len(current_prompt)} chars STRICT (no tolerance)
+7. Return optimized prompt ONLY (no preamble, explanation, or commentary)
 </process>
 
 <critical_requirements>
-- Domain-agnostic: works for CTF, bug bounty, pentesting, threat emulation, ANY future plugin
-- First-principles: teaches reasoning PROCESS not specific techniques
-- Length-constrained: output ≤ input + 300 chars (compress before adding)
-- Educational scaffolding preserved: keep technique CLASS examples (remove challenge SOLUTIONS)
-- XML structure intact: all tags exactly preserved
-- No anti-cheat violations: zero specific payloads/errors/commands/paths/data
+- ZERO GROWTH: Output ≤ {len(current_prompt)} chars (STRICT, no +300 tolerance)
+- STRENGTHEN not ADD: Work within existing framework, don't introduce new patterns
+- PROTECTED preserved: Never modify content between <!-- PROTECTED --> tags
+- Educational scaffolding: Keep technique CLASS examples, remove challenge SOLUTIONS
+- XML structure intact: All tags exactly preserved
+- No anti-cheat: Zero specific payloads/errors/commands/paths/challenge data
 </critical_requirements>
 
 <output_format>
@@ -718,12 +746,12 @@ Return ONLY the optimized prompt (no additional text, no preamble, no explanatio
         rewritten = str(result).strip()
         logger.debug("LLM rewrite returned %d chars", len(rewritten))
 
-        # Basic length sanity check (allow reasonable expansion for improvements)
-        max_allowed_length = len(current_prompt) * 1.5
+        # STRICT ZERO GROWTH: Reject if output > input (no tolerance)
+        max_allowed_length = len(current_prompt)  # CHANGED: was * 1.5
         if len(rewritten) > max_allowed_length:
             logger.warning(
-                "Rewritten prompt too large (%d chars vs %d original, max %d allowed) - rejecting",
-                len(rewritten), len(current_prompt), max_allowed_length
+                "Prompt optimizer violated zero-growth: %d → %d chars (+%d). Rejecting optimization.",
+                len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt)
             )
             _llm_rewrite_execution_prompt._failure_count += 1
             return current_prompt

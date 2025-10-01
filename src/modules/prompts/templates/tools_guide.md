@@ -1,77 +1,85 @@
-**Core**: Artifacts→use OPERATION ARTIFACTS DIRECTORY path (see OUTPUT DIRECTORY STRUCTURE above) | Native>custom | Custom tools→use OPERATION TOOLS DIRECTORY
-**shell**: Non-interactive, parallel. Save files to OPERATION ARTIFACTS DIRECTORY. Timeout: default 300s, heavy≤600s. On timeout→reduce scope. Install missing tools as needed.
-  - **Large outputs** (>10KB expected: sqlmap --dump, nmap, nikto full scan): Pipe to file, extract relevant data afterward
-  - Example: `sqlmap ... 2>&1 | tee output.txt; grep -E "password|hash|Database:" output.txt`
+<tool_protocols>
+**Core Rule**: Native tools > custom. Save all artifacts to OPERATION ARTIFACTS DIRECTORY (path injected above in OUTPUT DIRECTORY STRUCTURE).
+
+**shell**
+- Usage: Non-interactive, parallel execution. Default timeout: 300s, heavy operations ≤600s
+- Large outputs (>10KB expected: sqlmap --dump, nmap -A, nikto full scan):
+  - Pipe to file: `sqlmap ... 2>&1 | tee <artifacts_path>/sqlmap_output.txt`
+  - Extract relevant: `grep -E "password|hash|Database:" <artifacts_path>/sqlmap_output.txt`
   - Anti-pattern: Letting full verbose output return to context (causes overflow)
-**python_repl**: Rapid PoC prototyping. Batch multiple tests. NO TIMEOUT—avoid >600s operations. Stable→migrate to editor+load_tool. Store results as artifacts.
-**mem0_memory**: Step 0→store_plan. Step 20/40/60/etc→get_plan (MANDATORY)→assess criteria→advance if met. Phase >40% budget→store_reflection + pivot
-  Plan JSON: {objective, current_phase:1, total_phases:N, phases:[{id, title, status:"active/pending/done", criteria}]}
-  Categories: finding|signal|decision|artifact|observation|plan|reflection. Paths only, no blobs
-- **prompt_optimizer**: Manage adaptive prompt overlays and optimize execution guidance.
-  - **optimize_execution**: Rewrite execution tactics based on learned patterns
-    - **When to invoke**: After major pivot (switched capability approach), NOT automatically every 20 steps
-    - **What to pass**: PRINCIPLES learned, not specific target details
-      - learned_patterns: "SQLi in WHERE clause enables AUTH_BYPASS, not just data extraction. Standard OR 1=1 bypasses fail when app validates both fields"
-      - remove_dead_ends: ["password_cracking_when_sqli_can_bypass"]
-      - focus_areas: ["sql_where_logic_manipulation", "capability_based_exploitation"]
-    - **Purpose**: Extract reasoning principles from evidence, NOT add target-specific hardcoded details
-    - **Anti-patterns** (NEVER add to execution prompt): Specific payloads ({{7*7}}, sleep(5), exact commands), specific error messages (400, 403, "forbidden"), specific paths (/flag, /admin), specific techniques that worked (timing exfiltration, file writes), challenge-specific observations ("template syntax accepted", "payload reflected literally")
-    - **Valid patterns**: Universal reasoning principles only ("When approach X blocks, try variation Y", "Capability class Z requires validation method W")
-    - Apply when: Approach fundamentally wrong (using vuln for wrong capability), major blocker discovered, need strategic pivot
-    - Do NOT use for: Minor syntax variations, normal exploitation progress, every rebuild cycle, single failed attempt
-- **Finding Storage**: Use format from EVIDENCE-BASED VALIDATION section
-- **swarm**: Multi-agent collaboration. 2-3 agents max. Recommended: max_handoffs=4, max_iterations=12, node_timeout=1200, execution_timeout=1200
-  - Task format: STATE:[findings], GOAL:[objective], AVOID:[dead ends], FOCUS:[technique per agent]
-  - Agent prompts MUST specify WHEN/WHO to handoff: "After 5-8 steps, IMMEDIATELY handoff_to_agent('name', 'reason')"
-  - **CRITICAL**: Agents MUST call `handoff_to_agent('name', 'context')` explicitly. Without handoffs, swarm degenerates to sequential execution.
-  - **Deploy when**: (1) Multiple distinct capabilities need parallel testing (e.g., SQLi exhausted, test LFI+XSS+CommandInjection simultaneously) OR (2) 60%+ budget with no capability + reflection confirms hypothesis-diverse exploration needed OR (3) 75%+ budget as last resort. NOT for: syntax variations (try those first), single capability exhaustion (pivot to different capability), early exploration
-- **editor**: Create disciplined, reusable Python tools (@tool) for stabilized PoCs and checks.
-  - Only for Python tool files under `tools/`; do not use for reports or general notes.
-- **load_tool**: Dynamically register editor-created tools for immediate use.
-- **http_request**: Deterministic HTTP(S) requests for OSINT, vuln research, CVE analysis and API testing (including structured JSON bodies, e.g., GraphQL, when applicable).
-  - Specify method, URL, headers, body, and auth explicitly. Store request/response pairs to memory.
-- For web/API validation: must save a request/response transcript AND a negative/control transcript as artifacts under outputs/<target>/OP_<id>/artifacts/; reference only the paths in memory.
-  - Provide deterministic reproduction (http_request parameters and a cURL equivalent) and a one-line rationale in the Proof Pack.
-    - Resource discovery (OSINT) when a capability/tool is missing: spend up to 2–5 steps to locate reputable resources (official docs, CVE databases, curated lists/awesome repos), traverse ≤2 link hops, save pages as artifacts, extract candidate tools/commands, then install via shell and verify with which/--version.
-  - Prefer two independent signals where feasible and include at least one negative/control case; re-run key steps once to confirm stability.
-  - External intel quick refs: NVD/CVE, Exploit‑DB, vendor advisories, Shodan/Censys, VirusTotal; store JSON/HTML responses and reference artifact paths.
-- Large responses (HTML/JS): save raw content to outputs/<target>/OP_<id>/artifacts/*.html; review with grep/sed/awk instead of dumping large blobs into memory; store only the file path in findings.
-  - Common managed endpoints/keys (e.g., Vercel, Supabase anon keys, Tenderly RPC, analytics) are often normal; treat as observations unless abuse, sensitive exposure, or improper authorization is demonstrated with artifacts.
-- **stop**: Terminate operation ONLY when success criteria met.
-  **STOP DECISION TREE** (follow in order):
-  1. Do you have the exact proof/artifact required by objective? → YES: Continue to #1a | NO: Continue to #2
-     1a. Does artifact prove OBJECTIVE completion (not just technique success)? → YES: May stop | NO: Continue to #2
-  2. Has user explicitly said "stop"? → YES: May stop | NO: Continue to #3
-  3. Used <50% budget? → YES: MUST try 3 different approaches before stop | NO: Continue to #4
-  4. Used <80% budget? → YES: MUST deploy swarm before stop | NO: Continue to #5
-  5. Used ≥95% budget AND tried swarm? → YES: May stop after reflection | NO: Continue working
+- Install missing tools: `apt install tool` or `pip install package` (no sudo needed in container)
+- Timeout handling: On timeout → reduce scope, break into smaller operations
 
-  **INVALID STOP REASONS** (unless objective complete): "analysis complete", "documented findings", "technique not working", "blocked by protection", "exhausted current approach", "extracted intermediate data (credentials/hashes/tokens)", "cannot proceed to next phase", "authentication/bypass unachievable"
-  **VALID REASONS**: exact objective achieved with proof, user explicit request, budget exhausted (≥95%) after swarm + reflection
+**python_repl**
+- Usage: Rapid PoC prototyping, batch multiple tests. NO TIMEOUT (avoid >600s operations)
+- File writes: MUST use absolute paths from OPERATION ARTIFACTS DIRECTORY (relative paths write to project root)
+- Stability: Successful PoCs → migrate to editor + load_tool for reusability
+- Results: Store all outputs as artifacts with descriptive names
 
+**mem0_memory**
+- Step 0: store_plan with phases (id, title, status:"active/pending/done", criteria)
+- Checkpoints (MANDATORY at 20%/40%/60%/80% budget):
+  1. get_plan → retrieve current plan from memory
+  2. Evaluate criteria vs evidence
+  3. Update: Criteria met → store_plan(current_phase+1, status='done') | Stuck → pivot/swarm | Partial → continue
+- Actions: store, store_plan, get_plan, get, list, retrieve, delete
+- Plan JSON: {"objective":"...", "current_phase":1, "total_phases":N, "phases":[...]}
+- Categories: finding | signal | decision | artifact | observation | plan
+- Content: Paths only, no binary blobs
 
-Non-interactive rule:
-- All tools must run non-interactively—use explicit flags and idempotent commands; avoid prompts/TTY requirements.
+**swarm**
+- Purpose: Multi-agent collaboration for parallel capability testing
+- Configuration: 2-3 agents max, max_handoffs=4, max_iterations=12, node_timeout=1600, execution_timeout=1800
+- Task format: STATE:[current findings], GOAL:[objective], AVOID:[dead ends], FOCUS:[technique per agent]
+- Critical: Agent prompts MUST specify WHEN/WHO to handoff: "After 5-8 steps, IMMEDIATELY handoff_to_agent('agent_name', 'reason')"
+- Handoff requirement: Agents MUST explicitly call `handoff_to_agent('name', 'context')`. Without handoffs, swarm degenerates to sequential execution.
+- Deploy when:
+  - (1) Multiple distinct capabilities need parallel testing (e.g., SQLi exhausted → test LFI+XSS+CommandInjection simultaneously)
+  - (2) 60%+ budget with no capability achieved + reflection confirms need for hypothesis-diverse exploration
+  - (3) 75%+ budget as last resort
+- NOT for: Syntax variations (try those sequentially first), single capability exhaustion (pivot to different capability instead), early exploration
 
-Capability gaps (Ask-Enable-Retry):
-- When a missing capability blocks progress (e.g., blockchain RPC/web3, headless browser):
-  0) Discover: use `http_request` for a brief OSINT pass to find vetted resources and installation instructions (≤2 hops), save artifacts
-  1) Ask: state why the capability is required and the minimal package(s)
-  2) Enable: propose a minimal, temporary, non-interactive enablement (prefer ephemeral venv under `outputs/<target>/<op>/venv`)
-  3) Verify: confirm installation with `which` and `--version`; capture outputs
-  4) Retry: re-run the blocked step once and store resulting artifacts (transcripts, JSON, or screenshots)
-  - If enablement isn’t permitted, record precise next steps in memory instead of escalating severity
+**editor + load_tool** (meta-tooling)
+- Purpose: Runtime tool creation when existing tools insufficient for novel exploits
+- Workflow: editor → load_tool → invoke | Location: OPERATION TOOLS DIRECTORY only
+- Structure: @tool decorator, docstring, type hints
+- Debug first: Error in tool? Fix existing (editor → load_tool → test). Only create new if fundamentally incompatible.
+- When: Novel exploits when existing tools insufficient (specialized payloads, protocol handlers)
+- NOT for: Reports, documents, general scripts
 
-<critical_tool_protocols>
-**Protocol: Editor Tool - Meta-Tooling Only**
-- Purpose: Creating custom Python tools with @tool decorator in operation-specific tools/ directory
-- Never use for: Reports, analysis documents, non-Python files
-- Path: Use absolute path from OUTPUT DIRECTORY STRUCTURE section (→ line)
-- Pattern: editor(path="<abs_tools_path>/tool.py") → load_tool(path="<abs_tools_path>/tool.py") → invoke
+**http_request**
+- Purpose: Deterministic HTTP(S) requests for OSINT, CVE research, API testing (including GraphQL/REST)
+- Parameters: Specify method, URL, headers, body, auth explicitly
+- Validation: Save request/response transcript + negative/control case as artifacts
+- External intel: NVD/CVE, Exploit-DB, vendor advisories, Shodan/Censys, VirusTotal
+- Large responses (HTML/JS): Save raw to <artifacts_path>/*.html, grep/sed to extract relevant data, store only file path in findings
+- Managed endpoints: Common keys (Vercel, Supabase anon, Tenderly RPC, analytics) often normal - treat as observations unless abuse/sensitive exposure demonstrated with artifacts
 
-**Protocol: Swarm Deployment - Timeout Configuration**
-- Set node_timeout based on agent operations: 900s for heavy tools (nmap, sqlmap), 600s for API/web
-- Set max_iterations appropriately: agents*2 (e.g., 4 agents = 8 iterations)
-- Example: swarm(task="...", agents=[...], max_iterations=8, node_timeout=1200)
+**stop**
+- Valid: Objective achieved with artifacts OR budget ≥95% after swarm
+- FORBIDDEN: Intermediate success (creds/hash/vuln WITHOUT objective), approach blocked, constraints, budget <95% without trying different capability + swarm
 
-</critical_tool_protocols>
+</tool_protocols>
+
+<general_protocols>
+**Non-interactive rule**: All tools must run non-interactively (use explicit flags, idempotent commands, avoid TTY/prompts)
+
+**Progressive Complexity** (universal testing pattern):
+1. Atomic test: Simplest input testing acceptance/rejection
+2. Validate behavior → extract constraint learned
+3. Functional test: Core capability demonstration
+4. Validate processing evidence → update confidence
+5. Complex test: Full exploitation ONLY if prior levels validated
+
+**Minimal Action Principle**: What's LEAST I can do to learn MOST? Check memory before repeating. One variable per test isolates cause.
+
+**Validation After Every Tool**: "Intended outcome achieved? Constraint learned? Confidence update? Next action?"
+
+**Ask-Enable-Retry** (capability gaps):
+  0. Discover via http_request (≤2 hops) for installation instructions
+  1. Ask: Why needed + minimal package(s)
+  2. Enable: Propose minimal enablement (prefer venv under outputs/<target>/<op>/venv)
+  3. Verify: `which <tool>` and `<tool> --version`, capture outputs
+  4. Retry: Re-run blocked step, store artifacts
+  - If denied: Record next steps in memory, don't escalate severity
+</general_protocols>
