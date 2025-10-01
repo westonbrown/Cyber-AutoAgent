@@ -562,7 +562,8 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         lastPushedTypeRef.current = 'step_header';
 
         // Show thinking spinner while waiting for tool selection after step header
-        if (animationsEnabled && !activeThinkingRef.current) {
+        // Always reset and show spinner regardless of previous thinking state
+        if (animationsEnabled) {
           setActiveThinking(true);
           seenThinkingThisPhaseRef.current = true;
 
@@ -688,14 +689,15 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             urgent: (event as any).urgent || false  // Preserve urgent flag for immediate rendering
           } as DisplayStreamEvent;
 
-          results.push(thinkingEvent);
-
-          // For urgent thinking, immediately update active buffer (no throttle)
+          // For urgent thinking, immediately update active buffer and skip normal event flow
           // This ensures startup/post-reasoning spinners appear without delay
           if ((event as any).urgent) {
             activeBufRef.current.clear();
             activeBufRef.current.push(thinkingEvent);
             setActiveEvents(activeBufRef.current.toArray());
+            // Don't add to results - we've already updated the display
+          } else {
+            results.push(thinkingEvent);
           }
         }
         break;
@@ -1116,9 +1118,8 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             urgent: true  // Bypass throttle for immediate display
           } as DisplayStreamEvent;
 
-          results.push(thinkingEvent);
-
           // Update active buffer immediately to show spinner without delay
+          // Don't add to results to avoid being cleared by event loop
           activeBufRef.current.clear();
           activeBufRef.current.push(thinkingEvent);
           setActiveEvents(activeBufRef.current.toArray());

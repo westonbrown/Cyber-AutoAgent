@@ -13,6 +13,7 @@ import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import stripAnsi from 'strip-ansi';
 
 // Extended event types for UI-specific events not covered by the core SDK events
 // These events are used for UI state management and display formatting
@@ -295,13 +296,14 @@ export const EventLine: React.FC<{
       }
       
       return (
-        <Box flexDirection="column" marginTop={1} marginBottom={0}>
+        <Box flexDirection="column" marginTop={1}>
           <Box flexDirection="row" alignItems="center">
             <Text color="#89B4FA" bold>
               {stepDisplay}
             </Text>
           </Box>
           <Text color="#45475A">{getDivider()}</Text>
+          {event.step !== 'FINAL REPORT' && <Text> </Text>}
           {/* If this is the FINAL REPORT and we have operation context, render the report inline */}
           {event.step === 'FINAL REPORT' && operationContext && (
             <InlineReportViewer ctx={operationContext} />
@@ -958,8 +960,8 @@ const method = latestInput.method || 'GET';
         // If "Command:" was concatenated onto a previous line without a newline, insert one.
         .replace(/(\S)Command:/g, '$1\nCommand:');
 
-      // Backend now sends clean content without ANSI codes
-      const plain = normalized;
+      // Strip ANSI escape codes from tool output to prevent terminal formatting issues
+      const plain = stripAnsi(normalized);
 
       // Skip only placeholder tokens if the entire content is just a token
       const plainTrimmed = plain.trim();
@@ -1805,11 +1807,20 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           const combinedContent = group.events.reduce((acc, e) => {
             // Prefer full reasoning content when present
             if ('content' in e && (e as any).content) {
-              return acc + (e as any).content;
+              const content = (e as any).content;
+              // Add spacing between chunks if accumulator is not empty and doesn't end with whitespace
+              if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+                return acc + ' ' + content;
+              }
+              return acc + content;
             }
             // Also accumulate streaming deltas so we don't lose interim reasoning
             if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
-              return acc + (e as any).delta;
+              const delta = (e as any).delta;
+              if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+                return acc + ' ' + delta;
+              }
+              return acc + delta;
             }
             return acc;
           }, '');
@@ -1871,11 +1882,20 @@ export const StaticStreamDisplay: React.FC<{
         const combinedContent = group.events.reduce((acc, e) => {
           // Prefer full reasoning content when present
           if ('content' in e && (e as any).content) {
-            return acc + (e as any).content;
+            const content = (e as any).content;
+            // Add spacing between chunks if accumulator is not empty and doesn't end with whitespace
+            if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+              return acc + ' ' + content;
+            }
+            return acc + content;
           }
           // Also accumulate streaming deltas so we don't lose interim reasoning
           if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
-            return acc + (e as any).delta;
+            const delta = (e as any).delta;
+            if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+              return acc + ' ' + delta;
+            }
+            return acc + delta;
           }
           return acc;
         }, '');
