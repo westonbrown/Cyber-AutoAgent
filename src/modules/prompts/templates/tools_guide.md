@@ -4,6 +4,7 @@
 2. Medium confidence (50-80%) → Parallel shell for rapid multi-vector testing
 3. Low confidence (<50%) → Swarm for parallel capability exploration OR gather more data
 4. Novel exploit → Meta-tooling (editor + load_tool) when existing tools insufficient
+5. POC reuse → python_repl for prototype → if logic needed >2 times → editor+load_tool promotion
 
 **Core Rule**: Native tools > custom. Save all artifacts to OPERATION ARTIFACTS DIRECTORY (path injected above).
 
@@ -19,7 +20,8 @@
 **python_repl**
 - Usage: Rapid PoC prototyping, batch multiple tests. NO TIMEOUT (avoid >600s operations)
 - File writes: MUST use absolute paths from OPERATION ARTIFACTS DIRECTORY (relative paths write to project root)
-- Stability: Successful PoCs → migrate to editor + load_tool for reusability
+- Promotion trigger: POC works + logic needed >2 times → MUST promote via editor+load_tool to OPERATION TOOLS DIRECTORY
+- Economic check before repeating logic: "Already wrote this pattern?" → create reusable tool instead
 - Results: Store all outputs as artifacts with descriptive names
 
 **mem0_memory**
@@ -46,12 +48,12 @@
 - NOT for: Syntax variations (try those sequentially first), single capability exhaustion (pivot to different capability instead), early exploration
 
 **editor + load_tool** (meta-tooling)
-- Purpose: Runtime tool creation when existing tools insufficient for novel exploits
-- Workflow: editor → load_tool → invoke | Location: OPERATION TOOLS DIRECTORY only
-- Structure: @tool decorator, docstring, type hints
-- Debug first: Error in tool? Fix existing (editor → load_tool → test). Only create new if fundamentally incompatible.
-- When: Novel exploits when existing tools insufficient (specialized payloads, protocol handlers)
-- NOT for: Reports, documents, general scripts
+- Purpose: Promote working POCs to reusable tools | Novel exploits when existing tools insufficient
+- Trigger: POC tested + works + pattern repeats >2 times → promote to tool (cost: create once vs rewrite each time)
+- Workflow: editor(path in OPERATION TOOLS DIRECTORY, @tool decorator) → load_tool(name) → invoke
+- Structure: @tool decorator, docstring, type hints | Location: tools/ subdirectory, NOT artifacts/
+- Debug first: Error in tool? Fix via editor → load_tool → test. Create new only if incompatible.
+- NOT for: Reports, documents, one-time scripts (use artifacts/ for those)
 
 **http_request**
 - Purpose: Deterministic HTTP(S) requests for OSINT, CVE research, API testing (including GraphQL/REST)
@@ -76,6 +78,13 @@
 3. Functional test: Core capability demonstration
 4. Validate processing evidence → update confidence
 5. Complex test: Full exploitation ONLY if prior levels validated
+
+**Failure Handling in Tool Selection** (when technique fails):
+1. Extract constraint type from failure: [syntax | processing | filter | rate-limit | auth | resource-not-found]
+2. Update confidence: Apply formula (Success +20% | Failure -30% | Ambiguous -10%)
+3. Check pivot threshold: If confidence <50% → pivot required
+4. Select next tool based on constraint learned, NOT same tool with parameter variations
+5. Pivot to fundamentally different approach, not iterating current method
 
 **Minimal Action Principle**: What's LEAST I can do to learn MOST? Check memory before repeating. One variable per test isolates cause.
 
