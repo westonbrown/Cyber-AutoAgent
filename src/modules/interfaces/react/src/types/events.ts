@@ -282,7 +282,7 @@ export interface SDKAgentEvent extends BaseEvent {
 
 /**
  * Tool Execution Event Interface
- * 
+ *
  * Represents security assessment tool lifecycle events with comprehensive
  * metadata for execution tracking, performance monitoring, and error handling.
  */
@@ -298,6 +298,8 @@ export interface ToolEvent extends BaseEvent {
   error?: string;
   /** Tool execution duration in milliseconds */
   duration?: number;
+  /** Visual emphasis level for UI rendering */
+  emphasis?: 'high' | 'medium' | 'low';
 }
 
 /**
