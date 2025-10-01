@@ -312,11 +312,11 @@ class ConfigManager:
         if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             beta_flags.append("context-1m-2025-08-07")
 
-        # Claude Sonnet 4.5 has different output token limit
+        # Claude Sonnet 4.5 supports extended thinking with higher token limits
         # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
-            max_tokens = 16000  # Sufficient for 10000 thinking budget + 6000 output
-            thinking_budget = 10000
+            max_tokens = 64000      
+            thinking_budget = 62000  
         else:
             max_tokens = 32000
             thinking_budget = 10000
