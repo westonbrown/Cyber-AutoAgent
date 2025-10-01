@@ -559,7 +559,7 @@ def get_system_prompt(
     parts.append(f"Target: {target}")
     parts.append(f"Objective: {objective}")
     parts.append(f"Operation: {operation_id}")
-    parts.append(f"Budget: {max_steps} steps")
+    parts.append(f"Budget: {max_steps} steps (Note: 'steps' = thinking iterations, NOT tool calls. Multiple tools per step allowed. Budget % = current_step / max_steps)")
     if provider:
         parts.append(f"Provider: {provider}")
         parts.append(f'model_provider: "{provider}"')
@@ -601,27 +601,47 @@ def get_system_prompt(
             parts.append(f"\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
             parts.append(f"  → {rel_tools}")
 
-    # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
+    # Inject reflection snapshot with progressive checkpoint enforcement
     try:
-        _interval = 20
-        # Next reflection at the next multiple of interval (1-based: 20,40,60,...)
-        if current_step <= 0:
-            _next_reflection = _interval
-        else:
-            _next_reflection = ((current_step + _interval - 1) // _interval) * _interval
-        if remaining_steps is not None and isinstance(remaining_steps, int):
-            # Bound by max steps
-            _next_reflection = min(_next_reflection, max_steps)
-        _steps_until = max(0, _next_reflection - current_step)
+        _budget_pct = int((current_step / max_steps) * 100) if max_steps > 0 else 0
+
+        # Calculate checkpoint intervals for 800+ step operations
+        # Primary checkpoints: 20%, 40%, 60%, 80%
+        _checkpoints = [int(max_steps * pct) for pct in [0.2, 0.4, 0.6, 0.8]]
+        _next_checkpoint = next((cp for cp in _checkpoints if cp > current_step), max_steps)
+        _steps_until = max(0, _next_checkpoint - current_step)
+        _checkpoint_pct = int((_next_checkpoint / max_steps) * 100) if max_steps > 0 else 0
+
         parts.append("## REFLECTION SNAPSHOT")
         parts.append(
-            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} | NextReflectionDueAt: step {_next_reflection} (in {_steps_until} steps)"
+            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} ({_budget_pct}% budget) | NextCheckpoint: step {_next_checkpoint} ({_checkpoint_pct}% budget, in {_steps_until} steps)"
         )
+
+        # CRITICAL: Make checkpoints MANDATORY not optional
+        # Check if we're AT or PAST any checkpoint
+        _overdue_checkpoints = [cp for cp in _checkpoints if current_step >= cp]
+        if _overdue_checkpoints and current_step > 0:
+            _last_checkpoint = _overdue_checkpoints[-1]
+            _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
+            parts.append(f"\n{'='*60}")
+            parts.append(f"! CHECKPOINT {_checkpoint_pct_hit}% - ACTION REQUIRED ⚠️")
+            parts.append(f"{'='*60}")
+            parts.append(f"YOUR NEXT ACTION MUST BE:")
+            parts.append(f"  mem0_memory(action='get_plan', user_id='cyber_agent')")
+            parts.append(f"\nPurpose: Evaluate phase criteria vs evidence")
+            parts.append(f"Then: Continue current phase OR advance to next phase OR pivot")
+            parts.append(f"{'='*60}")
+            parts.append(f"Phase {plan_current_phase if plan_current_phase else '?'}: Retrieve plan -> Evaluate criteria -> Update progress")
+            parts.append("THEN: Criteria met? store_plan(current_phase+1, status='done') | Stuck? pivot/swarm | Partial? continue")
+            parts.append(f"{'='*60}")
+        # Approaching checkpoint warnings
+        elif _steps_until <= 5 and _steps_until > 0:
+            parts.append(f"\nCHECKPOINT APPROACHING: In {_steps_until} steps at {_checkpoint_pct}% budget")
+            parts.append(f"PREPARE: After step {_next_checkpoint}, FIRST action MUST be get_plan to evaluate phase {plan_current_phase if plan_current_phase else '?'} criteria")
+
         parts.append(
-            "Reflection triggers: High/Critical finding; two attempts without new artifact; repeated timeouts on same command; plan–evidence mismatch; technique succeeds but criteria unmet."
+            f"\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
         )
-        if _steps_until <= 3 and current_step > 0:
-            parts.append(f"⚠️ CHECKPOINT DUE: get_plan in {_steps_until} steps to evaluate phase criteria and update if satisfied")
     except Exception:
         pass
 
