@@ -190,6 +190,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 op_event["ui_mode"] = os.getenv("CYBER_UI_MODE", "cli").lower()
 
             self._emit_ui_event(op_event)
+
+            # Emit startup spinner immediately after initialization
+            # This provides visual feedback during model loading and first reasoning
+            self._emit_ui_event({
+                "type": "thinking",
+                "context": "startup",
+                "urgent": True
+            })
         except Exception as e:
             logger.warning("Failed to emit operation_init event: %s", e)
 
@@ -1877,6 +1885,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Clear after successful emission
         self.reasoning_buffer = []
 
+        # Emit tool_preparation spinner after reasoning
+        # This indicates the agent is selecting tools based on the reasoning
+        self._emit_ui_event({
+            "type": "thinking",
+            "context": "tool_preparation",
+            "urgent": True
+        })
+
     def _emit_step_header(self) -> None:
         """Emit step header with current progress."""
         # Do not emit a step header before the first actionable step is established
@@ -1908,6 +1924,8 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if not self.in_swarm_operation:
             event["step"] = self.current_step
             event["maxSteps"] = self.max_steps
+            # Include total tool invocations for budget transparency (Sonnet 4.5 does parallel tools)
+            event["totalTools"] = sum(self.tool_counts.values()) if self.tool_counts else 0
 
         # Add swarm agent information if in swarm operation
         if self.in_swarm_operation:
@@ -1948,6 +1966,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             pass
         # Mark that we have emitted at least one header
         self._any_step_header_emitted = True
+
+        # Emit tool_preparation spinner after step header
+        # Provides visual feedback while agent selects tools for this step
+        self._emit_ui_event({
+            "type": "thinking",
+            "context": "tool_preparation",
+            "urgent": True
+        })
 
     def _emit_initial_metrics(self) -> None:
         """Emit initial metrics on startup."""
@@ -2747,7 +2773,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 target=target, objective=objective, operation_id=self.operation_id, config_data=config_data
             )
 
-            # Accept any non-empty report content; do not enforce a specific header
+            # Accept any non-empty report content
             if isinstance(report_content, str) and report_content.strip():
                 try:
                     from pathlib import Path
@@ -2802,7 +2828,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         {"type": "output", "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"}
                     )
             else:
-                self._emit_ui_event({"type": "error", "content": "Failed to generate report: empty content from report generator"})
+                logger.info("Report generation skipped - no evidence collected during operation")
 
         except Exception as e:
             logger.error("Error generating final report: %s", e)

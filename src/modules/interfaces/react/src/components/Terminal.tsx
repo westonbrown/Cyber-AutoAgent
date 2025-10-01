@@ -1,8 +1,8 @@
 /**
  * Terminal - Full terminal buffer streaming display
- * 
+ *
  * Uses React Ink's Static component for smooth output without height limits.
- * 
+ *
  * This component allows the full agent output to flow naturally without
  * artificial height constraints, preventing text overlap and cutoff issues.
  */
@@ -18,6 +18,8 @@ import { normalizeEvent } from '../services/events/normalize.js';
 import { RingBuffer } from '../utils/RingBuffer.js';
 import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
+import { useTerminalSize } from '../hooks/useTerminalSize.js';
+import { calculateAvailableHeight } from '../utils/layoutConstants.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
 export const buildTrimmedReportContent = (raw: string): string => {
@@ -52,12 +54,15 @@ interface TerminalProps {
 export const Terminal: React.FC<TerminalProps> = React.memo(({
   executionService,
   sessionId,
-  terminalWidth = 80,
+  terminalWidth: propsTerminalWidth,
   collapsed = false,
   onEvent,
   onMetricsUpdate,
   animationsEnabled = true
 }) => {
+  // Use production-grade terminal size hook with resize handling
+  const { availableWidth, availableHeight, columns } = useTerminalSize();
+  const terminalWidth = propsTerminalWidth || availableWidth;
   // Test marker utility for diagnosing spinner/timer behavior
   const emitTestMarker = (msg: string) => {
     try {
@@ -465,10 +470,9 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       }
       pendingReasoningsRef.current = [];
       // Clear live reasoning preview now that it has been committed
-      setActiveThrottled(() => {
-        activeBufRef.current.clear();
-        return activeBufRef.current.toArray();
-      });
+      // Use immediate update (not throttled) to ensure reasoning clears before next step
+      activeBufRef.current.clear();
+      setActiveEvents(activeBufRef.current.toArray());
     }
   };
 
@@ -508,6 +512,9 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     stepCounterRef.current = 0;
     lastPushedTypeRef.current = null;
     results.push(event as DisplayStreamEvent);
+
+    console.error('[DEBUG] operation_init: animationsEnabled=', animationsEnabled, 'activeThinkingRef=', activeThinkingRef.current);
+
     if (animationsEnabled && !activeThinkingRef.current) {
       // Show spinner immediately after operation init
       setActiveThinking(true);
@@ -526,6 +533,9 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       activeBufRef.current.clear();
       activeBufRef.current.push(thinkingEvent);
       setActiveEvents(activeBufRef.current.toArray());
+      console.error('[DEBUG] operation_init: Created and set thinking spinner in activeBufRef');
+    } else {
+      console.error('[DEBUG] operation_init: SKIPPED thinking creation - animations disabled or thinking already active');
     }
     break;
 
@@ -681,6 +691,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         break;
         
       case 'thinking':
+        console.error('[DEBUG] thinking event received: context=', event.context, 'urgent=', (event as any).urgent, 'activeReasoning=', activeReasoning);
         // Handle thinking start without conflicting with reasoning
         if (!activeReasoning) {
           // Cancel any pending delayed spinner to avoid duplicates
@@ -688,19 +699,34 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           cancelPostToolIdleTimer();
           cancelPostReasoningIdleTimer();
           seenThinkingThisPhaseRef.current = true;
-          // Always clear any existing thinking item in the active tail
-          setActiveThrottled(prev => prev.filter(e => e.type !== 'thinking'));
           // Ensure the internal flag is set (fallback: it may already be true)
           if (!activeThinkingRef.current) {
             setActiveThinking(true);
+            console.error('[DEBUG] thinking: Set activeThinking to true');
           }
-          // Reinsert a thinking event so the spinner is visible even if our flag was already true
-          results.push({
+          // Create thinking event with urgent flag preserved
+          const thinkingEvent: DisplayStreamEvent = {
             type: 'thinking',
             context: event.context,
             startTime: event.startTime || Date.now(),
-            metadata: event.metadata
-          } as DisplayStreamEvent);
+            metadata: event.metadata,
+            urgent: (event as any).urgent || false  // Preserve urgent flag for immediate rendering
+          } as DisplayStreamEvent;
+
+          results.push(thinkingEvent);
+
+          // CRITICAL: For urgent thinking, immediately update active buffer (no throttle)
+          // This ensures startup/post-reasoning spinners appear without delay
+          if ((event as any).urgent) {
+            activeBufRef.current.clear();
+            activeBufRef.current.push(thinkingEvent);
+            setActiveEvents(activeBufRef.current.toArray());
+            console.error('[DEBUG] thinking: URGENT - immediately updated activeBufRef, array length=', activeBufRef.current.toArray().length);
+          } else {
+            console.error('[DEBUG] thinking: NOT urgent, will be preserved via standard flow');
+          }
+        } else {
+          console.error('[DEBUG] thinking: SKIPPED - activeReasoning is true');
         }
         break;
         
@@ -1406,6 +1432,41 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           regularEvents.push(processedEvent);
         }
 
+        // Keep current thinking (if any) and aggregated output in active tail without duplication
+        // IMPORTANT: This runs on EVERY event to preserve thinking across all events
+        const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
+        // Preserve existing thinking even if no new events - prevents thinking from disappearing
+        const existingThinking = activeBufRef.current.toArray().filter(e => e.type === 'thinking');
+        const hasThinkingToDisplay = thinkingEvents.length > 0 || existingThinking.length > 0 || currentAggDisplayEvent;
+
+        if (hasThinkingToDisplay) {
+          // Check if any thinking event is marked urgent - needs immediate rendering
+          const hasUrgent = thinkingEvents.some(e => (e as any).urgent === true);
+
+          const updateActiveBuf = () => {
+            // Preserve existing thinking if no new thinking events in this batch
+            const thinkingToKeep = thinkingEvents.length > 0 ? thinkingEvents : existingThinking;
+            // Rebuild active tail: keep thinking, then aggregated output if present
+            activeBufRef.current.clear();
+            // Deduplicate thinking entries by identity (type-only for safety)
+            const uniqueThinking: DisplayStreamEvent[] = [];
+            for (const t of thinkingToKeep) {
+              if (!uniqueThinking.some(u => u.type === t.type)) uniqueThinking.push(t);
+            }
+            for (const t of uniqueThinking) activeBufRef.current.push(t);
+            if (currentAggDisplayEvent) activeBufRef.current.push(currentAggDisplayEvent);
+            return activeBufRef.current.toArray();
+          };
+
+          // Bypass throttle for urgent events (startup, post-reasoning) to ensure immediate visibility
+          if (hasUrgent) {
+            const events = updateActiveBuf();
+            setActiveEvents(events);
+          } else {
+            setActiveThrottled(updateActiveBuf);
+          }
+        }
+
         if (regularEvents.length > 0) {
           // Before anything else, if a new step header arrived, flush current aggregated output into completed
           const stepHeaders = regularEvents.filter(e => e.type === 'step_header');
@@ -1436,37 +1497,6 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           if (newCompletedEvents.length > 0) {
 completedBufRef.current.pushMany(newCompletedEvents);
             setCompletedEvents(completedBufRef.current.toArray());
-          }
-
-          // Keep current thinking (if any) and aggregated output in active tail without duplication
-          const thinkingEvents = regularEvents.filter(e => e.type === 'thinking');
-          if (thinkingEvents.length > 0 || currentAggDisplayEvent) {
-            // Check if any thinking event is marked urgent - needs immediate rendering
-            const hasUrgent = thinkingEvents.some(e => (e as any).urgent === true);
-
-            const updateActiveBuf = () => {
-              // Preserve any existing thinking if none were added in this batch
-              const existingThinking = activeBufRef.current.toArray().filter(e => e.type === 'thinking');
-              const thinkingToKeep = thinkingEvents.length > 0 ? thinkingEvents : existingThinking;
-              // Rebuild active tail: keep thinking, then aggregated output if present
-              activeBufRef.current.clear();
-              // Deduplicate thinking entries by identity (type-only for safety)
-              const uniqueThinking: DisplayStreamEvent[] = [];
-              for (const t of thinkingToKeep) {
-                if (!uniqueThinking.some(u => u.type === t.type)) uniqueThinking.push(t);
-              }
-              for (const t of uniqueThinking) activeBufRef.current.push(t);
-              if (currentAggDisplayEvent) activeBufRef.current.push(currentAggDisplayEvent);
-              return activeBufRef.current.toArray();
-            };
-
-            // Bypass throttle for urgent events (startup, post-reasoning) to ensure immediate visibility
-            if (hasUrgent) {
-              const events = updateActiveBuf();
-              setActiveEvents(events);
-            } else {
-              setActiveThrottled(updateActiveBuf);
-            }
           }
         }
       }
@@ -1535,15 +1565,24 @@ completedBufRef.current.pushMany(newCompletedEvents);
     <Box flexDirection="column" flexGrow={1}>
       <>
         {completedEvents.length > 0 && (
-          <StaticStreamDisplay events={completedEvents} />
+          <StaticStreamDisplay
+            events={completedEvents}
+            terminalWidth={terminalWidth}
+            availableHeight={availableHeight}
+          />
         )}
         {activeEvents.length > 0 && (
-          <StreamDisplay events={activeEvents} animationsEnabled={animationsEnabled} />
+          <StreamDisplay
+            events={activeEvents}
+            animationsEnabled={animationsEnabled}
+            terminalWidth={terminalWidth}
+            availableHeight={availableHeight}
+          />
         )}
       </>
-      
-      {/* Trailing spacer to avoid footer crowding */}
-      <Box>
+
+      {/* Trailing spacer to prevent footer overlap with content */}
+      <Box marginTop={1}>
         <Text> </Text>
       </Box>
     </Box>
