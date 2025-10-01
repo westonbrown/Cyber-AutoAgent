@@ -693,24 +693,9 @@ export class PythonExecutionService extends EventEmitter {
         provider: config.modelProvider,
         model: config.modelId
       });
-      
-      // Emit startup thinking indicator BEFORE any output so the UI shows animation immediately
-      this.emit('event', {
-        type: 'thinking',
-        context: 'startup',
-        startTime: Date.now(),
-        urgent: true,  // Mark as urgent for immediate rendering bypass throttling
-        metadata: {
-          message: 'Preparing Python security assessment environment'
-        }
-      });
-      
-      // Emit startup lifecycle as output so it appears in the operation stream (OLD behavior)
-      this.emit('event', {
-        type: 'output',
-        content: '▶ Initializing Python assessment environment...',
-        timestamp: Date.now()
-      });
+
+      // Python backend will emit thinking(startup, urgent=true) immediately after operation_init
+      // No need to emit it here as it causes activeThinkingRef to be set prematurely
       
       setTimeout(() => {
         this.emit('event', {
