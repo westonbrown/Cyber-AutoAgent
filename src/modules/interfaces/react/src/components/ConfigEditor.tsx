@@ -65,7 +65,20 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'ollamaHost', label: 'Ollama Host', type: 'text', section: 'Models' },
   { key: 'openaiApiKey', label: 'OpenAI API Key', type: 'password', section: 'Models' },
   { key: 'anthropicApiKey', label: 'Anthropic API Key', type: 'password', section: 'Models' },
-  
+  { key: 'azureApiKey', label: 'Azure API Key', type: 'password', section: 'Models' },
+  { key: 'azureApiBase', label: 'Azure API Base', type: 'text', section: 'Models' },
+  { key: 'azureApiVersion', label: 'Azure API Version', type: 'text', section: 'Models' },
+  { key: 'maxTokens', label: 'Max Output Tokens', type: 'number', section: 'Models' },
+  { key: 'thinkingBudget', label: 'Thinking Budget Tokens', type: 'number', section: 'Models' },
+  { key: 'reasoningEffort', label: 'Reasoning Effort (O1/GPT-5)', type: 'select', section: 'Models',
+    options: [
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' }
+    ]
+  },
+  { key: 'maxCompletionTokens', label: 'Max Completion Tokens (O1/GPT-5)', type: 'number', section: 'Models' },
+
   // Operations (renamed from Assessment)
   { key: 'iterations', label: 'Max Iterations', type: 'number', section: 'Operations' },
   { key: 'autoApprove', label: 'Auto-Approve Tools', type: 'boolean', section: 'Operations' },
@@ -232,13 +245,14 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           return true;
         }
         
-        // Show provider-specific credentials
+        // Show provider-specific credentials and token configs
         if (config.modelProvider === 'bedrock') {
-          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion'].includes(f.key);
+          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion', 'maxTokens', 'thinkingBudget'].includes(f.key);
         } else if (config.modelProvider === 'ollama') {
-          return ['ollamaHost'].includes(f.key);
+          return ['ollamaHost', 'maxTokens'].includes(f.key);
         } else if (config.modelProvider === 'litellm') {
-          return ['openaiApiKey', 'anthropicApiKey', 'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion'].includes(f.key);
+          return ['openaiApiKey', 'anthropicApiKey', 'azureApiKey', 'azureApiBase', 'azureApiVersion',
+                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion', 'maxTokens', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
         }
         
         return false;

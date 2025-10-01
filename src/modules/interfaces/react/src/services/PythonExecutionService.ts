@@ -654,6 +654,13 @@ export class PythonExecutionService extends EventEmitter {
         ...(config.openaiApiKey ? { OPENAI_API_KEY: config.openaiApiKey } : {}),
         ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
         ...(config.cohereApiKey ? { COHERE_API_KEY: config.cohereApiKey } : {}),
+        ...(config.azureApiKey ? { AZURE_API_KEY: config.azureApiKey } : {}),
+        ...(config.azureApiBase ? { AZURE_API_BASE: config.azureApiBase } : {}),
+        ...(config.azureApiVersion ? { AZURE_API_VERSION: config.azureApiVersion } : {}),
+        ...(config.maxTokens ? { MAX_TOKENS: String(config.maxTokens) } : {}),
+        ...(config.thinkingBudget ? { THINKING_BUDGET: String(config.thinkingBudget) } : {}),
+        ...(config.reasoningEffort ? { REASONING_EFFORT: config.reasoningEffort } : {}),
+        ...(config.maxCompletionTokens ? { MAX_COMPLETION_TOKENS: String(config.maxCompletionTokens) } : {}),
         // Model Configuration - pass separate models from config
         ...(config.swarmModel ? { CYBER_AGENT_SWARM_MODEL: config.swarmModel } : {}),
         ...(config.evaluationModel ? { CYBER_AGENT_EVALUATION_MODEL: config.evaluationModel } : {}),
