@@ -556,7 +556,12 @@ def _llm_rewrite_execution_prompt(
     truncated_patterns = learned_patterns[:max_evidence_chars] if len(learned_patterns) > max_evidence_chars else learned_patterns
     evidence_note = "\n... (evidence truncated for brevity)" if len(learned_patterns) > max_evidence_chars else ""
 
-    system_prompt = f"""You are a meta-learning optimizer that STRENGTHENS existing cognitive framework based on operational evidence.
+    system_prompt = f"""You are a meta-cognitive prompt optimizer for autonomous agents that exhibit "prompt compliance gap" - they read guidance but don't always execute it.
+
+<critical_understanding>
+AGENT BEHAVIOR PATTERN: Agent sees prompts, echoes reasoning, then ignores protocols when selecting tools.
+YOUR MISSION: Transform suggestions into enforcement structures that change completion space, not just add reminders.
+</critical_understanding>
 
 <current_framework>
 Prompt: {len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
@@ -565,79 +570,75 @@ Contains:
 - Confidence tracking (0-100% with +20/-30/-10 update rules)
 - Progressive complexity (atomic → functional → complex)
 - 8 PROTECTED Universal Feedback Analysis Principles
-- Validation gates after every action
+- Checkpoint protocol (20%/40%/60%/80% budget intervals)
+- Stop validation gates
+- Phase 4 CHAINING triggers
 </current_framework>
 
-<evidence>
+<operational_evidence>
 {truncated_patterns}{evidence_note}
 
-FAILED: {remove_tactics}
-WORKED: {focus_tactics}
-</evidence>
+FAILED TACTICS: {remove_tactics}
+WORKING TACTICS: {focus_tactics}
+</operational_evidence>
 
-<mission>
-STRENGTHEN existing patterns (not add new ones). If evidence shows framework violation → make guidance MORE explicit/mandatory.
-</mission>
+<analysis_focus>
+Look for these BEHAVIORAL patterns in evidence (not just keywords):
+
+1. **Checkpoint Skipping**: Steps 40/80/120/160 passed without get_plan calls
+2. **Repeated Technique**: Same approach 5+ times without pivot
+3. **Premature Stop**: stop() invoked at <95% budget without objective achieved
+4. **Phase 4 Missed**: Extraction events (hash/credentials/token) without immediate direct-use testing
+5. **Validation Ignored**: Tool calls without reasoning that answers validation questions
+6. **Technique Fixation**: High iteration count on single approach without capability class switch
+
+If patterns found → Apply corresponding strengthening strategy below.
+If NO patterns → Return prompt UNCHANGED (conservative behavior when no evidence).
+</analysis_focus>
+
+<strengthening_strategies>
+When evidence confirms violation, apply STRUCTURAL changes (not just add "MANDATORY"):
+
+**A. Checkpoint Protocol Weak** (agent passed checkpoint without get_plan):
+TRANSFORM: "FIRST tool call MUST be: mem0_memory(action='get_plan')"
+TO: "BEFORE selecting next tool, complete:\nSTEP 1: mem0_memory(action='get_plan')\nSTEP 2: Answer validation questions\nSTEP 3: Update plan\nSTEP 4: ONLY AFTER above: Select next tool"
+RATIONALE: Sequential steps create completion structure, numbered gates harder to skip
+
+**B. Technique Fixation** (5+ iterations same approach):
+TRANSFORM: "Multiple failures → different method"
+TO: "3 failures same technique → MUST pivot to different method | 5+ failures → MUST switch capability class | After 3rd failure: next action uses DIFFERENT approach"
+RATIONALE: Explicit thresholds remove "multiple" ambiguity, make counters trackable
+
+**C. Phase 4 Missed** (extraction without direct-use):
+TRANSFORM: "After extracting data, ask: What would someone DO?"
+TO: "TRIGGER: After mem0_memory(action='store', category='finding') → IMMEDIATE NEXT ACTION tests direct use\nMandatory: Extract hash → NEXT tool tries hash as password (NOT crack first)\nEconomic rule: Try direct (1-5 steps) BEFORE process (10-60 steps)"
+RATIONALE: Event-based trigger with explicit example, economic framing makes choice obvious
+
+**D. Premature Stop** (stopped <95% budget):
+TRANSFORM: "Before stop(), retrieve plan and answer questions"
+TO: "To invoke stop(), FIRST complete MANDATORY tool calls:\n1. mem0_memory(action='get_plan')\n2. mem0_memory(action='retrieve', query='finding')\n3. AFTER reviewing, answer: Budget remaining? If >5%: MUST continue\nstop() BLOCKED until: Flag captured OR Budget=0%"
+RATIONALE: Sequential prerequisites with blocking language
+
+**E. Dead-End Removal** (FAILED tactics list populated):
+ACTION: Find guidance sections mentioning failed tactics, DELETE entirely or mark DEPRIORITIZED
+RATIONALE: Remove bloat, focus attention on working approaches
+
+**F. Working Approach Emphasis** (WORKED tactics confirmed):
+ACTION: Move working approaches to TOP of relevant sections, add "CONFIRMED WORKING:" prefix
+RATIONALE: Prioritize proven paths without adding length
+</strengthening_strategies>
 
 <length_constraint>
-CRITICAL: Output ≤ {len(current_prompt)} chars (ZERO growth, STRICT)
-Method: ONLY modify sections with evidence of violation
+CRITICAL: Output ≤ {len(current_prompt)} chars (ZERO NET GROWTH)
 
-Strengthening Rules (SELECTIVE, not universal):
-1. Dead-end removal: FAILED list → delete related guidance entirely
-2. Evidence-based specificity: "multiple" → "3" if evidence confirms exact threshold
-3. Violated patterns ONLY: If framework violation detected → strengthen THAT section only
-4. Working sections: NO CHANGES (if not violated, leave alone)
-5. Compress verbose: Replace multi-line with compact equivalents
+Balance strengthening with compression:
+- Add explicit steps/thresholds WHERE violated → Compress verbose sections ELSEWHERE
+- Example: "After extracting..." (ambiguous) → "After mem0_memory store" (explicit) → Save 20 chars by compressing another verbose section
+- Priority: Strengthen violations > Preserve working > Compress non-critical
 
-FORBIDDEN: Adding MANDATORY/REQUIRED/FORBIDDEN universally
-REQUIRED: Only strengthen sections with evidence of violation
-ZERO NET GROWTH: Output length MUST equal input length (strict enforcement)
+FORBIDDEN: Growing prompt without equal compression
+REQUIRED: Every char added MUST be balanced by char removed elsewhere
 </length_constraint>
-
-<framework_violations_to_strengthen>
-If evidence shows these violations, STRENGTHEN (not add) existing guidance:
-
-1. **Skipped Discovery Phase**
-   - Evidence: Jumped to exploitation without enumeration
-   - Strengthen: Make "Completeness check" MANDATORY, add consequence if skipped
-
-2. **No Explicit Hypothesis**
-   - Evidence: Actions without stated hypothesis/confidence
-   - Strengthen: Add REQUIRED before Phase 2 steps, make confidence tracking explicit
-
-3. **Skipped Validation Gates**
-   - Evidence: Continued without extracting constraint/updating confidence
-   - Strengthen: Make validation questions MANDATORY after every action
-
-4. **Progressive Complexity Violation**
-   - Evidence: Started with complex before testing atomic
-   - Strengthen: Add FORBIDDEN markers, make atomic-first REQUIRED
-
-5. **Confidence Not Updated**
-   - Evidence: Same confidence despite confirming/refuting evidence
-   - Strengthen: Make +20/-30/-10 rules explicit in validation phase
-
-6. **Premature Pivot**
-   - Evidence: Switched approach after 1-2 failures (should be 3+)
-   - Strengthen: Specify exact threshold based on evidence
-
-7. **Late Pivot**
-   - Evidence: Repeated same technique >5 times
-   - Strengthen: Add hard limit, make swarm deployment MANDATORY at threshold
-
-8. **Intermediate Success Confusion**
-   - Evidence: Stopped after extracting data without using it
-   - Strengthen: Make "TRY immediately" REQUIRED, add examples of correct flow
-
-9. **Chaining Skipped**
-   - Evidence: Achieved capability but didn't ask "Closer to OBJECTIVE?"
-   - Strengthen: Make Phase 4 questions MANDATORY after every capability
-
-10. **PROTECTED Principles Ignored**
-   - Evidence: Violated principles 1-8 from PROTECTED section
-   - Strengthen: Move violated principle to prominent position, add CRITICAL marker
-</framework_violations_to_strengthen>
 
 <protected_content>
 NEVER modify, compress, or remove these critical sections:
@@ -687,50 +688,49 @@ CRITICAL: Output must be ≤ {len(current_prompt)} chars. This is STRICT.
     remove_str = ", ".join(remove_tactics) if remove_tactics else "none"
     focus_str = ", ".join(focus_tactics) if focus_tactics else "none"
 
-    request = f"""STRENGTHEN existing cognitive framework based on operational evidence.
+    request = f"""Analyze operational evidence and apply STRUCTURAL strengthening to violated protocols.
 
 <current_prompt>
 {len(current_prompt)} chars, {len(current_prompt.split(chr(10)))} lines
 {current_prompt}
 </current_prompt>
 
-<evidence>
+<operational_evidence>
 {truncated_patterns}{evidence_note}
 
-DEAD ENDS: {remove_str}
-WORKED: {focus_str}
-</evidence>
+FAILED TACTICS: {remove_str}
+WORKING TACTICS: {focus_str}
+</operational_evidence>
 
-<task>
-1. Delete DEAD ENDS: Remove any guidance related to FAILED approaches
-2. Strengthen WORKED: Promote working approaches to MANDATORY/REQUIRED
-3. Strengthen violations: Use framework_violations_to_strengthen list from system prompt
-4. ZERO GROWTH: Every char added = equal chars removed
+<your_task>
+PHASE 1 - BEHAVIORAL ANALYSIS:
+Scan evidence for the 6 behavioral patterns listed in your system prompt:
+- Checkpoint skipping (steps 40/80/120/160 without get_plan)
+- Repeated technique (5+ iterations same approach)
+- Premature stop (<95% budget without objective)
+- Phase 4 missed (extraction without direct-use testing)
+- Validation ignored (tool calls without answering questions)
+- Technique fixation (high iteration count on single approach)
 
-DO NOT add new patterns. STRENGTHEN existing framework.
-</task>
+PHASE 2 - STRUCTURAL TRANSFORMATION:
+For EACH pattern found, apply corresponding strengthening strategy A-F from system prompt.
+Transform temporal language → explicit state checks
+Transform suggestions → sequential numbered gates
+Transform "multiple" → specific thresholds
+Transform "should" → "MUST" with blocking language
 
-<process>
-1. Scan for DEAD ENDS → delete related guidance entirely (free up chars)
-2. Scan for framework violations in evidence → identify which of 10 violations occurred
-3. For each violation: STRENGTHEN existing guidance (add MANDATORY, move to top, specify threshold)
-4. Promote WORKED approaches: Change "should" → "MUST", add REQUIRED markers
-5. Compress verbose: Remove hedging, merge bullets, compact notation
-6. Validate: output ≤ {len(current_prompt)} chars STRICT (no tolerance)
-7. Return optimized prompt ONLY (no preamble, explanation, or commentary)
-</process>
+PHASE 3 - COMPRESSION BALANCE:
+Every char added MUST equal char removed elsewhere.
+Methods: Delete failed tactics, compress verbose sections, merge redundant bullets
 
-<critical_requirements>
-- ZERO GROWTH: Output ≤ {len(current_prompt)} chars (STRICT, no +300 tolerance)
-- STRENGTHEN not ADD: Work within existing framework, don't introduce new patterns
-- PROTECTED preserved: Never modify content between <!-- PROTECTED --> tags
-- Educational scaffolding: Keep technique CLASS examples, remove challenge SOLUTIONS
-- XML structure intact: All tags exactly preserved
-- No anti-cheat: Zero specific payloads/errors/commands/paths/challenge data
-</critical_requirements>
+PHASE 4 - CONSERVATIVE FALLBACK:
+If NO behavioral patterns detected in evidence → Return prompt UNCHANGED
+Only strengthen when evidence confirms violation
+</your_task>
 
 <output_format>
-Return ONLY the optimized prompt (no additional text, no preamble, no explanation)
+Return ONLY the optimized prompt text (no explanation, no preamble, no commentary).
+Length: ≤ {len(current_prompt)} chars (STRICT enforcement, zero tolerance)
 </output_format>"""
 
     if not hasattr(_llm_rewrite_execution_prompt, '_failure_count'):
