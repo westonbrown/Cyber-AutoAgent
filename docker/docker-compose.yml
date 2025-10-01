@@ -20,17 +20,18 @@ services:
       - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       # - AWS_PROFILE=${AWS_PROFILE}
-      
-      # Ollama Configuration (Ollama Provider) 
+
+      # Ollama Configuration (Ollama Provider)
       - OLLAMA_HOST=${OLLAMA_HOST}
-      
+
       # Python configuration
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
-      
+
       # Application configuration
       - DEV=true
       - FORCE_COLOR=1
+      - CYBER_UI_MODE=cli
       
       # Observability configuration (auto-detected by default, forced true in compose mode)
       - ENABLE_OBSERVABILITY=${ENABLE_OBSERVABILITY:-true}

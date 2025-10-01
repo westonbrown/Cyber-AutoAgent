@@ -407,7 +407,7 @@ class ConfigManager:
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     temperature=0.95,
-                    max_tokens=8192,
+                    max_tokens=32000,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
@@ -442,7 +442,7 @@ class ConfigManager:
                     provider=ModelProvider.LITELLM,
                     model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=8192,
+                    max_tokens=32000,
                     top_p=0.95,
                 ),
                 "embedding": EmbeddingConfig(
