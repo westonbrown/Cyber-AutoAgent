@@ -93,7 +93,7 @@ Step: {{ current_step }}/{{ max_steps }} (Remaining: {{ remaining_steps }} steps
 </planning_and_reflection>
 
 <termination>
-**Stop forbidden until**: (Objective + artifact) OR (Budget ≥95%: current_step/max_steps ≥ 0.95)
+**Stop forbidden until**: (Objective + artifact) OR (Budget ≥95% - read from REFLECTION SNAPSHOT)
 
 Operation-specific termination details in <termination_policy> section
 </termination>
