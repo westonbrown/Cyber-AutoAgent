@@ -121,20 +121,51 @@ const AppContent: React.FC<AppProps> = ({
   
   // Screen clear handler - fixed to prevent race condition
   const handleScreenClear = useCallback(() => {
-    // Batch all state updates together to minimize re-renders
+    // CRITICAL: Clear Terminal's event buffers BEFORE removing operation
+    // This prevents heap exhaustion from retaining millions of event tokens
+
+    // Step 1: Clear operation history (small text log)
     operationManager.clearOperationHistory();
     actions.resetErrorCount();
-    // Removed setTerminalVisible(false) - we want to clear content, not hide the terminal
-    actions.setActiveOperation(null);
-    actions.clearCompletedOperation(); // Clear the completed operation flag
-    
-    // Use setTimeout to ensure state updates are processed
-    // This prevents the black screen by giving React time to commit changes
-    registerTimeout(() => {
-      // Only use modalManager's refresh to avoid double clear
-      modalManager.refreshStatic();
-    }, 0); // Next tick
-  }, [actions, operationManager, modalManager]);
+
+    // Step 2: Generate new session ID to trigger Terminal cleanup useEffect
+    // This clears completedEvents[], activeEvents[], and all ring buffers
+    if (appState.activeOperation) {
+      // Create a dummy operation with new ID to trigger Terminal's sessionId cleanup
+      const cleanupOperation = {
+        ...appState.activeOperation,
+        id: `cleanup_${Date.now()}`
+      };
+      actions.setActiveOperation(cleanupOperation);
+
+      // Step 3: Wait for Terminal cleanup to complete, then remove operation
+      registerTimeout(() => {
+        actions.setActiveOperation(null);
+        actions.clearCompletedOperation();
+
+        // Step 4: Force garbage collection to release memory
+        if (global.gc) {
+          try {
+            global.gc();
+          } catch (e) {
+            // GC not available, that's okay
+          }
+        }
+
+        // Step 5: Refresh UI
+        registerTimeout(() => {
+          modalManager.refreshStatic();
+        }, 0);
+      }, 100); // Allow time for Terminal cleanup
+    } else {
+      // No active operation, just clear state
+      actions.setActiveOperation(null);
+      actions.clearCompletedOperation();
+      registerTimeout(() => {
+        modalManager.refreshStatic();
+      }, 0);
+    }
+  }, [actions, operationManager, modalManager, appState.activeOperation]);
 
   // Keyboard handlers
   // Disable terminal-level handlers during initialization flow so Setup Wizard owns ESC/back behavior

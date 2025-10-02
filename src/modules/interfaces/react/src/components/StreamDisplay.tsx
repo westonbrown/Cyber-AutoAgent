@@ -303,7 +303,6 @@ export const EventLine: React.FC<{
             </Text>
           </Box>
           <Text color="#45475A">{getDivider()}</Text>
-          {event.step !== 'FINAL REPORT' && <Text> </Text>}
           {/* If this is the FINAL REPORT and we have operation context, render the report inline */}
           {event.step === 'FINAL REPORT' && operationContext && (
             <InlineReportViewer ctx={operationContext} />
@@ -379,13 +378,11 @@ export const EventLine: React.FC<{
     case 'reasoning':
       // This case should not be reached anymore as reasoning is handled in StreamDisplay
       // But keep it as fallback
-      const swarmAgentLabel = ('swarm_agent' in event && event.swarm_agent) 
-        ? ` (${event.swarm_agent})` 
+      const swarmAgentLabel = ('swarm_agent' in event && event.swarm_agent)
+        ? ` (${event.swarm_agent})`
         : '';
       return (
         <Box flexDirection="column">
-          <Text> </Text>
-          <Text> </Text>
           <Text color="cyan" bold>reasoning{swarmAgentLabel}</Text>
           <Box paddingLeft={0}>
             <Text color="cyan">{event.content}</Text>

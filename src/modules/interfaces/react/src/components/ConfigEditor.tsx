@@ -214,7 +214,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   // Auto-adjust observability and evaluation based on deployment mode
   useEffect(() => {
     const deploymentMode = config.deploymentMode;
-    
+
     // For local-cli and single-container, default to disabled
     if (deploymentMode === 'local-cli' || deploymentMode === 'single-container') {
       // Only update if not explicitly set by user (check if still at default true values)
@@ -228,7 +228,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
     }
     // For full-stack, these can remain enabled (user can still toggle)
-  }, [config.deploymentMode, updateConfig, showMessage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.deploymentMode, config.observability, config.autoEvaluation, config.langfuseHostOverride]);
   
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
@@ -961,7 +962,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   // Main render logic
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={45}>
       <Box
         flexDirection="column"
         borderStyle="single"
@@ -969,6 +970,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         padding={1}
         marginTop={1}
         width="100%"
+        height={43}
       >
         {/* Notification appears INSIDE the main border at the very top */}
         {message && (
@@ -998,7 +1000,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             </Text>
           </Box>
         )}
-        
+
         {renderHeader()}
       
       {/* Status bar */}
@@ -1024,7 +1026,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       </Box>
       
       {/* Main configuration sections */}
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} height={25}>
         {renderSections()}
       </Box>
       

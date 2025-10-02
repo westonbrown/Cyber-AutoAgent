@@ -379,10 +379,25 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const COMMAND_BUFFER_MS = 100;
   const OUTPUT_DEDUPE_TIME_MS = 500;
   const theme = themeManager.getCurrentTheme();
-  
+
   // Reset buffers when a new session starts to prevent memory growth across runs
   React.useEffect(() => {
+    // Aggressively clear state arrays first to release memory
+    setCompletedEvents([]);
+    setActiveEvents([]);
+
+    // Then reset all buffers and refs
     resetAllBuffers();
+
+    // Force garbage collection hint by clearing large objects
+    // This helps prevent heap overflow when starting multiple operations in same session
+    if (global.gc) {
+      try {
+        global.gc();
+      } catch (e) {
+        // GC not available, that's okay
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -470,7 +485,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       }
       pendingReasoningsRef.current = [];
       // Clear live reasoning preview now that it has been committed
-      // Use immediate update (not throttled) to ensure reasoning clears before next step
+      // Use immediate update (not throttled) to prevent duplicate display
       activeBufRef.current.clear();
       setActiveEvents(activeBufRef.current.toArray());
     }
@@ -689,12 +704,14 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             urgent: (event as any).urgent || false  // Preserve urgent flag for immediate rendering
           } as DisplayStreamEvent;
 
-          // For urgent thinking, immediately update active buffer and skip normal event flow
-          // This ensures startup/post-reasoning spinners appear without delay
+          // For urgent thinking, use throttled update (still faster than normal flow)
+          // This ensures startup/post-reasoning spinners appear without excessive renders
           if ((event as any).urgent) {
-            activeBufRef.current.clear();
-            activeBufRef.current.push(thinkingEvent);
-            setActiveEvents(activeBufRef.current.toArray());
+            setActiveThrottled(() => {
+              activeBufRef.current.clear();
+              activeBufRef.current.push(thinkingEvent);
+              return activeBufRef.current.toArray();
+            });
             // Don't add to results - we've already updated the display
           } else {
             results.push(thinkingEvent);
