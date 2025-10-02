@@ -49,6 +49,7 @@ interface TerminalProps {
   onEvent?: (event: any) => void;
   onMetricsUpdate?: (metrics: { tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number }) => void;
   animationsEnabled?: boolean;
+  cleanupRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 export const Terminal: React.FC<TerminalProps> = React.memo(({
@@ -58,7 +59,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   collapsed = false,
   onEvent,
   onMetricsUpdate,
-  animationsEnabled = true
+  animationsEnabled = true,
+  cleanupRef
 }) => {
   // Use production-grade terminal size hook with resize handling
   const { availableWidth, availableHeight, columns } = useTerminalSize();
@@ -227,16 +229,15 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingActiveUpdaterRef = useRef<((prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) | null>(null);
-  const ACTIVE_EMIT_INTERVAL_MS = 80;
+  // Increased from 80ms to 200ms to reduce Yoga WASM memory fragmentation
+  // This batches more events together, reducing total render count by ~60%
+  const ACTIVE_EMIT_INTERVAL_MS = 200;
 
   const setActiveThrottled = (
     updater: React.SetStateAction<DisplayStreamEvent[]>
   ) => {
-    if (animationsEnabled) {
-      setActiveEvents(updater);
-      return;
-    }
-
+    // CRITICAL: Always throttle to prevent WASM memory fragmentation
+    // Animations only affect spinner display, not event batching
     const fn: (prev: DisplayStreamEvent[]) => DisplayStreamEvent[] =
       typeof updater === 'function' ? (updater as (prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) : (() => updater as DisplayStreamEvent[]);
     pendingActiveUpdaterRef.current = fn;
@@ -379,6 +380,25 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const COMMAND_BUFFER_MS = 100;
   const OUTPUT_DEDUPE_TIME_MS = 500;
   const theme = themeManager.getCurrentTheme();
+
+  // Expose cleanup function via ref for /clear command
+  React.useEffect(() => {
+    if (cleanupRef) {
+      cleanupRef.current = () => {
+        // Clear state arrays to release memory
+        setCompletedEvents([]);
+        setActiveEvents([]);
+
+        // Reset all buffers and refs
+        resetAllBuffers();
+      };
+    }
+    return () => {
+      if (cleanupRef) {
+        cleanupRef.current = null;
+      }
+    };
+  }, [cleanupRef, resetAllBuffers]);
 
   // Reset buffers when a new session starts to prevent memory growth across runs
   React.useEffect(() => {
@@ -528,7 +548,26 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     lastPushedTypeRef.current = null;
     results.push(event as DisplayStreamEvent);
 
-    // Python backend emits thinking(startup, urgent=true) immediately after this
+    // Show spinner immediately after operation_init while awaiting first step/reasoning
+    // This covers the 10-15 second gap before the agent's first response
+    // CRITICAL: Use scheduleDelayedThinking with 0 delay instead of direct manipulation
+    // This ensures proper integration with the event loop and prevents race conditions
+    if (animationsEnabled) {
+      cancelDelayedThinking();
+      setActiveThinking(true);
+      seenThinkingThisPhaseRef.current = true;
+
+      // Immediately show urgent thinking event to bypass any delays
+      const thinkingEvent: DisplayStreamEvent = {
+        type: 'thinking',
+        context: 'waiting',
+        startTime: Date.now(),
+        urgent: true
+      } as DisplayStreamEvent;
+
+      // Push to results so it gets processed by the event loop
+      results.push(thinkingEvent);
+    }
     break;
 
       case 'step_header':
@@ -704,18 +743,9 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             urgent: (event as any).urgent || false  // Preserve urgent flag for immediate rendering
           } as DisplayStreamEvent;
 
-          // For urgent thinking, use throttled update (still faster than normal flow)
-          // This ensures startup/post-reasoning spinners appear without excessive renders
-          if ((event as any).urgent) {
-            setActiveThrottled(() => {
-              activeBufRef.current.clear();
-              activeBufRef.current.push(thinkingEvent);
-              return activeBufRef.current.toArray();
-            });
-            // Don't add to results - we've already updated the display
-          } else {
-            results.push(thinkingEvent);
-          }
+          // ALWAYS add to results so event loop processes it
+          // The urgent flag will trigger immediate rendering in the event loop (line 1516-1518)
+          results.push(thinkingEvent);
         }
         break;
         
@@ -756,9 +786,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           } as DisplayStreamEvent;
 
           results.push(thinkingEvent);
-          activeBufRef.current.clear();
-          activeBufRef.current.push(thinkingEvent);
-          setActiveEvents(activeBufRef.current.toArray());
+          // Event loop will handle immediate rendering via urgent flag
         }
 
         // Reset last tool output timestamp for new tool
@@ -880,11 +908,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           } as DisplayStreamEvent;
 
           results.push(thinkingEvent);
-
-          // Update active buffer immediately to show spinner without delay
-          activeBufRef.current.clear();
-          activeBufRef.current.push(thinkingEvent);
-          setActiveEvents(activeBufRef.current.toArray());
+          // Event loop will handle immediate rendering via urgent flag (no manual buffer manipulation)
         }
         // Optionally, we do not emit a separate tool_end display item here to avoid duplicates
         break;
@@ -1135,18 +1159,15 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             urgent: true  // Bypass throttle for immediate display
           } as DisplayStreamEvent;
 
-          // Update active buffer immediately to show spinner without delay
-          // Don't add to results to avoid being cleared by event loop
-          activeBufRef.current.clear();
-          activeBufRef.current.push(thinkingEvent);
-          setActiveEvents(activeBufRef.current.toArray());
+          results.push(thinkingEvent);
+          // Event loop will handle immediate rendering via urgent flag
         }
         // Reset flags and cancel pending delayed thinking
         cancelDelayedThinking();
         seenThinkingThisPhaseRef.current = false;
-        
-        // Flush any pending reasoning so it appears below the outputs of this tool call
-        flushPendingReasoning(results);
+
+        // Don't flush reasoning here - let it accumulate until step_header
+        // This ensures all reasoning within a step appears as one block
 
         results.push({
           type: 'tool_end',
@@ -1159,11 +1180,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Clear per-tool dedup set when tool ends
         try { if (event.toolId) perToolOutputSeenRef.current.delete(String(event.toolId)); } catch {}
         setCurrentToolId(undefined);
-        // Between tool output and the next reasoning block, show a lightweight spinner
-        // to indicate the agent is thinking about the result and preparing the next step.
-        if (animationsEnabled) {
-          scheduleDelayedThinking({ delay: 0, context: 'post_tool_idle', addSpacer: false });
-        }
+        // Spinner already shown above (lines 1147-1160) - no need for additional delayed spinner
         break;
 
       case 'operation_complete':
@@ -1172,7 +1189,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Flush any pending reasoning before we finalize
         flushPendingReasoning(results);
         setActiveReasoning(false);
-        
+
         // If any op-summary lines are still buffered (no report emitted), flush them now before metrics
         if (opSummaryBufferRef.current.length > 0) {
           results.push(...opSummaryBufferRef.current);
@@ -1184,6 +1201,43 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           metrics: event.metrics || {},
           duration: event.duration
         } as DisplayStreamEvent);
+
+        // CRITICAL: Aggressive memory cleanup after operation completes
+        // Keep only the most recent events to prevent 6GB heap exhaustion
+        setTimeout(() => {
+          // Keep only last 100 completed events (enough for final report + metrics)
+          const MAX_RETAINED_EVENTS = 100;
+          const allCompleted = completedBufRef.current.toArray();
+
+          if (allCompleted.length > MAX_RETAINED_EVENTS) {
+            const toKeep = allCompleted.slice(-MAX_RETAINED_EVENTS);
+            completedBufRef.current.clear();
+            for (const evt of toKeep) {
+              completedBufRef.current.push(evt);
+            }
+            setCompletedEvents(toKeep);
+          }
+
+          // Move final active events to completed
+          const activeSnapshot = activeBufRef.current.toArray();
+          for (const evt of activeSnapshot) {
+            completedBufRef.current.push(evt);
+          }
+
+          // Clear active buffer completely
+          activeBufRef.current.clear();
+          setActiveEvents([]);
+
+          // Force garbage collection to release memory immediately
+          if (global.gc) {
+            try {
+              global.gc();
+            } catch (e) {
+              // GC not available
+            }
+          }
+        }, 1000); // Wait 1s for final renders to complete
+
         break;
         
       case 'tool_output':
@@ -1480,8 +1534,13 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             }
           }
 
-          // Move non-thinking items to completed (excluding output fragments handled above)
-          const newCompletedEvents = regularEvents.filter(e => e.type !== 'thinking' && e.type !== 'output');
+          // Move non-thinking items to completed (excluding output fragments, separators, dividers handled above)
+          const newCompletedEvents = regularEvents.filter(e =>
+            e.type !== 'thinking' &&
+            e.type !== 'output' &&
+            e.type !== 'separator' &&
+            e.type !== 'divider'
+          );
           if (newCompletedEvents.length > 0) {
 completedBufRef.current.pushMany(newCompletedEvents);
             setCompletedEvents(completedBufRef.current.toArray());
@@ -1549,30 +1608,40 @@ completedBufRef.current.pushMany(newCompletedEvents);
   }
 
 
+  // Check if we have thinking-only events (spinner without other content)
+  const hasOnlyThinkingInActive = activeEvents.length > 0 &&
+    activeEvents.every(e => e.type === 'thinking' || e.type === 'thinking_end');
+
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <>
-        {completedEvents.length > 0 && (
-          <StaticStreamDisplay
-            events={completedEvents}
-            terminalWidth={terminalWidth}
-            availableHeight={availableHeight}
-          />
-        )}
-        {activeEvents.length > 0 && (
-          <StreamDisplay
-            events={activeEvents}
-            animationsEnabled={animationsEnabled}
-            terminalWidth={terminalWidth}
-            availableHeight={availableHeight}
-          />
-        )}
-      </>
+      {/* Completed events - rendered normally (Static component broke rendering) */}
+      {completedEvents.length > 0 && (
+        <StaticStreamDisplay
+          events={completedEvents}
+          terminalWidth={terminalWidth}
+          availableHeight={availableHeight}
+        />
+      )}
 
-      {/* Trailing spacer to prevent footer overlap with content */}
-      <Box marginTop={1}>
-        <Text> </Text>
-      </Box>
+      {/* Thinking-only spinner rendered IMMEDIATELY after completed content for visibility */}
+      {hasOnlyThinkingInActive && (
+        <StreamDisplay
+          events={activeEvents}
+          animationsEnabled={animationsEnabled}
+          terminalWidth={terminalWidth}
+          availableHeight={availableHeight}
+        />
+      )}
+
+      {/* Active events with content (reasoning, output, etc) */}
+      {activeEvents.length > 0 && !hasOnlyThinkingInActive && (
+        <StreamDisplay
+          events={activeEvents}
+          animationsEnabled={animationsEnabled}
+          terminalWidth={terminalWidth}
+          availableHeight={availableHeight}
+        />
+      )}
     </Box>
   );
 });

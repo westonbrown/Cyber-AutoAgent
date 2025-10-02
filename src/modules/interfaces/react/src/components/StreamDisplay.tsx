@@ -31,6 +31,7 @@ export type AdditionalStreamEvent =
   | { type: 'error'; content: string; [key: string]: any }
   | { type: 'metadata'; content: Record<string, string>; [key: string]: any }
   | { type: 'divider'; [key: string]: any }
+  | { type: 'separator'; content?: string; [key: string]: any }
   | { type: 'user_handoff'; message: string; breakout: boolean; [key: string]: any }
   | { type: 'metrics_update'; metrics: any; [key: string]: any }
   | { type: 'model_invocation_start'; modelId?: string; [key: string]: any }
@@ -312,13 +313,11 @@ export const EventLine: React.FC<{
       
     case 'thinking':
       return (
-        <Box marginTop={1}>
-          <ThinkingIndicator 
-            context={event.context}
-            startTime={event.startTime}
-            enabled={animationsEnabled}
-          />
-        </Box>
+        <ThinkingIndicator
+          context={event.context}
+          startTime={event.startTime}
+          enabled={animationsEnabled}
+        />
       );
       
     case 'thinking_end':
@@ -1327,7 +1326,10 @@ const method = latestInput.method || 'GET';
       
     case 'divider':
       return null;
-      
+
+    case 'separator':
+      return null;
+
     case 'user_handoff':
       return (
         <>

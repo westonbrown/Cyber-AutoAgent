@@ -118,54 +118,44 @@ const AppContent: React.FC<AppProps> = ({
       timeoutsRef.current = [];
     };
   }, []);
-  
-  // Screen clear handler - fixed to prevent race condition
+
+  // Ref to hold Terminal's cleanup function
+  const terminalCleanupRef = React.useRef<(() => void) | null>(null);
+
+  // Screen clear handler - fixed to prevent heap exhaustion
   const handleScreenClear = useCallback(() => {
-    // CRITICAL: Clear Terminal's event buffers BEFORE removing operation
+    // CRITICAL: Clear Terminal's event buffers BEFORE any state changes
     // This prevents heap exhaustion from retaining millions of event tokens
 
-    // Step 1: Clear operation history (small text log)
+    // Step 1: Call Terminal's cleanup directly (if available)
+    if (terminalCleanupRef.current) {
+      try {
+        terminalCleanupRef.current();
+      } catch (e) {
+        // Cleanup failed, continue anyway
+      }
+    }
+
+    // Step 2: Force garbage collection immediately
+    if (global.gc) {
+      try {
+        global.gc();
+      } catch (e) {
+        // GC not available, that's okay
+      }
+    }
+
+    // Step 3: Clear operation history and state
     operationManager.clearOperationHistory();
     actions.resetErrorCount();
+    actions.setActiveOperation(null);
+    actions.clearCompletedOperation();
 
-    // Step 2: Generate new session ID to trigger Terminal cleanup useEffect
-    // This clears completedEvents[], activeEvents[], and all ring buffers
-    if (appState.activeOperation) {
-      // Create a dummy operation with new ID to trigger Terminal's sessionId cleanup
-      const cleanupOperation = {
-        ...appState.activeOperation,
-        id: `cleanup_${Date.now()}`
-      };
-      actions.setActiveOperation(cleanupOperation);
-
-      // Step 3: Wait for Terminal cleanup to complete, then remove operation
-      registerTimeout(() => {
-        actions.setActiveOperation(null);
-        actions.clearCompletedOperation();
-
-        // Step 4: Force garbage collection to release memory
-        if (global.gc) {
-          try {
-            global.gc();
-          } catch (e) {
-            // GC not available, that's okay
-          }
-        }
-
-        // Step 5: Refresh UI
-        registerTimeout(() => {
-          modalManager.refreshStatic();
-        }, 0);
-      }, 100); // Allow time for Terminal cleanup
-    } else {
-      // No active operation, just clear state
-      actions.setActiveOperation(null);
-      actions.clearCompletedOperation();
-      registerTimeout(() => {
-        modalManager.refreshStatic();
-      }, 0);
-    }
-  }, [actions, operationManager, modalManager, appState.activeOperation]);
+    // Step 4: Refresh UI
+    registerTimeout(() => {
+      modalManager.refreshStatic();
+    }, 0);
+  }, [actions, operationManager, modalManager]);
 
   // Keyboard handlers
   // Disable terminal-level handlers during initialization flow so Setup Wizard owns ESC/back behavior
@@ -409,7 +399,8 @@ const AppContent: React.FC<AppProps> = ({
     onModalClose: handleModalClose,
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
     onSafetyConfirm: operationManager.startAssessmentExecution,
-    applicationConfig
+    applicationConfig,
+    terminalCleanupRef
   }), [
     appState,
     actions,
@@ -425,7 +416,8 @@ const AppContent: React.FC<AppProps> = ({
     handleModalClose,
     operationManager.addOperationHistoryEntry,
     operationManager.startAssessmentExecution,
-    applicationConfig
+    applicationConfig,
+    terminalCleanupRef
   ]);
   
   

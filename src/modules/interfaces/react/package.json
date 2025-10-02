@@ -33,7 +33,6 @@
     "glob": "^10.3.10",
     "ink": "^6.3.1",
     "ink-big-text": "^2.0.0",
-    "ink-divider": "^4.1.1",
     "ink-gradient": "^3.0.0",
     "ink-link": "^5.0.0",
     "ink-progress-bar": "^3.0.0",
