@@ -298,8 +298,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   }, [config]);
 
   const handleSave = useCallback(() => {
-    // Clear any existing message timeout
-    showMessage('Saving configuration...', 'info', 0);
+    // Don't show intermediate "Saving..." message to reduce re-renders
 
     (async () => {
       try {
@@ -307,13 +306,21 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
         const timestamp = new Date().toLocaleTimeString();
         setUnsavedChanges(false);
-        showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
+
+        // Delay notification to prevent rapid re-renders that cause WASM memory issues
+        // This is especially important in long-running sessions with multiple operations
+        // Increased to 300ms to match Terminal.tsx throttle intervals
+        setTimeout(() => {
+          showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
+        }, 300);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
+        setTimeout(() => {
+          showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
+        }, 300);
       }
     })();
-  }, [saveConfig, updateConfig, showMessage]);
+  }, [saveConfig, showMessage]);
   
   // Store handleSave in ref to avoid stale closures
   React.useEffect(() => {

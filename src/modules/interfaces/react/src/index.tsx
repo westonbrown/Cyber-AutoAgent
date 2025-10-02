@@ -351,16 +351,18 @@ function renderReactApp() {
 
   // Add maxFps to prevent Yoga WASM memory fragmentation
   // Limits renders to 10fps instead of default 30fps, reducing WASM allocations by ~67%
-  const app = render(<App
-    module={cli.flags.module}
-    target={cli.flags.target}
-    objective={cli.flags.objective}
-    autoRun={cli.flags.autoRun}
-    iterations={cli.flags.iterations}
-    provider={cli.flags.provider}
-    model={cli.flags.model}
-    region={cli.flags.region}
-  />, {
+  const app = render(
+    <App
+      module={cli.flags.module}
+      target={cli.flags.target}
+      objective={cli.flags.objective}
+      autoRun={cli.flags.autoRun}
+      iterations={cli.flags.iterations}
+      provider={cli.flags.provider}
+      model={cli.flags.model}
+      region={cli.flags.region}
+    />,
+    {
     ...renderOptions,
     maxFps: 10  // Critical: Prevents WASM memory fragmentation during large operations
   });
