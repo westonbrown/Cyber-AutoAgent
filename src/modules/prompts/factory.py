@@ -559,7 +559,7 @@ def get_system_prompt(
     parts.append(f"Target: {target}")
     parts.append(f"Objective: {objective}")
     parts.append(f"Operation: {operation_id}")
-    parts.append(f"Budget: {max_steps} steps (Note: 'steps' = thinking iterations, NOT tool calls. Multiple tools per step allowed. Budget % = current_step / max_steps)")
+    parts.append(f"Budget: {max_steps} steps (multiple tools per step allowed)")
     if provider:
         parts.append(f"Provider: {provider}")
         parts.append(f'model_provider: "{provider}"')
@@ -614,9 +614,10 @@ def get_system_prompt(
         _checkpoint_pct = int((_next_checkpoint / max_steps) * 100) if max_steps > 0 else 0
 
         parts.append("## REFLECTION SNAPSHOT")
-        parts.append(
-            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} ({_budget_pct}% budget, iterations NOT tool calls) | NextCheckpoint: step {_next_checkpoint} ({_checkpoint_pct}% budget, in {_steps_until} steps)"
-        )
+        parts.append(f"Current step: {current_step}")
+        parts.append(f"Budget: {_budget_pct}% ({current_step}/{max_steps})")
+        parts.append(f"Phase: {plan_current_phase if plan_current_phase is not None else '-'}")
+        parts.append(f"Checkpoint: {_next_checkpoint} in {_steps_until} steps")
 
         # CRITICAL: Make checkpoints MANDATORY not optional
         # Check if we're AT or PAST any checkpoint

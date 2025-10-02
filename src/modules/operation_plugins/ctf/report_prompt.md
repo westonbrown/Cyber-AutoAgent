@@ -20,8 +20,8 @@ State whether the flag was ACTUALLY captured or not. If not captured, state what
 **IF FLAG WAS CAPTURED** (flag artifact exists in memory/artifacts):
 ```
 Status: ✓ CAPTURED
-Flag: [actual flag from artifact]
-Artifact: [path to flag.txt]
+Flag: FLAG{...}  ← Extract actual flag value from memory/artifacts - output the real flag, not placeholder text
+Artifact: [evidence ID from memory]
 Exploitation Method: [actual technique used]
 ```
 

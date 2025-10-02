@@ -746,19 +746,28 @@ Length: ≤ {len(current_prompt)} chars (STRICT enforcement, zero tolerance)
         rewritten = str(result).strip()
         logger.debug("LLM rewrite returned %d chars", len(rewritten))
 
-        # STRICT ZERO GROWTH: Reject if output > input (no tolerance)
-        max_allowed_length = len(current_prompt)  # CHANGED: was * 1.5
-        if len(rewritten) > max_allowed_length:
+        # FLEXIBLE BOUNDS: Allow ±15% for execution prompt (one layer of multi-prompt system)
+        min_allowed = int(len(current_prompt) * 0.85)
+        max_allowed = int(len(current_prompt) * 1.15)
+
+        if len(rewritten) < min_allowed or len(rewritten) > max_allowed:
             logger.warning(
-                "Prompt optimizer violated zero-growth: %d → %d chars (+%d). Rejecting optimization.",
-                len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt)
+                "Prompt optimizer outside ±15%% bounds: %d → %d chars (%+d). Allowed: %d-%d. Rejecting.",
+                len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt),
+                min_allowed, max_allowed
             )
             _llm_rewrite_execution_prompt._failure_count += 1
             return current_prompt
 
+        # Check if actually changed
+        if rewritten == current_prompt:
+            logger.info("Prompt optimizer: No changes (no violations detected)")
+            return current_prompt
+
+        change_pct = ((len(rewritten) - len(current_prompt)) / len(current_prompt)) * 100
         logger.info(
-            "Prompt optimization completed: %d → %d chars (%+d)",
-            len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt)
+            "Prompt optimization: %d → %d chars (%+d, %+.1f%%)",
+            len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt), change_pct
         )
         _llm_rewrite_execution_prompt._failure_count = 0
         return rewritten

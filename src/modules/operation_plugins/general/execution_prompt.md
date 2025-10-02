@@ -73,7 +73,7 @@ Pattern: Observation → Behavioral test → Impact validation → THEN report. 
 
 Before stop(), MANDATORY:
 1. "Objective with artifacts?" → YES = valid stop
-2. "Budget: current_step/max_steps ≥ 0.95?" → NO = FORBIDDEN
+2. "Budget from REFLECTION SNAPSHOT ≥ 95%?" → NO = FORBIDDEN
 3. If stuck + <95%: mem0_memory get_plan, retrieve findings, list unexplored capability classes, try direct use of extracted data, swarm if >60% budget
 
 **stop() gate**: Objective met with artifacts | Budget ≥95%

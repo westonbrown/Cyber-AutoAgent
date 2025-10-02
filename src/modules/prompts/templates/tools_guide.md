@@ -36,10 +36,15 @@
 
 **swarm**
 - Purpose: Multi-agent collaboration for parallel capability testing
-- Configuration: 2-3 agents max, max_handoffs=4, max_iterations=12, node_timeout=1600, execution_timeout=1800
+- Configuration: 2-3 agents max, max_handoffs=4, max_iterations=12, node_timeout=2800, execution_timeout=3200
 - Task format: STATE:[current findings], GOAL:[objective], AVOID:[dead ends], FOCUS:[technique per agent]
 - Critical: Agent prompts MUST specify WHEN/WHO to handoff: "After 5-8 steps, IMMEDIATELY handoff_to_agent('agent_name', 'reason')"
 - Handoff requirement: Agents MUST explicitly call `handoff_to_agent('name', 'context')`. Without handoffs, swarm degenerates to sequential execution.
+- **Failure diagnosis**: Check swarm result iterations count
+  - 0 iterations = no handoffs occurred (agents didn't execute handoff_to_agent calls)
+  - Root cause: Agents given similar tasks with no trigger to transfer control
+  - Fix: Each agent MUST have fundamentally different approach class, not variations of same method
+  - Example: Agent-A tests input validation bypasses, Agent-B tests authentication flaws, Agent-C tests logic vulnerabilities
 - Deploy when:
   - (1) Multiple distinct capabilities need parallel testing (e.g., SQLi exhausted → test LFI+XSS+CommandInjection simultaneously)
   - (2) 60%+ budget with no capability achieved + reflection confirms need for hypothesis-diverse exploration
@@ -63,7 +68,7 @@
 - Managed endpoints: Common keys (Vercel, Supabase anon, Tenderly RPC, analytics) often normal - treat as observations unless abuse/sensitive exposure demonstrated with artifacts
 
 **stop**
-- Valid: Objective achieved with artifacts OR budget ≥95%
+- Valid: Objective achieved with artifacts OR budget ≥95% (from REFLECTION SNAPSHOT)
 - FORBIDDEN: Intermediate success (creds/hash/vuln WITHOUT objective), approach blocked, constraints, budget <95% without trying different capability + swarm
 
 </tool_protocols>
