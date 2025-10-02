@@ -718,20 +718,16 @@ class ConfigManager:
 
         # Try to find the execution prompt file using the loader's plugins directory
         master_path = None
-        for fname in ("execution_prompt.txt", "execution_prompt.md"):
-            candidate = module_loader.plugins_dir / module / fname
-            if candidate.exists() and candidate.is_file():
-                master_path = candidate
-                break
+        candidate = module_loader.plugins_dir / module / "execution_prompt.md"
+        if candidate.exists() and candidate.is_file():
+            master_path = candidate
 
         # If module-specific prompt not found and not already trying general, fall back
         if master_path is None and module != "general":
             logger.warning("Module %s execution prompt not found, falling back to general", module)
-            for fname in ("execution_prompt.txt", "execution_prompt.md"):
-                candidate = module_loader.plugins_dir / "general" / fname
-                if candidate.exists() and candidate.is_file():
-                    master_path = candidate
-                    break
+            candidate = module_loader.plugins_dir / "general" / "execution_prompt.md"
+            if candidate.exists() and candidate.is_file():
+                master_path = candidate
 
         if master_path is None or not master_path.exists():
             logger.error("No execution prompt found for module %s", module)

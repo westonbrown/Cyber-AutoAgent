@@ -789,11 +789,9 @@ class ModulePromptLoader:
         # 2) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
         local_candidate: Optional[Path] = None
         try:
-            for fname in ("execution_prompt.md", "execution_prompt.txt"):
-                p = (self.plugins_dir / module_name / fname)
-                if p.exists() and p.is_file():
-                    local_candidate = p
-                    break
+            p = self.plugins_dir / module_name / "execution_prompt.md"
+            if p.exists() and p.is_file():
+                local_candidate = p
         except Exception:
             # best-effort
             local_candidate = None
@@ -860,17 +858,12 @@ class ModulePromptLoader:
             except Exception:
                 pass
 
-        # 1) Local candidates
+        # 1) Local candidate
         local_candidate: Optional[Path] = None
         try:
-            candidates = [
-                self.plugins_dir / module_name / "report_prompt.txt",
-                self.plugins_dir / module_name / "report_prompt.md",
-            ]
-            for path in candidates:
-                if path.exists() and path.is_file():
-                    local_candidate = path
-                    break
+            path = self.plugins_dir / module_name / "report_prompt.md"
+            if path.exists() and path.is_file():
+                local_candidate = path
         except Exception as e:
             logger.debug("Failed to enumerate module report prompt for '%s': %s", module_name, e)
             local_candidate = None
