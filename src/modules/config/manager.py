@@ -315,8 +315,8 @@ class ConfigManager:
         # Claude Sonnet 4.5 supports extended thinking with higher token limits
         # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
-            default_max_tokens = 64000
-            default_thinking_budget = 60000
+            default_max_tokens = 32000
+            default_thinking_budget = 25000
         else:
             default_max_tokens = 32000
             default_thinking_budget = 10000
