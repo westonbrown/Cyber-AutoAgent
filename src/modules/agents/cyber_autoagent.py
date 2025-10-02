@@ -226,8 +226,11 @@ def _create_litellm_model(
     params = {
         "temperature": config["temperature"],
         "max_tokens": config["max_tokens"],
-        "top_p": config.get("top_p", 0.95),
     }
+
+    # Only include top_p if present in config (avoid provider conflicts)
+    if "top_p" in config:
+        params["top_p"] = config["top_p"]
 
     # Add reasoning parameters if set (O1/GPT-5 support)
     if os.getenv("REASONING_EFFORT"):

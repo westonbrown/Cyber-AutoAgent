@@ -75,10 +75,10 @@ class TestLLMConfig:
         config = LLMConfig(provider=ModelProvider.OLLAMA, model_id="llama3.2:3b")
         assert config.temperature == 0.95
         assert config.max_tokens == 4096
-        assert config.top_p == 0.95
+        assert config.top_p is None  # Default is None (optional parameter)
         assert config.parameters["temperature"] == 0.95
         assert config.parameters["max_tokens"] == 4096
-        assert config.parameters["top_p"] == 0.95
+        assert "top_p" not in config.parameters  # Only included when explicitly set
 
     def test_custom_parameters(self):
         """Test LLM config with custom parameters."""

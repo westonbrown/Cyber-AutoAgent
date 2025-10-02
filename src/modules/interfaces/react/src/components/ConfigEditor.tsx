@@ -69,6 +69,8 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'azureApiBase', label: 'Azure API Base', type: 'text', section: 'Models' },
   { key: 'azureApiVersion', label: 'Azure API Version', type: 'text', section: 'Models' },
   { key: 'maxTokens', label: 'Max Output Tokens', type: 'number', section: 'Models' },
+  { key: 'topP', label: 'Top P', type: 'number', section: 'Models',
+    description: 'Nucleus sampling (0.0-1.0). Leave empty for default. Note: Anthropic via LiteLLM requires either temperature OR top_p, not both.' },
   { key: 'thinkingBudget', label: 'Thinking Budget Tokens', type: 'number', section: 'Models' },
   { key: 'reasoningEffort', label: 'Reasoning Effort (O1/GPT-5)', type: 'select', section: 'Models',
     options: [
@@ -214,7 +216,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   // Auto-adjust observability and evaluation based on deployment mode
   useEffect(() => {
     const deploymentMode = config.deploymentMode;
-
+    
     // For local-cli and single-container, default to disabled
     if (deploymentMode === 'local-cli' || deploymentMode === 'single-container') {
       // Only update if not explicitly set by user (check if still at default true values)
@@ -228,8 +230,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
     }
     // For full-stack, these can remain enabled (user can still toggle)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.deploymentMode, config.observability, config.autoEvaluation, config.langfuseHostOverride]);
+  }, [config.deploymentMode, updateConfig, showMessage]);
   
   // Get fields for the current section
   const getCurrentSectionFields = useCallback(() => {
@@ -253,7 +254,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           return ['ollamaHost', 'maxTokens'].includes(f.key);
         } else if (config.modelProvider === 'litellm') {
           return ['openaiApiKey', 'anthropicApiKey', 'azureApiKey', 'azureApiBase', 'azureApiVersion',
-                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion', 'maxTokens', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
+                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion', 'maxTokens', 'topP', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
         }
         
         return false;
@@ -305,9 +306,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         await saveConfig();
 
         const timestamp = new Date().toLocaleTimeString();
-        showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
-        updateConfig({ isConfigured: true });
         setUnsavedChanges(false);
+        showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
@@ -335,10 +335,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     // Navigation mode
     if (key.escape) {
       if (navigationMode === 'fields') {
-        // Go back to section navigation and collapse current section
-        const newSections = [...sections];
-        newSections[selectedSectionIndex].expanded = false;
-        setSections(newSections);
+        // Go back to section navigation but KEEP section expanded
         setNavigationMode('sections');
         setSelectedFieldIndex(0);
       } else {
@@ -839,6 +836,17 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           onSelect={(item) => {
             updateConfigValue(field.key, item.value);
             setEditingField(null);
+
+            // Ensure section stays expanded and move to next field
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after selection
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -858,6 +866,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
             // Brief success message
             showMessage(`Token saved (${cleanedValue.length} chars)`, 'success', 2000);
+
+            // Ensure we stay in fields navigation mode and section stays expanded
+            setNavigationMode('fields');
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after saving
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -874,6 +894,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             updateConfigValue(field.key, cleanedValue);
             setEditingField(null);
             setTempValue('');
+
+            // Ensure we stay in fields navigation mode and section stays expanded
+            setNavigationMode('fields');
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after saving
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -906,6 +938,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           }
           setEditingField(null);
           setTempValue('');
+
+          // Ensure we stay in fields navigation mode and section stays expanded
+          setNavigationMode('fields');
+          const newSections = [...sections];
+          newSections[selectedSectionIndex].expanded = true;
+          setSections(newSections);
+
+          // Move to next field after saving
+          const fields = getCurrentSectionFields();
+          if (selectedFieldIndex < fields.length - 1) {
+            setSelectedFieldIndex(prev => prev + 1);
+          }
         }}
         mask={undefined}
       />
@@ -962,7 +1006,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
   // Main render logic
   return (
-    <Box flexDirection="column" height={45}>
+    <Box flexDirection="column">
       <Box
         flexDirection="column"
         borderStyle="single"
@@ -970,7 +1014,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         padding={1}
         marginTop={1}
         width="100%"
-        height={43}
       >
         {/* Notification appears INSIDE the main border at the very top */}
         {message && (
@@ -1000,7 +1043,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             </Text>
           </Box>
         )}
-
+        
         {renderHeader()}
       
       {/* Status bar */}
@@ -1026,7 +1069,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       </Box>
       
       {/* Main configuration sections */}
-      <Box flexDirection="column" flexGrow={1} height={25}>
+      <Box flexDirection="column" flexGrow={1}>
         {renderSections()}
       </Box>
       

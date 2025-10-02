@@ -60,18 +60,19 @@ class LLMConfig(ModelConfig):
 
     temperature: float = 0.95
     max_tokens: int = 4096
-    top_p: float = 0.95
+    top_p: Optional[float] = None
 
     def __post_init__(self):
         super().__post_init__()
         # Add LLM-specific parameters to the parameters dict
-        self.parameters.update(
-            {
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-            }
-        )
+        params = {
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        # Only include top_p if explicitly set (some providers like Anthropic reject both temperature and top_p)
+        if self.top_p is not None:
+            params["top_p"] = self.top_p
+        self.parameters.update(params)
 
 
 @dataclass
@@ -346,8 +347,11 @@ class ConfigManager:
             "region_name": region_name,
             "temperature": llm_config.temperature,
             "max_tokens": llm_config.max_tokens,
-            "top_p": llm_config.top_p,
         }
+
+        # Only include top_p if set (avoid conflicts with providers like Anthropic)
+        if llm_config.top_p is not None:
+            config["top_p"] = llm_config.top_p
 
         # Add 1M context support for Claude Sonnet 4 and 4.5
         if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
@@ -412,7 +416,7 @@ class ConfigManager:
                     model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     temperature=0.95,
                     max_tokens=32000,
-                    top_p=0.95,
+                    top_p=0.95,  # Bedrock supports both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.AWS_BEDROCK,
@@ -447,7 +451,7 @@ class ConfigManager:
                     model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
                     max_tokens=32000,
-                    top_p=0.95,
+                    # top_p omitted - LiteLLM forwards to various providers; Anthropic rejects both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.LITELLM,
