@@ -37,11 +37,18 @@ Phases:
 </evidence_framework>
 
 <termination_policy>
-- Success flags MUST be computed from outcomes: do not hardcode values like exploitation_successful=true in generated artifacts; derive from concrete checks (e.g., 201 DB write with row present; restricted endpoint access confirmed; measurable cost incurred) and include a negative/control; never emit success via echo; default false on exceptions/inconclusive.
-- Never hardcode exploitation_successful—derive from measurable checks and include a negative/control.
-- Operation completes when objectives are met with verifiable evidence, not assumptions.
-- Default to false on exceptions or inconclusive results.
-- Assessment completion requires concrete validation, not theoretical exploitation.
+**stop() forbidden until**: Objective met with verified artifacts OR budget ≥95% (current_step/max_steps ≥ 0.95)
+
+**Before stop(), validate**:
+- Objective achieved? → Concrete evidence required (not theoretical)
+- Budget check: current_step/max_steps = ? → If <0.95: FORBIDDEN
+- Success flags computed from runtime (NOT hardcoded true/false)
+- Artifacts exist: 201 writes verified, restricted access confirmed, measurable impact demonstrated
+- Control cases included for HIGH/CRITICAL findings
+
+**Forbidden stop reasons**: "stuck" | "no more ideas" | "techniques exhausted" | budget <95%
+
+Success derivation: Concrete checks (e.g., DB row present, endpoint accessible, cost incurred) + negative control. Default false on exceptions/inconclusive.
 </termination_policy>
 
 <domain_micro_rules>
