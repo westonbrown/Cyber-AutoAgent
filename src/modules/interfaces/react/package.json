@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.tsx",
+    "start": "node --expose-gc --max-old-space-size=6144 dist/index.js",
+    "dev": "node --expose-gc --max-old-space-size=6144 --loader tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config tests/jest.config.cjs",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --config tests/jest.config.cjs --watch",

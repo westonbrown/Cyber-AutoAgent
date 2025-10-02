@@ -41,7 +41,15 @@ export class ErrorBoundary extends Component<Props, State> {
 
     // Log error for debugging
     loggingService.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+
+    // Detect WASM memory errors (common after large operations)
+    const isWasmMemoryError = error.message?.includes('memory access out of bounds') ||
+                               error.message?.includes('getComputedWidth');
+
+    if (isWasmMemoryError) {
+      loggingService.warn('WASM memory exhaustion detected - application restart recommended');
+    }
+
     // Call optional error handler
     if (this.props.onError) {
       this.props.onError(error, errorInfo);
@@ -65,23 +73,29 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
+      // Detect WASM memory errors
+      const isWasmMemoryError = this.state.error?.message?.includes('memory access out of bounds') ||
+                                 this.state.error?.message?.includes('getComputedWidth');
+
       return (
         <Box flexDirection="column" width="100%">
           {/* Always show header for visual continuity */}
-          <Header 
-            version="0.1.3" 
-            terminalWidth={80} 
-            nightly={false} 
+          <Header
+            version="0.1.3"
+            terminalWidth={80}
+            nightly={false}
           />
-          
+
           <Box flexDirection="column" padding={2}>
             <Box borderStyle="double" borderColor="red" padding={1} marginBottom={1}>
               <Box flexDirection="column">
                 <Text color="red" bold>
-                  ⚠️ Application Error
+                  {isWasmMemoryError ? '⚠️ Memory Exhaustion Error' : '⚠️ Application Error'}
                 </Text>
                 <Text color={theme.muted}>
-                  Cyber-AutoAgent encountered an unexpected error
+                  {isWasmMemoryError
+                    ? 'Yoga layout engine WASM memory exhausted after large operation'
+                    : 'Cyber-AutoAgent encountered an unexpected error'}
                 </Text>
               </Box>
             </Box>
@@ -108,17 +122,30 @@ export class ErrorBoundary extends Component<Props, State> {
 
           <Box flexDirection="column">
             <Text color={theme.info}>
-              Recovery Options:
+              {isWasmMemoryError ? 'Required Action:' : 'Recovery Options:'}
             </Text>
-            <Text color={theme.success}>
-              • Press R to retry the operation
-            </Text>
-            <Text color={theme.success}>
-              • Press Ctrl+R to restart the application
-            </Text>
-            <Text color={theme.success}>
-              • Press Ctrl+C to exit
-            </Text>
+            {isWasmMemoryError ? (
+              <>
+                <Text color={theme.warning} bold>
+                  • RESTART REQUIRED: Press Ctrl+C to exit, then restart the CLI
+                </Text>
+                <Text color={theme.muted}>
+                  (WASM memory cannot be freed without process restart)
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text color={theme.success}>
+                  • Press R to retry the operation
+                </Text>
+                <Text color={theme.success}>
+                  • Press Ctrl+R to restart the application
+                </Text>
+                <Text color={theme.success}>
+                  • Press Ctrl+C to exit
+                </Text>
+              </>
+            )}
           </Box>
 
           <Box marginTop={2}>
