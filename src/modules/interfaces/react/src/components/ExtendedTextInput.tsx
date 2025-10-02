@@ -4,10 +4,14 @@
  * Enhanced text input component for Ink framework with extended capabilities
  * beyond standard ink-text-input limitations. Provides full-length text support,
  * cursor management, and clipboard handling for terminal interfaces.
+ *
+ * Uses reducer-based state management inspired by gemini-cli for atomic operations
+ * and reliable paste handling.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { Text, useInput } from 'ink';
+import { useTextBuffer } from '../hooks/useTextBuffer.js';
 
 interface ExtendedTextInputProps {
   value: string;
@@ -35,32 +39,18 @@ export const ExtendedTextInput: React.FC<ExtendedTextInputProps> = ({
   cursorChar = '█',
   disabled = false
 }) => {
-  const [cursorPosition, setCursorPosition] = useState(value.length);
-  // Keep a local reference to the latest value so we can accumulate fast input chunks (e.g., paste)
-  const localValueRef = useRef<string>(value);
+  // Use reducer-based text buffer for atomic operations
+  const buffer = useTextBuffer({
+    initialValue: value,
+    onChange
+  });
 
-  // Keep cursor at end and sync local ref when value changes from parent
+  // Sync buffer with external value changes
   useEffect(() => {
-    localValueRef.current = value;
-    setCursorPosition(value.length);
-  }, [value]);
-
-  // Bracketed paste handling and simple coalescing
-  const isPastingRef = useRef(false);
-  const pasteBufferRef = useRef('');
-  const pasteFlushTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const flushPaste = (immediate = false) => {
-    const buf = pasteBufferRef.current;
-    if (!buf) return;
-    const append = (localValueRef.current || '') + buf;
-    localValueRef.current = append;
-    pasteBufferRef.current = '';
-    onChange(append);
-    if (immediate && pasteFlushTimerRef.current) {
-      clearTimeout(pasteFlushTimerRef.current);
-      pasteFlushTimerRef.current = null;
+    if (buffer.text !== value) {
+      buffer.setText(value, Math.min(buffer.cursorPosition, value.length));
     }
-  };
+  }, [value]);
 
   useInput((input, key) => {
     try {
@@ -69,67 +59,58 @@ export const ExtendedTextInput: React.FC<ExtendedTextInputProps> = ({
       // Handle form submission first
       if (key.return) {
         if (onSubmit) {
-          onSubmit(localValueRef.current);
+          onSubmit(buffer.text);
         }
         return;
       }
 
-      // Text deletion
-      if (key.backspace || key.delete) {
-        if (localValueRef.current.length > 0) {
-          const next = localValueRef.current.slice(0, -1);
-          localValueRef.current = next;
-          onChange(next);
-        }
+      // Cursor movement - left arrow
+      if (key.leftArrow) {
+        buffer.moveLeft();
+        return;
+      }
+
+      // Cursor movement - right arrow
+      if (key.rightArrow) {
+        buffer.moveRight();
+        return;
+      }
+
+      // Home - move to beginning
+      if (key.ctrl && input === 'a') {
+        buffer.moveToStart();
+        return;
+      }
+
+      // End - move to end
+      if (key.ctrl && input === 'e') {
+        buffer.moveToEnd();
+        return;
+      }
+
+      // Backspace - delete before cursor
+      if (key.backspace) {
+        buffer.deleteBeforeCursor();
+        return;
+      }
+
+      // Delete key - delete at cursor
+      if (key.delete) {
+        buffer.deleteAfterCursor();
         return;
       }
 
       // Clear line
       if (key.ctrl && input === 'u') {
-        localValueRef.current = '';
-        onChange('');
+        buffer.clear();
         return;
       }
 
-      // Bracketed paste start/end sequences
-      if (input === '\u001b[200~') { // start
-        isPastingRef.current = true;
-        pasteBufferRef.current = '';
-        return;
-      }
-      if (input === '\u001b[201~') { // end
-        isPastingRef.current = false;
-        flushPaste(true);
-        return;
-      }
-
-      // During bracketed paste: accumulate without re-rendering every chunk
-      if (isPastingRef.current && input && !key.ctrl && !key.meta) {
-        pasteBufferRef.current += input;
-        // Optional safety: flush occasionally in very long pastes
-        if (!pasteFlushTimerRef.current) {
-          pasteFlushTimerRef.current = setTimeout(() => {
-            flushPaste();
-            pasteFlushTimerRef.current = null;
-          }, 30);
-        }
-        return;
-      }
-
-      // Standard text input (including non-bracketed large chunks)
+      // Character insertion at cursor position
+      // This handles both normal typing AND paste
+      // The reducer ensures atomic updates without race conditions
       if (input && !key.ctrl && !key.meta) {
-        // If this looks like a large paste chunk, coalesce briefly
-        if (input.length > 10) {
-          pasteBufferRef.current += input;
-          if (pasteFlushTimerRef.current) clearTimeout(pasteFlushTimerRef.current);
-          pasteFlushTimerRef.current = setTimeout(() => {
-            flushPaste(true);
-          }, 30);
-          return;
-        }
-        const next = (localValueRef.current || '') + input;
-        localValueRef.current = next;
-        onChange(next);
+        buffer.insert(input);
         return;
       }
     } catch (error) {
@@ -137,17 +118,32 @@ export const ExtendedTextInput: React.FC<ExtendedTextInputProps> = ({
     }
   }, { isActive: focus && !disabled });
 
-  // Simple render - ExtendedTextInput only handles single line (the tail)
+  // Render with cursor at correct position
   try {
-    if (!value && placeholder) {
+    if (!buffer.text && placeholder) {
       return <Text color="gray">{placeholder}</Text>;
     }
 
     // Ensure value is a safe string for rendering
-    const safeValue = String(value || '');
+    const safeValue = String(buffer.text || '');
 
-    // Just render the single line value with cursor
-    return <Text>{safeValue}{showCursor && focus && !disabled ? cursorChar : ''}</Text>;
+    if (!showCursor || !focus || disabled) {
+      return <Text>{safeValue}</Text>;
+    }
+
+    // Split text at cursor position and insert cursor character
+    const beforeCursor = safeValue.slice(0, buffer.cursorPosition);
+    const atCursor = safeValue.slice(buffer.cursorPosition, buffer.cursorPosition + 1) || ' ';
+    const afterCursor = safeValue.slice(buffer.cursorPosition + 1);
+
+    // Render with cursor at position
+    if (buffer.cursorPosition >= safeValue.length) {
+      // Cursor at end
+      return <Text>{safeValue}{cursorChar}</Text>;
+    } else {
+      // Cursor in middle - show inverse character
+      return <Text>{beforeCursor}<Text inverse>{atCursor}</Text>{afterCursor}</Text>;
+    }
   } catch (error) {
     // Fallback render without logging
     return <Text>{'_'}</Text>;

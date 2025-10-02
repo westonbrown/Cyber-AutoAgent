@@ -5,7 +5,7 @@
  */
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { ExtendedTextInput } from './ExtendedTextInput.js';
+import { MultiLineTextInput } from './MultiLineTextInput.js';
 import { ErrorBoundary } from './ErrorBoundary.js';
 import { themeManager } from '../themes/theme-manager.js';
 import { useModule } from '../contexts/ModuleContext.js';
@@ -361,27 +361,9 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
     }
   };
 
-  const handleChange = React.useCallback((newLineValue: string) => {
-    // Simple synchronous update; paste is treated as normal text
-    setValue(prev => {
-      // Multi-line paste handling
-      if (newLineValue.includes('\n')) {
-        return newLineValue;
-      }
-
-      // Single-line handling
-      if (!prev || prev === '') {
-        return newLineValue;
-      }
-
-      const parts = prev.split('\n');
-      if (parts.length > 0) {
-        parts[parts.length - 1] = newLineValue;
-        return parts.join('\n');
-      }
-
-      return newLineValue;
-    });
+  // Simplified handleChange - MultiLineTextInput manages the split internally
+  const handleChange = React.useCallback((newValue: string) => {
+    setValue(newValue);
   }, []);
 
   return (
@@ -397,41 +379,18 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         <Text color={disabled ? theme.muted : theme.accent}>
           {getPromptIndicator()} 
         </Text>
-        <Box marginLeft={1} flexGrow={1} flexDirection="column">
-          {(() => {
-            try {
-              const safeValue = String(value || '');
-              const parts = safeValue.split('\n');
-              const head = parts.slice(0, -1);
-              const tail = parts[parts.length - 1] || '';
-
-              return (
-                <>
-                  {head.map((line, idx) => {
-                    // Ensure line is a safe string
-                    const safeLine = String(line || ' ');
-                    return (
-                      <Text key={`ml-${idx}`} color={theme.foreground}>{safeLine}</Text>
-                    );
-                  })}
-                  <ErrorBoundary>
-                    <ExtendedTextInput
-                      value={tail}
-                      onChange={handleChange}
-                      onSubmit={handleSubmit}
-                      placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
-                      showCursor={!disabled || userHandoffActive}
-                      focus={!disabled || userHandoffActive}
-                      disabled={disabled && !userHandoffActive}
-                    />
-                  </ErrorBoundary>
-                </>
-              );
-            } catch (error) {
-              // Fallback render without logging
-              return <Text color={theme.foreground}>_</Text>;
-            }
-          })()}
+        <Box marginLeft={1} flexGrow={1}>
+          <ErrorBoundary>
+            <MultiLineTextInput
+              value={value}
+              onChange={handleChange}
+              onSubmit={handleSubmit}
+              placeholder={disabled && !userHandoffActive ? 'Operation running...' : getPlaceholder()}
+              showCursor={!disabled || userHandoffActive}
+              focus={!disabled || userHandoffActive}
+              textColor={theme.foreground}
+            />
+          </ErrorBoundary>
         </Box>
       </Box>
 

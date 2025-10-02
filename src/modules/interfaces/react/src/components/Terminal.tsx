@@ -140,7 +140,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const pendingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingMetricsRef = useRef<{ tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number } | null>(null);
   const EMIT_INTERVAL_MS = 300;
-  const METRICS_COALESCE_MS = 150;
+  const METRICS_COALESCE_MS = 500;  // Increased from 150ms to reduce WASM memory fragmentation
   const lastMetricsTsRef = useRef<number>(0);
   
   // State for event processing - replacing EventAggregator with React patterns
@@ -229,9 +229,10 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingActiveUpdaterRef = useRef<((prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) | null>(null);
-  // Increased from 80ms to 200ms to reduce Yoga WASM memory fragmentation
-  // This batches more events together, reducing total render count by ~60%
-  const ACTIVE_EMIT_INTERVAL_MS = 200;
+  // Increased from 80ms → 200ms → 400ms to reduce Yoga WASM memory fragmentation
+  // This batches more events together, reducing total render count significantly
+  // Higher value = fewer re-renders = less WASM memory fragmentation
+  const ACTIVE_EMIT_INTERVAL_MS = 400;
 
   const setActiveThrottled = (
     updater: React.SetStateAction<DisplayStreamEvent[]>
