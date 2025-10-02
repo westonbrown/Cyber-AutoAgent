@@ -115,24 +115,28 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   const displayMessage = message || getContextMessage(context, phraseIndex);
 
   return (
-    <Box>
-      {enabled ? (
-        <Text color={theme.primary}>
-          <Spinner type="dots" />
+    <Box flexDirection="column">
+      {/* Add visual breathing room before spinner */}
+      <Text>{'\n'}</Text>
+      <Box>
+        {enabled ? (
+          <Text color={theme.primary}>
+            <Spinner type="dots" />
+          </Text>
+        ) : (
+          <Text color={theme.muted}>[BUSY]</Text>
+        )}
+        <Text color={theme.muted}> </Text>
+        <Text color={theme.foreground}>
+          {displayMessage}
         </Text>
-      ) : (
-        <Text color={theme.muted}>[BUSY]</Text>
-      )}
-      <Text color={theme.muted}> </Text>
-      <Text color={theme.foreground}>
-        {displayMessage}
-      </Text>
-      {startTime && (
-        <>
-          <Text color={theme.muted}> </Text>
-          <Text color={theme.muted}>[{formatElapsed(enabled ? elapsedSeconds : Math.floor(((startTime && Date.now()) ? (Date.now() - startTime) : 0) / 1000))}]</Text>
-        </>
-      )}
+        {startTime && (
+          <>
+            <Text color={theme.muted}> </Text>
+            <Text color={theme.muted}>[{formatElapsed(enabled ? elapsedSeconds : Math.floor(((startTime && Date.now()) ? (Date.now() - startTime) : 0) / 1000))}]</Text>
+          </>
+        )}
+      </Box>
     </Box>
   );
 };

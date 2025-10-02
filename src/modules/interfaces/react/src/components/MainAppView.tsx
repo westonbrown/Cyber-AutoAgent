@@ -41,6 +41,7 @@ interface MainAppViewProps {
   hideHeader?: boolean;
   customContent?: React.ReactNode;
   applicationConfig?: any; // Application configuration
+  terminalCleanupRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 export const MainAppView: React.FC<MainAppViewProps> = ({
@@ -62,6 +63,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
   hideHistory = false,
   hideHeader = false,
   customContent,
+  terminalCleanupRef,
   applicationConfig
 }) => {
   // Filter operation history for display
@@ -237,6 +239,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               onEvent={(e:any) => { handleStreamEvent(e); handleLifecycleEvent(e); }}
               onMetricsUpdate={(metrics) => actions.updateMetrics?.(metrics)}
               animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
+              cleanupRef={terminalCleanupRef}
             />
           )
         )}
