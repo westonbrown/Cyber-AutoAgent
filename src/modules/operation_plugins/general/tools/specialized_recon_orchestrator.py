@@ -149,39 +149,42 @@ def specialized_recon_orchestrator(target: str, recon_type: str = "comprehensive
 
 
 def _setup_specialized_tools() -> Dict[str, Any]:
-    """Install specialized reconnaissance tools"""
+    """Install specialized reconnaissance tools using modern Go module paths"""
     tools_status = {"success": True, "tools": [], "failed": []}
 
-    # Essential Go-based tools from awesome-bugbounty-tools
+    # Modern ProjectDiscovery + community tools with @latest for latest versions
     go_tools = [
-        ("subfinder", "github.com/projectdiscovery/subfinder/v2/cmd/subfinder"),
-        ("assetfinder", "github.com/tomnomnom/assetfinder"),
-        ("httpx", "github.com/projectdiscovery/httpx/cmd/httpx"),
-        ("katana", "github.com/projectdiscovery/katana/cmd/katana"),
-        ("waybackurls", "github.com/tomnomnom/waybackurls"),
-        ("gau", "github.com/lc/gau/v2/cmd/gau"),
+        ("subfinder", "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"),
+        ("httpx", "github.com/projectdiscovery/httpx/cmd/httpx@latest"),
+        ("katana", "github.com/projectdiscovery/katana/cmd/katana@latest"),
+        ("nuclei", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"),
+        ("assetfinder", "github.com/tomnomnom/assetfinder@latest"),
+        ("waybackurls", "github.com/tomnomnom/waybackurls@latest"),
+        ("gau", "github.com/lc/gau/v2/cmd/gau@latest"),
     ]
 
     for tool_name, install_path in go_tools:
         try:
             # Check if tool already exists
             check_cmd = ["which", tool_name]
-            if subprocess.run(check_cmd, capture_output=True, text=True).returncode == 0:
+            if subprocess.run(check_cmd, capture_output=True, text=True, timeout=5).returncode == 0:
                 tools_status["tools"].append(tool_name)
                 continue
 
-            # Try to install with go get (for older Go versions)
-            install_cmd = ["go", "get", install_path]
+            # Use modern 'go install' for modules (not deprecated 'go get')
+            install_cmd = ["go", "install", install_path]
             result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=120)
 
             if result.returncode == 0:
                 tools_status["tools"].append(tool_name)
             else:
+                # Installation failed but continue with available tools
                 tools_status["failed"].append(tool_name)
-                tools_status["success"] = False
-        except Exception:
+        except (subprocess.TimeoutExpired, Exception):
             tools_status["failed"].append(tool_name)
-            tools_status["success"] = False
+
+    # Mark success as true even if some tools failed (graceful degradation)
+    tools_status["success"] = len(tools_status["tools"]) > 0
 
     return tools_status
 
@@ -444,18 +447,22 @@ def _analyze_attack_surface(results: Dict[str, Any]) -> Dict[str, Any]:
                 intelligence["high_value_targets"].append(f"Endpoint: {endpoint} (contains '{keyword}')")
                 break
 
-    # Analyze technology risks
+    # Analyze technology risks with exploitation context
     risky_technologies = {
-        "wordpress": "CMS with known vulnerabilities",
-        "drupal": "CMS requiring security updates",
-        "joomla": "CMS with common misconfigurations",
-        "apache": "Web server requiring security hardening",
-        "nginx": "Web server configuration review needed",
-        "php": "Interpreted language with injection risks",
-        "mysql": "Database server exposure risk",
-        "jenkins": "CI/CD server often misconfigured",
-        "grafana": "Monitoring tool with auth bypasses",
-        "kibana": "Analytics platform with exposure risks",
+        "wordpress": "CMS - check /wp-admin, /wp-login.php, xmlrpc.php, plugin vulns",
+        "drupal": "CMS - Drupalgeddon vectors, admin/config exposure",
+        "joomla": "CMS - /administrator access, component vulns",
+        "apache": "Web server - .htaccess bypass, mod_cgi exploits",
+        "nginx": "Web server - alias traversal, off-by-slash",
+        "php": "Interpreted - LFI/RFI, deserialization, type juggling",
+        "mysql": "Database - check port 3306 exposure, SQLi",
+        "jenkins": "CI/CD - script console at /script, unauthenticated builds",
+        "grafana": "Monitoring - CVE-2021-43798 path traversal, default creds admin:admin",
+        "kibana": "Analytics - timelion RCE, prototype pollution",
+        "tomcat": "App server - /manager/html default creds, WAR upload",
+        "spring": "Framework - Spring4Shell, actuator endpoints",
+        "flask": "Framework - debug mode, SSTI in templates",
+        "django": "Framework - debug mode info disclosure, admin panel",
     }
 
     for tech in results.get("technologies", []):
