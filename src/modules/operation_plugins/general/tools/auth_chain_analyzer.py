@@ -131,45 +131,75 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
     """Discover authentication-related endpoints"""
     auth_endpoints = []
 
-    # Authentication-focused wordlist
+    # Modern authentication endpoint wordlist (includes GraphQL, API gateways)
     auth_paths = [
+        # Traditional auth
         "/login",
         "/signin",
         "/auth",
         "/authenticate",
         "/sso",
+        # OAuth/OIDC
         "/oauth",
         "/oauth2",
-        "/saml",
+        "/oauth/authorize",
+        "/oauth/token",
+        "/.well-known/openid-configuration",
+        "/.well-known/jwks.json",
         "/oidc",
-        "/jwt",
+        "/callback",
+        # SAML
+        "/saml",
+        "/saml/metadata",
+        "/saml2",
+        "/metadata",
+        # API authentication
         "/api/auth",
         "/api/login",
         "/api/oauth",
         "/api/token",
+        "/api/v1/auth",
+        "/api/v2/auth",
+        "/v1/auth",
+        "/v2/auth",
+        # GraphQL
+        "/graphql",
+        "/api/graphql",
+        "/v1/graphql",
+        "/query",
+        # JWT specific
+        "/jwt",
+        "/token",
+        "/refresh",
+        "/api/refresh",
+        # Admin/privileged
         "/admin",
         "/admin/login",
         "/administrator",
         "/portal",
         "/dashboard",
+        "/console",
+        # User management
         "/profile",
         "/account",
         "/user",
+        "/users",
+        "/register",
+        "/signup",
+        # Password/recovery
         "/reset",
         "/forgot",
         "/password",
+        "/recovery",
+        # MFA
         "/mfa",
         "/2fa",
+        "/otp",
+        "/verify",
+        # Session
         "/logout",
         "/signout",
         "/session",
-        "/callback",
-        "/.well-known/openid_configuration",
-        "/.well-known/jwks.json",
-        "/metadata",
-        "/saml/metadata",
-        "/oauth/authorize",
-        "/token",
     ]
 
     # Method 1: Direct endpoint probing
@@ -262,15 +292,19 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
 
 
 def _classify_auth_endpoint(path: str, headers: str) -> str:
-    """Classify authentication endpoint type"""
+    """Classify authentication endpoint type with modern auth patterns"""
     path_lower = path.lower()
 
+    # GraphQL (check first as it's often API-based too)
+    if any(keyword in path_lower for keyword in ["graphql", "/query"]):
+        return "GraphQL"
+
     # JWT-related
-    if any(keyword in path_lower for keyword in ["jwt", "jwks", "token"]):
+    if any(keyword in path_lower for keyword in ["jwt", "jwks", "token", "refresh"]):
         return "JWT"
 
-    # OAuth-related
-    if any(keyword in path_lower for keyword in ["oauth", "authorize", "callback"]):
+    # OAuth/OIDC-related
+    if any(keyword in path_lower for keyword in ["oauth", "authorize", "callback", "oidc", ".well-known/openid"]):
         return "OAuth"
 
     # SAML-related
@@ -278,20 +312,24 @@ def _classify_auth_endpoint(path: str, headers: str) -> str:
         return "SAML"
 
     # Session-based
-    if any(keyword in path_lower for keyword in ["login", "signin", "session"]):
+    if any(keyword in path_lower for keyword in ["login", "signin", "session", "logout"]):
         return "Session-based"
 
-    # API authentication
+    # API authentication (generic)
     if "/api/" in path_lower and any(keyword in path_lower for keyword in ["auth", "login", "token"]):
         return "API Authentication"
 
     # Admin/privileged
-    if any(keyword in path_lower for keyword in ["admin", "administrator", "portal", "dashboard"]):
+    if any(keyword in path_lower for keyword in ["admin", "administrator", "portal", "dashboard", "console"]):
         return "Administrative"
 
     # Multi-factor
-    if any(keyword in path_lower for keyword in ["mfa", "2fa", "otp"]):
+    if any(keyword in path_lower for keyword in ["mfa", "2fa", "otp", "verify"]):
         return "Multi-factor"
+
+    # Password recovery
+    if any(keyword in path_lower for keyword in ["reset", "forgot", "recovery"]):
+        return "Password Recovery"
 
     return "Generic Authentication"
 
