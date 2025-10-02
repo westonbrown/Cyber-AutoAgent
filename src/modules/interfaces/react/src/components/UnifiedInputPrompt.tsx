@@ -177,7 +177,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
       suggestions.push(...filtered);
     }
 
-    return suggestions.slice(0, 8); // Limit to 8 suggestions
+    return suggestions.slice(0, 4); // Limit to 4 suggestions to reduce WASM memory pressure
   };
 
   // Update suggestions when input changes - use stable dependencies
@@ -435,20 +435,59 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
         </Box>
       </Box>
 
-      {/* Suggestions dropdown positioned below input */}
+      {/* Suggestions dropdown - improved contrast and readability */}
       {showSuggestions && filteredSuggestions.length > 0 && (
-        <Box flexDirection="column" borderStyle="single" borderColor={theme.muted} paddingX={1} marginTop={1} marginBottom={1}>
-          <Text color={theme.info} bold>Suggestions:</Text>
-          {filteredSuggestions.map((suggestion, index) => (
-            <Box key={index}>
-              <Text color={index === selectedSuggestionIndex ? theme.primary : theme.foreground}>
-                {index === selectedSuggestionIndex ? '> ' : '  '}
-                {suggestion.text}
+        <Box flexDirection="column" borderStyle="round" borderColor={theme.primary} paddingX={1} paddingY={0} marginTop={1}>
+          {/* Header with keyboard hints */}
+          <Box paddingY={1} borderStyle="single" borderColor={theme.subtle} borderTop={false} borderLeft={false} borderRight={false}>
+            <Text>
+              <Text color={theme.info} bold>Suggestions:</Text>
+              {' '}
+              <Text color={theme.foreground}>↑↓</Text>
+              <Text color={theme.comment}> navigate</Text>
+              {' • '}
+              <Text color={theme.foreground}>Tab/Enter</Text>
+              <Text color={theme.comment}> select</Text>
+              {' • '}
+              <Text color={theme.foreground}>Esc</Text>
+              <Text color={theme.comment}> cancel</Text>
+            </Text>
+          </Box>
+
+          {/* Suggestions list */}
+          <Box flexDirection="column" paddingY={1}>
+            {filteredSuggestions.map((suggestion, index) => {
+              const selected = index === selectedSuggestionIndex;
+              return (
+                <Box key={index} paddingY={0}>
+                  <Text>
+                    {/* Selection indicator with bright accent */}
+                    <Text color={selected ? theme.primary : 'transparent'} bold>
+                      {selected ? '▶ ' : '  '}
+                    </Text>
+                    {/* Suggestion text - bright when selected */}
+                    <Text color={selected ? theme.primary : theme.foreground} bold={selected}>
+                      {suggestion.text}
+                    </Text>
+                    {/* Description with better contrast */}
+                    <Text color={selected ? theme.info : theme.comment}>
+                      {' — '}
+                      {suggestion.description}
+                    </Text>
+                  </Text>
+                </Box>
+              );
+            })}
+          </Box>
+
+          {/* Counter for long lists */}
+          {filteredSuggestions.length > 4 && (
+            <Box borderStyle="single" borderColor={theme.subtle} borderBottom={false} borderLeft={false} borderRight={false} paddingTop={1}>
+              <Text color={theme.comment}>
+                ({selectedSuggestionIndex + 1}/{filteredSuggestions.length})
               </Text>
-              <Text color={theme.muted}> - {suggestion.description}</Text>
             </Box>
-          ))}
-          <Text color={theme.muted} italic>Use ↑↓ to navigate, Tab/Enter to select, Esc to cancel</Text>
+          )}
         </Box>
       )}
 
