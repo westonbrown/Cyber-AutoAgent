@@ -95,7 +95,7 @@ def generate_security_report(
         # Load the report template, preferring module-specific template when available
         from modules.prompts import load_prompt_template
 
-        # If a module-specific report prompt exists (e.g., ctf/report_prompt.txt), use it as the template
+        # If a module-specific report prompt exists (e.g., ctf/report_prompt.md), use it as the template
         if module_report_prompt and str(module_report_prompt).strip():
             report_template = module_report_prompt
             logger.info("Using module-specific report template for module: %s", module)
