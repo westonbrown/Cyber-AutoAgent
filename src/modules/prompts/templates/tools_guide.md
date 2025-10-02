@@ -21,7 +21,6 @@
 - Usage: Rapid PoC prototyping, batch multiple tests. NO TIMEOUT (avoid >600s operations)
 - File writes: MUST use absolute paths from OPERATION ARTIFACTS DIRECTORY (relative paths write to project root)
 - Promotion trigger: POC works + logic needed >2 times → MUST promote via editor+load_tool to OPERATION TOOLS DIRECTORY
-- Economic check before repeating logic: "Already wrote this pattern?" → create reusable tool instead
 - Results: Store all outputs as artifacts with descriptive names
 
 **mem0_memory**
@@ -64,7 +63,7 @@
 - Managed endpoints: Common keys (Vercel, Supabase anon, Tenderly RPC, analytics) often normal - treat as observations unless abuse/sensitive exposure demonstrated with artifacts
 
 **stop**
-- Valid: Objective achieved with artifacts OR budget ≥95% after swarm
+- Valid: Objective achieved with artifacts OR budget ≥95%
 - FORBIDDEN: Intermediate success (creds/hash/vuln WITHOUT objective), approach blocked, constraints, budget <95% without trying different capability + swarm
 
 </tool_protocols>
@@ -79,12 +78,10 @@
 4. Validate processing evidence → update confidence
 5. Complex test: Full exploitation ONLY if prior levels validated
 
-**Failure Handling in Tool Selection** (when technique fails):
-1. Extract constraint type from failure: [syntax | processing | filter | rate-limit | auth | resource-not-found]
-2. Update confidence: Apply formula (Success +20% | Failure -30% | Ambiguous -10%)
-3. Check pivot threshold: If confidence <50% → pivot required
-4. Select next tool based on constraint learned, NOT same tool with parameter variations
-5. Pivot to fundamentally different approach, not iterating current method
+**Failure Handling** (when technique fails, ask in order):
+- "What constraint type?" → [syntax | processing | filter | rate-limit | auth | resource-not-found]
+- "New confidence after applying formula?" → If <50%: pivot required
+- "Pivot to what?" → Target constraint learned, NOT iterate same method
 
 **Minimal Action Principle**: What's LEAST I can do to learn MOST? Check memory before repeating. One variable per test isolates cause.
 
