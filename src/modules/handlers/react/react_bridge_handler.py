@@ -227,6 +227,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # The emitter handles timestamp addition and protocol formatting
         try:
             self.emitter.emit(event)
+        except BrokenPipeError:
+            # Frontend terminal closed (user interrupted) - suppress noisy traceback
+            logger.debug(f"Frontend disconnected, skipping event {event.get('type')}")
         except Exception as e:
             logger.error(f"Failed to emit event {event.get('type')}: {e}", exc_info=True)
 
