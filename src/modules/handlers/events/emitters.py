@@ -84,8 +84,7 @@ class StdoutEventEmitter:
             if signature in self._recent_signatures:
                 return  # Skip duplicate emission
 
-        # Emit the event
-        # Include newline to ensure TeeOutput writes to log file immediately
+        # Always emit structured JSON events (React terminal is always the UI)
         try:
             # Ensure output content is stringified to avoid "[object Object]" in UI
             if event.get("type") == "output":
