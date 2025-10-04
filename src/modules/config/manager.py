@@ -316,8 +316,8 @@ class ConfigManager:
         # Claude Sonnet 4.5 supports extended thinking with higher token limits
         # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
-            default_max_tokens = 32000
-            default_thinking_budget = 25000
+            default_max_tokens = 16000
+            default_thinking_budget = 7000
         else:
             default_max_tokens = 32000
             default_thinking_budget = 10000
@@ -416,7 +416,7 @@ class ConfigManager:
                     model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     temperature=0.95,
                     max_tokens=32000,
-                    top_p=0.95,  # Bedrock supports both temperature and top_p
+                    # top_p removed - global.* models reject both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.AWS_BEDROCK,

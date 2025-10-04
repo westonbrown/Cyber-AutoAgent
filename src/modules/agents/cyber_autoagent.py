@@ -173,12 +173,15 @@ def _create_remote_model(
         "region_name": config["region_name"],
         "temperature": config["temperature"],
         "max_tokens": config["max_tokens"],
-        "top_p": config["top_p"],
         "boto_client_config": boto_config,
     }
 
-    # Add optional fields if present
-    if "additional_request_fields" in config:
+    # Only include top_p if present in config (some providers reject both temperature and top_p)
+    if config.get("top_p") is not None:
+        model_kwargs["top_p"] = config["top_p"]
+
+    # Add additional request fields if present (e.g., anthropic_beta for extended context)
+    if config.get("additional_request_fields"):
         model_kwargs["additional_request_fields"] = config["additional_request_fields"]
 
     return BedrockModel(**model_kwargs)
