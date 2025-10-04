@@ -61,54 +61,53 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({
   });
 
   return (
-    <Box 
-      flexDirection="column" 
-      borderStyle="double" 
-      borderColor={theme.danger} 
+    <Box
+      flexDirection="column"
+      borderStyle="double"
+      borderColor={theme.danger}
       padding={1}
       width="100%"
     >
       {/* Header */}
       <Box marginBottom={1}>
-        <Text color={theme.danger} bold>
+        <Text color={theme.danger} bold wrap="wrap">
           ⚠️  SECURITY ASSESSMENT AUTHORIZATION WARNING
         </Text>
       </Box>
 
       {/* Warning Content */}
       <Box flexDirection="column" marginBottom={1}>
-        <Text color={theme.foreground}>
+        <Text color={theme.foreground} wrap="wrap">
           You are about to execute a <Text color={theme.accent} bold>{module}</Text> security assessment against:
         </Text>
-        <Text color={theme.primary} bold>
+        <Text color={theme.primary} bold wrap="wrap">
           Target: {target}
         </Text>
-        
+
         <Box marginTop={1} marginBottom={1}>
-          <Text color={theme.warning}>
+          <Text color={theme.warning} wrap="wrap">
             IMPORTANT: Only proceed if you have:
           </Text>
         </Box>
-        
+
         <Box flexDirection="column" paddingLeft={2}>
-          <Text color={theme.foreground}>
+          <Text color={theme.foreground} wrap="wrap">
             • <Text color={theme.accent}>EXPLICIT WRITTEN AUTHORIZATION</Text> to test this target
           </Text>
-          <Text color={theme.foreground}>
+          <Text color={theme.foreground} wrap="wrap">
             • <Text color={theme.accent}>LEGAL PERMISSION</Text> from the target owner/organization
           </Text>
-          <Text color={theme.foreground}>
+          <Text color={theme.foreground} wrap="wrap">
             • <Text color={theme.accent}>PROPER SAFETY MEASURES</Text> in place to prevent damage
           </Text>
-          <Text color={theme.foreground}>
+          <Text color={theme.foreground} wrap="wrap">
             • <Text color={theme.accent}>APPROPRIATE SCOPE</Text> and testing boundaries defined
           </Text>
         </Box>
 
         <Box marginTop={1}>
-          <Text color={theme.danger}>
-            Unauthorized security testing may violate local, state, and federal laws.
-            You assume full legal responsibility for this cyber operation.
+          <Text color={theme.danger} wrap="wrap">
+            Unauthorized security testing may violate local, state, and federal laws. You assume full legal responsibility for this cyber operation.
           </Text>
         </Box>
       </Box>
@@ -116,17 +115,17 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({
       {/* Confirmation Steps */}
       {!acknowledged ? (
         <Box flexDirection="column">
-          <Text color={theme.info}>
+          <Text color={theme.info} wrap="wrap">
             Do you acknowledge that you have proper authorization? (y/N)
           </Text>
         </Box>
       ) : (
         <Box flexDirection="column">
-          <Text color={theme.success}>
+          <Text color={theme.success} wrap="wrap">
             ✓ Authorization acknowledged
           </Text>
           <Box marginTop={1}>
-            <Text color={theme.info}>
+            <Text color={theme.info} wrap="wrap">
               Proceed with cyber operation? (y/N)
             </Text>
           </Box>
@@ -135,7 +134,7 @@ export const SafetyWarning: React.FC<SafetyWarningProps> = React.memo(({
 
       {/* Footer */}
       <Box marginTop={1} borderTop borderColor={theme.muted} paddingTop={1}>
-        <Text color={theme.muted}>
+        <Text color={theme.muted} wrap="wrap">
           Press 'y' to continue, 'n' to cancel, or Esc to abort
         </Text>
       </Box>

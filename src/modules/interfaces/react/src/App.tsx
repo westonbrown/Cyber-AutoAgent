@@ -118,22 +118,43 @@ const AppContent: React.FC<AppProps> = ({
       timeoutsRef.current = [];
     };
   }, []);
-  
-  // Screen clear handler - fixed to prevent race condition
+
+  // Ref to hold Terminal's cleanup function
+  const terminalCleanupRef = React.useRef<(() => void) | null>(null);
+
+  // Screen clear handler - fixed to prevent heap exhaustion
   const handleScreenClear = useCallback(() => {
-    // Batch all state updates together to minimize re-renders
+    // CRITICAL: Clear Terminal's event buffers BEFORE any state changes
+    // This prevents heap exhaustion from retaining millions of event tokens
+
+    // Step 1: Call Terminal's cleanup directly (if available)
+    if (terminalCleanupRef.current) {
+      try {
+        terminalCleanupRef.current();
+      } catch (e) {
+        // Cleanup failed, continue anyway
+      }
+    }
+
+    // Step 2: Force garbage collection immediately
+    if (global.gc) {
+      try {
+        global.gc();
+      } catch (e) {
+        // GC not available, that's okay
+      }
+    }
+
+    // Step 3: Clear operation history and state
     operationManager.clearOperationHistory();
     actions.resetErrorCount();
-    // Removed setTerminalVisible(false) - we want to clear content, not hide the terminal
     actions.setActiveOperation(null);
-    actions.clearCompletedOperation(); // Clear the completed operation flag
-    
-    // Use setTimeout to ensure state updates are processed
-    // This prevents the black screen by giving React time to commit changes
+    actions.clearCompletedOperation();
+
+    // Step 4: Refresh UI
     registerTimeout(() => {
-      // Only use modalManager's refresh to avoid double clear
       modalManager.refreshStatic();
-    }, 0); // Next tick
+    }, 0);
   }, [actions, operationManager, modalManager]);
 
   // Keyboard handlers
@@ -378,7 +399,8 @@ const AppContent: React.FC<AppProps> = ({
     onModalClose: handleModalClose,
     addOperationHistoryEntry: operationManager.addOperationHistoryEntry,
     onSafetyConfirm: operationManager.startAssessmentExecution,
-    applicationConfig
+    applicationConfig,
+    terminalCleanupRef
   }), [
     appState,
     actions,
@@ -394,7 +416,8 @@ const AppContent: React.FC<AppProps> = ({
     handleModalClose,
     operationManager.addOperationHistoryEntry,
     operationManager.startAssessmentExecution,
-    applicationConfig
+    applicationConfig,
+    terminalCleanupRef
   ]);
   
   

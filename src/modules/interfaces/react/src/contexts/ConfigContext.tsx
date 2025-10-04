@@ -81,7 +81,21 @@ export interface Config {
   anthropicApiKey?: string;
   /** Cohere API key for Command models via LiteLLM */
   cohereApiKey?: string;
-  
+  /** Azure OpenAI API key */
+  azureApiKey?: string;
+  /** Azure OpenAI API base URL */
+  azureApiBase?: string;
+  /** Azure OpenAI API version */
+  azureApiVersion?: string;
+  /** Reasoning effort for O-series/GPT-5 models (low/medium/high) */
+  reasoningEffort?: 'low' | 'medium' | 'high';
+  /** Max completion tokens for reasoning models (overrides max_tokens) */
+  maxCompletionTokens?: number;
+  /** Max output tokens for standard/thinking models */
+  maxTokens?: number;
+  /** Thinking budget for Claude thinking models */
+  thinkingBudget?: number;
+
   // Docker Container Execution Configuration
   /** Docker image name for assessment execution */
   dockerImage: string;

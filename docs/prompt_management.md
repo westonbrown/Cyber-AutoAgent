@@ -60,15 +60,15 @@ parser.add_argument(
 ```
 src/modules/operation_plugins/
 ├── general/
-│   ├── execution_prompt.txt    # Domain-specific system prompt
-│   ├── report_prompt.txt       # Report generation guidance
+│   ├── execution_prompt.md    # Domain-specific system prompt
+│   ├── report_prompt.md       # Report generation guidance
 │   ├── module.yaml            # Module configuration
 │   └── tools/                 # Module-specific tools
 │       ├── __init__.py
 │       └── quick_recon.py
 └── ctf/
-    ├── execution_prompt.txt
-    ├── report_prompt.txt
+    ├── execution_prompt.md
+    ├── report_prompt.md
     ├── module.yaml
     └── tools/
         └── __init__.py
@@ -114,7 +114,7 @@ sequenceDiagram
     alt Optimized Prompt Exists
         P-->>L: Optimized prompt content
     else No Optimized Prompt
-        L->>F: Read modules/general/execution_prompt.txt
+        L->>F: Read modules/general/execution_prompt.md
         F-->>L: Template prompt content
     end
     L-->>A: Module execution prompt

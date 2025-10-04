@@ -79,23 +79,15 @@ def generate_security_report(
         if evidence is None:
             evidence = _retrieve_evidence_from_memory(operation_id)
 
-        # Validate evidence collection
+        # Validate evidence collection - skip report if no memories
         if not evidence or len(evidence) == 0:
-            logger.warning("No evidence retrieved for operation %s - report may be incomplete", operation_id)
-            # Add system warning to indicate missing evidence
-            evidence = [
-                {
-                    "category": "system_warning",
-                    "content": "⚠️ WARNING: No evidence collected during assessment - this may indicate incomplete operation or configuration issues",
-                    "severity": "MEDIUM",
-                    "confidence": "SYSTEM",
-                }
-            ]
-        else:
-            finding_count = len([e for e in evidence if e.get("category") == "finding"])
-            logger.info(
-                "Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count
-            )
+            logger.info("No evidence/memories collected for operation %s - skipping report generation", operation_id)
+            return ""
+
+        finding_count = len([e for e in evidence if e.get("category") == "finding"])
+        logger.info(
+            "Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count
+        )
 
         # Get module report prompt if available for domain guidance
         module_report_prompt = _get_module_report_prompt(module)
@@ -103,7 +95,7 @@ def generate_security_report(
         # Load the report template, preferring module-specific template when available
         from modules.prompts import load_prompt_template
 
-        # If a module-specific report prompt exists (e.g., ctf/report_prompt.txt), use it as the template
+        # If a module-specific report prompt exists (e.g., ctf/report_prompt.md), use it as the template
         if module_report_prompt and str(module_report_prompt).strip():
             report_template = module_report_prompt
             logger.info("Using module-specific report template for module: %s", module)
@@ -257,10 +249,6 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
                 for block in content:
                     if isinstance(block, dict) and "text" in block:
                         report_text += block["text"]
-
-                # Minimal sanity check only
-                if not report_text.strip().startswith("# SECURITY ASSESSMENT REPORT"):
-                    logger.warning("Report does not start with the expected header; continuing")
 
                 logger.info("Report generated successfully (%d characters)", len(report_text))
                 return report_text

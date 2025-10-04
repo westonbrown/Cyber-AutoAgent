@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.tsx",
+    "start": "node --expose-gc --max-old-space-size=6144 dist/index.js",
+    "dev": "node --expose-gc --max-old-space-size=6144 --loader tsx src/index.tsx",
     "typecheck": "tsc --noEmit",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --config tests/jest.config.cjs",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --config tests/jest.config.cjs --watch",
@@ -33,7 +33,6 @@
     "glob": "^10.3.10",
     "ink": "^6.3.1",
     "ink-big-text": "^2.0.0",
-    "ink-divider": "^4.1.1",
     "ink-gradient": "^3.0.0",
     "ink-link": "^5.0.0",
     "ink-progress-bar": "^3.0.0",

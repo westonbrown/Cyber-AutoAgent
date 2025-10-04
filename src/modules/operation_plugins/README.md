@@ -8,11 +8,11 @@ Operation modules extend Cyber-AutoAgent capabilities through domain-specific pr
 graph TD
     A[Agent Creation] --> B[Module Loader]
     B --> C[Load module.yaml]
-    C --> D[Inject execution_prompt.txt]
+    C --> D[Inject execution_prompt.md]
     D --> E[System Prompt Composition]
     E --> F[Tool Discovery]
     F --> G[Agent Execution]
-    G --> H[Load report_prompt.txt]
+    G --> H[Load report_prompt.md]
     H --> I[Report Generation]
 
     style B fill:#e3f2fd,stroke:#333,stroke-width:2px
@@ -26,8 +26,8 @@ graph TD
 operation_plugins/
 └── <module_name>/
     ├── module.yaml           # Metadata and configuration
-    ├── execution_prompt.txt  # Domain-specific system prompt
-    ├── report_prompt.txt     # Report generation guidance
+    ├── execution_prompt.md   # Domain-specific system prompt
+    ├── report_prompt.md      # Report generation guidance
     └── tools/               # Module-specific tools
         ├── __init__.py
         └── custom_tool.py   # @tool decorated functions
@@ -55,10 +55,10 @@ configuration:
   approach: Assessment methodology description
 ```
 
-### execution_prompt.txt
+### execution_prompt.md
 Specialized instructions injected into agent system prompt during operation. Defines domain expertise, methodology, and tool usage patterns specific to the module's security domain.
 
-### report_prompt.txt
+### report_prompt.md
 Report generation template specifying structure, visual elements, and domain-specific analysis sections for final assessment reports.
 
 ### tools/
@@ -76,7 +76,7 @@ sequenceDiagram
     A->>L: load_module(name)
     L->>F: Read module.yaml
     F-->>L: Metadata
-    L->>F: Read execution_prompt.txt
+    L->>F: Read execution_prompt.md
     F-->>L: Prompt content
     L->>T: Discover tools/*.py
     T-->>L: Tool paths
@@ -190,7 +190,7 @@ supported_targets:
   - custom-application
 ```
 
-**execution_prompt.txt:**
+**execution_prompt.md:**
 ```xml
 <role>
 Specialized security assessor for [domain]

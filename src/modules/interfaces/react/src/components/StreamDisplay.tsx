@@ -13,11 +13,12 @@ import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import stripAnsi from 'strip-ansi';
 
 // Extended event types for UI-specific events not covered by the core SDK events
 // These events are used for UI state management and display formatting
 export type AdditionalStreamEvent = 
-  | { type: 'step_header'; step: number | string; maxSteps?: number; operation?: string; duration?: string; [key: string]: any }
+  | { type: 'step_header'; step: number | string; maxSteps?: number; totalTools?: number; operation?: string; duration?: string; [key: string]: any }
   | { type: 'reasoning'; content: string; [key: string]: any }
   | { type: 'thinking'; context?: 'reasoning' | 'tool_preparation' | 'tool_execution' | 'waiting' | 'startup'; startTime?: number; urgent?: boolean; [key: string]: any }
   | { type: 'thinking_end'; [key: string]: any }
@@ -30,6 +31,7 @@ export type AdditionalStreamEvent =
   | { type: 'error'; content: string; [key: string]: any }
   | { type: 'metadata'; content: Record<string, string>; [key: string]: any }
   | { type: 'divider'; [key: string]: any }
+  | { type: 'separator'; content?: string; [key: string]: any }
   | { type: 'user_handoff'; message: string; breakout: boolean; [key: string]: any }
   | { type: 'metrics_update'; metrics: any; [key: string]: any }
   | { type: 'model_invocation_start'; modelId?: string; [key: string]: any }
@@ -60,6 +62,9 @@ interface StreamDisplayProps {
   showPerformanceInfo?: boolean;
   enableCostTracking?: boolean;
   animationsEnabled?: boolean;
+  // Terminal dimensions for layout calculations
+  terminalWidth?: number;
+  availableHeight?: number;
 }
 
 // Tool execution state tracking
@@ -282,12 +287,17 @@ export const EventLine: React.FC<{
         // Generic swarm operation without specific agent
         stepDisplay = `[SWARM • STEP ${event.step}/${event.maxSteps}]`;
       } else {
-        // Regular step header
-        stepDisplay = `[STEP ${event.step}/${event.maxSteps}]`;
+        // Regular step header with tool count for budget transparency
+        const toolCount = (event as any)['totalTools'];
+        if (toolCount && toolCount > 0) {
+          stepDisplay = `[STEP ${event.step}/${event.maxSteps} | ${toolCount} tools]`;
+        } else {
+          stepDisplay = `[STEP ${event.step}/${event.maxSteps}]`;
+        }
       }
       
       return (
-        <Box flexDirection="column" marginTop={1} marginBottom={0}>
+        <Box flexDirection="column" marginTop={1}>
           <Box flexDirection="row" alignItems="center">
             <Text color="#89B4FA" bold>
               {stepDisplay}
@@ -303,13 +313,11 @@ export const EventLine: React.FC<{
       
     case 'thinking':
       return (
-        <Box marginTop={1}>
-          <ThinkingIndicator 
-            context={event.context}
-            startTime={event.startTime}
-            enabled={animationsEnabled}
-          />
-        </Box>
+        <ThinkingIndicator
+          context={event.context}
+          startTime={event.startTime}
+          enabled={animationsEnabled}
+        />
       );
       
     case 'thinking_end':
@@ -369,13 +377,11 @@ export const EventLine: React.FC<{
     case 'reasoning':
       // This case should not be reached anymore as reasoning is handled in StreamDisplay
       // But keep it as fallback
-      const swarmAgentLabel = ('swarm_agent' in event && event.swarm_agent) 
-        ? ` (${event.swarm_agent})` 
+      const swarmAgentLabel = ('swarm_agent' in event && event.swarm_agent)
+        ? ` (${event.swarm_agent})`
         : '';
       return (
         <Box flexDirection="column">
-          <Text> </Text>
-          <Text> </Text>
           <Text color="cyan" bold>reasoning{swarmAgentLabel}</Text>
           <Box paddingLeft={0}>
             <Text color="cyan">{event.content}</Text>
@@ -432,11 +438,13 @@ export const EventLine: React.FC<{
       switch (event.tool_name) {
         case 'swarm':
           // Simplified swarm tool header to avoid duplication
-          const agentCount = latestInput?.agents?.length || 0;
-          const agentNames = latestInput?.agents?.map((a: any) => 
-            typeof a === 'string' ? a : a.name
+          // Ensure agents is an array before processing
+          const agents = Array.isArray(latestInput?.agents) ? latestInput.agents : [];
+          const agentCount = agents.length || 0;
+          const agentNames = agents.map((a: any) =>
+            typeof a === 'string' ? a : (a?.name || 'agent')
           ).filter(Boolean).slice(0, 4).join(', ') || 'agents';
-          
+
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="yellow" bold>tool: swarm</Text>
@@ -948,8 +956,8 @@ const method = latestInput.method || 'GET';
         // If "Command:" was concatenated onto a previous line without a newline, insert one.
         .replace(/(\S)Command:/g, '$1\nCommand:');
 
-      // Backend now sends clean content without ANSI codes
-      const plain = normalized;
+      // Strip ANSI escape codes from tool output to prevent terminal formatting issues
+      const plain = stripAnsi(normalized);
 
       // Skip only placeholder tokens if the entire content is just a token
       const plainTrimmed = plain.trim();
@@ -1318,7 +1326,10 @@ const method = latestInput.method || 'GET';
       
     case 'divider':
       return null;
-      
+
+    case 'separator':
+      return null;
+
     case 'user_handoff':
       return (
         <>
@@ -1795,11 +1806,20 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           const combinedContent = group.events.reduce((acc, e) => {
             // Prefer full reasoning content when present
             if ('content' in e && (e as any).content) {
-              return acc + (e as any).content;
+              const content = (e as any).content;
+              // Add spacing between chunks if accumulator is not empty and doesn't end with whitespace
+              if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+                return acc + ' ' + content;
+              }
+              return acc + content;
             }
             // Also accumulate streaming deltas so we don't lose interim reasoning
             if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
-              return acc + (e as any).delta;
+              const delta = (e as any).delta;
+              if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+                return acc + ' ' + delta;
+              }
+              return acc + delta;
             }
             return acc;
           }, '');
@@ -1846,7 +1866,9 @@ import { Static } from 'ink';
 
 export const StaticStreamDisplay: React.FC<{
   events: DisplayStreamEvent[];
-}> = React.memo(({ events }) => {
+  terminalWidth?: number;
+  availableHeight?: number;
+}> = React.memo(({ events, terminalWidth, availableHeight }) => {
   const groups = React.useMemo(() => computeDisplayGroups(events), [events]);
 
   // Flatten groups into discrete render items with stable keys
@@ -1859,11 +1881,20 @@ export const StaticStreamDisplay: React.FC<{
         const combinedContent = group.events.reduce((acc, e) => {
           // Prefer full reasoning content when present
           if ('content' in e && (e as any).content) {
-            return acc + (e as any).content;
+            const content = (e as any).content;
+            // Add spacing between chunks if accumulator is not empty and doesn't end with whitespace
+            if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+              return acc + ' ' + content;
+            }
+            return acc + content;
           }
           // Also accumulate streaming deltas so we don't lose interim reasoning
           if (e.type === 'reasoning_delta' && 'delta' in (e as any) && (e as any).delta) {
-            return acc + (e as any).delta;
+            const delta = (e as any).delta;
+            if (acc && !acc.endsWith(' ') && !acc.endsWith('\n')) {
+              return acc + ' ' + delta;
+            }
+            return acc + delta;
           }
           return acc;
         }, '');

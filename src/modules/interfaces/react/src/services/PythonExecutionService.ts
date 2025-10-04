@@ -654,6 +654,13 @@ export class PythonExecutionService extends EventEmitter {
         ...(config.openaiApiKey ? { OPENAI_API_KEY: config.openaiApiKey } : {}),
         ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
         ...(config.cohereApiKey ? { COHERE_API_KEY: config.cohereApiKey } : {}),
+        ...(config.azureApiKey ? { AZURE_API_KEY: config.azureApiKey } : {}),
+        ...(config.azureApiBase ? { AZURE_API_BASE: config.azureApiBase } : {}),
+        ...(config.azureApiVersion ? { AZURE_API_VERSION: config.azureApiVersion } : {}),
+        ...(config.maxTokens ? { MAX_TOKENS: String(config.maxTokens) } : {}),
+        ...(config.thinkingBudget ? { THINKING_BUDGET: String(config.thinkingBudget) } : {}),
+        ...(config.reasoningEffort ? { REASONING_EFFORT: config.reasoningEffort } : {}),
+        ...(config.maxCompletionTokens ? { MAX_COMPLETION_TOKENS: String(config.maxCompletionTokens) } : {}),
         // Model Configuration - pass separate models from config
         ...(config.swarmModel ? { CYBER_AGENT_SWARM_MODEL: config.swarmModel } : {}),
         ...(config.evaluationModel ? { CYBER_AGENT_EVALUATION_MODEL: config.evaluationModel } : {}),
@@ -693,23 +700,9 @@ export class PythonExecutionService extends EventEmitter {
         provider: config.modelProvider,
         model: config.modelId
       });
-      
-      // Emit startup thinking indicator BEFORE any output so the UI shows animation immediately
-      this.emit('event', {
-        type: 'thinking',
-        context: 'startup',
-        startTime: Date.now(),
-        metadata: {
-          message: 'Preparing Python security assessment environment'
-        }
-      });
-      
-      // Emit startup lifecycle as output so it appears in the operation stream (OLD behavior)
-      this.emit('event', {
-        type: 'output',
-        content: '▶ Initializing Python assessment environment...',
-        timestamp: Date.now()
-      });
+
+      // Python backend will emit thinking(startup, urgent=true) immediately after operation_init
+      // No need to emit it here as it causes activeThinkingRef to be set prematurely
       
       setTimeout(() => {
         this.emit('event', {

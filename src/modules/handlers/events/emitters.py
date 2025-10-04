@@ -36,6 +36,8 @@ class StdoutEventEmitter:
         # Track the last output content to prevent exact duplicates
         self._last_output_content = None
         self._last_output_time = None
+        # Cache UI mode to avoid repeated os.getenv calls
+        self._ui_mode = os.getenv("CYBER_UI_MODE", "react").lower()
 
     def emit(self, event: Dict[str, Any]) -> None:
         """Emit event with deduplication and ID tracking.
@@ -43,17 +45,14 @@ class StdoutEventEmitter:
         Args:
             event: Event dictionary to emit
         """
-        # Generate event ID if not present
-        if "id" not in event:
+        # Generate event ID if not present (React mode only needs this)
+        if self._ui_mode == "react" and "id" not in event:
             event["id"] = f"{self.operation_id}_{self._event_counter}"
             self._event_counter += 1
 
-        # Add timestamp if not present
-        if "timestamp" not in event:
+        # Add timestamp if not present (React mode only needs this)
+        if self._ui_mode == "react" and "timestamp" not in event:
             event["timestamp"] = datetime.now().isoformat()
-
-        # Create signature for deduplication (excluding timestamp and ID)
-        signature = self._create_signature(event)
 
         # Special handling for output events - prevent exact duplicates within 100ms window
         if event.get("type") == "output":
@@ -81,8 +80,12 @@ class StdoutEventEmitter:
             "tool_invocation_end",
             "metrics_update",
         ):
+            # Create signature for deduplication (only when needed)
+            signature = self._create_signature(event)
             if signature in self._recent_signatures:
                 return  # Skip duplicate emission
+        else:
+            signature = None
 
         # Always emit structured JSON events (React terminal is always the UI)
         try:
@@ -104,29 +107,44 @@ class StdoutEventEmitter:
         except (TypeError, ValueError) as e:
             # If JSON serialization fails, try to clean up the event data
             try:
-                cleaned_event = self._clean_event_for_json(event)
-                json_str = json.dumps(cleaned_event, ensure_ascii=True)
-            except Exception:
-                # Last resort: emit a simple error event
-                error_event = {
-                    "type": "error",
-                    "error": f"Failed to serialize event: {str(e)}",
-                    "event_type": event.get("type", "unknown"),
-                    "id": event.get("id", "unknown"),
-                    "timestamp": event.get("timestamp", datetime.now().isoformat()),
-                }
-                json_str = json.dumps(error_event, ensure_ascii=True)
+                # Ensure output content is stringified to avoid "[object Object]" in UI
+                if event.get("type") == "output":
+                    content = event.get("content")
+                    if not isinstance(content, str):
+                        try:
+                            if isinstance(content, (dict, list)):
+                                event["content"] = json.dumps(content, ensure_ascii=False)
+                            else:
+                                event["content"] = str(content)
+                        except Exception:
+                            event["content"] = str(content)
 
-        print(f"__CYBER_EVENT__{json_str}__CYBER_EVENT_END__\n", end="", flush=True)
+                # Use ensure_ascii=True to properly escape control characters
+                # This ensures that newlines in shell commands are properly escaped
+                json_str = json.dumps(event, ensure_ascii=True)
+            except (TypeError, ValueError) as e:
+                # If JSON serialization fails, try to clean up the event data
+                try:
+                    cleaned_event = self._clean_event_for_json(event)
+                    json_str = json.dumps(cleaned_event, ensure_ascii=True)
+                except Exception:
+                    # Last resort: emit a simple error event
+                    error_event = {
+                        "type": "error",
+                        "error": f"Failed to serialize event: {str(e)}",
+                        "event_type": event.get("type", "unknown"),
+                        "id": event.get("id", "unknown"),
+                        "timestamp": event.get("timestamp", datetime.now().isoformat()),
+                    }
+                    json_str = json.dumps(error_event, ensure_ascii=True)
+
+            print(f"__CYBER_EVENT__{json_str}__CYBER_EVENT_END__\n", end="", flush=True)
+        else:
+            # CLI mode: emit human-readable formatted output
+            self._emit_cli_format(event)
 
         # Track for deduplication (except tool events and metrics updates)
-        if event_type not in (
-            "tool_start",
-            "tool_end",
-            "tool_invocation_start",
-            "tool_invocation_end",
-            "metrics_update",
-        ):
+        if signature is not None:
             self._recent_signatures.append(signature)
 
     def _clean_event_for_json(self, event: Dict[str, Any]) -> Dict[str, Any]:
@@ -163,6 +181,70 @@ class StdoutEventEmitter:
 
         # Create a deep copy to avoid modifying the original
         return clean_value(event)
+
+    def _emit_cli_format(self, event: Dict[str, Any]) -> None:
+        """Emit event in human-readable CLI format.
+
+        Args:
+            event: Event dictionary to format and print
+        """
+        event_type = event.get("type", "")
+        content = event.get("content", "")
+
+        # Skip internal/state management events that don't need CLI display
+        # These are either handled elsewhere or are pure state transitions
+        if event_type in ("metrics_update", "tool_input_update", "thinking_end",
+                          "tool_invocation_start", "tool_invocation_end"):
+            return
+
+        # Operation initialization - show key details
+        if event_type == "operation_init":
+            print("\n" + "─" * 80, flush=True)
+            print("◆ Operation initialization complete", flush=True)
+            if event.get("operation_id"):
+                print(f"  Operation ID: {event['operation_id']}", flush=True)
+            if event.get("target"):
+                print(f"  Target: {event['target']}", flush=True)
+            if event.get("objective"):
+                # Truncate long objectives
+                obj = str(event['objective'])
+                if len(obj) > 100:
+                    obj = obj[:97] + "..."
+                print(f"  Objective: {obj}", flush=True)
+            print("─" * 80 + "\n", flush=True)
+
+        # Step headers - show progress
+        elif event_type == "step_header":
+            step = event.get("step", "?")
+            max_steps = event.get("maxSteps", "?")
+            duration = event.get("duration", "")
+            duration_str = f" ({duration})" if duration else ""
+            print(f"\n[Step {step}/{max_steps}]{duration_str}", flush=True)
+
+        # Print reasoning/thinking content
+        elif event_type == "reasoning":
+            if content:
+                print(f"\n💭 {content}\n", flush=True)
+
+        # Print tool execution info
+        elif event_type == "tool_start":
+            tool_name = event.get("tool_name", "unknown")
+            print(f"\n⚡ Executing: {tool_name}", flush=True)
+
+        elif event_type == "tool_end":
+            tool_name = event.get("tool_name", "unknown")
+            success = event.get("success", True)
+            status = "✅" if success else "❌"
+            print(f"{status} Completed: {tool_name}\n", flush=True)
+
+        # Print output content
+        elif event_type == "output":
+            if content:
+                print(content, flush=True)
+
+        # Print errors
+        elif event_type == "error":
+            print(f"❌ Error: {content}", flush=True)
 
     def _create_signature(self, event: Dict[str, Any]) -> str:
         """Create a signature for event deduplication.

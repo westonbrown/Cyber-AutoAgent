@@ -65,7 +65,22 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'ollamaHost', label: 'Ollama Host', type: 'text', section: 'Models' },
   { key: 'openaiApiKey', label: 'OpenAI API Key', type: 'password', section: 'Models' },
   { key: 'anthropicApiKey', label: 'Anthropic API Key', type: 'password', section: 'Models' },
-  
+  { key: 'azureApiKey', label: 'Azure API Key', type: 'password', section: 'Models' },
+  { key: 'azureApiBase', label: 'Azure API Base', type: 'text', section: 'Models' },
+  { key: 'azureApiVersion', label: 'Azure API Version', type: 'text', section: 'Models' },
+  { key: 'maxTokens', label: 'Max Output Tokens', type: 'number', section: 'Models' },
+  { key: 'topP', label: 'Top P', type: 'number', section: 'Models',
+    description: 'Nucleus sampling (0.0-1.0). Leave empty for default. Note: Anthropic via LiteLLM requires either temperature OR top_p, not both.' },
+  { key: 'thinkingBudget', label: 'Thinking Budget Tokens', type: 'number', section: 'Models' },
+  { key: 'reasoningEffort', label: 'Reasoning Effort (O1/GPT-5)', type: 'select', section: 'Models',
+    options: [
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' }
+    ]
+  },
+  { key: 'maxCompletionTokens', label: 'Max Completion Tokens (O1/GPT-5)', type: 'number', section: 'Models' },
+
   // Operations (renamed from Assessment)
   { key: 'iterations', label: 'Max Iterations', type: 'number', section: 'Operations' },
   { key: 'autoApprove', label: 'Auto-Approve Tools', type: 'boolean', section: 'Operations' },
@@ -232,13 +247,14 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           return true;
         }
         
-        // Show provider-specific credentials
+        // Show provider-specific credentials and token configs
         if (config.modelProvider === 'bedrock') {
-          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion'].includes(f.key);
+          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion', 'maxTokens', 'thinkingBudget'].includes(f.key);
         } else if (config.modelProvider === 'ollama') {
-          return ['ollamaHost'].includes(f.key);
+          return ['ollamaHost', 'maxTokens'].includes(f.key);
         } else if (config.modelProvider === 'litellm') {
-          return ['openaiApiKey', 'anthropicApiKey', 'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion'].includes(f.key);
+          return ['openaiApiKey', 'anthropicApiKey', 'azureApiKey', 'azureApiBase', 'azureApiVersion',
+                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion', 'maxTokens', 'topP', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
         }
         
         return false;
@@ -282,23 +298,29 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   }, [config]);
 
   const handleSave = useCallback(() => {
-    // Clear any existing message timeout
-    showMessage('Saving configuration...', 'info', 0);
+    // Don't show intermediate "Saving..." message to reduce re-renders
 
     (async () => {
       try {
         await saveConfig();
 
         const timestamp = new Date().toLocaleTimeString();
-        showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
-        updateConfig({ isConfigured: true });
         setUnsavedChanges(false);
+
+        // Delay notification to prevent rapid re-renders that cause WASM memory issues
+        // This is especially important in long-running sessions with multiple operations
+        // Increased to 300ms to match Terminal.tsx throttle intervals
+        setTimeout(() => {
+          showMessage(`Configuration saved at ${timestamp}`, 'success', 5000);
+        }, 300);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
+        setTimeout(() => {
+          showMessage(`Save failed: ${errorMessage}`, 'error', 5000);
+        }, 300);
       }
     })();
-  }, [saveConfig, updateConfig, showMessage]);
+  }, [saveConfig, showMessage]);
   
   // Store handleSave in ref to avoid stale closures
   React.useEffect(() => {
@@ -320,10 +342,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     // Navigation mode
     if (key.escape) {
       if (navigationMode === 'fields') {
-        // Go back to section navigation and collapse current section
-        const newSections = [...sections];
-        newSections[selectedSectionIndex].expanded = false;
-        setSections(newSections);
+        // Go back to section navigation but KEEP section expanded
         setNavigationMode('sections');
         setSelectedFieldIndex(0);
       } else {
@@ -713,10 +732,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     return (
       <Box marginBottom={1} flexDirection="column">
         <Box>
-          <Text bold color={theme.primary}>Configuration Editor</Text>
-          {unsavedChanges && <Text color={theme.warning}> [Unsaved]</Text>}
+          <Text bold color={theme.primary} wrap="wrap">Configuration Editor</Text>
+          {unsavedChanges && <Text color={theme.warning} wrap="wrap"> [Unsaved]</Text>}
         </Box>
-        <Text color={theme.muted}>
+        <Text color={theme.muted} wrap="wrap">
           {navigationMode === 'sections'
             ? 'Navigate with ↑↓ arrows • Enter to expand section • Ctrl+S to save • Esc to continue and exit'
             : 'Navigate with ↑↓ arrows • Enter to edit field • Cmd+V to paste (Mac) • Ctrl+S to save • Esc to collapse section'}
@@ -740,22 +759,23 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             <Box key={section.name} flexDirection="column" marginBottom={1}>
               {/* Section Header */}
               <Box>
-                <Text 
+                <Text
                   bold={isSelected}
                   color={isSelected ? theme.accent : theme.foreground}
+                  wrap="wrap"
                 >
                   {isSelected ? '▸ ' : '  '}
                   {section.expanded ? '▼ ' : '▶ '}
                   {section.label}
                 </Text>
-                <Text color={theme.muted}>
+                <Text color={theme.muted} wrap="wrap">
                   {' '}({configuredCount}/{fields.length} configured)
                 </Text>
               </Box>
-              
+
               {/* Section Description */}
               <Box paddingLeft={4}>
-                <Text color={theme.muted}>{section.description}</Text>
+                <Text color={theme.muted} wrap="wrap">{section.description}</Text>
               </Box>
               
               {/* Fields (if expanded) */}
@@ -823,6 +843,17 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           onSelect={(item) => {
             updateConfigValue(field.key, item.value);
             setEditingField(null);
+
+            // Ensure section stays expanded and move to next field
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after selection
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -842,6 +873,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
             // Brief success message
             showMessage(`Token saved (${cleanedValue.length} chars)`, 'success', 2000);
+
+            // Ensure we stay in fields navigation mode and section stays expanded
+            setNavigationMode('fields');
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after saving
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -858,6 +901,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             updateConfigValue(field.key, cleanedValue);
             setEditingField(null);
             setTempValue('');
+
+            // Ensure we stay in fields navigation mode and section stays expanded
+            setNavigationMode('fields');
+            const newSections = [...sections];
+            newSections[selectedSectionIndex].expanded = true;
+            setSections(newSections);
+
+            // Move to next field after saving
+            const fields = getCurrentSectionFields();
+            if (selectedFieldIndex < fields.length - 1) {
+              setSelectedFieldIndex(prev => prev + 1);
+            }
           }}
         />
       );
@@ -890,6 +945,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
           }
           setEditingField(null);
           setTempValue('');
+
+          // Ensure we stay in fields navigation mode and section stays expanded
+          setNavigationMode('fields');
+          const newSections = [...sections];
+          newSections[selectedSectionIndex].expanded = true;
+          setSections(newSections);
+
+          // Move to next field after saving
+          const fields = getCurrentSectionFields();
+          if (selectedFieldIndex < fields.length - 1) {
+            setSelectedFieldIndex(prev => prev + 1);
+          }
         }}
         mask={undefined}
       />
@@ -947,17 +1014,17 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   // Main render logic
   return (
     <Box flexDirection="column">
-      <Box 
+      <Box
         flexDirection="column"
-        borderStyle="single" 
+        borderStyle="single"
         borderColor={theme.primary}
         padding={1}
-        width="100%"
         marginTop={1}
+        width="100%"
       >
         {/* Notification appears INSIDE the main border at the very top */}
         {message && (
-          <Box 
+          <Box
             borderStyle="double"
             borderColor={
               message.type === 'success' ? theme.success :
@@ -966,10 +1033,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             }
             paddingX={1}
             marginBottom={1}
-            width="100%"
           >
-            <Text 
+            <Text
               bold
+              wrap="wrap"
               color={
                 message.type === 'success' ? theme.success :
                 message.type === 'error' ? theme.danger :
@@ -988,19 +1055,22 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       
       {/* Status bar */}
       <Box marginBottom={1} flexDirection="column">
-        <Text color={
-          status.status === 'success' ? theme.success :
-          status.status === 'warning' ? theme.warning :
-          theme.danger
-        }>
+        <Text
+          wrap="wrap"
+          color={
+            status.status === 'success' ? theme.success :
+            status.status === 'warning' ? theme.warning :
+            theme.danger
+          }
+        >
           Status: {status.message}
         </Text>
-        <Text color={theme.muted}>
-          Deployment: {deploymentStatus.mode} | 
-          Observability: {deploymentStatus.observability} | 
+        <Text color={theme.muted} wrap="wrap">
+          Deployment: {deploymentStatus.mode} |
+          Observability: {deploymentStatus.observability} |
           Evaluation: {deploymentStatus.evaluation}
         </Text>
-        <Text color={theme.muted}>
+        <Text color={theme.muted} wrap="wrap">
           {deploymentStatus.description}
         </Text>
       </Box>
@@ -1011,20 +1081,18 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       </Box>
       
         {/* Footer with shortcuts */}
-        <Box marginTop={1} borderStyle="single" borderColor={unsavedChanges ? theme.warning : theme.muted} paddingX={1}>
-          <Box justifyContent="space-between">
-            <Text color={theme.muted}>
-              {navigationMode === 'sections'
-                ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
-                : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
-              }
+        <Box marginTop={1} borderTop borderColor={unsavedChanges ? theme.warning : theme.muted} paddingTop={1}>
+          <Text color={theme.muted} wrap="wrap">
+            {navigationMode === 'sections'
+              ? '↑↓ Navigate sections • Enter to expand/collapse • Ctrl+S to save • Esc to exit'
+              : '↑↓ Navigate fields • Enter to edit • Esc to collapse • Ctrl+S to save'
+            }
+          </Text>
+          {unsavedChanges && (
+            <Text color={theme.warning} bold wrap="wrap">
+              {' '}[Unsaved Changes]
             </Text>
-            {unsavedChanges && (
-              <Text color={theme.warning} bold>
-                [Unsaved Changes]
-              </Text>
-            )}
-          </Box>
+          )}
         </Box>
       </Box>
     </Box>

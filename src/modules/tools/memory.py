@@ -126,12 +126,12 @@ _MEMORY_CLIENT = None
 TOOL_SPEC = {
     "name": "mem0_memory",
     "description": (
-        "Memory management: store/retrieve/list/get/delete/history.\n"
-        "Actions: store, store_plan, store_reflection, get_plan, reflect, get, list, retrieve, delete, history.\n"
+        "Memory management: store/retrieve/list/get/delete.\n"
+        "Actions: store, store_plan, get_plan, get, list, retrieve, delete.\n"
         "Plan (compact JSON): objective, current_phase, phases[id|title|status|criteria].\n"
-        "Plan evaluation: Every ~20 steps → get_plan, assess criteria, update phases if met (store_plan).\n"
+        "Plan evaluation: MANDATORY checkpoints at 20%/40%/60%/80% budget → get_plan, assess criteria, update phases if met (store_plan).\n"
+        "Context preservation: For 800+ step operations, checkpoints anchor strategy in memory across context window limits.\n"
         "Phase transitions: Criteria satisfied → status='done', advance current_phase, next status='active', store_plan.\n"
-        "Post-reflection: Evaluate plan, update if pivot or phase change needed.\n"
         "Finding Format: [VULNERABILITY][WHERE][IMPACT][EVIDENCE][STEPS][REMEDIATION][CONFIDENCE].\n"
         "Proof Pack (High/Critical): artifact path + one-line rationale; else validation_status='hypothesis' with next steps.\n"
         "Default user_id='cyber_agent' if unspecified.\n"
@@ -142,27 +142,24 @@ TOOL_SPEC = {
             "properties": {
                 "action": {
                     "type": "string",
-                    "description": ("Action to perform (store, get, list, retrieve, delete, history)"),
+                    "description": ("Action to perform (store, store_plan, get_plan, get, list, retrieve, delete)"),
                     "enum": [
                         "store",
                         "store_plan",
-                        "store_reflection",
                         "get_plan",
-                        "reflect",
                         "get",
                         "list",
                         "retrieve",
                         "delete",
-                        "history",
                     ],
                 },
                 "content": {
                     "type": ["string", "object"],
-                    "description": "Content to store - string for store/store_reflection, dict for store_plan",
+                    "description": "Content to store - string for store, dict for store_plan",
                 },
                 "memory_id": {
                     "type": "string",
-                    "description": "Memory ID (required for get, delete, history actions)",
+                    "description": "Memory ID (required for get, delete actions)",
                 },
                 "query": {
                     "type": "string",
@@ -1260,6 +1257,12 @@ def mem0_memory(
     - Store atomic, reproducible evidence and findings; aggregation happens at report generation.
     - Never store executive summaries/final reports in memory.
 
+    Planning and Checkpoints (MANDATORY for long operations):
+    - Step 0: store_plan with phases ({"status": "active/pending/done/partial_failure/blocked"})
+    - At checkpoints (20%/40%/60%/80% budget): MUST get_plan → evaluate criteria vs evidence → store_plan with updated status
+    - Pivot triggers: Phase marked 'partial_failure' or 'blocked' → switch to alternative capability (don't retry exhausted approach)
+    - Status values: 'active' (current), 'pending' (not started), 'done' (criteria met), 'partial_failure' (stuck, need pivot), 'blocked' (dependency failed)
+
     Failure-mode hardening (validation first):
     - High/Critical findings require metadata.proof_pack with existing artifact paths; missing/invalid proof_pack → auto-downgrade validation_status to "hypothesis" and cap confidence.
     - Pattern-only signals are capped at low confidence and marked as "pattern_match" evidence_type.
@@ -1271,9 +1274,9 @@ def mem0_memory(
     [CONFIDENCE] percentage with justification
 
     Args:
-        action: One of store|get|list|retrieve|delete|history|store_plan|get_plan|store_reflection|reflect
-        content: Content to store (for store action) — use structured format for findings
-        memory_id: Memory ID (for get, delete, history actions)
+        action: One of store|get|list|retrieve|delete|store_plan|get_plan
+        content: Content to store (for store action) — use structured format for findings/plans
+        memory_id: Memory ID (for get, delete actions)
         query: Search query (for retrieve action)
         user_id: User ID for memory operations (defaults to 'cyber_agent')
         agent_id: Agent ID for memory operations
@@ -1365,15 +1368,6 @@ def mem0_memory(
                 console.print("[green]✅ Strategic plan stored successfully[/green]")
             return json.dumps(results, indent=2)
 
-        elif action == "store_reflection":
-            if not content:
-                raise ValueError("content is required for store_reflection action")
-
-            results = _MEMORY_CLIENT.store_reflection(content, user_id=user_id or "cyber_agent", metadata=metadata)
-            if not strands_dev:
-                console.print("[green]✅ Reflection stored successfully[/green]")
-            return json.dumps(results, indent=2)
-
         elif action == "get_plan":
             # Scope retrieval to current operation when available to avoid stale plans
             op_id = os.getenv("CYBER_OPERATION_ID")
@@ -1386,25 +1380,6 @@ def mem0_memory(
                 if not strands_dev:
                     console.print("[yellow]⚠️ No active plan found[/yellow]")
                 return "No active plan found"
-
-        elif action == "reflect":
-            # Get recent findings for reflection
-            recent_memories = _MEMORY_CLIENT.search_memories("category:finding", user_id or "cyber_agent")
-            if isinstance(recent_memories, dict):
-                recent_findings = recent_memories.get("results", [])
-            else:
-                recent_findings = recent_memories or []
-
-            current_plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent")
-            reflection_prompt = _MEMORY_CLIENT.reflect_on_findings(
-                recent_findings, current_plan, user_id or "cyber_agent"
-            )
-
-            if not strands_dev:
-                console.print(
-                    Panel(reflection_prompt, title="[bold blue]Reflection Required[/bold blue]", border_style="blue")
-                )
-            return reflection_prompt
 
         elif action == "store":
             if not content:
@@ -1605,16 +1580,6 @@ def mem0_memory(
                 panel = format_delete_response(memory_id)
                 console.print(panel)
             return f"Memory {memory_id} deleted successfully"
-
-        elif action == "history":
-            if not memory_id:
-                raise ValueError("memory_id is required for history action")
-
-            history = _MEMORY_CLIENT.get_memory_history(memory_id)
-            if not strands_dev:
-                panel = format_history_response(history)
-                console.print(panel)
-            return json.dumps(history, indent=2)
 
         else:
             raise ValueError(f"Invalid action: {action}")

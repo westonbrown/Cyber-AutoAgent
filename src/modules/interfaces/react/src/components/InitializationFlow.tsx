@@ -8,7 +8,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import Divider from 'ink-divider';
 import { HealthMonitor, HealthStatus } from '../services/HealthMonitor.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 import { themeManager } from '../themes/theme-manager.js';
@@ -553,7 +552,10 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
           </Text>
         </Box>
         
-        <Divider title="Configuration" titleColor={theme.primary} dividerColor={theme.muted} />
+        <Box flexDirection="column" marginY={1}>
+          <Text color={theme.primary} bold>Configuration</Text>
+          <Text color={theme.muted}>{'─'.repeat(60)}</Text>
+        </Box>
         
         <Box borderStyle="round" borderColor={theme.primary} padding={2} marginY={2}>
           <Box flexDirection="column">
@@ -594,8 +596,10 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
           </Text>
         </Box>
         
-        <Divider dividerColor={theme.muted} />
-        
+        <Box marginY={1}>
+          <Text color={theme.muted}>{'─'.repeat(60)}</Text>
+        </Box>
+
         <Box flexDirection="column" marginY={1}>
           {deploymentModes.map((mode, index) => {
             const isSelected = index === selectedModeIndex;
@@ -640,8 +644,10 @@ export const InitializationFlow: React.FC<InitializationFlowProps> = ({ onComple
           })}
         </Box>
         
-        <Divider dividerColor={theme.muted} />
-        
+        <Box marginY={1}>
+          <Text color={theme.muted}>{'─'.repeat(60)}</Text>
+        </Box>
+
         <Box marginTop={1}>
           <Text color={theme.info}>
             Use <Text bold>↑↓</Text> to select, <Text bold color={theme.primary}>Enter</Text> to confirm

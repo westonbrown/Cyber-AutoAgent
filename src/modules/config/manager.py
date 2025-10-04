@@ -60,18 +60,19 @@ class LLMConfig(ModelConfig):
 
     temperature: float = 0.95
     max_tokens: int = 4096
-    top_p: float = 0.95
+    top_p: Optional[float] = None
 
     def __post_init__(self):
         super().__post_init__()
         # Add LLM-specific parameters to the parameters dict
-        self.parameters.update(
-            {
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-            }
-        )
+        params = {
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        # Only include top_p if explicitly set (some providers like Anthropic reject both temperature and top_p)
+        if self.top_p is not None:
+            params["top_p"] = self.top_p
+        self.parameters.update(params)
 
 
 @dataclass
@@ -312,14 +313,18 @@ class ConfigManager:
         if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             beta_flags.append("context-1m-2025-08-07")
 
-        # Claude Sonnet 4.5 has different output token limit
+        # Claude Sonnet 4.5 supports extended thinking with higher token limits
         # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
-            max_tokens = 16000  # Sufficient for 10000 thinking budget + 6000 output
-            thinking_budget = 10000
+            default_max_tokens = 32000
+            default_thinking_budget = 25000
         else:
-            max_tokens = 32000
-            thinking_budget = 10000
+            default_max_tokens = 32000
+            default_thinking_budget = 10000
+
+        # Allow override via environment variables
+        max_tokens = int(os.getenv("MAX_TOKENS", default_max_tokens))
+        thinking_budget = int(os.getenv("THINKING_BUDGET", default_thinking_budget))
 
         return {
             "model_id": model_id,
@@ -342,8 +347,11 @@ class ConfigManager:
             "region_name": region_name,
             "temperature": llm_config.temperature,
             "max_tokens": llm_config.max_tokens,
-            "top_p": llm_config.top_p,
         }
+
+        # Only include top_p if set (avoid conflicts with providers like Anthropic)
+        if llm_config.top_p is not None:
+            config["top_p"] = llm_config.top_p
 
         # Add 1M context support for Claude Sonnet 4 and 4.5
         if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
@@ -407,8 +415,8 @@ class ConfigManager:
                     provider=ModelProvider.AWS_BEDROCK,
                     model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
                     temperature=0.95,
-                    max_tokens=8192,
-                    top_p=0.95,
+                    max_tokens=32000,
+                    top_p=0.95,  # Bedrock supports both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.AWS_BEDROCK,
@@ -442,8 +450,8 @@ class ConfigManager:
                     provider=ModelProvider.LITELLM,
                     model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=8192,
-                    top_p=0.95,
+                    max_tokens=32000,
+                    # top_p omitted - LiteLLM forwards to various providers; Anthropic rejects both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
                     provider=ModelProvider.LITELLM,
@@ -714,20 +722,16 @@ class ConfigManager:
 
         # Try to find the execution prompt file using the loader's plugins directory
         master_path = None
-        for fname in ("execution_prompt.txt", "execution_prompt.md"):
-            candidate = module_loader.plugins_dir / module / fname
-            if candidate.exists() and candidate.is_file():
-                master_path = candidate
-                break
+        candidate = module_loader.plugins_dir / module / "execution_prompt.md"
+        if candidate.exists() and candidate.is_file():
+            master_path = candidate
 
         # If module-specific prompt not found and not already trying general, fall back
         if master_path is None and module != "general":
             logger.warning("Module %s execution prompt not found, falling back to general", module)
-            for fname in ("execution_prompt.txt", "execution_prompt.md"):
-                candidate = module_loader.plugins_dir / "general" / fname
-                if candidate.exists() and candidate.is_file():
-                    master_path = candidate
-                    break
+            candidate = module_loader.plugins_dir / "general" / "execution_prompt.md"
+            if candidate.exists() and candidate.is_file():
+                master_path = candidate
 
         if master_path is None or not master_path.exists():
             logger.error("No execution prompt found for module %s", module)
@@ -1175,6 +1179,12 @@ class ConfigManager:
                 raise EnvironmentError(
                     "COHERE_API_KEY not configured for LiteLLM Cohere models. "
                     "Set COHERE_API_KEY environment variable."
+                )
+        elif model_id.startswith("azure/"):
+            if not os.getenv("AZURE_API_KEY"):
+                raise EnvironmentError(
+                    "AZURE_API_KEY not configured for LiteLLM Azure models. "
+                    "Set AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION environment variables."
                 )
         # LiteLLM will handle other provider validations internally
 

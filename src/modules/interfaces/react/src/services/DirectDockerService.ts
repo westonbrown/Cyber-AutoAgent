@@ -241,6 +241,27 @@ export class DirectDockerService extends EventEmitter {
       if (config.cohereApiKey) {
         env.push(`COHERE_API_KEY=${config.cohereApiKey}`);
       }
+      if (config.azureApiKey) {
+        env.push(`AZURE_API_KEY=${config.azureApiKey}`);
+      }
+      if (config.azureApiBase) {
+        env.push(`AZURE_API_BASE=${config.azureApiBase}`);
+      }
+      if (config.azureApiVersion) {
+        env.push(`AZURE_API_VERSION=${config.azureApiVersion}`);
+      }
+      if (config.maxTokens) {
+        env.push(`MAX_TOKENS=${config.maxTokens}`);
+      }
+      if (config.thinkingBudget) {
+        env.push(`THINKING_BUDGET=${config.thinkingBudget}`);
+      }
+      if (config.reasoningEffort) {
+        env.push(`REASONING_EFFORT=${config.reasoningEffort}`);
+      }
+      if (config.maxCompletionTokens) {
+        env.push(`MAX_COMPLETION_TOKENS=${config.maxCompletionTokens}`);
+      }
 
       // Model Configuration - pass separate models from config
       if (config.swarmModel) {
@@ -254,7 +275,7 @@ export class DirectDockerService extends EventEmitter {
       const maskEnv = (vars: string[]) => {
         const SENSITIVE = new Set([
           'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK', 'OPENAI_API_KEY',
-          'ANTHROPIC_API_KEY', 'COHERE_API_KEY', 'LANGFUSE_SECRET_KEY'
+          'ANTHROPIC_API_KEY', 'COHERE_API_KEY', 'AZURE_API_KEY', 'LANGFUSE_SECRET_KEY'
         ]);
         const out: Record<string, string> = {};
         for (const e of vars) {

@@ -559,7 +559,7 @@ def get_system_prompt(
     parts.append(f"Target: {target}")
     parts.append(f"Objective: {objective}")
     parts.append(f"Operation: {operation_id}")
-    parts.append(f"Budget: {max_steps} steps")
+    parts.append(f"Budget: {max_steps} steps (multiple tools per step allowed)")
     if provider:
         parts.append(f"Provider: {provider}")
         parts.append(f'model_provider: "{provider}"')
@@ -586,40 +586,63 @@ def get_system_prompt(
     if isinstance(output_config, dict) and output_config:
         base_dir = output_config.get("base_dir") or output_config.get("base") or "./outputs"
         target_name = output_config.get("target_name") or target
+        artifacts_path = output_config.get("artifacts_path", "")
         tools_path = output_config.get("tools_path", "")
         parts.append("## OUTPUT DIRECTORY STRUCTURE")
         parts.append(f"Base directory: {base_dir}")
+        parts.append(f"Target organization: {base_dir}/{target_name}/")
         parts.append(f"Target: {target_name}")
         parts.append(f"Operation: {operation_id}")
+        if isinstance(artifacts_path, str) and artifacts_path:
+            rel_artifacts = artifacts_path.replace("/app/", "") if "/app/" in artifacts_path else artifacts_path
+            parts.append(f"\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):")
+            parts.append(f"  → {rel_artifacts}")
         if isinstance(tools_path, str) and tools_path:
-            # Show absolute path for meta-tooling - critical for editor+load_tool workflow
             rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
             parts.append(f"\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
             parts.append(f"  → {rel_tools}")
-            parts.append(f'  Example: editor(command="create", path="{rel_tools}/tool_name.py", ...)')
-        parts.append("\nArtifacts and evidence will be stored under the unified operation path.")
 
-    # Inject a concise reflection snapshot based on step counter (plan-aligned cadence)
+    # Inject reflection snapshot with progressive checkpoint enforcement
     try:
-        _interval = 20
-        # Next reflection at the next multiple of interval (1-based: 20,40,60,...)
-        if current_step <= 0:
-            _next_reflection = _interval
-        else:
-            _next_reflection = ((current_step + _interval - 1) // _interval) * _interval
-        if remaining_steps is not None and isinstance(remaining_steps, int):
-            # Bound by max steps
-            _next_reflection = min(_next_reflection, max_steps)
-        _steps_until = max(0, _next_reflection - current_step)
+        _budget_pct = int((current_step / max_steps) * 100) if max_steps > 0 else 0
+
+        # Calculate checkpoint intervals for 800+ step operations
+        # Primary checkpoints: 20%, 40%, 60%, 80%
+        _checkpoints = [int(max_steps * pct) for pct in [0.2, 0.4, 0.6, 0.8]]
+        _next_checkpoint = next((cp for cp in _checkpoints if cp > current_step), max_steps)
+        _steps_until = max(0, _next_checkpoint - current_step)
+        _checkpoint_pct = int((_next_checkpoint / max_steps) * 100) if max_steps > 0 else 0
+
         parts.append("## REFLECTION SNAPSHOT")
+        parts.append(f"Current step: {current_step}")
+        parts.append(f"Budget: {_budget_pct}% ({current_step}/{max_steps})")
+        parts.append(f"Phase: {plan_current_phase if plan_current_phase is not None else '-'}")
+        parts.append(f"Checkpoint: {_next_checkpoint} in {_steps_until} steps")
+
+        # CRITICAL: Make checkpoints MANDATORY not optional
+        # Check if we're AT or PAST any checkpoint
+        _overdue_checkpoints = [cp for cp in _checkpoints if current_step >= cp]
+        if _overdue_checkpoints and current_step > 0:
+            _last_checkpoint = _overdue_checkpoints[-1]
+            _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
+            parts.append(f"\n{'='*60}")
+            parts.append(f"⚠️ CHECKPOINT GATE {_checkpoint_pct_hit}% ⚠️")
+            parts.append(f"{'='*60}")
+            parts.append(f"Complete protocol BEFORE next tool:")
+            parts.append(f"1. mem0_memory(action='get_plan')")
+            parts.append(f"2. Answer: Criteria met? Current confidence? <50%?")
+            parts.append(f"3. If confidence <50%: MUST pivot to different method OR deploy swarm")
+            parts.append(f"4. store_plan (update status, mark partial_failure if pivoting)")
+            parts.append(f"5. AFTER 1-4: Select next tool")
+            parts.append(f"{'='*60}")
+        # Approaching checkpoint warnings
+        elif _steps_until <= 5 and _steps_until > 0:
+            parts.append(f"\nCHECKPOINT APPROACHING: In {_steps_until} steps at {_checkpoint_pct}% budget")
+            parts.append(f"PREPARE: After step {_next_checkpoint}, FIRST action MUST be get_plan to evaluate phase {plan_current_phase if plan_current_phase else '?'} criteria")
+
         parts.append(
-            f"CurrentPhase: {plan_current_phase if plan_current_phase is not None else '-'} | StepsExecuted: {current_step} / {max_steps} | NextReflectionDueAt: step {_next_reflection} (in {_steps_until} steps)"
+            f"\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
         )
-        parts.append(
-            "Reflection triggers: High/Critical finding; two attempts without new artifact; repeated timeouts on same command; plan–evidence mismatch; technique succeeds but criteria unmet."
-        )
-        if _steps_until <= 3 and current_step > 0:
-            parts.append(f"⚠️ CHECKPOINT DUE: get_plan in {_steps_until} steps to evaluate phase criteria and update if satisfied")
     except Exception:
         pass
 
@@ -767,11 +790,9 @@ class ModulePromptLoader:
         # 2) Prefer operation_plugins/<module>/execution_prompt first to avoid noisy missing-template warnings
         local_candidate: Optional[Path] = None
         try:
-            for fname in ("execution_prompt.md", "execution_prompt.txt"):
-                p = (self.plugins_dir / module_name / fname)
-                if p.exists() and p.is_file():
-                    local_candidate = p
-                    break
+            p = self.plugins_dir / module_name / "execution_prompt.md"
+            if p.exists() and p.is_file():
+                local_candidate = p
         except Exception:
             # best-effort
             local_candidate = None
@@ -838,17 +859,12 @@ class ModulePromptLoader:
             except Exception:
                 pass
 
-        # 1) Local candidates
+        # 1) Local candidate
         local_candidate: Optional[Path] = None
         try:
-            candidates = [
-                self.plugins_dir / module_name / "report_prompt.txt",
-                self.plugins_dir / module_name / "report_prompt.md",
-            ]
-            for path in candidates:
-                if path.exists() and path.is_file():
-                    local_candidate = path
-                    break
+            path = self.plugins_dir / module_name / "report_prompt.md"
+            if path.exists() and path.is_file():
+                local_candidate = path
         except Exception as e:
             logger.debug("Failed to enumerate module report prompt for '%s': %s", module_name, e)
             local_candidate = None

@@ -11,9 +11,26 @@ Group findings by attack vector potential:
 </general_report_structure>
 
 <finding_organization>
-- Chain related vulnerabilities to show compound risk
-- Map technical findings to business processes
-- Highlight where multiple small issues create critical exposure
+**Organize by Exploitation Chain Potential**:
+- Chain related vulnerabilities to show compound risk (XSS + CORS → account takeover, SQLi + file write → RCE)
+- Map technical findings to business processes (payment bypass, data exfiltration paths, privilege escalation chains)
+- Highlight where multiple small issues create critical exposure (info disclosure + weak session → full compromise)
+
+**Confidence-Based Severity Classification**:
+- CRITICAL: Verified exploitability (≥90% confidence) with proof artifacts + immediate business impact
+- HIGH: Likely exploitable (70-89% confidence) with clear attack path + significant risk
+- MEDIUM: Potentially exploitable (50-69% confidence) requiring additional conditions or chaining
+- LOW: Theoretical risk (<50% confidence) or requires significant attacker resources
+- INFO: Configuration weaknesses, best practices, defensive gaps (no direct exploit path)
+
+**Finding Structure Requirements**:
+Each finding MUST include:
+1. Vulnerability title with exploitation context (not just type)
+2. Evidence artifacts with paths (HTTP transcripts, screenshots, PoC code)
+3. Exploitation steps with before/after state validation
+4. Business impact quantification (data exposure scope, financial impact, compliance violations)
+5. Confidence percentage with validation methodology
+6. Negative controls demonstrating proper security elsewhere
 </finding_organization>
 
 <audience_adaptation>

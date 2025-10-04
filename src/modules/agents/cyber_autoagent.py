@@ -222,14 +222,26 @@ def _create_litellm_model(
     if model_id.startswith("bedrock/"):
         client_args["aws_region_name"] = region_name
 
+    # Build params dict with optional reasoning parameters
+    params = {
+        "temperature": config["temperature"],
+        "max_tokens": config["max_tokens"],
+    }
+
+    # Only include top_p if present in config (avoid provider conflicts)
+    if "top_p" in config:
+        params["top_p"] = config["top_p"]
+
+    # Add reasoning parameters if set (O1/GPT-5 support)
+    if os.getenv("REASONING_EFFORT"):
+        params["reasoning_effort"] = os.getenv("REASONING_EFFORT")
+    if os.getenv("MAX_COMPLETION_TOKENS"):
+        params["max_completion_tokens"] = int(os.getenv("MAX_COMPLETION_TOKENS"))
+
     return LiteLLMModel(
         client_args=client_args,
         model_id=config["model_id"],
-        params={
-            "temperature": config["temperature"],
-            "max_tokens": config["max_tokens"],
-            "top_p": config.get("top_p", 0.95),
-        },
+        params=params,
     )
 
 
@@ -383,8 +395,14 @@ def create_agent(
     try:
         if paths:
             root_path = paths.get("root")
+            artifacts_path = paths.get("artifacts")
+            tools_path = paths.get("tools")
             if isinstance(root_path, str) and root_path:
                 os.environ["CYBER_OPERATION_ROOT"] = root_path
+            if isinstance(artifacts_path, str) and artifacts_path:
+                os.environ["CYBER_ARTIFACTS_DIR"] = artifacts_path
+            if isinstance(tools_path, str) and tools_path:
+                os.environ["CYBER_TOOLS_DIR"] = tools_path
             if operation_id:
                 os.environ["CYBER_OPERATION_ID"] = operation_id
             if target_name:
@@ -662,7 +680,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
-        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "tools_path": paths.get("tools")},
+        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "artifacts_path": paths.get("artifacts"), "tools_path": paths.get("tools")},
         plan_snapshot=plan_snapshot,
         plan_current_phase=plan_current_phase,
     )
