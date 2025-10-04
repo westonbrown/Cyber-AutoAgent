@@ -36,7 +36,7 @@
 
 **swarm**
 - Purpose: Multi-agent collaboration for parallel capability testing
-- Configuration: 2-3 agents max, max_handoffs=4, max_iterations=12, node_timeout=2800, execution_timeout=3200
+- Configuration: 2-3 agents max, max_handoffs=3, max_iterations=8, node_timeout=3200, execution_timeout=3800
 - Task format: STATE:[current findings], GOAL:[objective], AVOID:[dead ends], FOCUS:[technique per agent]
 - Critical: Agent prompts MUST specify WHEN/WHO to handoff: "After 5-8 steps, IMMEDIATELY handoff_to_agent('agent_name', 'reason')"
 - Handoff requirement: Agents MUST explicitly call `handoff_to_agent('name', 'context')`. Without handoffs, swarm degenerates to sequential execution.
@@ -70,6 +70,7 @@
 **stop**
 - Valid: Objective achieved with artifacts OR budget ≥95% (from REFLECTION SNAPSHOT)
 - FORBIDDEN: Intermediate success (creds/hash/vuln WITHOUT objective), approach blocked, constraints, budget <95% without trying different capability + swarm
+- **Common violation**: Stopping after capability discovery. Must complete chain: capability confirmed → direct use tested → objective reached
 
 </tool_protocols>
 

@@ -619,26 +619,12 @@ def get_system_prompt(
         parts.append(f"Phase: {plan_current_phase if plan_current_phase is not None else '-'}")
         parts.append(f"Checkpoint: {_next_checkpoint} in {_steps_until} steps")
 
-        # CRITICAL: Make checkpoints MANDATORY not optional
-        # Check if we're AT or PAST any checkpoint
+        # Checkpoint guidance (not enforced - agent will self-regulate via learning patterns)
         _overdue_checkpoints = [cp for cp in _checkpoints if current_step >= cp]
         if _overdue_checkpoints and current_step > 0:
             _last_checkpoint = _overdue_checkpoints[-1]
             _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
-            parts.append(f"\n{'='*60}")
-            parts.append(f"⚠️ CHECKPOINT GATE {_checkpoint_pct_hit}% ⚠️")
-            parts.append(f"{'='*60}")
-            parts.append(f"Complete protocol BEFORE next tool:")
-            parts.append(f"1. mem0_memory(action='get_plan')")
-            parts.append(f"2. Answer: Criteria met? Current confidence? <50%?")
-            parts.append(f"3. If confidence <50%: MUST pivot to different method OR deploy swarm")
-            parts.append(f"4. store_plan (update status, mark partial_failure if pivoting)")
-            parts.append(f"5. AFTER 1-4: Select next tool")
-            parts.append(f"{'='*60}")
-        # Approaching checkpoint warnings
-        elif _steps_until <= 5 and _steps_until > 0:
-            parts.append(f"\nCHECKPOINT APPROACHING: In {_steps_until} steps at {_checkpoint_pct}% budget")
-            parts.append(f"PREPARE: After step {_next_checkpoint}, FIRST action MUST be get_plan to evaluate phase {plan_current_phase if plan_current_phase else '?'} criteria")
+            parts.append(f"\nCHECKPOINT {_checkpoint_pct_hit}%: Review plan, check confidence, pivot if <50%")
 
         parts.append(
             f"\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
