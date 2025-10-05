@@ -168,7 +168,7 @@ class Colors:
 
 
 def print_banner():
-    """Display operation banner with clean, centered ASCII art."""
+    """Display operation banner with neon cyberpunk gradient colors."""
     # Check if banner is disabled by environment variables
     import os
 
@@ -195,20 +195,43 @@ def print_banner():
         r"╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ",
     ]
 
-    subtitle = "-- Autonomous Cyber Agent --"
+    subtitle = "Full Spectrum Cyber Operations"
+    version = "v0.1.3"
+
+    # Terminal Pro gradient colors (24-bit RGB ANSI codes)
+    # Matrix green → Cyan → Apple blue (Gemini-inspired multi-color gradient)
+    gradient_colors = [
+        "\033[38;2;0;255;65m",     # Bright matrix green (#00FF41)
+        "\033[38;2;0;247;92m",     # Green-emerald blend
+        "\033[38;2;0;239;120m",    # Emerald blend
+        "\033[38;2;0;229;160m",    # Emerald green (#00E5A0)
+        "\033[38;2;0;223;192m",    # Emerald-cyan blend
+        "\033[38;2;0;217;224m",    # Cyan blend
+        "\033[38;2;0;217;255m",    # Bright cyan (#00D9FF)
+        "\033[38;2;25;205;255m",   # Cyan-blue blend
+        "\033[38;2;51;184;255m",   # Sky blue (#33B8FF)
+        "\033[38;2;40;164;255m",   # Sky-blue blend
+        "\033[38;2;28;148;255m",   # Blue blend
+        "\033[38;2;10;132;255m",   # Apple blue (#0A84FF)
+    ]
 
     banner_art_width = 0
     if banner_lines:
         banner_art_width = max(len(line.rstrip()) for line in banner_lines)
 
-    padding_length = (banner_art_width - len(subtitle)) // 2
-    centered_subtitle = (" " * max(0, padding_length)) + subtitle
+    # Print banner with gradient - one color per line
+    print()  # Empty line before banner
+    for i, line in enumerate(banner_lines):
+        if i < len(gradient_colors):
+            print(f"{gradient_colors[i]}{line}{Colors.RESET}")
+        else:
+            print(f"{gradient_colors[-1]}{line}{Colors.RESET}")
 
-    # Construct the full banner string
-    full_banner = "\n".join(banner_lines) + "\n" + centered_subtitle
-
-    # Print banner for CLI mode
-    print("%s%s%s" % (Colors.CYAN, full_banner, Colors.RESET))
+    # Print subtitle with Apple blue and version with bright matrix green
+    padding_length = (banner_art_width - len(subtitle) - len(version) - 3) // 2  # 3 for spacing
+    centered_line = (" " * max(0, padding_length)) + subtitle + " " + "\033[38;2;0;255;65m" + version + Colors.RESET
+    print(f"\033[38;2;10;132;255m{centered_line}{Colors.RESET}")
+    print()  # Empty line after banner
 
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):

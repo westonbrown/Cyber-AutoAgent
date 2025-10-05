@@ -702,22 +702,22 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     
     // Create a prominent notification box that stands out
     return (
-      <Box 
+      <Box
         borderStyle="double"
         borderColor={
           message.type === 'success' ? theme.success :
           message.type === 'error' ? theme.danger :
-          theme.info
+          theme.primary
         }
         paddingX={1}
         marginBottom={1}
       >
-        <Text 
+        <Text
           bold
           color={
             message.type === 'success' ? theme.success :
             message.type === 'error' ? theme.danger :
-            theme.info
+            theme.primary
           }
         >
           {message.type === 'success' && '━━━ '}
@@ -855,6 +855,14 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               setSelectedFieldIndex(prev => prev + 1);
             }
           }}
+          indicatorComponent={({ isSelected }) => (
+            <Text color={isSelected ? theme.primary : 'transparent'}>❯ </Text>
+          )}
+          itemComponent={({ isSelected, label }) => (
+            <Text color={isSelected ? theme.primary : theme.foreground}>
+              {label}
+            </Text>
+          )}
         />
       );
     }
@@ -1029,7 +1037,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             borderColor={
               message.type === 'success' ? theme.success :
               message.type === 'error' ? theme.danger :
-              theme.info
+              theme.primary
             }
             paddingX={1}
             marginBottom={1}
@@ -1040,7 +1048,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               color={
                 message.type === 'success' ? theme.success :
                 message.type === 'error' ? theme.danger :
-                theme.info
+                theme.primary
               }
             >
               {message.type === 'success' && '✓ '}
