@@ -1277,13 +1277,28 @@ const method = latestInput.method || 'GET';
     }
       
       
-    case 'error':
-      // Simplified error display - just show the content
+    case 'error': {
+      // Enhanced error display with solution guidance
+      const errorMsg = (event as any).error || event.content || 'Unknown error';
+      const solution = (event as any).solution;
+      const exitCode = (event as any).exitCode;
+
       return (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="red">{event.content}</Text>
+        <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor="red" paddingX={1}>
+          <Text bold color="red">✗ Error</Text>
+          <Text color="red">{errorMsg}</Text>
+          {exitCode !== undefined && (
+            <Text dimColor color="red">Exit code: {exitCode}</Text>
+          )}
+          {solution && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text bold color="yellow">→ Solution:</Text>
+              <Text color="yellow">{solution}</Text>
+            </Box>
+          )}
         </Box>
       );
+    }
       
     case 'metadata': {
       // Render metadata events normally, with special-case compact display for stop_tool
