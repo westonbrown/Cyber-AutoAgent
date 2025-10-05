@@ -400,7 +400,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
           {/* Header with keyboard hints */}
           <Box paddingY={1} borderStyle="single" borderColor={theme.subtle} borderTop={false} borderLeft={false} borderRight={false}>
             <Text>
-              <Text color={theme.info} bold>Suggestions:</Text>
+              <Text color={theme.primary} bold>Suggestions:</Text>
               {' '}
               <Text color={theme.foreground}>↑↓</Text>
               <Text color={theme.comment}> navigate</Text>
@@ -429,7 +429,7 @@ export const UnifiedInputPrompt: React.FC<UnifiedInputPromptProps> = ({
                       {suggestion.text}
                     </Text>
                     {/* Description with better contrast */}
-                    <Text color={selected ? theme.info : theme.comment}>
+                    <Text color={selected ? theme.primary : theme.comment}>
                       {' — '}
                       {suggestion.description}
                     </Text>

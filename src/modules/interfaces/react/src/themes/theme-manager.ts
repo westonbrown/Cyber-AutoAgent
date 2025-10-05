@@ -5,15 +5,15 @@
  */
 
 import { CyberTheme, ThemeConfig } from './types.js';
-import { CyberDarkTheme } from './cyber-dark.js';
-import { CyberLightTheme } from './cyber-light.js';
+import { NeonGridDark } from './neon-grid-dark.js';
+import { NeonGridLight } from './neon-grid-light.js';
 import { getRecommendedThemeType, supportsRichColors } from './terminal-detector.js';
 
 class ThemeManager {
   private currentTheme: CyberTheme;
   private config: ThemeConfig;
-  private darkTheme: CyberTheme = CyberDarkTheme;
-  private lightTheme: CyberTheme = CyberLightTheme;
+  private darkTheme: CyberTheme = NeonGridDark;
+  private lightTheme: CyberTheme = NeonGridLight;
 
   constructor() {
     // Auto-detect terminal background and select appropriate theme
@@ -24,7 +24,7 @@ class ThemeManager {
 
     this.config = {
       theme: this.currentTheme,
-      enableGradients: supportsColors, // Only enable gradients if terminal supports rich colors
+      enableGradients: true, // Always enable gradients for Neon Grid theme
       enableAnimations: true,
       terminalWidth: process.stdout.columns || 80
     };
