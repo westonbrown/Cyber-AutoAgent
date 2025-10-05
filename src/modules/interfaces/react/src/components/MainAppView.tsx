@@ -128,6 +128,22 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
     }
   }, []);
 
+  // Memoize event and metrics handlers to prevent Terminal useEffect re-runs
+  const handleEvent = useCallback((e: any) => {
+    handleStreamEvent(e);
+    handleLifecycleEvent(e);
+  }, [handleStreamEvent, handleLifecycleEvent]);
+
+  // Use ref to completely eliminate dependency on actions object
+  const actionsRef = useRef(actions);
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
+
+  const handleMetricsUpdate = useCallback((metrics: any) => {
+    actionsRef.current.updateMetrics?.(metrics);
+  }, []); // No dependencies - uses ref to prevent re-creation
+
   // Also reset header suppression when a brand-new activeOperation appears in running state
   useEffect(() => {
     if (appState.activeOperation && appState.activeOperation.status === 'running') {
@@ -236,8 +252,8 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               sessionId={appState.activeOperation!.id}
               terminalWidth={appState.terminalDisplayWidth}
               collapsed={activeModal !== ModalType.NONE}
-              onEvent={(e:any) => { handleStreamEvent(e); handleLifecycleEvent(e); }}
-              onMetricsUpdate={(metrics) => actions.updateMetrics?.(metrics)}
+              onEvent={handleEvent}
+              onMetricsUpdate={handleMetricsUpdate}
               animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
               cleanupRef={terminalCleanupRef}
             />
