@@ -873,15 +873,51 @@ export class PythonExecutionService extends EventEmitter {
           this.emit('complete');
           resolve(); // Process completed successfully
         } else {
-          // Provide more detailed error information with stderr tail
-          const tail = this.stderrBuffer
-            .split(/\r?\n/)
-            .filter(Boolean)
-            .slice(-12)
-            .join('\n');
+          // Parse stderr for common errors and provide actionable guidance
+          const stderrLines = this.stderrBuffer.split(/\r?\n/).filter(Boolean);
+          const tail = stderrLines.slice(-12).join('\n');
+
+          // Detect common error patterns
+          let userFriendlyMsg = '';
+          let solution = '';
+
+          if (this.stderrBuffer.includes('ModuleNotFoundError') || this.stderrBuffer.includes('ImportError')) {
+            const missingModule = this.stderrBuffer.match(/No module named ['"]([^'"]+)['"]/)?.[1];
+            userFriendlyMsg = `Missing Python dependency${missingModule ? `: ${missingModule}` : ''}`;
+            solution = 'Run: uv sync --all-extras  (or: pip install -r requirements.txt)';
+          } else if (this.stderrBuffer.includes('SyntaxError')) {
+            userFriendlyMsg = 'Python syntax error in source code';
+            solution = 'Check the stderr output below for the file and line number';
+          } else if (this.stderrBuffer.includes('PermissionError') || this.stderrBuffer.includes('EACCES')) {
+            userFriendlyMsg = 'Permission denied accessing files or directories';
+            solution = 'Check file permissions in the project directory';
+          } else if (this.stderrBuffer.includes('FileNotFoundError')) {
+            const missingFile = this.stderrBuffer.match(/FileNotFoundError.*['"]([^'"]+)['"]/)?.[1];
+            userFriendlyMsg = `Required file not found${missingFile ? `: ${missingFile}` : ''}`;
+            solution = 'Ensure all required configuration files exist';
+          } else if (this.stderrBuffer.includes('CUDA') || this.stderrBuffer.includes('torch')) {
+            userFriendlyMsg = 'PyTorch/CUDA configuration issue';
+            solution = 'Check GPU drivers or use CPU-only mode';
+          } else if (code === 1 && !this.stderrBuffer.trim()) {
+            userFriendlyMsg = 'Python process crashed without error output';
+            solution = 'Try running: python src/cyberautoagent.py --help  to diagnose';
+          } else {
+            userFriendlyMsg = `Python process exited with code ${code}`;
+            solution = 'Check stderr output below for details';
+          }
+
+          // Emit user-friendly error event for UI display
+          this.emit('event', {
+            type: 'error',
+            error: userFriendlyMsg,
+            solution: solution,
+            exitCode: code
+          });
+
+          // Construct detailed error for logs
           const context = `cwd=${this.projectRoot} pythonPath=${this.pythonPath}`;
-          const extra = tail ? `\n--- stderr tail ---\n${tail}\n-------------------` : '';
-          const errorMsg = `Python process exited with code ${code}. Check that all dependencies are installed and the cyberautoagent module can be imported.\n${context}${extra}`;
+          const extra = tail ? `\n--- stderr (last 12 lines) ---\n${tail}\n-------------------` : '';
+          const errorMsg = `${userFriendlyMsg}\n\nSolution: ${solution}\n\n${context}${extra}`;
           const error = new Error(errorMsg);
           this.emit('error', error);
           reject(error); // Process failed
