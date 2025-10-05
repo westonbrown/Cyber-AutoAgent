@@ -9,6 +9,7 @@
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import { 
   ExecutionService, 
   ExecutionMode, 
@@ -86,39 +87,67 @@ export class PythonExecutionServiceAdapter extends EventEmitter implements Execu
     const warnings: string[] = [];
 
     try {
-      // Check Python version
-      const pythonCheck = await this.pythonService.checkPythonVersion();
-      if (!pythonCheck.installed) {
-        issues.push({
-          type: 'python',
-          severity: 'error',
-          message: pythonCheck.error || 'Python 3.10+ is required',
-          suggestion: 'Install Python 3.10 or higher from https://python.org'
-        });
-      }
+      // Detect if running inside Docker - if so, skip detailed environment checks
+      // as everything is pre-installed during image build
+      const isDocker = !!(
+        process.env.CONTAINER === 'docker' ||
+        process.env.IS_DOCKER ||
+        fsSync.existsSync('/.dockerenv')
+      );
 
-      // Check environment status
-      const envStatus = await this.pythonService.checkEnvironmentStatus();
-      
-      if (!envStatus.venvValid) {
-        if (envStatus.venvExists) {
+      if (isDocker) {
+        logger.info('Running inside Docker - skipping environment validation (pre-installed)');
+
+        // Just do basic Python check
+        const pythonCheck = await this.pythonService.checkPythonVersion();
+        if (!pythonCheck.installed) {
           issues.push({
             type: 'python',
             severity: 'error',
-            message: 'Virtual environment exists but is corrupted',
-            suggestion: 'Delete .venv directory and run setup again'
+            message: 'Python not found in Docker container',
+            suggestion: 'Check Docker image build'
           });
-        } else {
-          warnings.push('Virtual environment will be created during setup');
         }
-      }
 
-      if (!envStatus.dependenciesInstalled) {
-        warnings.push('Python dependencies will be installed during setup');
-      }
+        // Skip venv/dependency checks - they're baked into the image
+      } else {
+        // On host: do full validation
+        logger.info('Running on host - performing full environment validation');
 
-      if (!envStatus.packageInstalled) {
-        warnings.push('Cyber-AutoAgent package will be installed during setup');
+        // Check Python version
+        const pythonCheck = await this.pythonService.checkPythonVersion();
+        if (!pythonCheck.installed) {
+          issues.push({
+            type: 'python',
+            severity: 'error',
+            message: pythonCheck.error || 'Python 3.10+ is required',
+            suggestion: 'Install Python 3.10 or higher from https://python.org'
+          });
+        }
+
+        // Check environment status
+        const envStatus = await this.pythonService.checkEnvironmentStatus();
+
+        if (!envStatus.venvValid) {
+          if (envStatus.venvExists) {
+            issues.push({
+              type: 'python',
+              severity: 'error',
+              message: 'Virtual environment exists but is corrupted',
+              suggestion: 'Delete .venv directory and run setup again'
+            });
+          } else {
+            warnings.push('Virtual environment will be created during setup');
+          }
+        }
+
+        if (!envStatus.dependenciesInstalled) {
+          warnings.push('Python dependencies will be installed during setup');
+        }
+
+        if (!envStatus.packageInstalled) {
+          warnings.push('Cyber-AutoAgent package will be installed during setup');
+        }
       }
 
       // Check model provider credentials

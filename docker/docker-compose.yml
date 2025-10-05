@@ -5,9 +5,8 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
     container_name: cyber-autoagent
-    # Run in service mode for full-stack deployment
-    # The container stays alive and waits for external requests via React UI
-    command: ["--service-mode"]
+    # React terminal is now the default entrypoint
+    # No command override needed - starts interactively
     # Add capabilities for network tools without full root access
     cap_add:
       - NET_RAW      # For packet crafting (nmap SYN scans, tcpdump)
@@ -31,8 +30,8 @@ services:
       # Application configuration
       - DEV=true
       - FORCE_COLOR=1
-      - CYBER_UI_MODE=cli
-      
+      - CONTAINER=docker  # Mark as Docker environment for React terminal detection
+
       # Observability configuration (auto-detected by default, forced true in compose mode)
       - ENABLE_OBSERVABILITY=${ENABLE_OBSERVABILITY:-true}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-web:3000}
