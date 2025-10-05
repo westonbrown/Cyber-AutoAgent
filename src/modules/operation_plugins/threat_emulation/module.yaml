@@ -1,0 +1,23 @@
+name: threat_emulation
+version: 1.0.0
+description: APT and threat actor emulation following MITRE ATT&CK framework
+author: Cyber-AutoAgent Team
+license: MIT
+cognitive_level: 4
+configuration:
+  approach: TTP-driven adversary emulation with marker-based tracking and detection opportunities
+capabilities:
+  - mitre_attack_execution: Execute TTPs from threat intel reports
+  - ioc_generation: Create detection markers for blue team training
+  - kill_chain_progression: Systematic attack chain execution
+  - operational_security: Marker-based simulation without actual harm
+supported_targets:
+  - network
+  - enterprise
+  - active-directory
+  - cloud-environment
+tools: []
+module_interface:
+  accepts_from: []
+  provides_to: []
+  finding_categories: ["ttp-executed", "ioc-created", "detection-opportunity", "attack-path"]

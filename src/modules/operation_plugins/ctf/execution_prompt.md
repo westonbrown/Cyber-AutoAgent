@@ -29,6 +29,7 @@
 
 **Phase 2: HYPOTHESIS** (Explicit reasoning before action)
 - **Approach Classification** (MANDATORY): "Challenge class: [single-capability | multi-capability chain | novel-exploit]" + "Expected step budget: [3-10 | 15-30 | 40-80]"
+- **Capability class** = vulnerability type (injection, authentication, authorization, logic, file operation). Technique = specific method within class. Example: Injection class has techniques: SQLi, XSS, SSTI, command injection
 - Technique tracking: "Using approach X (attempt N of this specific method, attempt M of this general approach)"
 - Tool batching: Can I test multiple hypotheses in parallel? → If YES: batch tool calls
 - Observation: [behavior noticed]
@@ -58,8 +59,9 @@ Example: "Challenge class: single-capability (auth bypass). Expected budget: 8-1
   4. Example: "Confidence was 70%. Hypothesis refuted. 70% - 30% = 40%"
 - Pivot decision (IMMEDIATE check after confidence calc):
   "Current confidence: Y%. Is Y < 50%?" → If YES: MUST pivot to different method OR deploy swarm | If NO: continue
-- **Repetition Gate** (stuck detection): "Same outcome 5+ iterations with NO progress toward objective?" → If YES: FORBIDDEN to continue current approach, MUST switch to fundamentally different method
-- **No-Progress Pattern** (technique vs objective gap): "Technique succeeds but objective NOT closer 3+ times?" (empty results, same rejection, zero data) → Question: "Is this technique sufficient or am I fixating? What's the SIMPLEST alternative path?" → Test baseline alternative BEFORE more technique iteration
+- **Repetition Gate** (stuck detection): Count outcomes toward OBJECTIVE (not technique variations). Track: "Method A fails + Method B fails + Method C fails = 3 same outcomes" (different variations = still same outcome). At 5: MUST switch capability class
+- **No-Progress Pattern** (technique vs objective gap): "Technique succeeds but objective NOT closer 3+ times?" (empty results, same rejection, zero data) → Question: "Is this the ONLY path? What's missing?" → Test fundamentally different approach (not variation)
+- **Insight-to-Action**: After storing plan with "pivot" or "partial_failure" status → Next action MUST execute the pivot. Pattern: Insight without immediate action = insight ignored
 - Next action: [escalate if >70% / pivot if <50% / refine if 50-70%]
 
 **Phase 4: CHAINING** (capability→objective bridge)
@@ -99,11 +101,11 @@ Example: Creds extracted → test login (1 step) BEFORE cracking/enumeration (20
 Before invoking stop(), complete checklist:
 1. Current step from REFLECTION SNAPSHOT: [___]
 2. Budget from REFLECTION SNAPSHOT: [___%]
-3. **Exploitation complete?** → Vuln identified ≠ objective achieved. Verify chain:
-   - Capability works? (vuln confirmed, access granted, data extracted)
-   - Direct use tested? (1-step application attempted)
-   - Objective reached? (flag extracted, not just vuln found)
-   → If ANY step incomplete: BLOCKED (complete chain first)
+3. **Exploitation complete?** Fill each:
+   [ ] Capability confirmed: [what capability?]
+   [ ] Direct use tested: [what happened?]
+   [ ] Objective reached: [flag extracted?]
+   If ANY unchecked: stop() BLOCKED
 4. Flag artifact exists? → [YES/NO]
 5. Decision gate:
    - Flag = YES → stop("Flag: [artifact]") ALLOWED

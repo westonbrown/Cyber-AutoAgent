@@ -1,0 +1,24 @@
+name: code_security
+version: 1.0.0
+description: Static code analysis for security vulnerabilities and supply chain risks
+author: Cyber-AutoAgent Team
+license: MIT
+cognitive_level: 4
+configuration:
+  approach: Multi-layered SAST with dependency scanning and secret detection
+capabilities:
+  - vulnerability_detection: AST-based pattern matching for security flaws
+  - dependency_scanning: CVE detection and supply chain risk assessment
+  - secret_detection: Hardcoded credentials and API key discovery
+  - code_quality: Security-focused code smell identification
+supported_targets:
+  - repository
+  - codebase
+  - source-code
+tools: []
+module_interface:
+  accepts_from: []
+  provides_to:
+    - general
+    - web_security
+  finding_categories: ["code-vulnerability", "dependency-risk", "hardcoded-secret", "logic-flaw"]
