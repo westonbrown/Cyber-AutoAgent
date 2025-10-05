@@ -216,6 +216,8 @@ memory/
 /tools/
 epics/
 outputs/
+logs/
+.leann/
 
 # Test outputs and logs
 test-results/

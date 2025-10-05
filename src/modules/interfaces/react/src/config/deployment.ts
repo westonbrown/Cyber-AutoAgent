@@ -15,6 +15,8 @@ export interface DeploymentInfo {
   evaluationDefault: boolean;
   langfuseHost: string;
   description: string;
+  /** Recommended execution mode for this deployment */
+  executionMode: 'local-cli' | 'single-container' | 'full-stack';
 }
 
 /**
@@ -95,7 +97,8 @@ export async function detectDeploymentMode(): Promise<DeploymentInfo> {
         observabilityDefault: true,
         evaluationDefault: true,
         langfuseHost: 'http://langfuse-web:3000',
-        description: 'Full-stack deployment with observability infrastructure'
+        description: 'Full-stack deployment with observability infrastructure',
+        executionMode: 'local-cli' // Inside Docker, spawn Python subprocess
       };
     } else {
       // Single container mode
@@ -104,7 +107,8 @@ export async function detectDeploymentMode(): Promise<DeploymentInfo> {
         observabilityDefault: false,
         evaluationDefault: false,
         langfuseHost: 'http://localhost:3000',
-        description: 'Single container deployment (no observability infrastructure)'
+        description: 'Single container deployment (no observability infrastructure)',
+        executionMode: 'local-cli' // Inside Docker, spawn Python subprocess
       };
     }
   } else {
@@ -115,7 +119,8 @@ export async function detectDeploymentMode(): Promise<DeploymentInfo> {
         observabilityDefault: true,
         evaluationDefault: true,
         langfuseHost: 'http://localhost:3000',
-        description: 'Local development with observability services running'
+        description: 'Local development with observability services running',
+        executionMode: 'local-cli' // On host, can use Python or Docker
       };
     } else {
       // Pure CLI mode
@@ -124,7 +129,8 @@ export async function detectDeploymentMode(): Promise<DeploymentInfo> {
         observabilityDefault: false,
         evaluationDefault: false,
         langfuseHost: 'http://localhost:3000',
-        description: 'CLI mode (no observability infrastructure)'
+        description: 'CLI mode (no observability infrastructure)',
+        executionMode: 'local-cli' // On host, can use Python or Docker
       };
     }
   }

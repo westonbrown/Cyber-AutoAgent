@@ -146,6 +146,12 @@ RUN uv sync --no-dev && \
     chmod 755 /app/evidence /app/logs && \
     chown -R cyberagent:cyberagent /home/cyberagent/go
 
+# Install and build React terminal interface (default UI)
+RUN cd /app/src/modules/interfaces/react && \
+    npm install && \
+    npm run build && \
+    chown -R cyberagent:cyberagent /app/src/modules/interfaces/react
+
 # Environment
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
@@ -221,5 +227,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Default entrypoint; command provided in compose (e.g., --service-mode)
-ENTRYPOINT ["python", "/app/src/cyberautoagent.py"]
+# Default entrypoint: React terminal (which spawns Python agent as subprocess)
+# Falls back to direct Python execution if given --python-direct flag
+ENTRYPOINT ["node", "/app/src/modules/interfaces/react/dist/index.js"]

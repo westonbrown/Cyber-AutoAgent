@@ -67,43 +67,76 @@
 
 ## Quick Start
 
-### React Interface (Recommended)
+The React-based terminal interface is now the **default UI**, providing interactive configuration, real-time operation monitoring, and guided setup in all deployment modes.
 
-The React-based terminal interface provides interactive configuration, real-time operation monitoring, and guided setup.
+### Local Development - Recommended
 
 ```bash
-# Install and start
+# Clone and setup
+git clone https://github.com/cyber-autoagent/cyber-autoagent.git
+cd cyber-autoagent
+
+# Build React terminal interface
 cd src/modules/interfaces/react
 npm install
 npm run build
+
+# Run interactive terminal (guided setup on first launch)
 npm start
+
+# Or run directly with parameters
+node dist/index.js \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Security assessment" \
+  --auto-run
 ```
 
-First launch guides you through Docker environment setup, deployment mode selection, model provider configuration, and first assessment.
+The React terminal will automatically spawn the Python agent as a subprocess and guide you through configuration on first launch.
 
 > **[Complete User Guide](docs/user-instructions.md)** - Detailed setup, configuration, operation modules, troubleshooting, and examples
 
 ### Docker Deployment
 
+#### Single Container
+
 ```bash
-# Using Docker (Recommended)
-docker run --rm \
-  -v ~/.aws:/home/cyberagent/.aws:ro \
+# Interactive mode with React terminal
+docker run -it --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
+  -v $(pwd)/outputs:/app/outputs \
+  cyber-autoagent
+
+# Or start directly with parameters
+docker run -it --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/outputs:/app/outputs \
   cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
-  --objective "Identify SQL injection vulnerabilities"
+  --objective "Identify SQL injection vulnerabilities" \
+  --auto-run
 ```
 
-### Python Direct
+#### Docker Compose (Full Stack with Observability)
+
+Use `docker compose run` for assessments with the full observability stack:
 
 ```bash
-# Using Python
-git clone https://github.com/cyber-autoagent/cyber-autoagent.git
-cd cyber-autoagent
-pip install -e .
-python src/cyberautoagent.py --target "192.168.1.100" --objective "Comprehensive security assessment"
+# Run assessment with React terminal UI and full observability
+docker compose -f docker/docker-compose.yml --env-file .env run --rm cyber-autoagent
+
+# With root access for dynamic tool installation
+docker compose -f docker/docker-compose.yml --env-file .env run --user root --rm cyber-autoagent
 ```
+
+The compose stack automatically provides:
+- **Langfuse observability** at http://localhost:3000 (login: admin@cyber-autoagent.com / changeme)
+- **Persistent databases** (PostgreSQL, ClickHouse, Redis, MinIO)
+- **Network access** to challenge containers
+- **React terminal UI** as the default interface
 
 ## Documentation
 
