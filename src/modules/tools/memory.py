@@ -399,8 +399,21 @@ class Mem0ServiceClient:
             logger.debug("Mem0Memory client initialized successfully")
             return mem0_client
         except Exception as e:
-            logger.error("Failed to initialize Mem0Memory client: %s", e)
-            raise
+            # Check if this is an Ollama network error (model may already exist locally)
+            error_msg = str(e)
+            if "connection reset" in error_msg or "pull model manifest" in error_msg:
+                logger.warning("Ollama network error during model pull - model may already exist locally, retrying initialization...")
+                # Retry once without forcing model pull (Mem0 will use existing local model)
+                try:
+                    mem0_client = Mem0Memory.from_config(config_dict=merged_config)
+                    logger.info("Mem0Memory initialized successfully on retry (using existing local model)")
+                    return mem0_client
+                except Exception as retry_error:
+                    logger.error("Retry failed: %s", retry_error)
+                    raise retry_error
+            else:
+                logger.error("Failed to initialize Mem0Memory client: %s", e)
+                raise
 
     def _merge_config(self, config: Optional[Dict] = None, server: str = "bedrock") -> Dict:
         """Merge user-provided configuration with default configuration.
