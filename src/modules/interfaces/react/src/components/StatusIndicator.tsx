@@ -32,9 +32,10 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = React.memo(({
   useEffect(() => {
     const monitor = HealthMonitor.getInstance();
     const containerManager = ContainerManager.getInstance();
-    
-    // Use environment-aware or slower polling to reduce churn. 10s is sufficient for status monitoring
-    monitor.startMonitoring(10000);
+
+    // Health monitoring disabled: checkHealth() creates memory leaks during long idle periods
+    // Status updates will rely on manual checks via /health command instead
+    // monitor.startMonitoring(10000);
     
     // Subscribe to updates
     const unsubscribe = monitor.subscribe((status) => {

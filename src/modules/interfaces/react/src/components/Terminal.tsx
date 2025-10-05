@@ -1602,7 +1602,7 @@ completedBufRef.current.pushMany(newCompletedEvents);
       executionService.off('complete', handleComplete);
       executionService.off('stopped', handleStopped);
     };
-  }, [executionService, onEvent, metrics, onMetricsUpdate, sessionId, resetAllBuffers]);
+  }, [executionService, onEvent, onMetricsUpdate, sessionId, resetAllBuffers]); // Removed 'metrics' - not used in effect, was causing re-runs on every token update
 
   if (collapsed) {
     return null;

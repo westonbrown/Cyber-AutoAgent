@@ -174,6 +174,15 @@ export class OperationManager {
 
   // Start a new operation
   startOperation(module: string, target: string, objective: string, model: string): Operation {
+    // Reset session cost for new operation to prevent accumulation across operations
+    this.sessionCost = {
+      tokensUsed: 0,
+      estimatedCost: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      modelPricing: this.getModelPricing(model)
+    };
+
     const operation: Operation = {
       id: this.generateOperationId(),
       module,
@@ -198,9 +207,9 @@ export class OperationManager {
 
     this.operations.set(operation.id, operation);
     this.currentOperation = operation;
-    
+
     this.addLog(operation.id, 'info', `Operation started: ${module} → ${target}`);
-    
+
     return operation;
   }
 

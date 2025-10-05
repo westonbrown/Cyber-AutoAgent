@@ -306,19 +306,35 @@ export class PythonExecutionService extends EventEmitter {
     this.userStopRequested = true;
     if (this.activeProcess) {
       this.logger.info('Stopping Python process', { pid: this.activeProcess.pid });
-      
+
       try {
-        // Try graceful termination first
-        this.activeProcess.kill('SIGTERM');
-        
-        // If still running after 3 seconds, force kill
-        setTimeout(() => {
-          if (this.activeProcess && !this.activeProcess.killed) {
-            this.logger.warn('Force killing Python process');
-            this.activeProcess.kill('SIGKILL');
+        // Kill entire process tree to prevent orphans
+        // On Unix: negative PID kills the process group
+        const pid = this.activeProcess.pid;
+        if (pid) {
+          try {
+            // Try to kill process group first (kills all children)
+            process.kill(-pid, 'SIGTERM');
+            this.logger.info('Sent SIGTERM to process group', { pgid: -pid });
+          } catch (pgErr) {
+            // If process group kill fails, try individual process
+            this.logger.warn('Process group kill failed, trying individual process', pgErr);
+            this.activeProcess.kill('SIGTERM');
           }
-        }, 3000);
-        
+
+          // If still running after 3 seconds, force kill entire tree
+          setTimeout(() => {
+            if (this.activeProcess && !this.activeProcess.killed) {
+              this.logger.warn('Force killing Python process tree');
+              try {
+                process.kill(-pid, 'SIGKILL');
+              } catch {
+                this.activeProcess.kill('SIGKILL');
+              }
+            }
+          }, 3000);
+        }
+
       } catch (error) {
         this.logger.error('Error stopping Python process', error as Error);
       }
@@ -791,10 +807,12 @@ export class PythonExecutionService extends EventEmitter {
       }
 
       // Spawn Python process
+      // detached: true creates new process group for proper tree cleanup
       this.activeProcess = spawn(this.pythonPath, args, {
         cwd: this.projectRoot,
         env,
-        shell: false
+        shell: false,
+        detached: true  // Create new process group to enable tree kill
       });
       
       // Emit started event
