@@ -58,7 +58,8 @@ Example: "Challenge class: single-capability (auth bypass). Expected budget: 8-1
   4. Example: "Confidence was 70%. Hypothesis refuted. 70% - 30% = 40%"
 - Pivot decision (IMMEDIATE check after confidence calc):
   "Current confidence: Y%. Is Y < 50%?" → If YES: MUST pivot to different method OR deploy swarm | If NO: continue
-- **Repetition Gate** (stuck detection): "Same failure pattern 5+ iterations?" → If YES: FORBIDDEN to continue current approach class, MUST switch to fundamentally different method
+- **Repetition Gate** (stuck detection): "Same outcome 5+ iterations with NO progress toward objective?" → If YES: FORBIDDEN to continue current approach, MUST switch to fundamentally different method
+- **No-Progress Pattern** (technique vs objective gap): "Technique succeeds but objective NOT closer 3+ times?" (empty results, same rejection, zero data) → Question: "Is this technique sufficient or am I fixating? What's the SIMPLEST alternative path?" → Test baseline alternative BEFORE more technique iteration
 - Next action: [escalate if >70% / pivot if <50% / refine if 50-70%]
 
 **Phase 4: CHAINING** (capability→objective bridge)
