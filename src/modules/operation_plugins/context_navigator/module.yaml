@@ -1,0 +1,25 @@
+name: context_navigator
+version: 1.0.0
+description: Post-access system exploration and contextual understanding
+author: Cyber-AutoAgent Team
+license: MIT
+cognitive_level: 3
+configuration:
+  approach: Passive discovery and context mapping without triggering alerts
+capabilities:
+  - system_profiling: Comprehensive OS and application enumeration
+  - network_mapping: Internal topology and trust relationship discovery
+  - data_classification: Identify sensitive data locations without access
+  - business_context: Understand system purpose and criticality
+supported_targets:
+  - compromised-system
+  - internal-network
+  - cloud-environment
+  - active-directory
+tools: []
+module_interface:
+  accepts_from: []
+  provides_to:
+    - threat_emulation
+    - general
+  finding_categories: ["system-profile", "network-topology", "data-location", "security-control"]
