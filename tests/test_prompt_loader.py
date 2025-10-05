@@ -26,10 +26,10 @@ def test_module_prompt_loader_discovers_tools(tmp_path, monkeypatch):
 
 
 def test_module_prompt_loader_load_module_report_prompt(tmp_path, monkeypatch):
-    # Create a report_prompt.txt for module
+    # Create a report_prompt.md for module
     module_dir = tmp_path / "operation_plugins" / "general"
     module_dir.mkdir(parents=True)
-    (module_dir / "report_prompt.txt").write_text("Report Guidance\n")
+    (module_dir / "report_prompt.md").write_text("Report Guidance\n")
 
     loader = ModulePromptLoader()
     monkeypatch.setattr(loader, "plugins_dir", tmp_path / "operation_plugins")
@@ -93,7 +93,7 @@ def test_module_prompt_loader_falls_back_to_master_when_no_optimized(tmp_path, m
     # Create master prompt
     plugins_dir = tmp_path / "operation_plugins" / "general"
     plugins_dir.mkdir(parents=True)
-    master_path = plugins_dir / "execution_prompt.txt"
+    master_path = plugins_dir / "execution_prompt.md"
     master_path.write_text("Master execution prompt")
 
     loader = ModulePromptLoader()
@@ -110,7 +110,7 @@ def test_module_prompt_loader_handles_invalid_operation_root(tmp_path, monkeypat
     # Create master prompt
     plugins_dir = tmp_path / "operation_plugins" / "general"
     plugins_dir.mkdir(parents=True)
-    master_path = plugins_dir / "execution_prompt.txt"
+    master_path = plugins_dir / "execution_prompt.md"
     master_path.write_text("Master execution prompt")
 
     loader = ModulePromptLoader()
@@ -132,7 +132,7 @@ def test_module_prompt_loader_handles_empty_optimized_file(tmp_path, monkeypatch
     # Create master prompt
     plugins_dir = tmp_path / "operation_plugins" / "general"
     plugins_dir.mkdir(parents=True)
-    master_path = plugins_dir / "execution_prompt.txt"
+    master_path = plugins_dir / "execution_prompt.md"
     master_path.write_text("Master execution prompt")
 
     loader = ModulePromptLoader()
@@ -148,7 +148,7 @@ def test_module_prompt_loader_operation_root_none(tmp_path, monkeypatch):
     # Create master prompt
     plugins_dir = tmp_path / "operation_plugins" / "general"
     plugins_dir.mkdir(parents=True)
-    master_path = plugins_dir / "execution_prompt.txt"
+    master_path = plugins_dir / "execution_prompt.md"
     master_path.write_text("Master execution prompt")
 
     loader = ModulePromptLoader()
