@@ -82,11 +82,6 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
 
-  // Batch state updates to prevent memory leaks from frequent toArray() calls
-  const pendingStateUpdateRef = useRef<NodeJS.Timeout | null>(null);
-  const needsStateUpdateRef = useRef(false);
-  const COMPLETED_EVENTS_BATCH_MS = 300;
-
   // Ring buffers to bound memory regardless of session length
   const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
   const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(
@@ -145,8 +140,8 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const lastEmitRef = useRef<number>(0);
   const pendingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingMetricsRef = useRef<{ tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number } | null>(null);
-  const EMIT_INTERVAL_MS = 300;
-  const METRICS_COALESCE_MS = 500;  // Increased from 150ms to reduce WASM memory fragmentation
+  const EMIT_INTERVAL_MS = 16;
+  const METRICS_COALESCE_MS = 50;
   const lastMetricsTsRef = useRef<number>(0);
   
   // State for event processing - replacing EventAggregator with React patterns
@@ -235,10 +230,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   // Throttle for active tail updates when animations are disabled
   const activeUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingActiveUpdaterRef = useRef<((prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) | null>(null);
-  // Increased from 80ms → 200ms → 400ms to reduce Yoga WASM memory fragmentation
-  // This batches more events together, reducing total render count significantly
-  // Higher value = fewer re-renders = less WASM memory fragmentation
-  const ACTIVE_EMIT_INTERVAL_MS = 400;
+  const ACTIVE_EMIT_INTERVAL_MS = 16;
 
   const setActiveThrottled = (
     updater: React.SetStateAction<DisplayStreamEvent[]>
@@ -261,15 +253,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
 
   // Batch completed events updates to prevent memory leaks
   const scheduleCompletedEventsUpdate = () => {
-    if (pendingStateUpdateRef.current) return;
-    needsStateUpdateRef.current = true;
-    pendingStateUpdateRef.current = setTimeout(() => {
-      if (needsStateUpdateRef.current) {
-        setCompletedEvents(completedBufRef.current.toArray());
-        needsStateUpdateRef.current = false;
-      }
-      pendingStateUpdateRef.current = null;
-    }, COMPLETED_EVENTS_BATCH_MS);
+    setCompletedEvents(completedBufRef.current.toArray());
   };
 
   // Unified helpers for delayed thinking spinner scheduling/cancellation
@@ -1614,10 +1598,6 @@ completedBufRef.current.pushMany(newCompletedEvents);
       if (activeUpdateTimerRef.current) {
         clearTimeout(activeUpdateTimerRef.current);
         activeUpdateTimerRef.current = null;
-      }
-      if (pendingStateUpdateRef.current) {
-        clearTimeout(pendingStateUpdateRef.current);
-        pendingStateUpdateRef.current = null;
       }
       executionService.off('event', handleEvent);
       executionService.off('complete', handleComplete);

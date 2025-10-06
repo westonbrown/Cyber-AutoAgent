@@ -255,9 +255,8 @@ function getInitialState(): ApplicationState {
 export function useApplicationState() {
   const [state, dispatch] = useReducer(applicationReducer, getInitialState());
   
-  // Debounced state for preventing UI flicker
-  const [debouncedMetrics, setDebouncedMetrics, flushMetrics] = useDebouncedState(null, 150);
-  const [debouncedContextUsage, setDebouncedContextUsage, flushContextUsage] = useDebouncedState(0, 200);
+  const [debouncedMetrics, setDebouncedMetrics, flushMetrics] = useDebouncedState(null, 50);
+  const [debouncedContextUsage, setDebouncedContextUsage, flushContextUsage] = useDebouncedState(0, 50);
   
   // Refs for cleanup
   const cleanupFunctions = useRef<(() => void)[]>([]);

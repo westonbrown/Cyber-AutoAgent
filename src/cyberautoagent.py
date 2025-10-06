@@ -476,11 +476,7 @@ def main():
 
     atexit.register(cleanup_logging)
 
-    # Display banner (unless disabled by environment variable or in React mode)
-    if (
-        os.environ.get("CYBERAGENT_NO_BANNER", "").lower() not in ("1", "true", "yes")
-        and os.environ.get("CYBER_UI_MODE", "cli").lower() != "react"
-    ):
+    if os.environ.get("CYBERAGENT_NO_BANNER", "").lower() not in ("1", "true", "yes"):
         print_banner()
 
         # Safety warning (only show with banner)
