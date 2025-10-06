@@ -16,19 +16,23 @@ describe('DirectDockerService auto-execute fallback', () => {
     jest.useRealTimers();
   });
 
-  it('sends execute if prompt not detected after operation_init', () => {
+  it('sends execute when interactive prompt detected in buffer', () => {
     const svc = new DirectDockerService();
     (svc as any).isExecutionActive = true;
     const writes: string[] = [];
     (svc as any).containerStream = { write: (s: string) => { writes.push(s); } };
 
-    // operation_init should schedule fallback soon
-    (svc as any).parseEvents(wrapEvent({ type: 'operation_init', operation_id: 'OP1', timestamp: Date.now() }));
+    // Simulate receiving execute prompt in buffer
+    const promptText = "Press Enter or type 'execute' to start assessment";
+    (svc as any).streamEventBuffer = promptText;
 
-    // Advance timers beyond fallback threshold (initial 1000ms + interval)
-    jest.advanceTimersByTime(2000);
+    // Call handleInteractivePrompts which should detect the prompt
+    (svc as any).handleInteractivePrompts();
 
-    // One of the writes should be 'execute\r\n'
+    // Advance timers to trigger the delayed write
+    jest.advanceTimersByTime(1000);
+
+    // Should have sent 'execute\r\n'
     expect(writes.some(w => w.includes('execute\r\n'))).toBe(true);
   });
 });

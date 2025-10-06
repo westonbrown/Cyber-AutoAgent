@@ -808,7 +808,7 @@ class TestEnvironmentIntegration:
         )
         assert standard_config["temperature"] == 0.95
         assert standard_config["max_tokens"] == 32000
-        assert standard_config["top_p"] == 0.95
+        # top_p is now optional (not included for Anthropic models to avoid conflicts)
 
         # Test local model configuration
         local_config = config_manager.get_local_model_config("llama3.2:3b", "ollama")
