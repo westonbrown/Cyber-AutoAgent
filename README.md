@@ -17,7 +17,7 @@
 <h3>Proactive Cybersecurity Autonomous Agent Powered by AI</h3>
 
 <p>
-  <strong>Cyber-AutoAgent</strong> is a proactive security assessment tool that autonomously conducts intelligent penetration testing with natural language reasoning, dynamic tool selection, and evidence collection using AWS Bedrock or local Ollama models with the Strands framework.
+  <strong>Cyber-AutoAgent</strong> is a proactive security assessment tool that autonomously conducts intelligent penetration testing with natural language reasoning, dynamic tool selection, and evidence collection using AWS Bedrock, Litellm or local Ollama models with the core Strands framework.
 </p>
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker&style=for-the-badge)](https://hub.docker.com/r/cyberautoagent/cyber-autoagent)
@@ -33,7 +33,7 @@
 ![Demo GIF](docs/agent_demo.gif)
 
 <div align="center">
-  <em>Cyber-AutoAgent in action - Autonomous security assessment with AI reasoning</em>
+  <em>Cyber-AutoAgent in action - Autonomous security operations with AI reasoning</em>
 </div>
 
 ---
@@ -354,8 +354,8 @@ Cyber-AutoAgent supports multiple model providers for maximum flexibility:
 | Cost | Pay per call | Free | Varies by provider |
 | Performance | High | Hardware dependent | Provider dependent |
 | Offline Use | No | Yes | No |
-| Setup | Easy | Higher | Easy |
-| Model Selection | AWS only | Limited | 100+ models |
+| Setup | Easy | Higher | Medium |
+| Model Selection | 100+ models | Limited | 100+ models |
 
 ## Observability & Evaluation
 
