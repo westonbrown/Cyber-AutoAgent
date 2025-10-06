@@ -7,6 +7,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import stripAnsi from 'strip-ansi';
 import { themeManager } from '../themes/theme-manager.js';
 import { LogLevelIcon } from './icons.js';
 
@@ -119,11 +120,11 @@ const LogEntry: React.FC<{ log: LogEntry; showTimestamp: boolean }> = ({ log, sh
           <Text color={theme.muted}>[{log.timestamp}] </Text>
         )}
         <LogLevelIcon level={log.level} />
-        <Text color={levelColors[log.level]}>{log.message}</Text>
+        <Text color={levelColors[log.level]}>{stripAnsi(log.message)}</Text>
       </Box>
       {log.details && (
         <Box marginLeft={showTimestamp ? 11 : 2}>
-          <Text color={theme.muted} dimColor>{log.details}</Text>
+          <Text color={theme.muted} dimColor>{stripAnsi(log.details)}</Text>
         </Box>
       )}
     </Box>
