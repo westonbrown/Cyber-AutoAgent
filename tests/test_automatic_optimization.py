@@ -167,7 +167,12 @@ def test_auto_optimization_rewrites_prompt(
     )
 
     # Mock the LLM rewrite function to return optimized content
-    with patch('modules.tools.prompt_optimizer._llm_rewrite_execution_prompt') as mock_rewrite:
+    import sys
+
+    # Get the actual module object from sys.modules
+    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+
+    with patch.object(prompt_opt_module, '_llm_rewrite_execution_prompt') as mock_rewrite:
         mock_rewrite.return_value = """
 # Optimized Execution Prompt
 
@@ -271,6 +276,8 @@ def test_auto_optimization_error_handling(
     mock_callback_handler, mock_memory, mock_config, setup_operation_folder
 ):
     """Test that auto-optimization handles errors gracefully."""
+    import sys
+
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
         memory_instance=mock_memory,
@@ -281,8 +288,11 @@ def test_auto_optimization_error_handling(
         max_steps=100,
     )
 
+    # Get the actual module object from sys.modules
+    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+
     # Mock LLM rewrite to raise an error
-    with patch('modules.tools.prompt_optimizer._llm_rewrite_execution_prompt') as mock_rewrite:
+    with patch.object(prompt_opt_module, '_llm_rewrite_execution_prompt') as mock_rewrite:
         mock_rewrite.side_effect = Exception("LLM service unavailable")
 
         # Should not crash the operation
