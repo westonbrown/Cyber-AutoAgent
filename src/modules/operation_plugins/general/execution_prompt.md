@@ -7,7 +7,7 @@ Discovery without exploitation = reconnaissance failure. Findings = exploited vu
 
 **Phase 2: HYPOTHESIS** → Explicit reasoning before action
 - Technique: "Using X (attempt N of method, attempt M of approach)" | Example: "sqlmap --technique=B (attempt 1 boolean, attempt 3 SQLi)"
-- Batch: Can I test multiple in parallel? → batch tool calls
+- **Batch Gate** (before tool): Independent tests? → batch in single call | Sequential dependencies? → separate
 - Hypothesis: SPECIFIC exploitation path, NOT general. WEAK: "SQLi might work" | STRONG: "Blind SQLi username param → extract admin hash → crack → /admin login"
 - Confidence: [0-100%] actual number, NOT template (45%, 70%)
 - Expected: [if true → A + impact, if false → B + pivot]
@@ -15,7 +15,7 @@ Discovery without exploitation = reconnaissance failure. Findings = exploited vu
 **Phase 3: VALIDATION** → After EVERY action
 - Outcome? [yes/no + evidence]
 - Constraint? SPECIFIC not vague. VAGUE: "Filter blocks" | SPECIFIC: "Quotes OK, <script> stripped, onclick passes" | Type: [syntax|processing|filter|rate-limit|auth]
-- Confidence math (MANDATORY): "Was X%. Result. X% +20/-30/-10 = Y%"
+- Confidence UPDATE (IMMEDIATE): BEFORE: [X%] | AFTER: [Y%] | Apply formula from system prompt
 - Pivot: "Y < 50%?" → If YES: MUST pivot OR swarm | If NO: continue
 - Next: [escalate if >70% / pivot if <50% / refine if 50-70%]
 
@@ -30,6 +30,11 @@ After direct fails: Pivot to different attack vector (NOT encoding variations)
 </cognitive_loop>
 
 <web_pentest_execution>
+**Checkpoint Protocol** (checkpoints ONLY at 20%/40%/60%/80% budget):
+- Steps 20/50/80/110/140/170/200: get_plan → evaluate → update ONCE
+- Between checkpoints: NO plan calls unless phase status changes (active→done/partial_failure/blocked)
+- **Thinking mode** (use ONLY for): Checkpoint decisions (continue vs pivot?) | Before swarm (confidence analysis?) | Before stop() (all classes tried?) | After 3+ same failures (pattern?)
+
 **Failure & Pivot**:
 - Count attempts: "Attempt N of method, attempt M of approach"
 - 3 same method → different method | 5+ same approach → different capability class
