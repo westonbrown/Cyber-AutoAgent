@@ -14,8 +14,6 @@
 
 **[!] EXPERIMENTAL SOFTWARE - USE ONLY IN AUTHORIZED, SAFE, SANDBOXED ENVIRONMENTS [!]**
 
-<h3>Proactive Cybersecurity Autonomous Agent Powered by AI</h3>
-
 <p>
   <strong>Cyber-AutoAgent</strong> is a proactive security assessment tool that autonomously conducts intelligent penetration testing with natural language reasoning, dynamic tool selection, and evidence collection using AWS Bedrock, Litellm or local Ollama models with the core Strands framework.
 </p>
