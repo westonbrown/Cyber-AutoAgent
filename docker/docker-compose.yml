@@ -341,4 +341,4 @@ networks:
   default:
     driver: bridge
   cyber-autoagent_default:
-    external: true
+    driver: bridge

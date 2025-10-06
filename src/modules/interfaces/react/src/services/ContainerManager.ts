@@ -465,11 +465,11 @@ export class ContainerManager extends EventEmitter {
         throw error;
       }
 
+      // Ensure external networks exist before starting containers
+      await this.ensureNetworksExist();
+
       this.logger.info(`Starting containers using: ${composePath}`);
       this.emit('progress', `◆ Using docker-compose file: ${composePath}`);
-      
-      // Build the docker-compose command with specific services
-      const serviceList = config.services.join(' ');
 
       // Streamed compose runner helpers
       const runCompose = async (args: string[], phaseLabel: string, services: string[]) => {
@@ -749,15 +749,53 @@ export class ContainerManager extends EventEmitter {
   }
   
   /**
+   * Ensure required external Docker networks exist
+   * Creates cyber-autoagent_default network if missing
+   */
+  private async ensureNetworksExist(): Promise<void> {
+    const requiredNetworks = ['cyber-autoagent_default'];
+
+    for (const networkName of requiredNetworks) {
+      try {
+        // Check if network exists
+        const { stdout } = await execAsync(
+          `docker network ls --filter name=^${networkName}$ --format "{{.Name}}"`
+        );
+
+        if (stdout.trim() === networkName) {
+          this.logger.debug(`Network ${networkName} already exists`);
+          continue;
+        }
+
+        // Create network if missing
+        this.logger.info(`Creating external network: ${networkName}`);
+        this.emit('progress', `Creating Docker network: ${networkName}...`);
+
+        await execAsync(`docker network create ${networkName}`);
+        this.emit('progress', `✓ Created network: ${networkName}`);
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        // If network creation fails, throw error with helpful message
+        throw new Error(
+          `Failed to create required network ${networkName}. ` +
+          `Please ensure Docker is running and you have network creation permissions. ` +
+          `Error: ${errorMsg}`
+        );
+      }
+    }
+  }
+
+  /**
    * Cleanup resources and remove all event listeners
    */
   cleanup(): void {
     // Remove all event listeners to prevent memory leaks
     this.removeAllListeners();
-    
+
     // Reset state
     this.initialized = false;
-    
+
     this.logger.info('ContainerManager cleaned up');
   }
   

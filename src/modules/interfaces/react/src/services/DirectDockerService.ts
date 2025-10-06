@@ -373,9 +373,11 @@ export class DirectDockerService extends EventEmitter {
         if (config.evalSummaryMaxChars !== undefined) env.push(`EVAL_SUMMARY_MAX_CHARS=${config.evalSummaryMaxChars}`);
       }
 
-      // Prefer ad-hoc container per assessment for reliability; allow opt-in reuse via env
-      // Set CYBER_DOCKER_REUSE=true to enable exec into the service container explicitly
-      const ENABLE_SERVICE_CONTAINER_REUSE = currentDeploymentMode === 'full-stack' && process.env.CYBER_DOCKER_REUSE === 'true';
+      // Prefer re-using the long-lived service container when available.
+      // CYBER_DOCKER_REUSE defaults to true; set to `false` to force ad-hoc containers.
+      const reuseEnv = process.env.CYBER_DOCKER_REUSE;
+      const ENABLE_SERVICE_CONTAINER_REUSE = reuseEnv !== 'false'
+        && (currentDeploymentMode === 'single-container' || currentDeploymentMode === 'full-stack');
       
       if (ENABLE_SERVICE_CONTAINER_REUSE) {
         const serviceContainer = await this.findServiceContainer();
@@ -437,10 +439,9 @@ export class DirectDockerService extends EventEmitter {
       logger.info('Creating ad-hoc container', { image: dockerImage, network: dockerNetwork, binds, args, env: maskEnv(env) });
       this.activeContainer = await this.dockerClient.createContainer({
         Image: dockerImage,
-        // Don't set Cmd - let the Entrypoint handle the execution
-        // The Entrypoint is: ["python", "/app/src/cyberautoagent.py"]
-        // We need to pass our args to the Python script, not override the Entrypoint
-        Cmd: args, // This will be appended to the Entrypoint
+        // Override the entrypoint to run the Python agent directly so we emit structured events
+        Entrypoint: ['python', '/app/src/cyberautoagent.py'],
+        Cmd: args,
         Env: env,
         AttachStdout: true,
         AttachStderr: true,

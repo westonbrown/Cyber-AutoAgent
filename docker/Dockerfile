@@ -178,9 +178,6 @@ RUN git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool && \
 RUN git clone https://github.com/epinna/tplmap.git /opt/tplmap && \
     chmod +x /opt/tplmap/tplmap.py
 
-# GraphQL Inspector CLI for GraphQL introspection
-RUN npm install -g @graphql-inspector/cli jwt-decode
-
 # Install Python packages for our new tools (use --break-system-packages for Kali)
 RUN pip3 install --break-system-packages requests aiohttp jinja2 'httpx[cli]' ratelimit pycryptodomex
 
@@ -188,8 +185,7 @@ RUN pip3 install --break-system-packages requests aiohttp jinja2 'httpx[cli]' ra
 RUN echo '#!/bin/bash\ncd /opt/clairvoyance && source venv/bin/activate && python -m clairvoyance "$@"' > /usr/local/bin/clairvoyance && \
     echo '#!/bin/bash\npython3 /opt/jwt_tool/jwt_tool.py "$@"' > /usr/local/bin/jwt-tool && \
     echo '#!/bin/bash\npython3 /opt/tplmap/tplmap.py "$@"' > /usr/local/bin/tplmap && \
-    echo '#!/bin/bash\nif [ $# -eq 0 ]; then echo "Usage: jwt-decode <jwt-token>"; exit 1; fi\nnode -e "const jwt = require(\"jwt-decode\"); try { console.log(JSON.stringify(jwt.default(\"$1\"), null, 2)); } catch (e) { console.error(\"Error decoding JWT:\", e.message); process.exit(1); }"' > /usr/local/bin/jwt-decode && \
-    chmod +x /usr/local/bin/clairvoyance /usr/local/bin/jwt-tool /usr/local/bin/tplmap /usr/local/bin/jwt-decode
+    chmod +x /usr/local/bin/clairvoyance /usr/local/bin/jwt-tool /usr/local/bin/tplmap
 
 # httpx and katana from ProjectDiscovery can pull large dependency graphs; use prebuilt binaries instead
 RUN set -eux; \
