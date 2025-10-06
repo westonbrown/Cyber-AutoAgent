@@ -81,6 +81,12 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
 const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N events in memory (default 3000)
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
+
+  // Batch state updates to prevent memory leaks from frequent toArray() calls
+  const pendingStateUpdateRef = useRef<NodeJS.Timeout | null>(null);
+  const needsStateUpdateRef = useRef(false);
+  const COMPLETED_EVENTS_BATCH_MS = 300;
+
   // Ring buffers to bound memory regardless of session length
   const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
   const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(
@@ -237,8 +243,6 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
   const setActiveThrottled = (
     updater: React.SetStateAction<DisplayStreamEvent[]>
   ) => {
-    // CRITICAL: Always throttle to prevent WASM memory fragmentation
-    // Animations only affect spinner display, not event batching
     const fn: (prev: DisplayStreamEvent[]) => DisplayStreamEvent[] =
       typeof updater === 'function' ? (updater as (prev: DisplayStreamEvent[]) => DisplayStreamEvent[]) : (() => updater as DisplayStreamEvent[]);
     pendingActiveUpdaterRef.current = fn;
@@ -253,6 +257,19 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         setActiveEvents(prev => u(prev));
       }
     }, ACTIVE_EMIT_INTERVAL_MS);
+  };
+
+  // Batch completed events updates to prevent memory leaks
+  const scheduleCompletedEventsUpdate = () => {
+    if (pendingStateUpdateRef.current) return;
+    needsStateUpdateRef.current = true;
+    pendingStateUpdateRef.current = setTimeout(() => {
+      if (needsStateUpdateRef.current) {
+        setCompletedEvents(completedBufRef.current.toArray());
+        needsStateUpdateRef.current = false;
+      }
+      pendingStateUpdateRef.current = null;
+    }, COMPLETED_EVENTS_BATCH_MS);
   };
 
   // Unified helpers for delayed thinking spinner scheduling/cancellation
@@ -304,7 +321,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
       if (opts?.addSpacer && animationsEnabled) {
         completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
         completedBufRef.current.push({ type: 'output', content: '' } as DisplayStreamEvent);
-        setCompletedEvents(completedBufRef.current.toArray());
+        scheduleCompletedEventsUpdate();
       }
 
       const thinkingEvent: DisplayStreamEvent = {
@@ -373,7 +390,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     if (preserveEvents.length > 0) {
       completedBufRef.current.pushMany(preserveEvents);
     }
-    setCompletedEvents(completedBufRef.current.toArray());
+    scheduleCompletedEventsUpdate();
     setActiveEvents(activeBufRef.current.toArray());
   }, [cancelDelayedThinking, setActiveEvents, setCompletedEvents, setActiveThinking, setActiveReasoning, setSwarmActive, setCurrentSwarmAgent]);
   
@@ -1517,7 +1534,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
             const aggEv = buildAggDisplayEvent();
             if (aggEv) {
               completedBufRef.current.push(aggEv as any);
-              setCompletedEvents(completedBufRef.current.toArray());
+              scheduleCompletedEventsUpdate();
               resetStepAgg();
             }
             // Clear any live tail from previous step (reasoning/output) to prevent leakage
@@ -1544,7 +1561,7 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
           );
           if (newCompletedEvents.length > 0) {
 completedBufRef.current.pushMany(newCompletedEvents);
-            setCompletedEvents(completedBufRef.current.toArray());
+            scheduleCompletedEventsUpdate();
           }
         }
       }
@@ -1597,6 +1614,10 @@ completedBufRef.current.pushMany(newCompletedEvents);
       if (activeUpdateTimerRef.current) {
         clearTimeout(activeUpdateTimerRef.current);
         activeUpdateTimerRef.current = null;
+      }
+      if (pendingStateUpdateRef.current) {
+        clearTimeout(pendingStateUpdateRef.current);
+        pendingStateUpdateRef.current = null;
       }
       executionService.off('event', handleEvent);
       executionService.off('complete', handleComplete);
