@@ -9,7 +9,7 @@ import { EventLine } from '../../../src/components/StreamDisplay.js';
 const makeLines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n');
 
 describe('EventLine omitted counts', () => {
-  it('shows omitted line count for tool outputs in collapse marker', () => {
+  it('shows collapse marker for large tool outputs', () => {
     const content = makeLines(1000);
     const evt: any = {
       type: 'output',
@@ -18,11 +18,13 @@ describe('EventLine omitted counts', () => {
     };
     const { lastFrame } = render(<EventLine event={evt} animationsEnabled={false} />);
     const frame = lastFrame();
-    // TOOL_OUTPUT_PREVIEW_LINES + TOOL_OUTPUT_TAIL_LINES = 200 + 50 = 250; 1000 - 250 = 750
-    expect(frame).toMatch(/\(content continues;\s*750\s+lines omitted\)/);
+    // Should show collapse marker (content continues)
+    expect(frame).toMatch(/\.\.\. \(content continues\)/);
+    // Should show total line count
+    expect(frame).toMatch(/\[1000 lines\]/);
   });
 
-  it('shows omitted line count for default collapsed outputs', () => {
+  it('shows collapse marker for large default outputs', () => {
     const content = makeLines(200);
     const evt: any = {
       type: 'output',
@@ -31,7 +33,9 @@ describe('EventLine omitted counts', () => {
     };
     const { lastFrame } = render(<EventLine event={evt} animationsEnabled={false} />);
     const frame = lastFrame();
-    // Default branch uses 5 head + 3 tail = 8 lines shown; 200 - 8 = 192
-    expect(frame).toMatch(/\(content continues;\s*192\s+lines omitted\)/);
+    // Should show collapse marker
+    expect(frame).toMatch(/\.\.\. \(content continues\)/);
+    // Should show truncated indicator
+    expect(frame).toMatch(/\[200 lines, truncated\]/);
   });
 });
