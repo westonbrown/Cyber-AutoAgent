@@ -169,14 +169,9 @@ class Colors:
 
 def print_banner():
     """Display operation banner with neon cyberpunk gradient colors."""
-    # Check if banner is disabled by environment variables
     import os
 
-    if (
-        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
-        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
-    ):
-        # Banner disabled - return early (React UI mode suppresses banner)
+    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes"):
         return
 
     banner_lines = [
@@ -236,14 +231,9 @@ def print_banner():
 
 def print_section(title, content, color=Colors.BLUE, emoji=""):
     """Print formatted section with optional emoji."""
-    # Check if output is disabled by environment variables
     import os
 
-    if (
-        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
-        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
-    ):
-        # Output disabled - return early (React UI mode suppresses CLI sections)
+    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes"):
         return
 
     # Print section for CLI mode
@@ -255,14 +245,9 @@ def print_section(title, content, color=Colors.BLUE, emoji=""):
 
 def print_status(message, status="INFO"):
     """Print status message with color coding and emojis."""
-    # Check if output is disabled by environment variables
     import os
 
-    if (
-        os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes")
-        or os.getenv("CYBER_UI_MODE", "cli").lower() == "react"
-    ):
-        # Output disabled - return early (React UI mode suppresses CLI status lines)
+    if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes"):
         return
 
     # Print status for CLI mode
