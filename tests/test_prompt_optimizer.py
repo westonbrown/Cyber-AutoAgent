@@ -124,13 +124,18 @@ def test_prompt_optimizer_optimize_execution_handles_missing_file(tmp_path, monk
 
 def test_prompt_optimizer_optimize_execution_with_empty_lists(tmp_path, monkeypatch):
     """Test optimize_execution with empty remove_dead_ends and focus_areas"""
+    import sys
+    from unittest.mock import patch
+
     root = _setup_env(tmp_path, monkeypatch)
 
     optimized_path = root / "execution_prompt_optimized.txt"
     optimized_path.write_text("Current prompt")
 
-    from unittest.mock import patch
-    with patch("modules.tools.prompt_optimizer._llm_rewrite_execution_prompt") as mock_rewrite:
+    # Get the actual module object from sys.modules
+    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+
+    with patch.object(prompt_opt_module, "_llm_rewrite_execution_prompt") as mock_rewrite:
         mock_rewrite.return_value = "Optimized prompt"
 
         result = prompt_optimizer(
