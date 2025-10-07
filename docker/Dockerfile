@@ -164,28 +164,29 @@ RUN go install github.com/tomnomnom/assetfinder@latest
 
 # Install additional security tools
 # GraphQL Clairvoyance - GraphQL schema enumeration
-RUN git clone https://github.com/nikitastupin/clairvoyance.git /opt/clairvoyance && \
-    cd /opt/clairvoyance && \
-    python3 -m venv venv && \
-    . venv/bin/activate && \
-    pip install .
+RUN git clone https://github.com/nikitastupin/clairvoyance.git /opt/clairvoyance || true && \
+    if [ -d /opt/clairvoyance ]; then \
+      cd /opt/clairvoyance && \
+      python3 -m venv venv && \
+      . venv/bin/activate && \
+      pip install . || true; \
+    fi
 
 # JWT Tool - JWT analysis and manipulation
-RUN git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool && \
-    chmod +x /opt/jwt_tool/jwt_tool.py
+RUN git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool || true && \
+    if [ -f /opt/jwt_tool/jwt_tool.py ]; then chmod +x /opt/jwt_tool/jwt_tool.py; fi
 
 # tplmap - Server-Side Template Injection scanner
-RUN git clone https://github.com/epinna/tplmap.git /opt/tplmap && \
-    chmod +x /opt/tplmap/tplmap.py
+RUN git clone https://github.com/epinna/tplmap.git /opt/tplmap || true && \
+    if [ -f /opt/tplmap/tplmap.py ]; then chmod +x /opt/tplmap/tplmap.py; fi
 
 # Install Python packages for our new tools (use --break-system-packages for Kali)
 RUN pip3 install --break-system-packages requests aiohttp jinja2 'httpx[cli]' ratelimit pycryptodomex
 
 # Create wrapper scripts for easy access
-RUN echo '#!/bin/bash\ncd /opt/clairvoyance && source venv/bin/activate && python -m clairvoyance "$@"' > /usr/local/bin/clairvoyance && \
-    echo '#!/bin/bash\npython3 /opt/jwt_tool/jwt_tool.py "$@"' > /usr/local/bin/jwt-tool && \
-    echo '#!/bin/bash\npython3 /opt/tplmap/tplmap.py "$@"' > /usr/local/bin/tplmap && \
-    chmod +x /usr/local/bin/clairvoyance /usr/local/bin/jwt-tool /usr/local/bin/tplmap
+RUN ([ -d /opt/clairvoyance ] && echo '#!/bin/bash\ncd /opt/clairvoyance && source venv/bin/activate && python -m clairvoyance "$@"' > /usr/local/bin/clairvoyance && chmod +x /usr/local/bin/clairvoyance) || true && \
+    ([ -f /opt/jwt_tool/jwt_tool.py ] && echo '#!/bin/bash\npython3 /opt/jwt_tool/jwt_tool.py "$@"' > /usr/local/bin/jwt-tool && chmod +x /usr/local/bin/jwt-tool) || true && \
+    ([ -f /opt/tplmap/tplmap.py ] && echo '#!/bin/bash\npython3 /opt/tplmap/tplmap.py "$@"' > /usr/local/bin/tplmap && chmod +x /usr/local/bin/tplmap) || true
 
 # httpx and katana from ProjectDiscovery can pull large dependency graphs; use prebuilt binaries instead
 RUN set -eux; \

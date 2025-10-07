@@ -683,12 +683,11 @@ export class DirectDockerService extends EventEmitter {
     
     this.streamEventBuffer += cleanedData;
 
-    // Look for event markers - use global regex and iterate through
-    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/gs;
+    const eventRegex = /__CYBER_EVENT__(.+?)__CYBER_EVENT_END__/s;
     let match;
     let processedEvents = false;
-    
-    while ((match = eventRegex.exec(this.streamEventBuffer)) !== null) {
+
+    while ((match = eventRegex.exec(this.streamEventBuffer))) {
       processedEvents = true;
       const start = match.index as number;
       const end = start + match[0].length;
@@ -838,11 +837,9 @@ export class DirectDockerService extends EventEmitter {
         }
         
         this.emit('event', event);
-        
-        // Remove only the matched event from buffer, preserve any surrounding non-event content
-        const before = this.streamEventBuffer.slice(0, start);
-        const after = this.streamEventBuffer.slice(end);
-        this.streamEventBuffer = before + after;
+
+        // Immediately slice buffer after processing event
+        this.streamEventBuffer = this.streamEventBuffer.slice(end);
 
         // Immediately check for interactive prompts after processing each event
         this.handleInteractivePrompts();
