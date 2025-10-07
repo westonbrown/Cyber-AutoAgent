@@ -1175,7 +1175,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
                 # Process errors through tool-specific handlers for cleaner display
                 if tool_name == "shell":
-                    clean_error = self._parse_shell_tool_output(error_text.strip())
+                    clean_error = self._parse_shell_tool_output_detailed(error_text.strip())
                 elif tool_name == "http_request":
                     clean_error = self._parse_http_tool_output(error_text.strip())
                 else:
@@ -1273,7 +1273,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Clean/parse known tool outputs
         if tool_name == "shell":
-            output_text = self._parse_shell_tool_output(output_text)
+            output_text = self._parse_shell_tool_output_detailed(output_text)
         elif tool_name == "editor":
             output_text = self._parse_editor_tool_output(output_text)
         elif tool_name == "swarm" and "Status.FAILED" in output_text:
@@ -1539,7 +1539,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self._processed_outputs = set()
 
         # Parse and clean shell tool output
-        clean_output = self._parse_shell_tool_output(output_text.strip())
+        clean_output = self._parse_shell_tool_output_detailed(output_text.strip())
 
         # Agent tracking handled through explicit events, not text parsing
 

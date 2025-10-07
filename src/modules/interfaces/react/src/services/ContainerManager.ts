@@ -471,7 +471,6 @@ export class ContainerManager extends EventEmitter {
       this.logger.info(`Starting containers using: ${composePath}`);
       this.emit('progress', `◆ Using docker-compose file: ${composePath}`);
 
-      // Streamed compose runner helpers
       const runCompose = async (args: string[], phaseLabel: string, services: string[]) => {
         const { cmd, baseArgs } = await this.resolveComposeCmd();
         const cwd = path.dirname(composePath);
@@ -484,10 +483,12 @@ export class ContainerManager extends EventEmitter {
           } catch {}
         });
         if (phaseLabel) aggregator.setLabel(phaseLabel);
-        return await new Promise<void>((resolve, reject) => {
+
+        const composePromise = new Promise<void>((resolve, reject) => {
           let stderrBuffer = '';
           const fullCommand = [cmd, ...baseArgs, '-f', composePath, ...args].join(' ');
           const child = spawn(cmd, [...baseArgs, '-f', composePath, ...args], { cwd });
+
           child.stdout.on('data', (buf) => aggregator.update(buf.toString()));
           child.stderr.on('data', (buf) => {
             const output = buf.toString();
@@ -506,7 +507,30 @@ export class ContainerManager extends EventEmitter {
               reject(new Error(errorMsg));
             }
           });
+
+          // For build commands, poll for image existence to detect hung processes
+          if (args[0] === 'build' && args[1] === 'cyber-autoagent') {
+            const pollInterval = setInterval(async () => {
+              try {
+                const { stdout } = await execAsync('docker images -q cyber-autoagent:latest');
+                if (stdout.trim()) {
+                  clearInterval(pollInterval);
+                  child.kill();
+                  this.logger.info('Build completed (detected via image check), killing hung process');
+                  resolve();
+                }
+              } catch {}
+            }, 10000); // Check every 10 seconds
+
+            child.on('close', () => clearInterval(pollInterval));
+          }
         });
+
+        const timeout = new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('Docker command timeout after 10 minutes')), 600000)
+        );
+
+        return Promise.race([composePromise, timeout]);
       };
 
       // For single-container mode we can skip dependencies in up, but we still pull if needed
@@ -530,13 +554,24 @@ export class ContainerManager extends EventEmitter {
       if (needsBuild && config.services.includes('cyber-autoagent')) {
         this.emit('progress', `◆ Building cyber-autoagent image (first time setup)...`);
 
-        const buildOperation = runCompose(['build', 'cyber-autoagent'], 'Building cyber-autoagent…', ['cyber-autoagent'])
-          .catch(e => {
+        const buildWithVerification = runCompose(['build', 'cyber-autoagent'], 'Building cyber-autoagent…', ['cyber-autoagent'])
+          .catch(async (e) => {
+            // Build process may hang but image could still be created
+            // Check if image exists before failing
+            try {
+              const { stdout } = await execAsync('docker images -q cyber-autoagent:latest');
+              if (stdout.trim()) {
+                this.logger.info('Build process hung but image exists, continuing');
+                this.emit('progress', '✓ Image build completed (process hung, detected via image check)');
+                return; // Success - image exists
+              }
+            } catch {}
+
             this.logger.error('Failed to build cyber-autoagent image', e as Error);
             throw new Error(`Failed to build cyber-autoagent image. Ensure Docker has enough resources and all files are present.`);
           });
 
-        parallelOperations.push(buildOperation);
+        parallelOperations.push(buildWithVerification);
       }
 
       // Pull external service images in parallel with build
