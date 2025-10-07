@@ -466,7 +466,6 @@ export class DirectDockerService extends EventEmitter {
         this.emit('event', { type: 'output', content: `✓ Docker image: ${dockerImage}`, timestamp: Date.now() });
         this.emit('event', { type: 'output', content: `✓ Output directory mount: ${outputPath} -> /app/outputs`, timestamp: Date.now() });
         this.emit('event', { type: 'output', content: `✓ Network: ${dockerNetwork}`, timestamp: Date.now() });
-        this.emit('event', { type: 'output', content: `✓ Target: ${params.target}`, timestamp: Date.now() });
         this.emit('event', { type: 'output', content: `✓ Provider: ${config.modelProvider || 'unknown'} (${config.modelId || 'default-model'})`, timestamp: Date.now() });
       }, 900);
 
@@ -601,20 +600,6 @@ export class DirectDockerService extends EventEmitter {
         }
       }, 1000);
 
-      // Emit objective/target and plugin details early in the run
-      setTimeout(() => {
-        const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
-        this.emit('event', {
-          type: 'output',
-          content: `◆ Objective: ${objective}`,
-          timestamp: Date.now()
-        });
-        this.emit('event', {
-          type: 'output',
-          content: `◆ Target: ${params.target}`,
-          timestamp: Date.now()
-        });
-      }, 1200);
 
       // Provider is already emitted in preflight checks (✓ Provider: ... at ~900ms).
       // Avoid emitting here to prevent interleaving with tool discovery output.

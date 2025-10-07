@@ -519,9 +519,10 @@ def main():
     else:
         output_path_display = output_base_path
 
-    print_section(
-        "MISSION PARAMETERS",
-        f"""
+    if os.environ.get("CYBER_UI_MODE", "cli").lower() != "react":
+        print_section(
+            "MISSION PARAMETERS",
+            f"""
 {Colors.BOLD}Operation ID:{Colors.RESET} {Colors.CYAN}{local_operation_id}{Colors.RESET}
 {Colors.BOLD}Objective:{Colors.RESET}    {Colors.YELLOW}{args.objective}{Colors.RESET}
 {Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET} (sanitized: {target_sanitized})
@@ -529,9 +530,9 @@ def main():
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
 {Colors.BOLD}Output Path:{Colors.RESET}  {output_path_display}
 """,
-        Colors.CYAN,
-        "🎯",
-    )
+            Colors.CYAN,
+            "🎯",
+        )
 
     # Initialize timing
     start_time = time.time()
