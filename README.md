@@ -72,7 +72,7 @@ The React-based terminal interface is now the **default UI**, providing interact
 ```bash
 # Clone and setup
 git clone https://github.com/westonbrown/Cyber-AutoAgent.git
-cd cyber-autoagent
+cd Cyber-AutoAgent
 
 # Build React terminal interface
 cd src/modules/interfaces/react
