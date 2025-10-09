@@ -397,6 +397,36 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("ollama")
         assert config.swarm.llm.model_id == "custom-swarm-model"
 
+    @patch.dict(os.environ, {
+        "CYBER_AGENT_PROVIDER": "litellm",
+        "CYBER_AGENT_LLM_MODEL": "xai/grok-4-fast-reasoning",
+        "CYBER_AGENT_EMBEDDING_MODEL": "bedrock/amazon.titan-embed-text-v2:0",
+        "XAI_API_KEY": "test-key",
+        "AWS_BEARER_TOKEN_BEDROCK": "test-token",
+        "AWS_REGION": "us-east-1",
+    }, clear=True)
+    def test_litellm_gemini_configuration(self):
+        """Ensure LiteLLM + hybrid configuration (XAI LLM + Bedrock embeddings) works."""
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_server_config("litellm")
+
+        # Verify LLM configuration
+        assert config.llm.model_id == "xai/grok-4-fast-reasoning"
+        assert config.llm.provider == ModelProvider.LITELLM
+
+        # Verify embedding configuration (explicit override)
+        assert config.embedding.model_id == "bedrock/amazon.titan-embed-text-v2:0"
+        assert config.embedding.provider == ModelProvider.LITELLM
+
+        # Verify memory configs aligned
+        assert config.memory.llm.model_id == "xai/grok-4-fast-reasoning"
+        assert config.memory.llm.provider == ModelProvider.LITELLM
+        assert config.swarm.llm.model_id == "xai/grok-4-fast-reasoning"
+
+        # Should not raise for missing AWS credentials (XAI_API_KEY is present)
+        self.config_manager.validate_requirements("litellm")
+
     def test_parameter_overrides(self):
         """Test that function parameters override configuration."""
         # This would require more complex override logic
@@ -930,5 +960,3 @@ class TestOutputConfigIntegration:
 
             # Override should take precedence over environment variable
             assert output_config.base_dir == "/override/outputs"
-
-

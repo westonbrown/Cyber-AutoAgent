@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -551,7 +551,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "ragas", specifier = ">=0.3.0" },
     { name = "requests", specifier = ">=2.25.0" },
-    { name = "strands-agents", extras = ["ollama", "otel", "litellm"], specifier = "==1.10.0" },
+    { name = "strands-agents", extras = ["ollama", "otel", "litellm"], specifier = "==1.11.0" },
     { name = "strands-agents-tools", specifier = "==0.2.9" },
 ]
 provides-extras = ["dev"]
@@ -3228,7 +3228,7 @@ wheels = [
 
 [[package]]
 name = "strands-agents"
-version = "1.10.0"
+version = "1.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -3242,9 +3242,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/24/5ea42c4057332d7d8307e4b04886aaebe22a3776cae322517b5903378ea8/strands_agents-1.10.0.tar.gz", hash = "sha256:6e92e27e4fe70c04879d553f3fa64b9a5056aae1b79f6a916dd32adaf1723109", size = 407496, upload-time = "2025-09-29T14:29:26.39Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/73/7ea29184c8f4c07cb4e6c6805ced5deef71e9fdf124d62fe38c9bc92fbcc/strands_agents-1.11.0.tar.gz", hash = "sha256:52899a2205ac612442f7773deb1e45c7fc6e897d54f8ea70068f2e60879ff25a", size = 411280, upload-time = "2025-10-08T16:09:45.688Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/f7/321549660d10e4e1d8ca558f4b8fb450e9d77c23cf744a9dc121b3e356dd/strands_agents-1.10.0-py3-none-any.whl", hash = "sha256:56b775f1ada565b321de41bb92e5d33c240fb0582c66d45c241e42af0a200b10", size = 211680, upload-time = "2025-09-29T14:29:24.478Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/9e/4d2b0d21505edc4b50c3acf5559832a364d36701c263bcc5735400c68ef3/strands_agents-1.11.0-py3-none-any.whl", hash = "sha256:ff698d5cc73fbeb9993c11e7caa0b74d5a822faf99a65a68d9ef39e10b21158e", size = 213648, upload-time = "2025-10-08T16:09:43.99Z" },
 ]
 
 [package.optional-dependencies]

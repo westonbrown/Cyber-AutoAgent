@@ -304,8 +304,8 @@ def main():
         "--provider",
         type=str,
         choices=["bedrock", "ollama", "litellm"],
-        default="bedrock",
-        help="Model provider: 'bedrock' for AWS Bedrock, 'ollama' for local models, 'litellm' for universal access (default: bedrock)",
+        default=os.getenv("CYBER_AGENT_PROVIDER", "bedrock"),
+        help="Model provider: 'bedrock' for AWS Bedrock, 'ollama' for local models, 'litellm' for universal access (default: from CYBER_AGENT_PROVIDER or bedrock)",
     )
     parser.add_argument(
         "--confirmations",
@@ -347,6 +347,12 @@ def main():
     env_objective = os.environ.get("CYBER_OBJECTIVE")
     if env_objective:
         args.objective = env_objective  # Env var takes precedence
+
+    # Persist provider/model selections to environment for downstream configuration
+    if args.provider:
+        os.environ["CYBER_AGENT_PROVIDER"] = args.provider
+    if args.model:
+        os.environ["CYBER_AGENT_LLM_MODEL"] = args.model
 
     # Handle service mode
     if args.service_mode:
@@ -404,6 +410,8 @@ def main():
         config_overrides["output_dir"] = args.output_dir
     # Always enable unified output system
     config_overrides["enable_unified_output"] = True
+    if args.model:
+        config_overrides["model_id"] = args.model
 
     # Toggle rubric evaluation via CLI flag
     if args.eval_rubric:
@@ -505,6 +513,24 @@ def main():
     logger.info("Objective: %s", args.objective)
     logger.info("Target: %s", args.target)
     logger.info("Max steps: %d", args.iterations)
+    logger.info("Provider: %s", args.provider)
+    logger.info("Model: %s", server_config.llm.model_id)
+    logger.info("Temperature: %s", server_config.llm.temperature)
+    logger.info("Max tokens: %d", server_config.llm.max_tokens)
+    if server_config.llm.top_p is not None:
+        logger.info("Top P: %s", server_config.llm.top_p)
+
+    # Log extended parameters from environment (model-agnostic)
+    thinking_budget = os.getenv("THINKING_BUDGET")
+    reasoning_effort = os.getenv("REASONING_EFFORT")
+    max_completion = os.getenv("MAX_COMPLETION_TOKENS")
+
+    if thinking_budget:
+        logger.info("Thinking budget: %s", thinking_budget)
+    if reasoning_effort:
+        logger.info("Reasoning effort: %s", reasoning_effort)
+    if max_completion:
+        logger.info("Max completion tokens: %s", max_completion)
 
     # Display operation details with unified output information
     target_sanitized = sanitize_target_name(args.target)

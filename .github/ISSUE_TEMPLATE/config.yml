@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/westonbrown/Cyber-AutoAgent#readme
+    about: Check the README for setup and usage guides
+  - name: Discord Community
+    url: https://discord.gg/WNHhsnkTc3
+    about: Ask questions and get help from the community
