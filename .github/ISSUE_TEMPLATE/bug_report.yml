@@ -1,0 +1,82 @@
+name: Bug Report
+description: Report a bug or issue
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Run command...
+        2. See error...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - Python CLI
+        - React UI (npm start)
+        - Docker
+        - Docker Compose
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and Model
+      placeholder: "e.g., bedrock/claude-sonnet-4-5, xai/grok-4, ollama/llama3"
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "e.g., macOS 14.5, Ubuntu 22.04, Windows 11"
+    validations:
+      required: false
+
+  - type: input
+    id: python
+    attributes:
+      label: Python Version
+      placeholder: "e.g., 3.11.5, 3.12.0"
+    validations:
+      required: false
+
+  - type: input
+    id: node
+    attributes:
+      label: Node Version (if using React UI)
+      placeholder: "e.g., 20.10.0"
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Cyber-AutoAgent Version
+      placeholder: "e.g., 0.1.3, main branch, commit hash"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error logs
+      description: Paste relevant error messages
+      render: shell
+    validations:
+      required: false
