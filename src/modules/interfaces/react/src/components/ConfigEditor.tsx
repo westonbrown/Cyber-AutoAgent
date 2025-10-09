@@ -65,21 +65,31 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'ollamaHost', label: 'Ollama Host', type: 'text', section: 'Models' },
   { key: 'openaiApiKey', label: 'OpenAI API Key', type: 'password', section: 'Models' },
   { key: 'anthropicApiKey', label: 'Anthropic API Key', type: 'password', section: 'Models' },
+  { key: 'geminiApiKey', label: 'Gemini API Key', type: 'password', section: 'Models' },
+  { key: 'xaiApiKey', label: 'X.AI API Key', type: 'password', section: 'Models' },
+  { key: 'cohereApiKey', label: 'Cohere API Key', type: 'password', section: 'Models' },
   { key: 'azureApiKey', label: 'Azure API Key', type: 'password', section: 'Models' },
   { key: 'azureApiBase', label: 'Azure API Base', type: 'text', section: 'Models' },
   { key: 'azureApiVersion', label: 'Azure API Version', type: 'text', section: 'Models' },
-  { key: 'maxTokens', label: 'Max Output Tokens', type: 'number', section: 'Models' },
-  { key: 'topP', label: 'Top P', type: 'number', section: 'Models',
-    description: 'Nucleus sampling (0.0-1.0). Leave empty for default. Note: Anthropic via LiteLLM requires either temperature OR top_p, not both.' },
-  { key: 'thinkingBudget', label: 'Thinking Budget Tokens', type: 'number', section: 'Models' },
-  { key: 'reasoningEffort', label: 'Reasoning Effort (O1/GPT-5)', type: 'select', section: 'Models',
+  { key: 'temperature', label: 'Temperature (optional)', type: 'number', section: 'Models',
+    description: 'Sampling temperature (0.0-2.0). Leave as Auto for provider defaults.' },
+  { key: 'maxTokens', label: 'Max Output Tokens (optional)', type: 'number', section: 'Models',
+    description: 'Leave as Auto for provider/model defaults.' },
+  { key: 'topP', label: 'Top P (optional)', type: 'number', section: 'Models',
+    description: 'Nucleus sampling (0.0-1.0). Leave as Auto. Note: Anthropic requires temperature OR top_p, not both.' },
+  { key: 'thinkingBudget', label: 'Thinking Budget (optional)', type: 'number', section: 'Models',
+    description: 'Claude thinking models only. Leave as Auto for model defaults.' },
+  { key: 'reasoningEffort', label: 'Reasoning Effort (optional)', type: 'select', section: 'Models',
+    description: 'OpenAI O1/GPT-5 only. Leave as Auto for default.',
     options: [
+      { label: 'Auto', value: '' },
       { label: 'Low', value: 'low' },
       { label: 'Medium', value: 'medium' },
       { label: 'High', value: 'high' }
     ]
   },
-  { key: 'maxCompletionTokens', label: 'Max Completion Tokens (O1/GPT-5)', type: 'number', section: 'Models' },
+  { key: 'maxCompletionTokens', label: 'Max Completion Tokens (optional)', type: 'number', section: 'Models',
+    description: 'OpenAI O1/GPT-5 only. Leave as Auto for default.' },
 
   // Operations (renamed from Assessment)
   { key: 'iterations', label: 'Max Iterations', type: 'number', section: 'Operations' },
@@ -144,6 +154,30 @@ const SECTIONS: ConfigSection[] = [
   { name: 'Pricing', label: 'Model Pricing', description: 'Token cost configuration per 1K tokens', expanded: false },
   { name: 'Output', label: 'Output', description: 'Report and logging', expanded: false }
 ];
+
+/**
+ * Detect model capabilities based on model ID
+ * Simple pattern matching - easily extensible for new models
+ */
+const getModelCapabilities = (modelId: string | undefined) => {
+  if (!modelId) return { hasThinking: false, hasReasoning: false };
+
+  const id = modelId.toLowerCase();
+
+  // Thinking models (Claude extended thinking with THINKING_BUDGET)
+  const hasThinking =
+    id.includes('claude-sonnet-4-5') ||
+    id.includes('claude-sonnet-4-20') ||
+    id.includes('claude-opus-4');
+
+  // Reasoning models (OpenAI O1/GPT-5 with REASONING_EFFORT)
+  const hasReasoning =
+    id.includes('o1-') ||
+    id.includes('gpt-5') ||
+    id.includes('reasoning');
+
+  return { hasThinking, hasReasoning };
+};
 
 export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const { config, updateConfig, saveConfig } = useConfig();
@@ -236,27 +270,38 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   const getCurrentSectionFields = useCallback(() => {
     const currentSection = sections[selectedSectionIndex];
     if (!currentSection?.expanded) return [];
-    
+
     let fields = CONFIG_FIELDS.filter(f => f.section === currentSection.name);
-    
+
     // Filter credentials based on provider
     if (currentSection.name === 'Models') {
+      // Detect model capabilities
+      const capabilities = getModelCapabilities(config.modelId);
+
       fields = fields.filter(f => {
         // Always show provider and model fields
         if (['modelProvider', 'modelId', 'embeddingModel', 'evaluationModel', 'swarmModel'].includes(f.key)) {
           return true;
         }
-        
+
+        // Model-specific advanced parameters (only show if model supports them)
+        if (f.key === 'thinkingBudget' && !capabilities.hasThinking) return false;
+        if (f.key === 'reasoningEffort' && !capabilities.hasReasoning) return false;
+        if (f.key === 'maxCompletionTokens' && !capabilities.hasReasoning) return false;
+
         // Show provider-specific credentials and token configs
         if (config.modelProvider === 'bedrock') {
-          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion', 'maxTokens', 'thinkingBudget'].includes(f.key);
+          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
+                  'temperature', 'maxTokens', 'thinkingBudget'].includes(f.key);
         } else if (config.modelProvider === 'ollama') {
-          return ['ollamaHost', 'maxTokens'].includes(f.key);
+          return ['ollamaHost', 'temperature', 'maxTokens'].includes(f.key);
         } else if (config.modelProvider === 'litellm') {
-          return ['openaiApiKey', 'anthropicApiKey', 'azureApiKey', 'azureApiBase', 'azureApiVersion',
-                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsRegion', 'maxTokens', 'topP', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
+          return ['openaiApiKey', 'anthropicApiKey', 'geminiApiKey', 'xaiApiKey', 'cohereApiKey',
+                  'azureApiKey', 'azureApiBase', 'azureApiVersion',
+                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
+                  'temperature', 'maxTokens', 'topP', 'thinkingBudget', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
         }
-        
+
         return false;
       });
     }
@@ -272,7 +317,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
     
     return fields;
-  }, [sections, selectedSectionIndex, config.modelProvider, config.memoryBackend]);
+  }, [sections, selectedSectionIndex, config.modelProvider, config.memoryBackend, config.modelId]);
   
   // Basic pre-save validation for required fields and dependent settings
   const validateBeforeSave = useCallback(() => {
@@ -481,6 +526,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       'awsSessionToken',
       'openaiApiKey',
       'anthropicApiKey',
+      'geminiApiKey',
+      'xaiApiKey',
       'cohereApiKey',
       'mem0ApiKey',
       'langfusePublicKey',
@@ -517,18 +564,24 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         updates.embeddingModel = 'mxbai-embed-large';
         updates.evaluationModel = 'qwen3-coder:30b-a3b-q4_K_M';
         updates.swarmModel = 'qwen3-coder:30b-a3b-q4_K_M';
+        // Clear temperature to null so backend uses model-specific defaults
+        updates.temperature = null;
       } else if (value === 'bedrock') {
         // Set AWS Bedrock defaults - Latest Sonnet 4.5 with 1M context + thinking
         updates.modelId = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
         updates.embeddingModel = 'amazon.titan-embed-text-v2:0';
         updates.evaluationModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';
         updates.swarmModel = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+        // Clear temperature to null so backend uses model-specific defaults (1.0 for Sonnet 4.5)
+        updates.temperature = null;
       } else if (value === 'litellm') {
         // Set LiteLLM defaults
         updates.modelId = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
         updates.embeddingModel = 'bedrock/amazon.titan-embed-text-v2:0';
         updates.evaluationModel = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
         updates.swarmModel = 'bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0';
+        // Clear temperature to null so backend uses model-specific defaults
+        updates.temperature = null;
       }
       
       updateConfig(updates);
@@ -681,19 +734,59 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     }
     
     const field = CONFIG_FIELDS.find(f => f.key === key);
-    
+
     if (value === undefined || value === null || value === '') {
+      // Show computed defaults for model-specific parameters
+      if (key === 'temperature') {
+        // Thinking models require temperature=1.0
+        if (config.modelId?.includes('claude-sonnet-4-5') ||
+            config.modelId?.includes('claude-sonnet-4-20') ||
+            config.modelId?.includes('claude-opus-4')) {
+          return '1.0';
+        }
+        return 'Auto';
+      }
+      if (key === 'maxTokens' && config.modelId?.includes('claude-sonnet-4-5-20250929')) {
+        return '16000';
+      }
+      if (key === 'thinkingBudget' && config.modelId?.includes('claude-sonnet-4-5-20250929')) {
+        return '7000';
+      }
+      if (key === 'maxTokens' && config.modelId?.includes('claude-sonnet-4-20250514')) {
+        return '32000';
+      }
+      if (key === 'thinkingBudget' && config.modelId?.includes('claude-sonnet-4-20250514')) {
+        return '10000';
+      }
+
+      // Show provider defaults for common optional fields
+      if (key === 'topP') {
+        return 'Auto';
+      }
+      if (key === 'reasoningEffort') {
+        return 'Auto';
+      }
+      if (key === 'maxCompletionTokens') {
+        return 'Auto';
+      }
+      if (key === 'maxTokens') {
+        return 'Auto (provider default)';
+      }
+      if (key === 'thinkingBudget') {
+        return 'Auto (provider default)';
+      }
+
       return 'Not set';
     }
-    
+
     if (field?.type === 'password' && value) {
       return '*'.repeat(8);
     }
-    
+
     if (field?.type === 'boolean') {
       return value ? 'Enabled' : 'Disabled';
     }
-    
+
     return String(value);
   };
 
