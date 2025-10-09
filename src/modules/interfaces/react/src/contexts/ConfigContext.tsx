@@ -79,6 +79,10 @@ export interface Config {
   openaiApiKey?: string;
   /** Anthropic API key for Claude models via LiteLLM */
   anthropicApiKey?: string;
+  /** Google Gemini API key for Gemini models via LiteLLM */
+  geminiApiKey?: string;
+  /** X.AI API key for Grok models via LiteLLM */
+  xaiApiKey?: string;
   /** Cohere API key for Command models via LiteLLM */
   cohereApiKey?: string;
   /** Azure OpenAI API key */
@@ -91,6 +95,10 @@ export interface Config {
   reasoningEffort?: 'low' | 'medium' | 'high';
   /** Max completion tokens for reasoning models (overrides max_tokens) */
   maxCompletionTokens?: number;
+  /** Sampling temperature for the primary model */
+  temperature?: number;
+  /** nucleus sampling parameter for providers that support it */
+  topP?: number;
   /** Max output tokens for standard/thinking models */
   maxTokens?: number;
   /** Thinking budget for Claude thinking models */
@@ -222,6 +230,7 @@ export const defaultConfig: Config = {
   embeddingModel: 'amazon.titan-embed-text-v2:0',
   evaluationModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
   swarmModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+  temperature: 0.95,
   awsRegion: process.env.AWS_REGION || 'us-east-1',
   awsBearerToken: process.env.AWS_BEARER_TOKEN_BEDROCK,
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -353,6 +362,8 @@ export const defaultConfig: Config = {
   // LiteLLM API Keys
   openaiApiKey: process.env.OPENAI_API_KEY,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  xaiApiKey: process.env.XAI_API_KEY,
   cohereApiKey: process.env.COHERE_API_KEY,
   
   // Docker Settings

@@ -397,6 +397,27 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("ollama")
         assert config.swarm.llm.model_id == "custom-swarm-model"
 
+    @patch.dict(os.environ, {
+        "CYBER_AGENT_PROVIDER": "litellm",
+        "CYBER_AGENT_LLM_MODEL": "gemini/gemini-2.5-flash",
+        "GEMINI_API_KEY": "test-key",
+    }, clear=True)
+    def test_litellm_gemini_configuration(self):
+        """Ensure LiteLLM + Gemini configuration avoids bedrock dependencies."""
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_server_config("litellm")
+
+        assert config.llm.model_id == "gemini/gemini-2.5-flash"
+        assert config.embedding.model_id in {"models/text-embedding-004", "multi-qa-MiniLM-L6-cos-v1"}
+        assert config.embedding.provider == ModelProvider.LITELLM
+        assert config.memory.llm.model_id == "gemini/gemini-2.5-flash"
+        assert config.memory.llm.provider == ModelProvider.LITELLM
+        assert config.swarm.llm.model_id == "gemini/gemini-2.5-flash"
+
+        # Should not raise for missing AWS credentials
+        self.config_manager.validate_requirements("litellm")
+
     def test_parameter_overrides(self):
         """Test that function parameters override configuration."""
         # This would require more complex override logic
@@ -930,5 +951,3 @@ class TestOutputConfigIntegration:
 
             # Override should take precedence over environment variable
             assert output_config.base_dir == "/override/outputs"
-
-

@@ -238,6 +238,12 @@ export class DirectDockerService extends EventEmitter {
       if (config.anthropicApiKey) {
         env.push(`ANTHROPIC_API_KEY=${config.anthropicApiKey}`);
       }
+      if (config.geminiApiKey) {
+        env.push(`GEMINI_API_KEY=${config.geminiApiKey}`);
+      }
+      if (config.xaiApiKey) {
+        env.push(`XAI_API_KEY=${config.xaiApiKey}`);
+      }
       if (config.cohereApiKey) {
         env.push(`COHERE_API_KEY=${config.cohereApiKey}`);
       }
@@ -250,8 +256,18 @@ export class DirectDockerService extends EventEmitter {
       if (config.azureApiVersion) {
         env.push(`AZURE_API_VERSION=${config.azureApiVersion}`);
       }
+      if (config.embeddingModel) {
+        env.push(`CYBER_AGENT_EMBEDDING_MODEL=${config.embeddingModel}`);
+      }
       if (config.maxTokens) {
         env.push(`MAX_TOKENS=${config.maxTokens}`);
+        env.push(`CYBER_AGENT_MAX_TOKENS=${config.maxTokens}`);
+      }
+      if (config.temperature !== undefined) {
+        env.push(`CYBER_AGENT_TEMPERATURE=${config.temperature}`);
+      }
+      if (config.topP !== undefined) {
+        env.push(`CYBER_AGENT_TOP_P=${config.topP}`);
       }
       if (config.thinkingBudget) {
         env.push(`THINKING_BUDGET=${config.thinkingBudget}`);
@@ -275,7 +291,8 @@ export class DirectDockerService extends EventEmitter {
       const maskEnv = (vars: string[]) => {
         const SENSITIVE = new Set([
           'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK', 'OPENAI_API_KEY',
-          'ANTHROPIC_API_KEY', 'COHERE_API_KEY', 'AZURE_API_KEY', 'LANGFUSE_SECRET_KEY'
+          'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'COHERE_API_KEY',
+          'AZURE_API_KEY', 'LANGFUSE_SECRET_KEY'
         ]);
         const out: Record<string, string> = {};
         for (const e of vars) {

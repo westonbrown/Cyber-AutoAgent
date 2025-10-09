@@ -15,11 +15,12 @@ Key Components:
 - Validation and error handling
 """
 
+import importlib.util
 import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 import ollama
@@ -28,6 +29,30 @@ import requests
 from modules.handlers.utils import get_output_path, sanitize_target_name
 
 logger = logging.getLogger(__name__)
+
+
+LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
+    "openai": ("openai/text-embedding-3-small", 1536),
+    "azure": ("azure/text-embedding-3-small", 1536),
+    "gemini": ("models/text-embedding-004", 768),
+    "google": ("models/text-embedding-004", 768),
+    "mistral": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
+}
+DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
+MEM0_PROVIDER_MAP: Dict[str, str] = {
+    "bedrock": "aws_bedrock",
+    "openai": "openai",
+    "azure": "azure_openai",
+    "anthropic": "anthropic",
+    "cohere": "cohere",
+    "gemini": "gemini",
+    "google": "gemini",
+    "mistral": "huggingface",
+    "groq": "openai",
+    "xai": "huggingface",
+}
+
 
 
 class ModelProvider(Enum):
@@ -529,6 +554,9 @@ class ConfigManager:
                     # Fallback to user's model if availability check fails
                     defaults["embedding"].model_id = user_model
 
+        if provider == "litellm":
+            self._align_litellm_defaults(defaults)
+
         # Build memory configuration
         memory_config = MemoryConfig(
             embedder=self._get_memory_embedder_config(provider, defaults),
@@ -788,26 +816,17 @@ class ConfigManager:
                 },
             }
         elif server == "litellm":
-            # For LiteLLM, we need to map to the actual provider that Mem0 supports
-            # Extract provider from model ID (e.g., "bedrock/model" -> "aws_bedrock")
-            model_id = memory_config.embedder.model_id
-            if model_id.startswith("bedrock/"):
-                embedder_config = {
-                    "provider": "aws_bedrock",
-                    "config": {
-                        "model": model_id.replace("bedrock/", ""),  # Remove prefix for Mem0
-                        "aws_region": memory_config.embedder.aws_region,
-                    },
-                }
-            else:
-                # Default to AWS Bedrock for unsupported providers
-                embedder_config = {
-                    "provider": "aws_bedrock",
-                    "config": {
-                        "model": "amazon.titan-embed-text-v2:0",
-                        "aws_region": memory_config.embedder.aws_region,
-                    },
-                }
+            prefix, _ = self._split_litellm_model_id(memory_config.embedder.model_id)
+            mem0_provider = MEM0_PROVIDER_MAP.get(prefix, "huggingface")
+            embedder_config = {
+                "provider": mem0_provider,
+                "config": {
+                    "model": memory_config.embedder.model_id,
+                    "embedding_dims": memory_config.embedder.dimensions,
+                },
+            }
+            if mem0_provider == "aws_bedrock":
+                embedder_config["config"]["aws_region"] = memory_config.embedder.aws_region
         else:  # bedrock
             embedder_config = {
                 "provider": "aws_bedrock",
@@ -829,27 +848,14 @@ class ConfigManager:
                 },
             }
         elif server == "litellm":
-            # For LiteLLM, we need to map to the actual provider that Mem0 supports
-            model_id = memory_config.llm.model_id
-            if model_id.startswith("bedrock/"):
-                llm_config = {
-                    "provider": "aws_bedrock",
-                    "config": {
-                        "model": model_id.replace("bedrock/", ""),  # Remove prefix for Mem0
-                        "temperature": memory_config.llm.temperature,
-                        "max_tokens": memory_config.llm.max_tokens,
-                    },
-                }
-            else:
-                # Default to AWS Bedrock for unsupported providers
-                llm_config = {
-                    "provider": "aws_bedrock",
-                    "config": {
-                        "model": "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
-                        "temperature": memory_config.llm.temperature,
-                        "max_tokens": memory_config.llm.max_tokens,
-                    },
-                }
+            llm_config = {
+                "provider": "litellm",
+                "config": {
+                    "model": memory_config.llm.model_id,
+                    "temperature": memory_config.llm.temperature,
+                    "max_tokens": memory_config.llm.max_tokens,
+                },
+            }
         else:  # bedrock
             llm_config = {
                 "provider": "aws_bedrock",
@@ -873,6 +879,8 @@ class ConfigManager:
                 "provider": "faiss",
                 "config": memory_config.vector_store.get_config_for_provider("faiss"),
             }
+
+        vector_store_config["config"]["embedding_model_dims"] = memory_config.embedder.dimensions
 
         return {
             "embedder": embedder_config,
@@ -927,71 +935,133 @@ class ConfigManager:
 
     def _apply_environment_overrides(self, _server: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
-        # Main LLM model override
+        llm_cfg = defaults.get("llm") if isinstance(defaults.get("llm"), LLMConfig) else None
+
         llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
-        if llm_model:
-            defaults["llm"] = LLMConfig(
-                provider=defaults["llm"].provider,
+        if llm_model and llm_cfg is not None:
+            llm_cfg = LLMConfig(
+                provider=llm_cfg.provider,
                 model_id=llm_model,
-                temperature=defaults["llm"].temperature,
-                max_tokens=defaults["llm"].max_tokens,
+                temperature=llm_cfg.temperature,
+                max_tokens=llm_cfg.max_tokens,
+                top_p=llm_cfg.top_p,
             )
+            defaults["llm"] = llm_cfg
 
-        # Embedding model override
+        temperature_override = os.getenv("CYBER_AGENT_TEMPERATURE")
+        if temperature_override and llm_cfg is not None:
+            try:
+                temperature = float(temperature_override)
+                llm_cfg.temperature = temperature
+                llm_cfg.parameters["temperature"] = temperature
+            except ValueError:
+                logger.warning("Invalid CYBER_AGENT_TEMPERATURE=%s - ignoring", temperature_override)
+
+        top_p_override = os.getenv("CYBER_AGENT_TOP_P")
+        if top_p_override and llm_cfg is not None:
+            try:
+                top_p = float(top_p_override)
+                llm_cfg.top_p = top_p
+                llm_cfg.parameters["top_p"] = top_p
+            except ValueError:
+                logger.warning("Invalid CYBER_AGENT_TOP_P=%s - ignoring", top_p_override)
+
+        max_tokens_override = os.getenv("CYBER_AGENT_MAX_TOKENS") or os.getenv("MAX_TOKENS")
+        if max_tokens_override and llm_cfg is not None:
+            try:
+                max_tokens = int(float(max_tokens_override))
+                llm_cfg.max_tokens = max_tokens
+                llm_cfg.parameters["max_tokens"] = max_tokens
+            except ValueError:
+                logger.warning("Invalid MAX_TOKENS override=%s - ignoring", max_tokens_override)
+
         embedding_model = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
-        if embedding_model:
-            defaults["embedding"] = EmbeddingConfig(
-                provider=defaults["embedding"].provider,
-                model_id=embedding_model,
-                dimensions=defaults["embedding"].dimensions,
-            )
+        if embedding_model and isinstance(defaults.get("embedding"), EmbeddingConfig):
+            embedding_cfg = defaults["embedding"]
+            embedding_cfg.model_id = embedding_model
+            embedding_cfg.parameters["dimensions"] = embedding_cfg.dimensions
 
-        # Evaluation model override
         eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
-        if eval_model:
-            defaults["evaluation_llm"] = LLMConfig(
-                provider=defaults["evaluation_llm"].provider,
-                model_id=eval_model,
-                temperature=defaults["evaluation_llm"].temperature,
-                max_tokens=defaults["evaluation_llm"].max_tokens,
-            )
+        if eval_model and isinstance(defaults.get("evaluation_llm"), LLMConfig):
+            evaluation_cfg = defaults["evaluation_llm"]
+            evaluation_cfg.model_id = eval_model
 
-        # Swarm model override
         swarm_model = os.getenv("CYBER_AGENT_SWARM_MODEL")
-        if swarm_model:
-            defaults["swarm_llm"] = LLMConfig(
-                provider=defaults["swarm_llm"].provider,
-                model_id=swarm_model,
-                temperature=defaults["swarm_llm"].temperature,
-                max_tokens=defaults["swarm_llm"].max_tokens,
-            )
+        if swarm_model and isinstance(defaults.get("swarm_llm"), LLMConfig):
+            swarm_cfg = defaults["swarm_llm"]
+            swarm_cfg.model_id = swarm_model
 
-        # Memory LLM override
         memory_llm_model = os.getenv("MEM0_LLM_MODEL")
-        if memory_llm_model:
-            defaults["memory_llm"] = MemoryLLMConfig(
-                provider=defaults["memory_llm"].provider,
-                model_id=memory_llm_model,
-                temperature=defaults["memory_llm"].temperature,
-                max_tokens=defaults["memory_llm"].max_tokens,
-                aws_region=defaults["memory_llm"].aws_region,
-            )
-
-        # Memory embedding override (only if not already overridden)
-        mem0_embedding_model = os.getenv("MEM0_EMBEDDING_MODEL")
-        if mem0_embedding_model and not embedding_model:  # Only if not already overridden
-            defaults["embedding"] = EmbeddingConfig(
-                provider=defaults["embedding"].provider,
-                model_id=mem0_embedding_model,
-                dimensions=defaults["embedding"].dimensions,
-            )
-
-        # Region override
-        aws_region = os.getenv("AWS_REGION")
-        if aws_region:
-            defaults["region"] = aws_region
+        if memory_llm_model and isinstance(defaults.get("memory_llm"), MemoryLLMConfig):
+            memory_llm_cfg = defaults["memory_llm"]
+            memory_llm_cfg.model_id = memory_llm_model
 
         return defaults
+
+    def _split_litellm_model_id(self, model_id: str) -> Tuple[str, str]:
+        """Split LiteLLM model id into provider prefix and base id."""
+        if not model_id:
+            return "", ""
+        if "/" in model_id:
+            prefix, base = model_id.split("/", 1)
+            if prefix.lower() == "models":
+                prefix = "gemini"
+            return prefix.lower(), base
+        return "", model_id
+
+    def _align_litellm_defaults(self, defaults: Dict[str, Any]) -> None:
+        """Ensure LiteLLM configuration components stay aligned with the selected model."""
+        llm_cfg = defaults.get("llm")
+        if not isinstance(llm_cfg, LLMConfig):
+            return
+
+        provider_prefix, base_model = self._split_litellm_model_id(llm_cfg.model_id)
+        if not base_model:
+            return
+
+        embed_override = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+
+        for key in ("memory_llm", "evaluation_llm", "swarm_llm"):
+            cfg = defaults.get(key)
+            if isinstance(cfg, MemoryLLMConfig):
+                cfg.model_id = llm_cfg.model_id
+                cfg.provider = ModelProvider.LITELLM
+                cfg.parameters["temperature"] = cfg.temperature
+                cfg.parameters["max_tokens"] = cfg.max_tokens
+            elif isinstance(cfg, LLMConfig):
+                cfg.model_id = llm_cfg.model_id
+                cfg.provider = ModelProvider.LITELLM
+                cfg.parameters["temperature"] = cfg.temperature
+                cfg.parameters["max_tokens"] = cfg.max_tokens
+
+        embed_cfg = defaults.get("embedding")
+        if isinstance(embed_cfg, EmbeddingConfig) and not embed_override:
+            embed_model, dims = LITELLM_EMBEDDING_DEFAULTS.get(
+                provider_prefix, DEFAULT_LITELLM_EMBEDDING
+            )
+
+            if embed_model == "models/text-embedding-004":
+                if importlib.util.find_spec("google.genai") is None:
+                    logger.error(
+                        "LiteLLM provider '%s' requires optional dependency 'google-genai'. "
+                        "Install it or set CYBER_AGENT_EMBEDDING_MODEL to a supported embedding.",
+                        provider_prefix,
+                    )
+                    raise ImportError("google-genai is required for Gemini embeddings")
+            elif embed_model == "multi-qa-MiniLM-L6-cos-v1":
+                if importlib.util.find_spec("sentence_transformers") is None:
+                    logger.error(
+                        "LiteLLM provider '%s' requires optional dependency 'sentence-transformers'. "
+                        "Install it or set CYBER_AGENT_EMBEDDING_MODEL to a supported embedding.",
+                        provider_prefix,
+                    )
+                    raise ImportError("sentence-transformers is required for Hugging Face embeddings")
+
+            embed_cfg.model_id = embed_model
+            embed_cfg.dimensions = dims
+            embed_cfg.provider = ModelProvider.LITELLM
+            embed_cfg.parameters["dimensions"] = dims
+
 
     def _get_memory_embedder_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
@@ -1150,7 +1220,10 @@ class ConfigManager:
         """
         # Get default LiteLLM model ID
         litellm_config = self._default_configs.get("litellm", {})
-        model_id = litellm_config.get("llm", {}).model_id if hasattr(litellm_config.get("llm", {}), "model_id") else ""
+        model_id = os.getenv("CYBER_AGENT_LLM_MODEL")
+        if not model_id:
+            llm_cfg = litellm_config.get("llm")
+            model_id = llm_cfg.model_id if hasattr(llm_cfg, "model_id") else ""
 
         # Check provider-specific requirements based on model prefix
         if model_id.startswith("bedrock/"):
@@ -1185,6 +1258,12 @@ class ConfigManager:
                 raise EnvironmentError(
                     "AZURE_API_KEY not configured for LiteLLM Azure models. "
                     "Set AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION environment variables."
+                )
+        elif model_id.startswith("gemini/"):
+            if not os.getenv("GEMINI_API_KEY"):
+                raise EnvironmentError(
+                    "GEMINI_API_KEY not configured for LiteLLM Gemini models. "
+                    "Set GEMINI_API_KEY environment variable."
                 )
         # LiteLLM will handle other provider validations internally
 
