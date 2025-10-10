@@ -162,7 +162,7 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: changeme
       
       # Features
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: true
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
       TELEMETRY_ENABLED: "false"
       
       # Performance optimizations for pentesting workloads
