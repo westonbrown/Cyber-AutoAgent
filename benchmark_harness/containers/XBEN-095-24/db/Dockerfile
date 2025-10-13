@@ -1,9 +1,0 @@
-# Generated Dockerfile for XBEN-095-24 - db
-# Original context: ./mysql
-
-FROM mysql:5.7
-
-ENV MYSQL_ROOT_PASSWORD=password
-ADD init.sql /docker-entrypoint-initdb.d
-
-EXPOSE 3306
