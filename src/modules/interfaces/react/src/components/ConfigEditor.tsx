@@ -160,7 +160,7 @@ const SECTIONS: ConfigSection[] = [
  * Simple pattern matching - easily extensible for new models
  */
 const getModelCapabilities = (modelId: string | undefined) => {
-  if (!modelId) return { hasThinking: false, hasReasoning: false };
+  if (!modelId) return { hasThinking: false, hasReasoning: false, requiresTemp1: false };
 
   const id = modelId.toLowerCase();
 
@@ -173,10 +173,14 @@ const getModelCapabilities = (modelId: string | undefined) => {
   // Reasoning models (OpenAI O1/GPT-5 with REASONING_EFFORT)
   const hasReasoning =
     id.includes('o1-') ||
+    id.includes('o3-') ||
     id.includes('gpt-5') ||
     id.includes('reasoning');
 
-  return { hasThinking, hasReasoning };
+  // Models that require temperature=1.0 exactly (Claude thinking + OpenAI reasoning)
+  const requiresTemp1 = hasThinking || hasReasoning;
+
+  return { hasThinking, hasReasoning, requiresTemp1 };
 };
 
 export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
@@ -553,10 +557,26 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
   };
 
   const updateConfigValue = useCallback((key: string, value: any) => {
+    // Validate temperature for models that require temperature=1.0
+    if (key === 'temperature' && value !== null && value !== undefined && value !== '') {
+      const capabilities = getModelCapabilities(config.modelId);
+      if (capabilities.requiresTemp1) {
+        const tempValue = typeof value === 'string' ? parseFloat(value) : value;
+        if (tempValue !== 1.0) {
+          showMessage(
+            `${config.modelId} requires temperature=1.0 (reasoning models only support this value)`,
+            'error',
+            5000
+          );
+          return; // Block the change
+        }
+      }
+    }
+
     // Special handling for provider changes - set appropriate default models
     if (key === 'modelProvider') {
       const updates: any = { modelProvider: value };
-      
+
       // Set default models based on provider
       if (value === 'ollama') {
         // Set Ollama-specific defaults
@@ -583,7 +603,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
         // Clear temperature to null so backend uses model-specific defaults
         updates.temperature = null;
       }
-      
+
       updateConfig(updates);
       setUnsavedChanges(true);
       showMessage(`Switched to ${value} provider with default models`, 'info');
@@ -738,11 +758,10 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     if (value === undefined || value === null || value === '') {
       // Show computed defaults for model-specific parameters
       if (key === 'temperature') {
-        // Thinking models require temperature=1.0
-        if (config.modelId?.includes('claude-sonnet-4-5') ||
-            config.modelId?.includes('claude-sonnet-4-20') ||
-            config.modelId?.includes('claude-opus-4')) {
-          return '1.0';
+        // Thinking/reasoning models require temperature=1.0
+        const capabilities = getModelCapabilities(config.modelId);
+        if (capabilities.requiresTemp1) {
+          return '1.0 (required)';
         }
         return 'Auto';
       }
@@ -785,6 +804,14 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
     if (field?.type === 'boolean') {
       return value ? 'Enabled' : 'Disabled';
+    }
+
+    // Add "(required)" hint for temperature=1.0 on reasoning models
+    if (key === 'temperature' && value !== null && value !== undefined && value !== '') {
+      const capabilities = getModelCapabilities(config.modelId);
+      if (capabilities.requiresTemp1) {
+        return `${value} (required)`;
+      }
     }
 
     return String(value);
