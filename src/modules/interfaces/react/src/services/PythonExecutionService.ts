@@ -672,9 +672,18 @@ export class PythonExecutionService extends EventEmitter {
         ...(config.geminiApiKey ? { GEMINI_API_KEY: config.geminiApiKey } : {}),
         ...(config.xaiApiKey ? { XAI_API_KEY: config.xaiApiKey } : {}),
         ...(config.cohereApiKey ? { COHERE_API_KEY: config.cohereApiKey } : {}),
-        ...(config.azureApiKey ? { AZURE_API_KEY: config.azureApiKey } : {}),
-        ...(config.azureApiBase ? { AZURE_API_BASE: config.azureApiBase } : {}),
-        ...(config.azureApiVersion ? { AZURE_API_VERSION: config.azureApiVersion } : {}),
+        ...(config.azureApiKey ? {
+          AZURE_API_KEY: config.azureApiKey,
+          AZURE_OPENAI_API_KEY: config.azureApiKey 
+        } : {}),
+        ...(config.azureApiBase ? {
+          AZURE_API_BASE: config.azureApiBase,
+          AZURE_OPENAI_ENDPOINT: config.azureApiBase 
+        } : {}),
+        ...(config.azureApiVersion ? {
+          AZURE_API_VERSION: config.azureApiVersion,
+          OPENAI_API_VERSION: config.azureApiVersion 
+        } : {}),
         ...(config.embeddingModel ? { CYBER_AGENT_EMBEDDING_MODEL: config.embeddingModel } : {}),
         ...(config.maxTokens ? { MAX_TOKENS: String(config.maxTokens), CYBER_AGENT_MAX_TOKENS: String(config.maxTokens) } : {}),
         ...(config.temperature !== undefined ? { CYBER_AGENT_TEMPERATURE: String(config.temperature) } : {}),

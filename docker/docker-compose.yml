@@ -23,6 +23,14 @@ services:
       # Ollama Configuration (Ollama Provider)
       - OLLAMA_HOST=${OLLAMA_HOST}
 
+      # Azure OpenAI Configuration (LiteLLM Provider)
+      - AZURE_API_KEY=${AZURE_API_KEY}
+      - AZURE_API_BASE=${AZURE_API_BASE}
+      - AZURE_API_VERSION=${AZURE_API_VERSION}
+      - AZURE_OPENAI_API_KEY=${AZURE_API_KEY}          
+      - AZURE_OPENAI_ENDPOINT=${AZURE_API_BASE}       
+      - OPENAI_API_VERSION=${AZURE_API_VERSION}       
+
       # Python configuration
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1

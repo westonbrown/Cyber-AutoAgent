@@ -249,12 +249,15 @@ export class DirectDockerService extends EventEmitter {
       }
       if (config.azureApiKey) {
         env.push(`AZURE_API_KEY=${config.azureApiKey}`);
+        env.push(`AZURE_OPENAI_API_KEY=${config.azureApiKey}`); 
       }
       if (config.azureApiBase) {
         env.push(`AZURE_API_BASE=${config.azureApiBase}`);
+        env.push(`AZURE_OPENAI_ENDPOINT=${config.azureApiBase}`); 
       }
       if (config.azureApiVersion) {
         env.push(`AZURE_API_VERSION=${config.azureApiVersion}`);
+        env.push(`OPENAI_API_VERSION=${config.azureApiVersion}`); 
       }
       if (config.embeddingModel) {
         env.push(`CYBER_AGENT_EMBEDDING_MODEL=${config.embeddingModel}`);

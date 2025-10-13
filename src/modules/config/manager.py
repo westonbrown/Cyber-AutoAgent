@@ -339,7 +339,6 @@ class ConfigManager:
             beta_flags.append("context-1m-2025-08-07")
 
         # Claude Sonnet 4.5 supports extended thinking with higher token limits
-        # Note: max_tokens must be > thinking.budget_tokens (AWS requirement)
         if "claude-sonnet-4-5-20250929" in model_id:
             default_max_tokens = 16000
             default_thinking_budget = 7000
@@ -475,7 +474,7 @@ class ConfigManager:
                     provider=ModelProvider.LITELLM,
                     model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
                     temperature=0.95,
-                    max_tokens=32000,
+                    max_tokens=32000,  # LiteLLM auto-caps based on model limits
                     # top_p omitted - LiteLLM forwards to various providers; Anthropic rejects both temperature and top_p
                 ),
                 "embedding": EmbeddingConfig(
@@ -1010,7 +1009,12 @@ class ConfigManager:
         return "", model_id
 
     def _align_litellm_defaults(self, defaults: Dict[str, Any]) -> None:
-        """Ensure LiteLLM configuration components stay aligned with the selected model."""
+        """Ensure LiteLLM configuration components stay aligned with the selected model.
+
+        Uses LiteLLM's get_max_tokens() API to dynamically cap max_tokens based on
+        model limits from model_prices_and_context_window.json. This ensures we stay
+        within model limits without hardcoding values that may change.
+        """
         llm_cfg = defaults.get("llm")
         if not isinstance(llm_cfg, LLMConfig):
             return
@@ -1018,6 +1022,45 @@ class ConfigManager:
         provider_prefix, base_model = self._split_litellm_model_id(llm_cfg.model_id)
         if not base_model:
             return
+
+        # Use LiteLLM's model database to get max_output_tokens for this model
+        # This handles all providers and updates automatically with LiteLLM
+        try:
+            import litellm
+
+            # Query LiteLLM's model database for max output tokens
+            model_max_tokens = litellm.get_max_tokens(base_model)
+
+            if model_max_tokens and llm_cfg.max_tokens > model_max_tokens:
+                logger.info(
+                    "Capping max_tokens from %d to %d for model '%s' (model limit from LiteLLM database)",
+                    llm_cfg.max_tokens,
+                    model_max_tokens,
+                    llm_cfg.model_id
+                )
+                llm_cfg.max_tokens = model_max_tokens
+                llm_cfg.parameters["max_tokens"] = model_max_tokens
+            elif model_max_tokens:
+                logger.debug(
+                    "Model '%s' max_tokens=%d is within limit (model max: %d)",
+                    llm_cfg.model_id,
+                    llm_cfg.max_tokens,
+                    model_max_tokens
+                )
+            else:
+                logger.debug(
+                    "Model '%s' not in LiteLLM database, using configured max_tokens=%d",
+                    llm_cfg.model_id,
+                    llm_cfg.max_tokens
+                )
+        except Exception as e:
+            # If LiteLLM doesn't know about this model, log and continue
+            # The API call will fail with a clear error if max_tokens is invalid
+            logger.debug(
+                "Could not query max_tokens for model '%s': %s (will use configured value)",
+                llm_cfg.model_id,
+                str(e)
+            )
 
         embed_override = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
 
@@ -1214,9 +1257,12 @@ class ConfigManager:
     def _validate_litellm_requirements(self) -> None:
         """Validate LiteLLM requirements based on model provider prefix.
 
-        LiteLLM handles authentication internally based on model prefixes,
-        so we validate that required environment variables are set for the
-        default model configuration.
+        LiteLLM handles most validation internally:
+        - max_tokens: Auto-capped to model limits via get_modified_max_tokens()
+        - temperature: Validated by provider (e.g., reasoning models require 1.0)
+        - Model limits: Maintained in model_prices_and_context_window.json
+
+        This validation only checks that required API credentials are configured.
         """
         # Get default LiteLLM model ID
         litellm_config = self._default_configs.get("litellm", {})
@@ -1225,14 +1271,16 @@ class ConfigManager:
             llm_cfg = litellm_config.get("llm")
             model_id = llm_cfg.model_id if hasattr(llm_cfg, "model_id") else ""
 
+        logger.info("Validating LiteLLM configuration for model: %s", model_id)
+
         # Check provider-specific requirements based on model prefix
         if model_id.startswith("bedrock/"):
             # LiteLLM does NOT support AWS bearer tokens - only standard credentials
             if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
                 raise EnvironmentError(
-                    "AWS credentials not configured for LiteLLM Bedrock models. "
-                    "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY or configure AWS_PROFILE. "
-                    "Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK - use standard AWS credentials instead."
+                    "AWS credentials not configured for LiteLLM Bedrock models.\n"
+                    "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE\n"
+                    "Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK"
                 )
 
         elif model_id.startswith("openai/"):
@@ -1265,7 +1313,12 @@ class ConfigManager:
                     "GEMINI_API_KEY not configured for LiteLLM Gemini models. "
                     "Set GEMINI_API_KEY environment variable."
                 )
-        # LiteLLM will handle other provider validations internally
+        else:
+            # No explicit prefix - LiteLLM will auto-detect based on available credentials
+            logger.debug(
+                "Model '%s' has no explicit prefix. LiteLLM will auto-detect provider based on credentials.",
+                model_id
+            )
 
 
 # Global configuration manager instance
