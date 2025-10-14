@@ -365,6 +365,9 @@ export const defaultConfig: Config = {
   geminiApiKey: process.env.GEMINI_API_KEY,
   xaiApiKey: process.env.XAI_API_KEY,
   cohereApiKey: process.env.COHERE_API_KEY,
+  azureApiKey: process.env.AZURE_API_KEY,
+  azureApiBase: process.env.AZURE_API_BASE,
+  azureApiVersion: process.env.AZURE_API_VERSION,
   
   // Docker Settings
   dockerImage: 'cyber-autoagent:latest',
