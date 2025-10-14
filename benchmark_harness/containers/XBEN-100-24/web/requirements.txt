@@ -1,7 +1,0 @@
-Flask==1.1.4
-Jinja2==2.11.3
-MarkupSafe==1.1.1
-pymongo==3.12.3
-mongoengine==0.20.0
-graphene==2.1.9
-flask-graphql==2.0.1
