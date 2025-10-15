@@ -6,7 +6,22 @@ FROM kalilinux/kali-rolling
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system packages, Python, and common security tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    mirrors="ftp.acc.umu.se/mirror/kali.org/kali mirror.math.princeton.edu/pub/kali kali.mirror.garr.it/mirrors/kali mirror.pit.teraswitch.com/kali"; \
+    success=0; \
+    for mirror in $mirrors; do \
+        echo "deb http://$mirror kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list; \
+        if apt-get update; then \
+            echo "Using Kali mirror: $mirror"; \
+            success=1; \
+            break; \
+        fi; \
+    done; \
+    if [ "$success" -ne 1 ]; then \
+        echo "ERROR: apt-get update failed for all configured mirrors" >&2; \
+        exit 1; \
+    fi; \
+    apt-get install -y --no-install-recommends \
     python3 \
     python3-venv \
     python3-pip \
