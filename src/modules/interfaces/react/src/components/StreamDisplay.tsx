@@ -515,6 +515,10 @@ export const EventLine: React.FC<{
           reasonLabel = 'TERMINATED';
       }
       const normalizedReason = (reason || '').toLowerCase();
+      const sanitizedMessage =
+        typeof msg === 'string'
+          ? (msg.replace(/\s*Switching to final report\.?/gi, '').trim() || 'Provider/network timeout detected.')
+          : msg;
       const likelyNetworkIssue = ['network_timeout', 'network_error', 'timeout'].includes(normalizedReason);
       const providerLabel = (() => {
         const providerId = config?.modelProvider;
@@ -544,7 +548,7 @@ export const EventLine: React.FC<{
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box borderStyle="round" borderColor="yellow" paddingX={1}>
-            <Text color="yellow" bold>{reasonLabel}: {event.message}</Text>
+            <Text color="yellow" bold>{reasonLabel}: {sanitizedMessage}</Text>
           </Box>
           {helpHints.length > 0 && (
             <Box marginLeft={2} marginTop={1} flexDirection="column">
