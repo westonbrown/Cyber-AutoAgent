@@ -9,12 +9,13 @@
  * - Service lifecycle management
  */
 
-import { 
-  ExecutionService, 
-  ExecutionMode, 
-  ExecutionConfig, 
+import {
+  ExecutionService,
+  ExecutionMode,
+  ExecutionConfig,
   ValidationResult,
-  DEFAULT_EXECUTION_CONFIG 
+  ValidationIssue,
+  DEFAULT_EXECUTION_CONFIG
 } from './ExecutionService.js';
 import { Config } from '../contexts/ConfigContext.js';
 import { createLogger } from '../utils/logger.js';
@@ -34,7 +35,68 @@ export interface ServiceSelectionResult {
   /** Validation result for the selected service */
   validation: ValidationResult;
   /** Services that were considered but rejected */
-  rejected: { mode: ExecutionMode; reason: string }[];
+  rejected: RejectedServiceInfo[];
+}
+
+/**
+ * Detailed information about a rejected execution mode
+ */
+export interface RejectedServiceInfo {
+  mode: ExecutionMode;
+  reason: string;
+  issues?: ValidationIssue[];
+  warnings?: string[];
+  errorMessage?: string;
+}
+
+/**
+ * Error thrown when no execution service can be selected
+ */
+export class ExecutionServiceSelectionError extends Error {
+  readonly modesTried: ExecutionMode[];
+  readonly attempts: RejectedServiceInfo[];
+  readonly diagnostics: string[];
+
+  constructor(modesTried: ExecutionMode[], attempts: RejectedServiceInfo[]) {
+    const summary = `No execution service available. Tried: ${modesTried.join(', ')}`;
+    super(summary);
+    this.name = 'ExecutionServiceSelectionError';
+    this.modesTried = modesTried;
+    this.attempts = attempts;
+    this.diagnostics = attempts.map(ExecutionServiceSelectionError.formatAttempt);
+  }
+
+  private static formatAttempt(attempt: RejectedServiceInfo): string {
+    const label = ExecutionServiceSelectionError.formatMode(attempt.mode);
+    const lines: string[] = [`Diagnostics for ${label}: ${attempt.reason}`];
+
+    (attempt.issues || []).forEach((issue) => {
+      const suggestion = issue.suggestion ? ` → ${issue.suggestion}` : '';
+      lines.push(`  • [${issue.severity.toUpperCase()}] ${issue.message}${suggestion}`);
+    });
+
+    (attempt.warnings || []).forEach((warning) => {
+      lines.push(`  • Warning: ${warning}`);
+    });
+
+    if (attempt.errorMessage) {
+      lines.push(`  • Details: ${attempt.errorMessage}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private static formatMode(mode: ExecutionMode): string {
+    switch (mode) {
+      case ExecutionMode.DOCKER_STACK:
+        return 'Full Stack (docker-stack)';
+      case ExecutionMode.DOCKER_SINGLE:
+        return 'Single Container (docker-single)';
+      case ExecutionMode.PYTHON_CLI:
+      default:
+        return 'Local CLI (python-cli)';
+    }
+  }
 }
 
 /**
@@ -93,7 +155,7 @@ export class ExecutionServiceFactory {
   ): Promise<ServiceSelectionResult> {
     await this.initialize();
 
-    const rejected: { mode: ExecutionMode; reason: string }[] = [];
+    const rejected: RejectedServiceInfo[] = [];
     
     // Determine mode preference order
     const modesToTry = this.getModesToTry(config, executionConfig);
@@ -113,7 +175,12 @@ export class ExecutionServiceFactory {
         const isSupported = await service.isSupported(config);
         logger.info(`Service ${mode} support check: ${isSupported}`);
         if (!isSupported) {
-          rejected.push({ mode, reason: 'Service does not support current configuration' });
+          rejected.push({
+            mode,
+            reason: 'Service does not support current configuration',
+            issues: [],
+            warnings: []
+          });
           service.cleanup();
           continue;
         }
@@ -133,13 +200,24 @@ export class ExecutionServiceFactory {
             rejected
           };
         } else {
-          rejected.push({ mode, reason: validation.error || 'Validation failed' });
+          rejected.push({
+            mode,
+            reason: validation.error || 'Validation failed',
+            issues: validation.issues,
+            warnings: validation.warnings
+          });
           service.cleanup();
         }
 
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        rejected.push({ mode, reason: `Service creation failed: ${errorMsg}` });
+        rejected.push({
+          mode,
+          reason: 'Service creation failed',
+          issues: [],
+          warnings: [],
+          errorMessage: errorMsg
+        });
         logger.warn(`Failed to create service for mode ${mode}:`, { error: errorMsg });
       }
     }
@@ -147,7 +225,7 @@ export class ExecutionServiceFactory {
     // No service could be selected
     const errorMsg = `No execution service available. Tried: ${modesToTry.join(', ')}`;
     logger.error(errorMsg, undefined, { rejected });
-    throw new Error(errorMsg);
+    throw new ExecutionServiceSelectionError(modesToTry, rejected);
   }
 
   /**

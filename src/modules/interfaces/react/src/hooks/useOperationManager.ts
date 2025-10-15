@@ -13,7 +13,7 @@ import { AssessmentFlow } from '../services/AssessmentFlow.js';
 import { useModule } from '../contexts/ModuleContext.js';
 import { ApplicationState } from './useApplicationState.js';
 import { useDebouncedState } from './useDebouncedState.js';
-import { ExecutionServiceFactory, ServiceSelectionResult } from '../services/ExecutionServiceFactory.js';
+import { ExecutionServiceFactory, ExecutionServiceSelectionError, ServiceSelectionResult } from '../services/ExecutionServiceFactory.js';
 import { ExecutionService, ExecutionHandle, DEFAULT_EXECUTION_CONFIG } from '../services/ExecutionService.js';
 import { useConfig } from '../contexts/ConfigContext.js';
 
@@ -374,10 +374,16 @@ export function useOperationManager({
         addOperationHistoryEntry('info', `Selected execution mode: ${serviceSelection.mode}`);
         
       } catch (error) {
-        addOperationHistoryEntry('error', `Failed to select execution service: ${error.message}`);
+        if (error instanceof ExecutionServiceSelectionError) {
+          addOperationHistoryEntry('error', error.message);
+          error.diagnostics.forEach((line) => addOperationHistoryEntry('info', line));
+        } else {
+          const message = error instanceof Error ? error.message : String(error);
+          addOperationHistoryEntry('error', `Failed to select execution service: ${message}`);
+        }
         operationManager.updateOperation(operation.id, {
           status: 'error',
-          description: 'Failed to initialize execution environment'
+          description: error instanceof Error ? error.message : 'Failed to initialize execution environment'
         });
         actions.setActiveOperation(null);
         return;

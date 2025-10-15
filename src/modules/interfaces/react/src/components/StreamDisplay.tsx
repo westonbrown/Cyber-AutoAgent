@@ -12,8 +12,40 @@ import { formatToolInput } from '../utils/toolFormatters.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import stripAnsi from 'strip-ansi';
+import { useConfig } from '../contexts/ConfigContext.js';
+
+const PROJECT_MARKERS = ['pyproject.toml', path.join('docker', 'docker-compose.yml'), '.git'];
+let cachedProjectRoot: string | null | undefined;
+
+const resolveProjectRoot = (): string | null => {
+  if (cachedProjectRoot !== undefined) {
+    return cachedProjectRoot;
+  }
+  let currentDir = process.cwd();
+  for (let depth = 0; depth < 10; depth += 1) {
+    const hasMarker = PROJECT_MARKERS.some(marker => {
+      try {
+        return fsSync.existsSync(path.join(currentDir, marker));
+      } catch {
+        return false;
+      }
+    });
+    if (hasMarker) {
+      cachedProjectRoot = currentDir;
+      return currentDir;
+    }
+    const parent = path.dirname(currentDir);
+    if (parent === currentDir) {
+      break;
+    }
+    currentDir = parent;
+  }
+  cachedProjectRoot = null;
+  return null;
+};
 
 // Extended event types for UI-specific events not covered by the core SDK events
 // These events are used for UI state management and display formatting
@@ -67,12 +99,6 @@ interface StreamDisplayProps {
   availableHeight?: number;
 }
 
-// Tool execution state tracking
-interface ToolState {
-  status: 'executing' | 'completed' | 'failed';
-  startTime: number;
-}
-
 // Compute divider dynamically to avoid stale or zero-width when terminal resizes
 const getDivider = (): string => {
   try {
@@ -89,6 +115,7 @@ const getDivider = (): string => {
 type OperationContext = {
   operationId?: string | null;
   target?: string | null;
+  reportPath?: string | null;
 };
 
 // Utility: sanitize target into safe path segment (mirrors Python logic)
@@ -105,33 +132,96 @@ const sanitizeTargetForPath = (target: string): string => {
   }
 };
 
+export const getReportPathCandidates = (
+  ctx: OperationContext,
+  reportPath: string | null | undefined,
+  projectRoot: string | null | undefined
+): string[] => {
+  const candidates: string[] = [];
+
+  const addCandidate = (candidate?: string | null) => {
+    if (!candidate) return;
+    const normalized = path.normalize(candidate);
+    if (!candidates.includes(normalized)) {
+      candidates.push(normalized);
+    }
+  };
+
+  if (reportPath) {
+    if (path.isAbsolute(reportPath)) {
+      addCandidate(reportPath);
+    } else {
+      if (projectRoot) {
+        addCandidate(path.resolve(projectRoot, reportPath));
+      }
+      addCandidate(path.resolve(process.cwd(), reportPath));
+    }
+  }
+
+  if (ctx.operationId && ctx.target) {
+    const safeTarget = sanitizeTargetForPath(String(ctx.target));
+    const explicitRelative = path.join(
+      'outputs',
+      safeTarget,
+      String(ctx.operationId),
+      'security_assessment_report.md'
+    );
+    if (projectRoot) {
+      addCandidate(path.resolve(projectRoot, explicitRelative));
+    }
+    addCandidate(path.resolve(process.cwd(), explicitRelative));
+    addCandidate(path.resolve(process.cwd(), '..', explicitRelative));
+  }
+
+  return candidates;
+};
+
 // Inline viewer to load and render the generated markdown report from disk
-const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
+const InlineReportViewer: React.FC<{
+  ctx: OperationContext;
+  reportPath?: string | null;
+  fallbackContent?: string | null;
+  projectRoot?: string | null;
+}>= ({ ctx, reportPath, fallbackContent, projectRoot }) => {
   const [content, setContent] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+
+  const candidatePaths = React.useMemo(
+    () => getReportPathCandidates(ctx, reportPath ?? null, projectRoot ?? null),
+    [ctx.operationId, ctx.target, reportPath, projectRoot]
+  );
 
   React.useEffect(() => {
     const load = async () => {
       try {
         setError(null);
-        if (!ctx.operationId || !ctx.target) {
+        const candidates = candidatePaths;
+
+        if (candidates.length === 0) {
+          if (fallbackContent) {
+            setContent(fallbackContent);
+            return;
+          }
           setError('Report context unavailable');
           return;
         }
-        const safeTarget = sanitizeTargetForPath(String(ctx.target));
-        const reportPathCandidates = [
-          path.join(process.cwd(), 'outputs', safeTarget, String(ctx.operationId), 'security_assessment_report.md'),
-          path.join(process.cwd(), '..', 'outputs', safeTarget, String(ctx.operationId), 'security_assessment_report.md'),
-        ];
+
         let loaded: string | null = null;
-        for (const p of reportPathCandidates) {
+        for (const candidate of candidates) {
           try {
-            const data = await fs.readFile(p, 'utf-8');
+            if (!fsSync.existsSync(candidate)) {
+              continue;
+            }
+            const data = await fs.readFile(candidate, 'utf-8');
             loaded = data;
             break;
           } catch {}
         }
         if (!loaded) {
+          if (fallbackContent) {
+            setContent(fallbackContent);
+            return;
+          }
           setError('Report file not found');
           return;
         }
@@ -141,7 +231,7 @@ const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
       }
     };
     load();
-  }, [ctx.operationId, ctx.target]);
+  }, [candidatePaths, fallbackContent]);
 
   if (error) {
     return (
@@ -159,17 +249,57 @@ const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
   }
 
   const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  let displayLines: string[] = [];
-  if (lines.length > (DISPLAY_LIMITS.REPORT_PREVIEW_LINES + DISPLAY_LIMITS.REPORT_TAIL_LINES)) {
-    displayLines = [
-      ...lines.slice(0, DISPLAY_LIMITS.REPORT_PREVIEW_LINES),
-      '',
-      '... (content continues)',
-      '',
-      ...lines.slice(-DISPLAY_LIMITS.REPORT_TAIL_LINES),
-    ];
-  } else {
-    displayLines = lines;
+  const displayLines: string[] =
+    lines.length > DISPLAY_LIMITS.REPORT_PREVIEW_LINES + DISPLAY_LIMITS.REPORT_TAIL_LINES
+      ? [
+          ...lines.slice(0, DISPLAY_LIMITS.REPORT_PREVIEW_LINES),
+          '',
+          '... (content continues)',
+          '',
+          ...lines.slice(-DISPLAY_LIMITS.REPORT_TAIL_LINES),
+        ]
+      : lines;
+
+  const MAX_PREVIEW_LINE_LENGTH = 320;
+  const MAX_INLINE_LINES = 160;
+  const MAX_INLINE_CHARS = 12000;
+
+  const previewLines = displayLines.slice(0, MAX_INLINE_LINES).map(line => {
+    if (line.length > MAX_PREVIEW_LINE_LENGTH) {
+      return `${line.slice(0, MAX_PREVIEW_LINE_LENGTH)}…`;
+    }
+    return line;
+  });
+
+  const totalChars = previewLines.reduce((acc, line) => acc + line.length, 0);
+
+  if (totalChars > MAX_INLINE_CHARS) {
+    while (previewLines.length > 0 && previewLines.reduce((acc, line) => acc + line.length, 0) > MAX_INLINE_CHARS) {
+      previewLines.splice(previewLines.length - 1, 1);
+    }
+  }
+
+  const truncatedNotice = displayLines.length > previewLines.length || lines.length > DISPLAY_LIMITS.REPORT_PREVIEW_LINES + DISPLAY_LIMITS.REPORT_TAIL_LINES;
+
+  if (previewLines.length === 0) {
+    return (
+      <Box flexDirection="column" marginTop={1} marginBottom={1}>
+        <Box borderStyle="round" borderColor="yellow" paddingX={1}>
+          <Text color="yellow" bold>Report preview truncated</Text>
+        </Box>
+        <Box flexDirection="column" marginTop={1} paddingX={1}>
+          <Text dimColor>
+            Inline preview suppressed to avoid overwhelming the terminal renderer. Open the saved
+            markdown report for the full content.
+          </Text>
+          {reportPath ? (
+            <Text dimColor>Report path: {reportPath}</Text>
+          ) : candidatePaths.length > 0 ? (
+            <Text dimColor>Report path: {candidatePaths[0]}</Text>
+          ) : null}
+        </Box>
+      </Box>
+    );
   }
 
   return (
@@ -178,9 +308,16 @@ const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
         <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
       </Box>
       <Box flexDirection="column" marginTop={1} paddingX={1}>
-        {displayLines.map((line, i) => (
+        {previewLines.map((line, i) => (
           <Text key={i}>{line}</Text>
         ))}
+        {truncatedNotice && (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Preview truncated for brevity. Open the saved markdown report for full content.
+            </Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );
@@ -189,11 +326,15 @@ const InlineReportViewer: React.FC<{ ctx: OperationContext }>= ({ ctx }) => {
 // Export EventLine for potential reuse in other components
 export const EventLine: React.FC<{ 
   event: DisplayStreamEvent; 
-  toolStates?: Map<string, ToolState>;
   toolInputs?: Map<string, any>;
   animationsEnabled?: boolean;
   operationContext?: OperationContext;
-}> = React.memo(({ event, toolStates, toolInputs, animationsEnabled = true, operationContext }) => {
+  reportPath?: string | null;
+  reportFallbackContent?: string | null;
+  projectRoot?: string | null;
+}> = React.memo(({ event, toolInputs, animationsEnabled = true, operationContext, reportPath, reportFallbackContent, projectRoot }) => {
+  const { config } = useConfig();
+
   switch (event.type) {
     // =======================================================================
     // SDK NATIVE EVENT HANDLERS - Integrated with SDK context
@@ -306,7 +447,15 @@ export const EventLine: React.FC<{
           <Text color="#45475A">{getDivider()}</Text>
           {/* If this is the FINAL REPORT and we have operation context, render the report inline */}
           {event.step === 'FINAL REPORT' && operationContext && (
-            <InlineReportViewer ctx={operationContext} />
+            <InlineReportViewer
+              ctx={{
+                ...operationContext,
+                reportPath: reportPath ?? operationContext.reportPath ?? null,
+              }}
+              reportPath={reportPath ?? operationContext.reportPath ?? null}
+              fallbackContent={reportFallbackContent ?? null}
+              projectRoot={projectRoot ?? null}
+            />
           )}
         </Box>
       );
@@ -365,11 +514,45 @@ export const EventLine: React.FC<{
         default:
           reasonLabel = 'TERMINATED';
       }
+      const normalizedReason = (reason || '').toLowerCase();
+      const likelyNetworkIssue = ['network_timeout', 'network_error', 'timeout'].includes(normalizedReason);
+      const providerLabel = (() => {
+        const providerId = config?.modelProvider;
+        if (!providerId) return 'model provider';
+        const labelMap: Record<'bedrock' | 'ollama' | 'litellm', string> = {
+          bedrock: 'AWS Bedrock',
+          ollama: 'Ollama',
+          litellm: 'LiteLLM'
+        };
+        return labelMap[providerId] ?? providerId.replace(/_/g, ' ');
+      })();
+      const helpHints: string[] = [];
+      if (likelyNetworkIssue) {
+        if (config?.modelProvider) {
+          helpHints.push(`Provider configured as "${providerLabel}".`);
+        } else {
+          helpHints.push('No model provider configured. Open Settings → Provider to configure credentials.');
+        }
+        if (config?.awsRegion) {
+          helpHints.push(`Region set to "${config.awsRegion}". Verify this matches your ${providerLabel} deployment.`);
+        }
+        if (config?.ollamaHost && config.modelProvider === 'ollama') {
+          helpHints.push(`Attempted to reach Ollama at ${config.ollamaHost}. Ensure the host is reachable.`);
+        }
+        helpHints.push('Confirm credentials/network access, then retry the assessment.');
+      }
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box borderStyle="round" borderColor="yellow" paddingX={1}>
             <Text color="yellow" bold>{reasonLabel}: {event.message}</Text>
           </Box>
+          {helpHints.length > 0 && (
+            <Box marginLeft={2} marginTop={1} flexDirection="column">
+              {helpHints.map((hint, idx) => (
+                <Text key={idx} color="yellow">• {hint}</Text>
+              ))}
+            </Box>
+          )}
         </Box>
       );
     }
@@ -1507,8 +1690,12 @@ const method = latestInput.method || 'GET';
             <MemoizedEventLine 
               key={batchedEvent.id || `${event.id}_${idx}`}
               event={batchedEvent}
-              toolStates={toolStates}
+              toolInputs={toolInputs}
               animationsEnabled={animationsEnabled}
+              operationContext={operationContext}
+              reportPath={reportPath}
+              reportFallbackContent={reportFallbackContent}
+              projectRoot={projectRoot}
             />
           ))}
         </>
@@ -1729,22 +1916,14 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
     });
   }, [events]);
   
-  // Track tool execution states
-  const [toolStates, setToolStates] = React.useState<Map<string, ToolState>>(new Map());
-  
   // Track tool inputs (for handling tool_input_update events from swarm agents)
   const [toolInputs, setToolInputs] = React.useState<Map<string, any>>(new Map());
   
   React.useEffect(() => {
-    const newToolStates = new Map<string, ToolState>();
     const newToolInputs = new Map<string, any>();
     
     events.forEach(event => {
       if (event.type === 'tool_start') {
-        newToolStates.set(event.tool_name, {
-          status: 'executing',
-          startTime: Date.now()
-        });
         // Store initial tool input only if it has meaningful content
         if ('tool_id' in event && event.tool_id) {
           const ti: any = (event as any).tool_input;
@@ -1764,17 +1943,9 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         if ('tool_id' in event && event.tool_id && 'tool_input' in event) {
           newToolInputs.set(event.tool_id, event.tool_input);
         }
-      } else if (event.type === 'tool_invocation_end') {
-        const toolName = ('tool_name' in event && event.tool_name) || 'unknown';
-        const success = ('success' in event && event.success !== false);
-        newToolStates.set(toolName, {
-          status: success ? 'completed' : 'failed',
-          startTime: newToolStates.get(toolName)?.startTime || Date.now()
-        });
       }
     });
     
-    setToolStates(newToolStates);
     setToolInputs(newToolInputs);
   }, [events]);
   
@@ -1793,6 +1964,36 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
     return events.some(e => e.type === 'swarm_start');
   }, [events]);
   
+  const projectRoot = React.useMemo(() => resolveProjectRoot(), []);
+
+  const reportDetails = React.useMemo(() => {
+    let latestPath: string | null = null;
+    let fallback: string | null = null;
+    events.forEach(event => {
+      if (event.type === 'report_paths') {
+        const candidate =
+          (event as any).reportPath ??
+          (event as any).report_path ??
+          (event as any).report ??
+          null;
+        if (candidate) {
+          latestPath = String(candidate);
+        }
+      } else if (event.type === 'report_content') {
+        if ('content' in event && typeof (event as any).content === 'string') {
+          fallback = (event as any).content as string;
+        } else if ('content' in event && (event as any).content) {
+          try {
+            fallback = JSON.stringify((event as any).content);
+          } catch {
+            fallback = String((event as any).content);
+          }
+        }
+      }
+    });
+    return { path: latestPath, content: fallback };
+  }, [events]);
+
   // Capture operation context (operation_id and target) from events for artifact resolution
   const operationContext = React.useMemo<OperationContext>(() => {
     let opId: string | null = null;
@@ -1803,8 +2004,8 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         if ('target' in e && (e as any).target) target = String((e as any).target);
       }
     }
-    return { operationId: opId, target };
-  }, [events]);
+    return { operationId: opId, target, reportPath: reportDetails.path };
+  }, [events, reportDetails.path]);
 
   return (
     <Box flexDirection="column">
@@ -1860,14 +2061,16 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
         } else {
           // Display single events normally
           return group.events.map((event, i) => (
-            <MemoizedEventLine 
-              key={event.id || `ev-${idx}-${i}`}  // Use event ID if available
-              event={event} 
-              toolStates={toolStates}
-              toolInputs={toolInputs} 
-              animationsEnabled={animationsEnabled} 
-              operationContext={operationContext}
-            />
+              <MemoizedEventLine 
+                key={event.id || `ev-${idx}-${i}`}  // Use event ID if available
+                event={event} 
+                toolInputs={toolInputs} 
+                animationsEnabled={animationsEnabled} 
+                operationContext={operationContext}
+                reportPath={reportDetails.path}
+                reportFallbackContent={reportDetails.content}
+                projectRoot={projectRoot}
+              />
           ));
         }
       })}
@@ -1885,6 +2088,34 @@ export const StaticStreamDisplay: React.FC<{
   availableHeight?: number;
 }> = React.memo(({ events, terminalWidth, availableHeight }) => {
   const groups = React.useMemo(() => computeDisplayGroups(events), [events]);
+  const projectRoot = React.useMemo(() => resolveProjectRoot(), []);
+  const reportDetails = React.useMemo(() => {
+    let latestPath: string | null = null;
+    let fallback: string | null = null;
+    events.forEach(event => {
+      if (event.type === 'report_paths') {
+        const candidate =
+          (event as any).reportPath ??
+          (event as any).report_path ??
+          (event as any).report ??
+          null;
+        if (candidate) {
+          latestPath = String(candidate);
+        }
+      } else if (event.type === 'report_content') {
+        if ('content' in event && typeof (event as any).content === 'string') {
+          fallback = (event as any).content as string;
+        } else if ('content' in event && (event as any).content) {
+          try {
+            fallback = JSON.stringify((event as any).content);
+          } catch {
+            fallback = String((event as any).content);
+          }
+        }
+      }
+    });
+    return { path: latestPath, content: fallback };
+  }, [events]);
 
   // Flatten groups into discrete render items with stable keys
   type Item = { key: string; render: () => React.ReactNode };
@@ -1943,7 +2174,15 @@ export const StaticStreamDisplay: React.FC<{
           out.push({
             key,
             render: () => (
-              <MemoizedEventLine key={key} event={event} toolStates={new Map()} animationsEnabled={false} operationContext={undefined} />
+              <MemoizedEventLine
+                key={key}
+                event={event}
+                animationsEnabled={false}
+                operationContext={undefined}
+                reportPath={reportDetails.path}
+                reportFallbackContent={reportDetails.content}
+                projectRoot={projectRoot}
+              />
             )
           });
         });

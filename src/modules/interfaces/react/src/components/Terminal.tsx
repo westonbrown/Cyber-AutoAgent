@@ -81,6 +81,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
 const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N events in memory (default 3000)
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
+  const [staticSessionKey, setStaticSessionKey] = useState(0);
 
   // Ring buffers to bound memory regardless of session length
   const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
@@ -374,9 +375,10 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     if (preserveEvents.length > 0) {
       completedBufRef.current.pushMany(preserveEvents);
     }
+    setStaticSessionKey(prev => prev + 1);
     scheduleCompletedEventsUpdate();
     setActiveEvents(activeBufRef.current.toArray());
-  }, [cancelDelayedThinking, setActiveEvents, setCompletedEvents, setActiveThinking, setActiveReasoning, setSwarmActive, setCurrentSwarmAgent]);
+  }, [cancelDelayedThinking, setActiveEvents, setCompletedEvents, setActiveThinking, setActiveReasoning, setSwarmActive, setCurrentSwarmAgent, setStaticSessionKey]);
   
   // Constants for event processing
   const COMMAND_BUFFER_MS = 100;
@@ -1619,6 +1621,7 @@ completedBufRef.current.pushMany(newCompletedEvents);
       {/* Completed events - rendered normally (Static component broke rendering) */}
       {completedEvents.length > 0 && (
         <StaticStreamDisplay
+          key={staticSessionKey}
           events={completedEvents}
           terminalWidth={terminalWidth}
           availableHeight={availableHeight}
