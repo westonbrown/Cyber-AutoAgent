@@ -46,12 +46,15 @@ MEM0_PROVIDER_MAP: Dict[str, str] = {
     "openai": "openai",
     "azure": "azure_openai",
     "anthropic": "anthropic",
-    "cohere": "cohere",
     "gemini": "gemini",
     "google": "gemini",
+    "deepseek": "deepseek",
+    "together": "together",
+    "groq": "groq",
+    "xai": "xai",
+    "lmstudio": "lmstudio",
+    "vllm": "vllm",
     "mistral": "huggingface",
-    "groq": "openai",
-    "xai": "huggingface",
     "sagemaker": "huggingface",
 }
 
