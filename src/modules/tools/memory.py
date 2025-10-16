@@ -263,18 +263,48 @@ class Mem0ServiceClient:
         if os.environ.get("OPENSEARCH_HOST"):
             merged_config = self._merge_config(config, server_type)
             config_manager = get_config_manager()
-            embedder_region = (
-                merged_config.get("embedder", {})
+
+            # Resolve provider labels
+            def _provider_label(p: str) -> str:
+                mapping = {
+                    "aws_bedrock": "AWS Bedrock",
+                    "ollama": "Ollama",
+                    "azure_openai": "Azure OpenAI",
+                    "openai": "OpenAI",
+                    "anthropic": "Anthropic",
+                    "cohere": "Cohere",
+                    "gemini": "Google Gemini",
+                    "huggingface": "Hugging Face",
+                    "sagemaker": "Amazon SageMaker",
+                    "groq": "Groq",
+                }
+                return mapping.get(p, p or "unknown")
+
+            embedder_cfg = merged_config.get("embedder", {})
+            llm_cfg = merged_config.get("llm", {})
+            embedder_provider = embedder_cfg.get("provider", "")
+            llm_provider = llm_cfg.get("provider", "")
+            embedder_model = embedder_cfg.get("config", {}).get("model")
+            llm_model = llm_cfg.get("config", {}).get("model")
+            # Prefer dims from vector_store config if present
+            dims = (
+                merged_config.get("vector_store", {})
                 .get("config", {})
-                .get("aws_region", config_manager.get_default_region())
+                .get("embedding_model_dims", 1024)
+            )
+            embedder_region = (
+                embedder_cfg.get("config", {}).get("aws_region")
+                or config_manager.get_default_region()
             )
 
             if not self.silent:
                 print("[+] Memory Backend: OpenSearch")
                 print(f"    Host: {os.environ.get('OPENSEARCH_HOST')}")
-                print(f"    Region: {embedder_region}")
-                print(f"    Embedder: AWS Bedrock - {merged_config['embedder']['config']['model']} (1024 dims)")
-                print(f"    LLM: AWS Bedrock - {merged_config['llm']['config']['model']}")
+                # Only show region for AWS-based providers
+                if embedder_provider == "aws_bedrock" or llm_provider == "aws_bedrock":
+                    print(f"    Region: {embedder_region}")
+                print(f"    Embedder: {_provider_label(embedder_provider)} - {embedder_model} ({dims} dims)")
+                print(f"    LLM: {_provider_label(llm_provider)} - {llm_model}")
             logger.debug("Using OpenSearch backend (Mem0Memory with OpenSearch)")
             return self._initialize_opensearch_client(config, server_type)
 
@@ -365,24 +395,65 @@ class Mem0ServiceClient:
             print("[+] Memory Backend: FAISS (local)")
             print(f"    Store Location: {faiss_path}")
 
-            # Display embedder configuration
+            # Display embedder/LLM configuration
+            def _provider_label(p: str) -> str:
+                mapping = {
+                    "aws_bedrock": "AWS Bedrock",
+                    "ollama": "Ollama",
+                    "azure_openai": "Azure OpenAI",
+                    "openai": "OpenAI",
+                    "anthropic": "Anthropic",
+                    "cohere": "Cohere",
+                    "gemini": "Google Gemini",
+                    "huggingface": "Hugging Face",
+                    "sagemaker": "Amazon SageMaker",
+                    "groq": "Groq",
+                    "litellm": "LiteLLM",
+                }
+                return mapping.get(p, p or "unknown")
+
             embedder_config = merged_config.get("embedder", {})
-            embedder_provider = embedder_config.get("provider", "aws_bedrock")
+            llm_config = merged_config.get("llm", {})
+            embedder_provider = embedder_config.get("provider", "")
+            llm_provider = llm_config.get("provider", "")
             embedder_model = embedder_config.get("config", {}).get("model")
+            llm_model = llm_config.get("config", {}).get("model")
+            # Prefer dims from vector_store config if present
+            dims = (
+                merged_config.get("vector_store", {})
+                .get("config", {})
+                .get("embedding_model_dims", 1024)
+            )
+
+            # Derive region only for AWS-based providers
             config_manager = get_config_manager()
             embedder_region = embedder_config.get("config", {}).get("aws_region", config_manager.get_default_region())
 
-            # Display LLM configuration
-            llm_config = merged_config.get("llm", {})
-            llm_model = llm_config.get("config", {}).get("model")
-
-            if embedder_provider == "ollama":
-                print(f"    Embedder: Ollama - {embedder_model} (1024 dims)")
-                print(f"    LLM: Ollama - {llm_model}")
-            else:
+            # Show region only when relevant
+            if embedder_provider == "aws_bedrock" or llm_provider == "aws_bedrock":
                 print(f"    Region: {embedder_region}")
-                print(f"    Embedder: AWS Bedrock - {embedder_model} (1024 dims)")
-                print(f"    LLM: AWS Bedrock - {llm_model}")
+
+            # Pretty print providers
+            print(f"    Embedder: {_provider_label(embedder_provider)} - {embedder_model} ({dims} dims)")
+
+            # If using LiteLLM for LLM, try to extract actual provider from model prefix for display
+            display_llm_provider = _provider_label(llm_provider)
+            if llm_provider in ("", "litellm") and isinstance(llm_model, str) and "/" in llm_model:
+                prefix = llm_model.split("/", 1)[0].lower()
+                display_llm_provider = _provider_label({
+                    "bedrock": "aws_bedrock",
+                    "azure": "azure_openai",
+                    "openai": "openai",
+                    "anthropic": "anthropic",
+                    "cohere": "cohere",
+                    "gemini": "gemini",
+                    "sagemaker": "sagemaker",
+                    "groq": "groq",
+                    "xai": "huggingface",
+                    "mistral": "huggingface",
+                }.get(prefix, llm_provider))
+
+            print(f"    LLM: {display_llm_provider} - {llm_model}")
 
             # Display appropriate message based on whether store existed before initialization
             # Use has_existing_memories parameter which includes proper file size validation

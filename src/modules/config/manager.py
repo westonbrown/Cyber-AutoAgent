@@ -817,7 +817,7 @@ class ConfigManager:
                 },
             }
         elif server == "litellm":
-            prefix, _ = self._split_litellm_model_id(memory_config.embedder.model_id)
+            prefix, model_name = self._split_litellm_model_id(memory_config.embedder.model_id)
             mem0_provider = MEM0_PROVIDER_MAP.get(prefix, "huggingface")
             embedder_config = {
                 "provider": mem0_provider,
@@ -828,6 +828,14 @@ class ConfigManager:
             }
             if mem0_provider == "aws_bedrock":
                 embedder_config["config"]["aws_region"] = memory_config.embedder.aws_region
+            elif mem0_provider == "azure_openai":
+                # Azure OpenAI requires azure_kwargs configuration
+                embedder_config["config"]["azure_kwargs"] = {
+                    "api_key": os.getenv("AZURE_API_KEY"),
+                    "azure_deployment": model_name,  # Deployment name from model string
+                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
+                    "api_version": os.getenv("AZURE_API_VERSION"),
+                }
         else:  # bedrock
             embedder_config = {
                 "provider": "aws_bedrock",
@@ -849,14 +857,25 @@ class ConfigManager:
                 },
             }
         elif server == "litellm":
+            # Map LiteLLM model prefix to a Mem0-supported provider (e.g., azure_openai, openai, aws_bedrock)
+            prefix, model_name = self._split_litellm_model_id(memory_config.llm.model_id)
+            mem0_llm_provider = MEM0_PROVIDER_MAP.get(prefix, "huggingface")
             llm_config = {
-                "provider": "litellm",
+                "provider": mem0_llm_provider,
                 "config": {
                     "model": memory_config.llm.model_id,
                     "temperature": memory_config.llm.temperature,
                     "max_tokens": memory_config.llm.max_tokens,
                 },
             }
+            if mem0_llm_provider == "azure_openai":
+                # Azure OpenAI requires azure_kwargs configuration
+                llm_config["config"]["azure_kwargs"] = {
+                    "api_key": os.getenv("AZURE_API_KEY"),
+                    "azure_deployment": model_name,  # Deployment name from model string
+                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
+                    "api_version": os.getenv("AZURE_API_VERSION"),
+                }
         else:  # bedrock
             llm_config = {
                 "provider": "aws_bedrock",
