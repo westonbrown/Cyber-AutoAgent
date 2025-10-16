@@ -27,7 +27,85 @@ from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+# Hook import for routing unknown tools to shell
+from strands.hooks.events import BeforeToolCallEvent  # type: ignore
+
 logger = logging.getLogger(__name__)
+
+# Minimal tool router hook to map unknown tool names to the shell tool
+class _ToolRouterHook:
+    """BeforeToolCall hook that maps unknown tool names to the shell tool."""
+
+    def __init__(self, shell_tool: Any) -> None:
+        self._shell_tool = shell_tool
+
+    def register_hooks(self, registry) -> None:  # type: ignore[no-untyped-def]
+        registry.add_callback(BeforeToolCallEvent, self._on_before_tool)
+
+    def _on_before_tool(self, event) -> None:  # type: ignore[no-untyped-def]
+        if getattr(event, "selected_tool", None) is not None:
+            return
+
+        tool_use = getattr(event, "tool_use", {}) or {}
+        tool_name = str(tool_use.get("name", "")).strip()
+        if not tool_name:
+            return
+
+        raw_input = tool_use.get("input", {})
+        if isinstance(raw_input, dict):
+            params: dict[str, Any] = raw_input
+        else:
+            params = {"options": str(raw_input)}
+            if isinstance(raw_input, str) and raw_input.strip().startswith("{"):
+                try:
+                    import json as _json
+                    maybe = _json.loads(raw_input)
+                    if isinstance(maybe, dict):
+                        params = maybe
+                except Exception:
+                    pass
+
+        options = _s(params.get("options"))
+        target = _first(params.get("target"), params.get("host"), params.get("url"), params.get("ip"))
+
+        KNOWN = {"options", "target", "host", "url", "ip"}
+        extras: list[str] = []
+        for k, v in params.items():
+            if k in KNOWN:
+                continue
+            if isinstance(v, (str, int, float)):
+                vk = _s(v)
+                if not vk:
+                    continue
+                flag = ("-" if len(k) == 1 else "--") + k.replace("_", "-")
+                extras.append(f"{flag} {vk}")
+
+        parts = [tool_name]
+        if options:
+            parts.append(options)
+        if target:
+            parts.append(target)
+        if extras:
+            parts.extend(extras)
+        command = " ".join(p for p in parts if p)
+
+        event.selected_tool = self._shell_tool  # type: ignore[attr-defined]
+        tool_use["input"] = {"command": command}
+
+
+def _s(v: Any) -> str:
+    try:
+        return str(v).strip()
+    except Exception:
+        return ""
+
+
+def _first(*vals: Any) -> str:
+    for v in vals:
+        s = _s(v)
+        if s:
+            return s
+    return ""
 
 
 # Configure SDK logging for debugging swarm operations
@@ -789,7 +867,10 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         rebuild_interval=20,  # Rebuild every 20 steps
     )
 
-    hooks = [react_hooks, prompt_rebuild_hook]
+    # Tool router to prevent unknown-tool failures by routing to shell before execution
+    tool_router_hook = _ToolRouterHook(shell)
+
+    hooks = [tool_router_hook, react_hooks, prompt_rebuild_hook]
 
     # Create model based on provider type
     try:
