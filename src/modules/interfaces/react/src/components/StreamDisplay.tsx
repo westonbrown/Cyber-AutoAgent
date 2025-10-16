@@ -16,6 +16,7 @@ import * as fsSync from 'fs';
 import * as path from 'path';
 import stripAnsi from 'strip-ansi';
 import { useConfig } from '../contexts/ConfigContext.js';
+import type { Config } from '../contexts/ConfigContext.js';
 
 const PROJECT_MARKERS = ['pyproject.toml', path.join('docker', 'docker-compose.yml'), '.git'];
 let cachedProjectRoot: string | null | undefined;
@@ -324,16 +325,29 @@ const InlineReportViewer: React.FC<{
 };
 
 // Export EventLine for potential reuse in other components
-export const EventLine: React.FC<{ 
-  event: DisplayStreamEvent; 
+interface EventLineProps {
+  event: DisplayStreamEvent;
   toolInputs?: Map<string, any>;
   animationsEnabled?: boolean;
   operationContext?: OperationContext;
   reportPath?: string | null;
   reportFallbackContent?: string | null;
   projectRoot?: string | null;
-}> = React.memo(({ event, toolInputs, animationsEnabled = true, operationContext, reportPath, reportFallbackContent, projectRoot }) => {
+  configOverride?: Config;
+}
+
+export const EventLine: React.FC<EventLineProps> = React.memo(({
+  event,
+  toolInputs,
+  animationsEnabled = true,
+  operationContext,
+  reportPath,
+  reportFallbackContent,
+  projectRoot,
+  configOverride,
+}) => {
   const { config } = useConfig();
+  const effectiveConfig = configOverride ?? config;
 
   switch (event.type) {
     // =======================================================================
@@ -521,7 +535,7 @@ export const EventLine: React.FC<{
           : msg;
       const likelyNetworkIssue = ['network_timeout', 'network_error', 'timeout'].includes(normalizedReason);
       const providerLabel = (() => {
-        const providerId = config?.modelProvider;
+        const providerId = effectiveConfig?.modelProvider;
         if (!providerId) return 'model provider';
         const labelMap: Record<'bedrock' | 'ollama' | 'litellm', string> = {
           bedrock: 'AWS Bedrock',
@@ -532,16 +546,16 @@ export const EventLine: React.FC<{
       })();
       const helpHints: string[] = [];
       if (likelyNetworkIssue) {
-        if (config?.modelProvider) {
+        if (effectiveConfig?.modelProvider) {
           helpHints.push(`Provider configured as "${providerLabel}".`);
         } else {
           helpHints.push('No model provider configured. Open Settings → Provider to configure credentials.');
         }
-        if (config?.awsRegion) {
-          helpHints.push(`Region set to "${config.awsRegion}". Verify this matches your ${providerLabel} deployment.`);
+        if (effectiveConfig?.awsRegion) {
+          helpHints.push(`Region set to "${effectiveConfig.awsRegion}". Verify this matches your ${providerLabel} deployment.`);
         }
-        if (config?.ollamaHost && config.modelProvider === 'ollama') {
-          helpHints.push(`Attempted to reach Ollama at ${config.ollamaHost}. Ensure the host is reachable.`);
+        if (effectiveConfig?.ollamaHost && effectiveConfig.modelProvider === 'ollama') {
+          helpHints.push(`Attempted to reach Ollama at ${effectiveConfig.ollamaHost}. Ensure the host is reachable.`);
         }
         helpHints.push('Confirm credentials/network access, then retry the assessment.');
       }

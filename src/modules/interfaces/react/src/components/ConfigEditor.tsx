@@ -62,6 +62,20 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'awsSecretAccessKey', label: 'AWS Secret Access Key', type: 'password', section: 'Models' },
   { key: 'awsBearerToken', label: 'AWS Bearer Token', type: 'password', section: 'Models' },
   { key: 'awsRegion', label: 'AWS Region', type: 'text', section: 'Models' },
+  { key: 'awsProfile', label: 'AWS Profile Name', type: 'text', section: 'Models',
+    description: 'Optional credential profile (supports LiteLLM Bedrock/SageMaker).' },
+  { key: 'awsRoleArn', label: 'AWS Role ARN', type: 'text', section: 'Models',
+    description: 'Assume this IAM role before invoking Bedrock/SageMaker endpoints.' },
+  { key: 'awsSessionName', label: 'AWS Role Session Name', type: 'text', section: 'Models',
+    description: 'Session name used when assuming the specified IAM role.' },
+  { key: 'awsWebIdentityTokenFile', label: 'AWS Web Identity Token File', type: 'text', section: 'Models',
+    description: 'Path to Web Identity token (IRSA / OIDC environments).' },
+  { key: 'awsStsEndpoint', label: 'AWS STS Endpoint', type: 'text', section: 'Models',
+    description: 'Custom STS endpoint for GovCloud or private regions.' },
+  { key: 'awsExternalId', label: 'AWS External ID', type: 'text', section: 'Models',
+    description: 'External ID for cross-account role assumptions.' },
+  { key: 'sagemakerBaseUrl', label: 'SageMaker Base URL Override', type: 'text', section: 'Models',
+    description: 'Override runtime URL for private/VPC SageMaker endpoints.' },
   { key: 'ollamaHost', label: 'Ollama Host', type: 'text', section: 'Models' },
   { key: 'openaiApiKey', label: 'OpenAI API Key', type: 'password', section: 'Models' },
   { key: 'anthropicApiKey', label: 'Anthropic API Key', type: 'password', section: 'Models' },
@@ -281,6 +295,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     if (currentSection.name === 'Models') {
       // Detect model capabilities
       const capabilities = getModelCapabilities(config.modelId);
+      const isSageMakerModel = config.modelProvider === 'litellm' &&
+        (config.modelId ? config.modelId.toLowerCase().startsWith('sagemaker/') : false);
 
       fields = fields.filter(f => {
         // Always show provider and model fields
@@ -295,15 +311,27 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
 
         // Show provider-specific credentials and token configs
         if (config.modelProvider === 'bedrock') {
-          return ['awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
-                  'temperature', 'maxTokens', 'thinkingBudget'].includes(f.key);
+          const bedrockFields = [
+            'awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
+            'awsProfile', 'awsRoleArn', 'awsSessionName', 'awsWebIdentityTokenFile', 'awsStsEndpoint', 'awsExternalId',
+            'temperature', 'maxTokens', 'thinkingBudget'
+          ];
+          return bedrockFields.includes(f.key);
         } else if (config.modelProvider === 'ollama') {
           return ['ollamaHost', 'temperature', 'maxTokens'].includes(f.key);
         } else if (config.modelProvider === 'litellm') {
-          return ['openaiApiKey', 'anthropicApiKey', 'geminiApiKey', 'xaiApiKey', 'cohereApiKey',
-                  'azureApiKey', 'azureApiBase', 'azureApiVersion',
-                  'awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
-                  'temperature', 'maxTokens', 'topP', 'thinkingBudget', 'reasoningEffort', 'maxCompletionTokens'].includes(f.key);
+          const litellmFields = [
+            'openaiApiKey', 'anthropicApiKey', 'geminiApiKey', 'xaiApiKey', 'cohereApiKey',
+            'azureApiKey', 'azureApiBase', 'azureApiVersion',
+            'awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
+            'awsProfile', 'awsRoleArn', 'awsSessionName', 'awsWebIdentityTokenFile', 'awsStsEndpoint', 'awsExternalId',
+            'temperature', 'maxTokens', 'topP', 'thinkingBudget', 'reasoningEffort', 'maxCompletionTokens',
+            'sagemakerBaseUrl'
+          ];
+          if (f.key === 'sagemakerBaseUrl') {
+            return isSageMakerModel;
+          }
+          return litellmFields.includes(f.key);
         }
 
         return false;

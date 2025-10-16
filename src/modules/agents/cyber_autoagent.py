@@ -222,8 +222,28 @@ def _create_litellm_model(
     client_args = {}
 
     # Configure AWS Bedrock models via LiteLLM
-    if model_id.startswith("bedrock/"):
+    if model_id.startswith(("bedrock/", "sagemaker/")):
         client_args["aws_region_name"] = region_name
+        aws_profile = os.getenv("AWS_PROFILE") or os.getenv("AWS_DEFAULT_PROFILE")
+        if aws_profile:
+            client_args["aws_profile_name"] = aws_profile
+        role_arn = os.getenv("AWS_ROLE_ARN") or os.getenv("AWS_ROLE_NAME")
+        if role_arn:
+            client_args["aws_role_name"] = role_arn
+        session_name = os.getenv("AWS_ROLE_SESSION_NAME")
+        if session_name:
+            client_args["aws_session_name"] = session_name
+        sts_endpoint = os.getenv("AWS_STS_ENDPOINT")
+        if sts_endpoint:
+            client_args["aws_sts_endpoint"] = sts_endpoint
+        external_id = os.getenv("AWS_EXTERNAL_ID")
+        if external_id:
+            client_args["aws_external_id"] = external_id
+
+    if model_id.startswith("sagemaker/"):
+        sagemaker_base_url = os.getenv("SAGEMAKER_BASE_URL")
+        if sagemaker_base_url:
+            client_args["sagemaker_base_url"] = sagemaker_base_url
 
     # Build params dict with optional reasoning parameters
     params = {
