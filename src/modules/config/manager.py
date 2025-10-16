@@ -37,6 +37,7 @@ LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "gemini": ("models/text-embedding-004", 768),
     "google": ("models/text-embedding-004", 768),
     "mistral": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "sagemaker": ("multi-qa-MiniLM-L6-cos-v1", 384),
     "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
 }
 DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
@@ -51,6 +52,7 @@ MEM0_PROVIDER_MAP: Dict[str, str] = {
     "mistral": "huggingface",
     "groq": "openai",
     "xai": "huggingface",
+    "sagemaker": "huggingface",
 }
 
 
@@ -1312,6 +1314,18 @@ class ConfigManager:
                 raise EnvironmentError(
                     "GEMINI_API_KEY not configured for LiteLLM Gemini models. "
                     "Set GEMINI_API_KEY environment variable."
+                )
+        elif model_id.startswith("sagemaker/"):
+            has_std_creds = os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY")
+            if not (has_std_creds or os.getenv("AWS_PROFILE")):
+                raise EnvironmentError(
+                    "AWS credentials not configured for LiteLLM SageMaker models.\n"
+                    "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE"
+                )
+            if not (os.getenv("AWS_REGION") or os.getenv("AWS_REGION_NAME")):
+                raise EnvironmentError(
+                    "AWS region not configured for LiteLLM SageMaker models.\n"
+                    "Set AWS_REGION or AWS_REGION_NAME environment variable."
                 )
         else:
             # No explicit prefix - LiteLLM will auto-detect based on available credentials

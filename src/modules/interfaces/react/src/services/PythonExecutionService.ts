@@ -18,6 +18,7 @@ import { createLogger } from '../utils/logger.js';
 import { AssessmentParams } from '../types/Assessment.js';
 import { Config } from '../contexts/ConfigContext.js';
 import { StreamEvent, EventType, ToolEvent, AgentEvent } from '../types/events.js';
+import { flattenEnvironment } from '../utils/env.js';
 
 // Define OutputEvent locally since it's part of PythonSystemEvent
 interface OutputEvent {
@@ -650,7 +651,13 @@ export class PythonExecutionService extends EventEmitter {
       }
       
       // Set up environment variables
-        const env: Record<string, string> = {
+      const resolvedRegion =
+        config.awsRegion ||
+        process.env.AWS_REGION ||
+        process.env.AWS_REGION_NAME ||
+        'us-east-1';
+
+      const env: Record<string, string> = {
         ...process.env,
         PYTHONPATH: this.srcPath,
         PYTHONUNBUFFERED: '1',
@@ -663,7 +670,24 @@ export class PythonExecutionService extends EventEmitter {
         CYBERAGENT_NO_BANNER: 'true', // Suppress CLI banner in React UI mode
         DEV: config.verbose ? 'true' : 'false',
         // Set AWS region
-        AWS_REGION: config.awsRegion || process.env.AWS_REGION || 'us-east-1',
+        AWS_REGION: resolvedRegion,
+        AWS_DEFAULT_REGION: resolvedRegion,
+        AWS_REGION_NAME: resolvedRegion,
+        ...(config.awsProfile
+          ? { AWS_PROFILE: config.awsProfile, AWS_DEFAULT_PROFILE: config.awsProfile }
+          : {}),
+        ...(config.awsRoleArn
+          ? { AWS_ROLE_ARN: config.awsRoleArn, AWS_ROLE_NAME: config.awsRoleArn }
+          : {}),
+        ...(config.awsSessionName
+          ? { AWS_ROLE_SESSION_NAME: config.awsSessionName }
+          : {}),
+        ...(config.awsWebIdentityTokenFile
+          ? { AWS_WEB_IDENTITY_TOKEN_FILE: config.awsWebIdentityTokenFile }
+          : {}),
+        ...(config.awsStsEndpoint ? { AWS_STS_ENDPOINT: config.awsStsEndpoint } : {}),
+        ...(config.awsExternalId ? { AWS_EXTERNAL_ID: config.awsExternalId } : {}),
+        ...(config.sagemakerBaseUrl ? { SAGEMAKER_BASE_URL: config.sagemakerBaseUrl } : {}),
         // Ollama Configuration
         ...(config.ollamaHost ? { OLLAMA_HOST: config.ollamaHost } : {}),
         // LiteLLM Configuration (only set if provided)
@@ -715,9 +739,14 @@ export class PythonExecutionService extends EventEmitter {
           ...(config.minEvidence !== undefined ? { EVAL_MIN_EVIDENCE: String(config.minEvidence) } : {}),
           ...(config.evalMaxWaitSecs !== undefined ? { EVALUATION_MAX_WAIT_SECS: String(config.evalMaxWaitSecs) } : {}),
           ...(config.evalPollIntervalSecs !== undefined ? { EVALUATION_POLL_INTERVAL_SECS: String(config.evalPollIntervalSecs) } : {}),
-          ...(config.evalSummaryMaxChars !== undefined ? { EVAL_SUMMARY_MAX_CHARS: String(config.evalSummaryMaxChars) } : {}),
-        })
+        ...(config.evalSummaryMaxChars !== undefined ? { EVAL_SUMMARY_MAX_CHARS: String(config.evalSummaryMaxChars) } : {}),
+      })
       };
+
+      const userEnvironment = flattenEnvironment(config.environment as any);
+      for (const [key, value] of Object.entries(userEnvironment)) {
+        env[key] = value;
+      }
       // Only set AWS credentials/bearer if provided in config; do not overwrite existing env with empty strings
       if (config.awsAccessKeyId) env.AWS_ACCESS_KEY_ID = config.awsAccessKeyId;
       if (config.awsSecretAccessKey) env.AWS_SECRET_ACCESS_KEY = config.awsSecretAccessKey;

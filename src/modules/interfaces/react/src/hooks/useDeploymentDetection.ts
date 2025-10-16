@@ -54,26 +54,8 @@ export function useDeploymentDetection({
 
         // If a healthy deployment is detected, check if we need to switch modes
         if (hasHealthy) {
-          // Check if the configured deployment mode is unhealthy
           const configuredMode = applicationConfig?.deploymentMode;
-          if (configuredMode) {
-            const configuredDeployment = detection.availableDeployments?.find(
-              d => d.mode === configuredMode
-            );
-            
-            // If configured mode is unhealthy, switch to a healthy one
-            if (configuredDeployment && !configuredDeployment.isHealthy) {
-              const healthyDeployment = detection.availableDeployments?.find(d => d.isHealthy);
-              if (healthyDeployment && updateConfig && saveConfig) {
-                // Auto-switch to the healthy deployment
-                updateConfig({ deploymentMode: healthyDeployment.mode });
-                await saveConfig();
-                
-                // Log the auto-switch for debugging (suppressed in production UI)
-                loggingService.info(`Auto-switched from unhealthy ${configuredMode} to ${healthyDeployment.mode}`);
-              }
-            }
-          } else if (!applicationConfig?.isConfigured) {
+          if (!configuredMode && !applicationConfig?.isConfigured) {
             // No deployment mode configured yet, but we have healthy deployments
             // Auto-select the best available healthy deployment
             const healthyDeployment = detection.availableDeployments?.find(d => d.isHealthy);

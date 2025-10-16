@@ -31,6 +31,10 @@ import * as os from 'os';
 import { loggingService } from '../services/LoggingService.js';
 import { detectDeploymentMode, getDeploymentDefaults } from '../config/deployment.js';
 import { DeploymentDetector } from '../services/DeploymentDetector.js';
+import { RawEnvironmentMap } from '../utils/env.js';
+
+export type EnvironmentMap = RawEnvironmentMap;
+
 
 /**
  * Main Configuration Interface - Complete Settings Schema
@@ -61,6 +65,20 @@ export interface Config {
   awsSecretAccessKey?: string;
   /** AWS Session Token for temporary credentials */
   awsSessionToken?: string;
+  /** AWS profile name for credential resolution */
+  awsProfile?: string;
+  /** AWS role ARN to assume before invoking providers */
+  awsRoleArn?: string;
+  /** Session name when assuming AWS roles */
+  awsSessionName?: string;
+  /** Web identity token file path for IRSA / OIDC flows */
+  awsWebIdentityTokenFile?: string;
+  /** Custom AWS STS endpoint for private or GovCloud regions */
+  awsStsEndpoint?: string;
+  /** External ID for cross-account role assumptions */
+  awsExternalId?: string;
+  /** Optional override for SageMaker runtime base URL */
+  sagemakerBaseUrl?: string;
   /** Ollama server host URL for local model serving */
   ollamaHost?: string;
   
@@ -152,7 +170,7 @@ export interface Config {
   showOperationId: boolean; // Show operation ID in UI
   
   // Environment Variables
-  environment: Record<string, string>;
+  environment: EnvironmentMap;
   
   // Report Settings
   reportSettings: {
@@ -216,6 +234,8 @@ interface ConfigContextType {
   saveConfig: () => Promise<void>;
   /** Load configuration from persistent storage */
   loadConfig: () => Promise<void>;
+  /** Load configuration and re-run validation */
+  validateAndLoadConfig: () => Promise<void>;
   /** Reset all settings to application defaults */
   resetToDefaults: () => void;
 }
@@ -236,6 +256,13 @@ export const defaultConfig: Config = {
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   awsSessionToken: process.env.AWS_SESSION_TOKEN,
+  awsProfile: process.env.AWS_PROFILE || process.env.AWS_DEFAULT_PROFILE,
+  awsRoleArn: process.env.AWS_ROLE_ARN || process.env.AWS_ROLE_NAME,
+  awsSessionName: process.env.AWS_ROLE_SESSION_NAME,
+  awsWebIdentityTokenFile: process.env.AWS_WEB_IDENTITY_TOKEN_FILE,
+  awsStsEndpoint: process.env.AWS_STS_ENDPOINT,
+  awsExternalId: process.env.AWS_EXTERNAL_ID,
+  sagemakerBaseUrl: process.env.SAGEMAKER_BASE_URL,
   ollamaHost: process.env.OLLAMA_HOST || 'http://localhost:11434',
   
   // Model Pricing (per 1K tokens)
@@ -406,7 +433,7 @@ export const defaultConfig: Config = {
   showOperationId: true, // Show operation ID for tracking
   
   // Environment Variables
-  environment: {},
+  environment: {} as EnvironmentMap,
   
   // Report Settings
   reportSettings: {
@@ -448,7 +475,7 @@ export const defaultConfig: Config = {
   deploymentMode: 'local-cli' // Default to Local CLI for minimal setup
 };
 
-const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
+export const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 
 /**
  * ConfigProvider - Enterprise Configuration Management Provider
@@ -597,9 +624,8 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
       );
 
       if (!isModeHealthy) {
-        // The configured deployment is not active. Invalidate it.
-        delete loadedConfig.deploymentMode;
-        loadedConfig.isConfigured = false; // Force setup
+        // Preserve user selection but mark as needing attention so UI can guide them
+        loadedConfig.isConfigured = loadedConfig.isConfigured ?? false;
       }
     }
     
@@ -635,7 +661,7 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
     saveConfig,
     loadConfig,
     validateAndLoadConfig,
-    resetToDefaults,
+  resetToDefaults,
   }), [config, isConfigLoading, updateConfig, saveConfig, loadConfig, validateAndLoadConfig, resetToDefaults]);
 
   return (
@@ -643,6 +669,16 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
       {children}
     </ConfigContext.Provider>
   );
+};
+
+const fallbackContext: ConfigContextType = {
+  config: defaultConfig,
+  isConfigLoading: false,
+  updateConfig: () => {},
+  saveConfig: async () => {},
+  loadConfig: async () => {},
+  validateAndLoadConfig: async () => {},
+  resetToDefaults: () => {},
 };
 
 /**
@@ -665,8 +701,10 @@ export const ConfigProvider: FC<{ children: ReactNode }> = ({ children }) => {
  * await saveConfig();
  * ```
  */
+export const useOptionalConfig = () => useContext(ConfigContext) ?? fallbackContext;
+
 export const useConfig = (): ConfigContextType => {
-  const configurationContext = useContext(ConfigContext);
+  const configurationContext = useOptionalConfig();
   if (!configurationContext) {
     throw new Error('useConfig hook must be used within a ConfigProvider component. Ensure your component is wrapped with <ConfigProvider>.');
   }

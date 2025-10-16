@@ -27,6 +27,7 @@ import { Config } from '../contexts/ConfigContext.js';
 import { StreamEvent, EventType } from '../types/events.js';
 import { ContainerManager, DeploymentMode } from './ContainerManager.js';
 import { createLogger } from '../utils/logger.js';
+import { flattenEnvironment } from '../utils/env.js';
 
 /**
  * Sanitize target name for filesystem use (matches Python agent logic)
@@ -143,7 +144,13 @@ export class DirectDockerService extends EventEmitter {
       const objective = params.objective || `Perform ${params.module.replace('_', ' ')} assessment`;
       
       // Initialize environment variables - always pass objective via env to avoid escaping issues
-      const env: string[] = [`CYBER_OBJECTIVE=${objective}`];
+      let env: string[] = [`CYBER_OBJECTIVE=${objective}`];
+      const resolvedRegion =
+        config.awsRegion ||
+        process.env.AWS_REGION ||
+        process.env.AWS_REGION_NAME ||
+        process.env.AWS_DEFAULT_REGION ||
+        'us-east-1';
       
       // Decide auto-confirm behavior from config (default true when confirmations are disabled)
       this.autoConfirm = !(config.confirmations === true);
@@ -217,13 +224,48 @@ export class DirectDockerService extends EventEmitter {
         env.push(`AWS_SECRET_ACCESS_KEY=${config.awsSecretAccessKey}`);
       }
 
+      if (config.awsSessionToken) {
+        env.push(`AWS_SESSION_TOKEN=${config.awsSessionToken}`);
+      }
+
       if (config.awsBearerToken) {
         env.push(`AWS_BEARER_TOKEN_BEDROCK=${config.awsBearerToken}`);
       }
 
-      if (config.awsRegion) {
-        env.push(`AWS_DEFAULT_REGION=${config.awsRegion}`);
-        env.push(`AWS_REGION=${config.awsRegion}`);
+      if (resolvedRegion) {
+        env.push(`AWS_DEFAULT_REGION=${resolvedRegion}`);
+        env.push(`AWS_REGION=${resolvedRegion}`);
+        env.push(`AWS_REGION_NAME=${resolvedRegion}`);
+      }
+
+      if (config.awsProfile) {
+        env.push(`AWS_PROFILE=${config.awsProfile}`);
+        env.push(`AWS_DEFAULT_PROFILE=${config.awsProfile}`);
+      }
+
+      if (config.awsRoleArn) {
+        env.push(`AWS_ROLE_ARN=${config.awsRoleArn}`);
+        env.push(`AWS_ROLE_NAME=${config.awsRoleArn}`);
+      }
+
+      if (config.awsSessionName) {
+        env.push(`AWS_ROLE_SESSION_NAME=${config.awsSessionName}`);
+      }
+
+      if (config.awsWebIdentityTokenFile) {
+        env.push(`AWS_WEB_IDENTITY_TOKEN_FILE=${config.awsWebIdentityTokenFile}`);
+      }
+
+      if (config.awsStsEndpoint) {
+        env.push(`AWS_STS_ENDPOINT=${config.awsStsEndpoint}`);
+      }
+
+      if (config.awsExternalId) {
+        env.push(`AWS_EXTERNAL_ID=${config.awsExternalId}`);
+      }
+
+      if (config.sagemakerBaseUrl) {
+        env.push(`SAGEMAKER_BASE_URL=${config.sagemakerBaseUrl}`);
       }
 
       // Ollama configuration
@@ -293,7 +335,8 @@ export class DirectDockerService extends EventEmitter {
       // Debug logging: what we're about to send to Docker
       const maskEnv = (vars: string[]) => {
         const SENSITIVE = new Set([
-          'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK', 'OPENAI_API_KEY',
+          'AWS_SECRET_ACCESS_KEY', 'AWS_BEARER_TOKEN_BEDROCK', 'AWS_SESSION_TOKEN', 'AWS_EXTERNAL_ID',
+          'OPENAI_API_KEY',
           'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'COHERE_API_KEY',
           'AZURE_API_KEY', 'LANGFUSE_SECRET_KEY'
         ]);
@@ -392,6 +435,24 @@ export class DirectDockerService extends EventEmitter {
         if (config.evalPollIntervalSecs !== undefined) env.push(`EVALUATION_POLL_INTERVAL_SECS=${config.evalPollIntervalSecs}`);
         if (config.evalSummaryMaxChars !== undefined) env.push(`EVAL_SUMMARY_MAX_CHARS=${config.evalSummaryMaxChars}`);
       }
+
+      // Merge user-provided environment overrides (flattened)
+      const envMap = new Map<string, string>();
+      for (const entry of env) {
+        const idx = entry.indexOf('=');
+        if (idx > 0) {
+          const key = entry.slice(0, idx).toUpperCase();
+          const value = entry.slice(idx + 1);
+          envMap.set(key, value);
+        }
+      }
+      const userEnvironment = flattenEnvironment(config.environment as any);
+      for (const [key, value] of Object.entries(userEnvironment)) {
+        if (value !== undefined) {
+          envMap.set(key.toUpperCase(), value);
+        }
+      }
+      env = Array.from(envMap.entries()).map(([key, value]) => `${key}=${value}`);
 
       // Prefer re-using the long-lived service container when available.
       // CYBER_DOCKER_REUSE defaults to true; set to `false` to force ad-hoc containers.
