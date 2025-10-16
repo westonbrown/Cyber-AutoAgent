@@ -38,7 +38,6 @@ module.exports = {
 '^(\\\.{1,2}/.*)\\.js$': '$1',
     // Force ESM mock for ink
     '^ink$': '<rootDir>/tests/unit/mocks/ink.js',
-    '^ink-testing-library$': '<rootDir>/tests/unit/mocks/ink-testing-library.js',
     '^ink$': '<rootDir>/tests/unit/mocks/ink.js',
     '^ink-gradient$': '<rootDir>/tests/unit/mocks/ink-components.js',
     '^ink-big-text$': '<rootDir>/tests/unit/mocks/ink-components.js',
