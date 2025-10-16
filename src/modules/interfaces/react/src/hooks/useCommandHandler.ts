@@ -110,30 +110,48 @@ export function useCommandHandler({
       // Import HealthMonitor dynamically to avoid circular dependencies
       const { HealthMonitor } = await import('../services/HealthMonitor.js');
       const monitor = HealthMonitor.getInstance();
+      const { ContainerManager } = await import('../services/ContainerManager.js');
+      const containerManager = ContainerManager.getInstance();
       
       addOperationHistoryEntry('info', 'Running system health check...');
       
       // Get detailed health status
       const { status, recommendations } = await monitor.getDetailedHealth();
       
-      // Get deployment mode info
-      const deploymentMode = applicationConfig?.deploymentMode || 'unknown';
+      // Get deployment mode info (configured vs detected)
       const deploymentModeNames = {
         'local-cli': 'Local CLI',
         'single-container': 'Single Container', 
         'full-stack': 'Full Stack'
-      };
-      const deploymentName = deploymentModeNames[deploymentMode] || deploymentMode;
+      } as const;
+
+      const configuredModeKey = applicationConfig?.deploymentMode as keyof typeof deploymentModeNames | undefined;
+      let detectedMode: keyof typeof deploymentModeNames | 'unknown' = 'unknown';
+      try {
+        const rawMode = await containerManager.getCurrentMode();
+        detectedMode = rawMode;
+      } catch {
+        detectedMode = 'unknown';
+      }
       
       // Format health report
       let healthReport = `\nSYSTEM HEALTH REPORT\n`;
       healthReport += `====================================\n\n`;
       
       // Deployment information  
-      healthReport += `Deployment Mode: ${deploymentName}\n`;
+      const detectedLabel = detectedMode !== 'unknown'
+        ? deploymentModeNames[detectedMode]
+        : (configuredModeKey ? deploymentModeNames[configuredModeKey] : 'Unknown');
+      healthReport += `Deployment Mode: ${detectedLabel}\n`;
       healthReport += `Last Check: ${status.lastCheck.toLocaleTimeString()}\n`;
       healthReport += `Overall Status: ${status.overall.toUpperCase()}\n`;
       healthReport += `Docker Engine: ${status.dockerRunning ? 'RUNNING' : 'STOPPED'}\n\n`;
+      
+      const mismatch = Boolean(
+        configuredModeKey &&
+        detectedMode !== 'unknown' &&
+        configuredModeKey !== detectedMode
+      );
       
       // Service status
       healthReport += `SERVICE STATUS\n`;
@@ -165,10 +183,14 @@ export function useCommandHandler({
       }
       
       // Recommendations
-      if (recommendations.length > 0) {
+      const combinedRecommendations = [...recommendations];
+      if (mismatch) {
+        combinedRecommendations.push('Detected deployment mode differs from configured mode. Consider running /setup to realign or restart the stack.');
+      }
+      if (combinedRecommendations.length > 0) {
         healthReport += `\nRECOMMENDATIONS\n`;
         healthReport += `------------------------------------\n`;
-        recommendations.forEach(rec => {
+        combinedRecommendations.forEach(rec => {
           healthReport += `- ${rec}\n`;
         });
       }
