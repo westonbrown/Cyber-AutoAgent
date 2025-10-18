@@ -50,8 +50,15 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   const [mode, setMode] = useState<'review' | 'feedback' | 'confirm'>('review');
   const [feedbackText, setFeedbackText] = useState('');
 
+  // Show idle state when HITL is enabled but no intervention needed
   if (!isActive) {
-    return null;
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor="green" paddingX={1} marginBottom={1}>
+        <Text color="green">
+          ✓ HITL: Active - monitoring operations (press [i] for manual intervention)
+        </Text>
+      </Box>
+    );
   }
 
   // Format parameters for display

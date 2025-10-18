@@ -797,6 +797,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
         print_status("HITL system enabled - human feedback available", "SUCCESS")
 
+        # Update callback handler init_context with HITL status for React UI
+        callback_handler.init_context["hitl_enabled"] = True
+
     hooks = [react_hooks, prompt_rebuild_hook]
     if hitl_hook:
         hooks.append(hitl_hook)
