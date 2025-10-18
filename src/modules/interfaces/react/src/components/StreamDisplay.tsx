@@ -2070,6 +2070,9 @@ const method = latestInput.method || 'GET';
           {('observability' in event) && (
             <Text dimColor>  Observability: {event.observability ? 'enabled' : 'disabled'}</Text>
           )}
+          {('hitl_enabled' in event) && event.hitl_enabled && (
+            <Text color="#A6E3A1">  HITL: enabled - human feedback available</Text>
+          )}
           {('tools_available' in event && event.tools_available) ? (
             <Text dimColor>  Available Tools: {event.tools_available}</Text>
           ) : null}

@@ -73,7 +73,7 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
 
   // Get HITL state from application state
   const { state: appState } = useApplicationState();
-  const { hitlPendingTool, hitlInterpretation } = appState;
+  const { hitlEnabled, hitlPendingTool, hitlInterpretation } = appState;
 
   // HITL keyboard handler
   useInput((input, key) => {
@@ -675,6 +675,10 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         }
         if (typeof event.target === 'string') {
       targetRef.current = event.target;
+    }
+    // Set HITL enabled status from operation init
+    if (dispatch && 'hitl_enabled' in event && event.hitl_enabled === true) {
+      dispatch({ type: ActionType.SET_HITL_ENABLED, payload: true });
     }
     // Reset counters at operation start
     stepCounterRef.current = 0;
@@ -1766,8 +1770,8 @@ completedBufRef.current.pushMany(newCompletedEvents);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {/* HITL Intervention Panel - rendered above stream when active */}
-      {hitlPanelActive && (
+      {/* HITL Intervention Panel - always visible when HITL is enabled */}
+      {hitlEnabled && (
         <HITLInterventionPanel
           toolName={hitlPendingTool?.toolName || ''}
           toolId={hitlPendingTool?.toolId || hitlInterpretation?.toolId || ''}
