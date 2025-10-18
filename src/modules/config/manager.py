@@ -41,6 +41,26 @@ LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
 }
 DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
+
+EMBEDDING_DIMENSIONS: Dict[str, int] = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "azure/text-embedding-3-small": 1536,
+    "azure/text-embedding-3-large": 3072,
+    "azure/text-embedding-ada-002": 1536,
+    "openai/text-embedding-3-small": 1536,
+    "openai/text-embedding-3-large": 3072,
+    "openai/text-embedding-ada-002": 1536,
+    "models/text-embedding-004": 768,
+    "text-embedding-004": 768,
+    "gemini/text-embedding-004": 768,
+    "amazon.titan-embed-text-v1": 1536,
+    "amazon.titan-embed-text-v2:0": 1024,
+    "cohere.embed-english-v3": 1024,
+    "cohere.embed-multilingual-v3": 1024,
+    "multi-qa-MiniLM-L6-cos-v1": 384,
+}
 MEM0_PROVIDER_MAP: Dict[str, str] = {
     "bedrock": "aws_bedrock",
     "openai": "openai",
@@ -1102,10 +1122,37 @@ class ConfigManager:
                 cfg.parameters["max_tokens"] = cfg.max_tokens
 
         embed_cfg = defaults.get("embedding")
-        if isinstance(embed_cfg, EmbeddingConfig) and not embed_override:
-            embed_model, dims = LITELLM_EMBEDDING_DEFAULTS.get(
-                provider_prefix, DEFAULT_LITELLM_EMBEDDING
-            )
+        if isinstance(embed_cfg, EmbeddingConfig):
+            if embed_override:
+                embed_model = embed_override
+                dims = EMBEDDING_DIMENSIONS.get(embed_model)
+                if dims is None:
+                    logger.warning(
+                        "Unknown embedding model '%s', dimensions not in lookup table. "
+                        "Attempting to infer from model name or defaulting to 1536.",
+                        embed_model
+                    )
+                    if "3-large" in embed_model:
+                        dims = 3072
+                    elif "ada-002" in embed_model or "3-small" in embed_model:
+                        dims = 1536
+                    elif "text-embedding-004" in embed_model:
+                        dims = 768
+                    elif "MiniLM" in embed_model:
+                        dims = 384
+                    elif "titan" in embed_model and "v2" in embed_model:
+                        dims = 1024
+                    else:
+                        dims = 1536
+                        logger.warning(
+                            "Could not infer dimensions for '%s', defaulting to 1536. "
+                            "If this is incorrect, the FAISS index will fail to load.",
+                            embed_model
+                        )
+            else:
+                embed_model, dims = LITELLM_EMBEDDING_DEFAULTS.get(
+                    provider_prefix, DEFAULT_LITELLM_EMBEDDING
+                )
 
             if embed_model == "models/text-embedding-004":
                 if importlib.util.find_spec("google.genai") is None:
