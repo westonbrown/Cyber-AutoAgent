@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
@@ -20,6 +20,9 @@ import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { calculateAvailableHeight } from '../utils/layoutConstants.js';
+import { HITLInterventionPanel } from './HITLInterventionPanel.js';
+import { submitFeedback, confirmInterpretation } from '../utils/hitlCommands.js';
+import { useApplicationState, ActionType } from '../hooks/useApplicationState.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
 export const buildTrimmedReportContent = (raw: string): string => {
@@ -50,6 +53,7 @@ interface TerminalProps {
   onMetricsUpdate?: (metrics: { tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number }) => void;
   animationsEnabled?: boolean;
   cleanupRef?: React.MutableRefObject<(() => void) | null>;
+  dispatch?: (action: any) => void;
 }
 
 export const Terminal: React.FC<TerminalProps> = React.memo(({
@@ -60,11 +64,51 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   onEvent,
   onMetricsUpdate,
   animationsEnabled = true,
-  cleanupRef
+  cleanupRef,
+  dispatch
 }) => {
   // Use production-grade terminal size hook with resize handling
   const { availableWidth, availableHeight, columns } = useTerminalSize();
   const terminalWidth = propsTerminalWidth || availableWidth;
+
+  // Get HITL state from application state
+  const { state: appState } = useApplicationState();
+  const { hitlPendingTool, hitlInterpretation } = appState;
+
+  // HITL keyboard handler
+  useInput((input, key) => {
+    if (!hitlPendingTool && !hitlInterpretation) return;
+
+    // Review mode: a/c/s/r keys
+    if (hitlPendingTool && !hitlInterpretation) {
+      if (input === 'a') {
+        submitFeedback('approval', 'Approved', hitlPendingTool.toolId);
+      } else if (input === 'c') {
+        // TODO: Enter feedback input mode
+        submitFeedback('correction', 'User requested correction', hitlPendingTool.toolId);
+      } else if (input === 's') {
+        submitFeedback('suggestion', 'User requested suggestion', hitlPendingTool.toolId);
+      } else if (input === 'r') {
+        submitFeedback('rejection', 'Rejected', hitlPendingTool.toolId);
+      }
+    }
+
+    // Confirmation mode: y/n keys
+    if (hitlInterpretation) {
+      if (input === 'y') {
+        confirmInterpretation(true, hitlInterpretation.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+      } else if (input === 'n') {
+        confirmInterpretation(false, hitlInterpretation.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+      }
+    }
+  });
+
   // Test marker utility for diagnosing spinner/timer behavior
   const emitTestMarker = (msg: string) => {
     try {
@@ -531,6 +575,47 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     };
     
     switch (event.type) {
+      case 'hitl_pause_requested':
+        // Update HITL state when tool execution is paused
+        if (dispatch) {
+          dispatch({
+            type: ActionType.SET_HITL_PENDING_TOOL,
+            payload: {
+              toolName: event.tool_name || 'unknown',
+              toolId: event.tool_id || '',
+              parameters: event.parameters || {},
+              reason: event.reason,
+              confidence: event.confidence
+            }
+          });
+        }
+        results.push(event as DisplayStreamEvent);
+        break;
+
+      case 'hitl_agent_interpretation':
+        // Update HITL state when agent provides interpretation
+        if (dispatch && event.awaiting_approval) {
+          dispatch({
+            type: ActionType.SET_HITL_INTERPRETATION,
+            payload: {
+              toolId: event.tool_id || '',
+              text: event.interpretation || '',
+              modifiedParameters: event.modified_parameters || {}
+            }
+          });
+        }
+        results.push(event as DisplayStreamEvent);
+        break;
+
+      case 'hitl_feedback_submitted':
+      case 'hitl_resume':
+        // Clear HITL state when feedback is submitted or execution resumes
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+        results.push(event as DisplayStreamEvent);
+        break;
+
       case 'operation_init':
         // Reset dedup sets at operation start
         perToolOutputSeenRef.current.clear();
@@ -1614,8 +1699,49 @@ completedBufRef.current.pushMany(newCompletedEvents);
   const hasOnlyThinkingInActive = activeEvents.length > 0 &&
     activeEvents.every(e => e.type === 'thinking' || e.type === 'thinking_end');
 
+  // Determine if HITL panel should be active
+  const hitlPanelActive = !!(hitlPendingTool || hitlInterpretation);
+
+  // Handlers for HITL panel callbacks
+  const handleSubmitFeedback = (feedbackType: string, content: string) => {
+    if (hitlPendingTool) {
+      submitFeedback(feedbackType as any, content, hitlPendingTool.toolId);
+    }
+  };
+
+  const handleConfirmInterpretation = (approved: boolean) => {
+    if (hitlInterpretation) {
+      confirmInterpretation(approved, hitlInterpretation.toolId);
+      if (dispatch) {
+        dispatch({ type: ActionType.CLEAR_HITL_STATE });
+      }
+    }
+  };
+
   return (
     <Box flexDirection="column" flexGrow={1}>
+      {/* HITL Intervention Panel - rendered above stream when active */}
+      {hitlPanelActive && (
+        <HITLInterventionPanel
+          toolName={hitlPendingTool?.toolName || ''}
+          toolId={hitlPendingTool?.toolId || hitlInterpretation?.toolId || ''}
+          parameters={hitlPendingTool?.parameters || {}}
+          reason={hitlPendingTool?.reason}
+          confidence={hitlPendingTool?.confidence}
+          interpretation={
+            hitlInterpretation
+              ? {
+                  text: hitlInterpretation.text,
+                  modifiedParameters: hitlInterpretation.modifiedParameters
+                }
+              : undefined
+          }
+          isActive={hitlPanelActive}
+          onSubmitFeedback={handleSubmitFeedback}
+          onConfirmInterpretation={handleConfirmInterpretation}
+        />
+      )}
+
       {/* Completed events - rendered normally (Static component broke rendering) */}
       {completedEvents.length > 0 && (
         <StaticStreamDisplay
