@@ -2108,6 +2108,54 @@ const method = latestInput.method || 'GET';
       );
     }
 
+    case 'hitl_pause_requested': {
+      const toolName = 'tool_name' in event ? String(event.tool_name) : 'unknown';
+      const reason = 'reason' in event ? String(event.reason) : undefined;
+      const confidence = 'confidence' in event && typeof event.confidence === 'number' ? event.confidence : undefined;
+
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Box borderStyle="round" borderColor="yellow" paddingX={1}>
+            <Text color="yellow" bold>⚠️  HITL: Tool execution paused for review</Text>
+          </Box>
+          <Box marginLeft={2} marginTop={1}>
+            <Text>Tool: <Text bold color="cyan">{toolName}</Text></Text>
+          </Box>
+          {reason && (
+            <Box marginLeft={2}>
+              <Text>Reason: <Text color="yellow">{reason}</Text></Text>
+            </Box>
+          )}
+          {confidence !== undefined && (
+            <Box marginLeft={2}>
+              <Text>Confidence: <Text color={confidence < 50 ? 'red' : confidence < 70 ? 'yellow' : 'green'}>{confidence}%</Text></Text>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    case 'hitl_feedback_submitted': {
+      const feedbackType = 'feedback_type' in event ? String(event.feedback_type) : 'unknown';
+      return (
+        <Box marginTop={1}>
+          <Text color="cyan">💬 Feedback submitted: <Text bold>{feedbackType}</Text></Text>
+        </Box>
+      );
+    }
+
+    case 'hitl_agent_interpretation': {
+      const interpretation = 'interpretation' in event ? String(event.interpretation) : '';
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="green" bold>✓ Agent Interpretation:</Text>
+          <Box marginLeft={2}>
+            <Text color="green">{interpretation}</Text>
+          </Box>
+        </Box>
+      );
+    }
+
     case 'specialist_progress': {
       const status = event.status || 'Processing';
       const gate = event.gate;
@@ -2174,6 +2222,17 @@ const method = latestInput.method || 'GET';
               <Text dimColor>[{failedGates.join(', ')}]</Text>
             </Box>
           )}
+        </Box>
+      );
+    }
+
+    case 'hitl_resume': {
+      const approved = 'approved' in event ? Boolean(event.approved) : false;
+      return (
+        <Box marginTop={1}>
+          <Text color={approved ? 'green' : 'yellow'}>
+            {approved ? '✓ Execution resumed' : '⚠️  Interpretation rejected'}
+          </Text>
         </Box>
       );
     }
