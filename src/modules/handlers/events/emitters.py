@@ -1,4 +1,25 @@
-"""Event emitters for different transport mechanisms."""
+"""Event emitters for different transport mechanisms.
+
+HITL Event Types:
+-----------------
+The following events are emitted by the HITL system:
+
+hitl_pause_requested:
+    Emitted when tool execution is paused for review.
+    Fields: tool_name, tool_id, parameters, confidence, reason
+
+hitl_feedback_submitted:
+    Emitted when user provides feedback.
+    Fields: feedback_type, content, tool_id, timestamp
+
+hitl_agent_interpretation:
+    Emitted when agent interprets user feedback.
+    Fields: tool_id, interpretation, modified_parameters, awaiting_approval
+
+hitl_resume:
+    Emitted when execution resumes after feedback.
+    Fields: tool_id, modified_parameters, approved
+"""
 
 import hashlib
 import json
