@@ -15,7 +15,13 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.models import BedrockModel
 from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
-from strands_tools import editor, http_request, load_tool, python_repl, shell, stop, swarm
+from strands_tools.editor import editor
+from strands_tools.http_request import http_request
+from strands_tools.load_tool import load_tool
+from strands_tools.python_repl import python_repl
+from strands_tools.shell import shell
+from strands_tools.stop import stop
+from strands_tools.swarm import swarm
 
 from modules import prompts
 from modules.prompts import get_system_prompt  # Backward-compat import for tests
