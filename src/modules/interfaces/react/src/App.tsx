@@ -79,7 +79,7 @@ const AppContent: React.FC<AppProps> = ({
   const currentTheme = themeManager.getCurrentTheme();
   
   // Consolidated state management
-  const { state: appState, actions } = useApplicationState();
+  const { state: appState, actions, dispatch } = useApplicationState();
   
   // Command parser service
   const commandParser = React.useMemo(() => new InputParser(), []);
@@ -387,6 +387,7 @@ const AppContent: React.FC<AppProps> = ({
   const mainAppViewProps = React.useMemo(() => ({
     appState,
     actions,
+    dispatch,
     currentTheme,
     operationHistoryEntries: operationManager.operationHistoryEntries,
     assessmentFlowState: operationManager.assessmentFlowState,
@@ -404,6 +405,7 @@ const AppContent: React.FC<AppProps> = ({
   }), [
     appState,
     actions,
+    dispatch,
     currentTheme,
     operationManager.operationHistoryEntries,
     operationManager.assessmentFlowState,
