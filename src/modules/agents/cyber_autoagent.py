@@ -77,6 +77,9 @@ from modules.tools.memory import (
     initialize_memory_system,
     mem0_memory,
 )
+from modules.handlers.hitl import FeedbackInputHandler, FeedbackManager, HITLHookProvider
+from modules.handlers.utils import print_status, sanitize_target_name
+from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
 from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -768,6 +771,36 @@ Available {config.module} MCP tools:
             rebuild_interval=20,
         )
         hooks.append(prompt_rebuild_hook)
+    # Create HITL hook if enabled
+    hitl_hook = None
+    feedback_manager = None
+    feedback_handler = None
+
+    if os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true":
+        # Initialize feedback manager
+        feedback_manager = FeedbackManager(
+            memory=memory_client,
+            operation_id=operation_id,
+            emitter=callback_handler.emitter,
+        )
+
+        # Initialize feedback input handler for receiving UI commands
+        feedback_handler = FeedbackInputHandler(feedback_manager=feedback_manager)
+        feedback_handler.start_listening()
+
+        # Create HITL hook provider
+        hitl_hook = HITLHookProvider(
+            feedback_manager=feedback_manager,
+            auto_pause_on_destructive=True,
+            auto_pause_on_low_confidence=False,  # TODO: Enable when confidence scoring available
+            confidence_threshold=70.0,
+        )
+
+        print_status("HITL system enabled - human feedback available", "SUCCESS")
+
+    hooks = [react_hooks, prompt_rebuild_hook]
+    if hitl_hook:
+        hooks.append(hitl_hook)
 
     # Create model based on provider type
     try:
