@@ -714,14 +714,9 @@ Available {config.module} MCP tools:
                     else {}
                 ),
             },
-<<<<<<< HEAD
-            "observability": config_manager.getenv_bool("ENABLE_OBSERVABILITY", False),
-            "ui_mode": config_manager.getenv("CYBER_UI_MODE", "cli").lower(),
-=======
             "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
             "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
             "hitl_enabled": hitl_enabled,
->>>>>>> 1a9aad1 (Fix HITL panel state management to show persistent monitoring banner)
         },
     )
 
