@@ -120,15 +120,32 @@ docker run -it --rm \
 
 #### Docker Compose (Full Stack with Observability)
 
-Use `docker compose run` for assessments with the full observability stack:
+**Setup:** Create `.env` file in project root with your configuration:
 
 ```bash
-# Run assessment with React terminal UI and full observability
-docker compose -f docker/docker-compose.yml --env-file .env run --rm cyber-autoagent
+# Copy example and configure
+cp .env.example .env
+# Edit .env with your provider settings
+```
+
+Example `.env` for LiteLLM:
+```bash
+CYBER_AGENT_PROVIDER=litellm
+CYBER_AGENT_LLM_MODEL=gemini/gemini-2.5-flash
+GEMINI_API_KEY=your_api_key_here
+```
+
+**Run assessments** with the full observability stack:
+
+```bash
+# Run with React terminal UI and full observability
+docker compose -f docker/docker-compose.yml run --rm cyber-autoagent
 
 # With root access for dynamic tool installation
-docker compose -f docker/docker-compose.yml --env-file .env run --user root --rm cyber-autoagent
+docker compose -f docker/docker-compose.yml run --user root --rm cyber-autoagent
 ```
+
+**Note:** The `.env` file in the project root is automatically loaded by docker-compose.
 
 The compose stack automatically provides:
 - **Langfuse observability** at http://localhost:3000 (login: admin@cyber-autoagent.com / changeme)

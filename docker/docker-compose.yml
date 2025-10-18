@@ -13,6 +13,10 @@ services:
       - NET_ADMIN    # For network administration
       - SYS_PTRACE   # For process tracing (some exploitation tools)
     environment:
+      # Provider Configuration
+      - CYBER_AGENT_PROVIDER=${CYBER_AGENT_PROVIDER:-bedrock}
+      - CYBER_AGENT_LLM_MODEL=${CYBER_AGENT_LLM_MODEL}
+
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
@@ -23,12 +27,19 @@ services:
       # Ollama Configuration (Ollama Provider)
       - OLLAMA_HOST=${OLLAMA_HOST}
 
+      # LiteLLM Provider API Keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - XAI_API_KEY=${XAI_API_KEY}
+      - COHERE_API_KEY=${COHERE_API_KEY}
+
       # Azure OpenAI Configuration (LiteLLM Provider)
       - AZURE_API_KEY=${AZURE_API_KEY}
       - AZURE_API_BASE=${AZURE_API_BASE}
       - AZURE_API_VERSION=${AZURE_API_VERSION}
-      - AZURE_OPENAI_API_KEY=${AZURE_API_KEY}          
-      - AZURE_OPENAI_ENDPOINT=${AZURE_API_BASE}       
+      - AZURE_OPENAI_API_KEY=${AZURE_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_API_BASE}
       - OPENAI_API_VERSION=${AZURE_API_VERSION}       
 
       # Python configuration
