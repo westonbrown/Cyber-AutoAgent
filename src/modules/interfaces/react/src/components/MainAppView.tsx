@@ -24,6 +24,7 @@ import { ModalType } from '../hooks/useModalManager.js';
 interface MainAppViewProps {
   appState: ApplicationState;
   actions: any; // Application state actions
+  dispatch?: any; // Application state dispatch function
   currentTheme: any; // Theme configuration object
   operationHistoryEntries: OperationHistoryEntry[];
   assessmentFlowState: any; // Assessment flow state object
@@ -47,6 +48,7 @@ interface MainAppViewProps {
 export const MainAppView: React.FC<MainAppViewProps> = ({
   appState,
   actions,
+  dispatch,
   currentTheme,
   operationHistoryEntries,
   assessmentFlowState,
@@ -256,6 +258,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               onMetricsUpdate={handleMetricsUpdate}
               animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
               cleanupRef={terminalCleanupRef}
+              dispatch={dispatch}
             />
           )
         )}
