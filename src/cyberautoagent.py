@@ -31,9 +31,12 @@ import warnings
 from datetime import datetime
 
 # Third-party imports
+from dotenv import load_dotenv
 import requests
 from opentelemetry import trace
 from strands.telemetry.config import StrandsTelemetry
+
+load_dotenv()
 from requests.exceptions import ReadTimeout as RequestsReadTimeout, ConnectionError as RequestsConnectionError
 from botocore.exceptions import (
     ReadTimeoutError as BotoReadTimeoutError,
