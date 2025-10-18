@@ -54,6 +54,9 @@ interface TerminalProps {
   animationsEnabled?: boolean;
   cleanupRef?: React.MutableRefObject<(() => void) | null>;
   dispatch?: (action: any) => void;
+  hitlEnabled?: boolean;
+  hitlPendingTool?: any;
+  hitlInterpretation?: any;
 }
 
 export const Terminal: React.FC<TerminalProps> = React.memo(({
@@ -65,15 +68,14 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   onMetricsUpdate,
   animationsEnabled = true,
   cleanupRef,
-  dispatch
+  dispatch,
+  hitlEnabled = false,
+  hitlPendingTool,
+  hitlInterpretation
 }) => {
   // Use production-grade terminal size hook with resize handling
   const { availableWidth, availableHeight, columns } = useTerminalSize();
   const terminalWidth = propsTerminalWidth || availableWidth;
-
-  // Get HITL state from application state
-  const { state: appState } = useApplicationState();
-  const { hitlEnabled, hitlPendingTool, hitlInterpretation } = appState;
 
   // HITL keyboard handler
   useInput((input, key) => {
