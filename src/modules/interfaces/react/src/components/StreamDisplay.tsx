@@ -47,7 +47,11 @@ export type AdditionalStreamEvent =
   | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
   | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any }
-  | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any };
+  | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any }
+  | { type: 'hitl_pause_requested'; tool_name?: string; tool_id?: string; parameters?: any; reason?: string; confidence?: number; [key: string]: any }
+  | { type: 'hitl_feedback_submitted'; feedback_type?: string; content?: string; tool_id?: string; [key: string]: any }
+  | { type: 'hitl_agent_interpretation'; tool_id?: string; interpretation?: string; modified_parameters?: any; awaiting_approval?: boolean; [key: string]: any }
+  | { type: 'hitl_resume'; tool_id?: string; modified_parameters?: any; approved?: boolean; [key: string]: any };
 
 // Combined event type supporting both SDK-aligned and additional events
 export type DisplayStreamEvent = StreamEvent | AdditionalStreamEvent;
