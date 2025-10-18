@@ -1,7 +1,7 @@
 """Unit tests for HITL (Human-in-the-Loop) feedback system."""
 
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
