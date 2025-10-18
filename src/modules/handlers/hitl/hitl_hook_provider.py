@@ -51,11 +51,12 @@ class HITLHookProvider(HookProvider):
             confidence_threshold,
         )
 
-    def register_hooks(self, registry: HookRegistry) -> None:
+    def register_hooks(self, registry: HookRegistry, **kwargs) -> None:
         """Register hook callbacks.
 
         Args:
             registry: Hook registry from Strands SDK
+            **kwargs: Additional keyword arguments (unused)
         """
         logger.debug("Registering HITL hooks")
         registry.add_callback(BeforeToolInvocationEvent, self._on_before_tool_call)

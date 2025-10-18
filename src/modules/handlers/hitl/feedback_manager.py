@@ -264,7 +264,9 @@ class FeedbackManager:
                         metadata=intervention_data,
                     )
 
-                logger.info("Intervention stored in memory for tool %s", feedback.tool_id)
+                logger.info(
+                    "Intervention stored in memory for tool %s", feedback.tool_id
+                )
 
         except Exception as e:
             logger.warning("Failed to store intervention in memory: %s", e)
