@@ -714,6 +714,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     except Exception:
         pass
 
+    # Check if HITL is enabled before creating handler so we can include it in init_context
+    hitl_enabled = os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true"
+
     callback_handler = ReactBridgeHandler(
         max_steps=config.max_steps,
         operation_id=operation_id,
@@ -745,6 +748,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             },
             "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
             "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
+            "hitl_enabled": hitl_enabled,
         },
     )
 
@@ -775,7 +779,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     feedback_manager = None
     feedback_handler = None
 
-    if os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true":
+    if hitl_enabled:
         # Initialize feedback manager
         feedback_manager = FeedbackManager(
             memory=memory_client,
@@ -796,9 +800,6 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         )
 
         print_status("HITL system enabled - human feedback available", "SUCCESS")
-
-        # Update callback handler init_context with HITL status for React UI
-        callback_handler.init_context["hitl_enabled"] = True
 
     hooks = [react_hooks, prompt_rebuild_hook]
     if hitl_hook:
