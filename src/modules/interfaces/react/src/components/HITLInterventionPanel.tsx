@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 
 interface HITLInterventionPanelProps {
@@ -47,7 +47,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   onSubmitFeedback,
   onConfirmInterpretation,
 }) => {
-  const [mode, setMode] = useState<'review' | 'feedback' | 'confirm'>('review');
+  const isManualIntervention = toolName === 'manual_intervention';
   const [feedbackText, setFeedbackText] = useState('');
 
   // Show idle state when HITL is enabled but no intervention needed
@@ -70,13 +70,56 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
     }
   };
 
-  // Review mode - show tool details and options
-  if (mode === 'review' && !interpretation) {
+  // Manual Intervention - Direct text input
+  if (isManualIntervention && !interpretation) {
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
+        <Box marginBottom={1}>
+          <Text bold color="cyan">
+            💬 MANUAL INTERVENTION
+          </Text>
+        </Box>
+
+        <Box marginBottom={1}>
+          <Text dimColor>
+            Agent execution paused. Provide feedback to guide the agent:
+          </Text>
+        </Box>
+
+        <Box marginBottom={1} flexDirection="column">
+          <Text>Feedback:</Text>
+          <Box marginTop={1}>
+            <Text color="cyan">&gt; </Text>
+            <TextInput
+              value={feedbackText}
+              onChange={setFeedbackText}
+              placeholder="Type your feedback and press Enter..."
+              onSubmit={(value) => {
+                if (value.trim()) {
+                  onSubmitFeedback('suggestion', value);
+                  setFeedbackText('');
+                }
+              }}
+            />
+          </Box>
+        </Box>
+
+        <Box>
+          <Text dimColor>Press [Esc] to cancel and resume</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Auto-pause (Destructive Operation) - Show tool details with approval options
+  if (!isManualIntervention && !interpretation) {
+    const hasParameters = parameters && Object.keys(parameters).length > 0;
+
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1}>
         <Box marginBottom={1}>
           <Text bold color="yellow">
-            ⚠️  HITL INTERVENTION REQUIRED
+            ⚠️  DESTRUCTIVE OPERATION - REVIEW REQUIRED
           </Text>
         </Box>
 
@@ -94,31 +137,23 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
           </Box>
         )}
 
-        {confidence !== undefined && (
-          <Box marginBottom={1}>
-            <Text>
-              Confidence: <Text color={confidence < 50 ? 'red' : confidence < 70 ? 'yellow' : 'green'}>
-                {confidence}%
-              </Text>
-            </Text>
+        {hasParameters && (
+          <Box marginBottom={1} flexDirection="column">
+            <Text bold>Parameters:</Text>
+            <Text color="gray">{formatParameters(parameters)}</Text>
           </Box>
         )}
 
         <Box marginBottom={1} flexDirection="column">
-          <Text bold>Parameters:</Text>
-          <Text color="gray">{formatParameters(parameters)}</Text>
-        </Box>
-
-        <Box marginBottom={1} flexDirection="column">
           <Text bold>Options:</Text>
-          <Text>  [a] Approve - proceed with tool execution</Text>
+          <Text>  [a] Approve - proceed with operation</Text>
           <Text>  [c] Correction - provide modified parameters</Text>
-          <Text>  [s] Suggestion - suggest alternative approach</Text>
-          <Text>  [r] Reject - cancel this tool execution</Text>
+          <Text>  [r] Reject - cancel this operation</Text>
+          <Text dimColor>  [Esc] Cancel and resume</Text>
         </Box>
 
         <Box>
-          <Text dimColor>Press a key to choose an option...</Text>
+          <Text dimColor>Press a key to choose...</Text>
         </Box>
       </Box>
     );
