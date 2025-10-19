@@ -667,6 +667,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               confidence: event.confidence
             }
           });
+          // Set userHandoffActive to prevent ESC from terminating the operation
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: true
+          });
         }
         results.push(event as DisplayStreamEvent);
         break;
@@ -691,6 +696,11 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         // Clear HITL state when feedback is submitted or execution resumes
         if (dispatch) {
           dispatch({ type: ActionType.CLEAR_HITL_STATE });
+          // Clear userHandoffActive to restore normal ESC behavior
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: false
+          });
         }
         results.push(event as DisplayStreamEvent);
         break;

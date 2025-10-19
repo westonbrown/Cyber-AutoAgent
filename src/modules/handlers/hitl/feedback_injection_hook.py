@@ -1,6 +1,7 @@
 """HITL feedback injection hook for modifying agent system prompt."""
 
 import logging
+import sys
 from typing import TYPE_CHECKING
 
 from strands.experimental.hooks.events import BeforeModelInvocationEvent
@@ -10,6 +11,15 @@ if TYPE_CHECKING:
     from .feedback_manager import FeedbackManager
 
 logger = logging.getLogger(__name__)
+
+
+def direct_log(msg: str):
+    """Write directly to stdout bypassing all logging infrastructure."""
+    try:
+        sys.stdout.write(f"[HITL-HOOK-DIRECT] {msg}\n")
+        sys.stdout.flush()
+    except Exception:
+        pass  # Fail silently if stdout unavailable
 
 
 class HITLFeedbackInjectionHook(HookProvider):
@@ -35,6 +45,9 @@ class HITLFeedbackInjectionHook(HookProvider):
             "[HITL-HOOK] HITLFeedbackInjectionHook initialized for operation %s",
             feedback_manager.operation_id,
         )
+        direct_log(
+            f"HITLFeedbackInjectionHook initialized for operation {feedback_manager.operation_id}"
+        )
 
     def register_hooks(self, registry: HookRegistry):
         """Register BeforeModelInvocationEvent callback.
@@ -44,6 +57,7 @@ class HITLFeedbackInjectionHook(HookProvider):
         """
         registry.add_callback(BeforeModelInvocationEvent, self.inject_feedback)
         logger.debug("[HITL-HOOK] Registered BeforeModelInvocationEvent callback")
+        direct_log("Registered BeforeModelInvocationEvent callback")
 
     def inject_feedback(self, event: BeforeModelInvocationEvent):
         """Inject pending feedback into system prompt before model invocation.
@@ -55,9 +69,11 @@ class HITLFeedbackInjectionHook(HookProvider):
         Args:
             event: BeforeModelInvocationEvent containing agent context
         """
+        direct_log("inject_feedback() called - checking for pending feedback")
         feedback_message = self.feedback_manager.get_pending_feedback_message()
 
         if feedback_message:
+            direct_log(f"Found pending feedback ({len(feedback_message)} chars)")
             logger.info(
                 "[HITL-HOOK] Injecting feedback into system prompt (length=%d chars)",
                 len(feedback_message),
@@ -70,11 +86,15 @@ class HITLFeedbackInjectionHook(HookProvider):
             )
 
             # Append feedback to system prompt (like prompt_optimizer does)
+            direct_log("Appending feedback to event.agent.system_prompt")
             event.agent.system_prompt += f"\n\n{feedback_message}"
+            direct_log("Feedback appended successfully")
 
             # Clear feedback after injection to prevent duplicate injection
             self.feedback_manager.clear_pending_feedback()
+            direct_log("Cleared pending feedback after injection")
 
             logger.info("[HITL-HOOK] Feedback successfully injected into system prompt")
         else:
+            direct_log("No pending feedback found")
             logger.debug("[HITL-HOOK] No pending feedback to inject")
