@@ -79,7 +79,11 @@ from modules.tools.memory import (
 )
 from modules.handlers.hitl import FeedbackInputHandler, FeedbackManager, HITLHookProvider
 from modules.handlers.utils import print_status, sanitize_target_name
-from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
+from modules.tools.memory import (
+    get_memory_client,
+    initialize_memory_system,
+    mem0_memory,
+)
 from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -714,7 +718,9 @@ Available {config.module} MCP tools:
                     else {}
                 ),
             },
-            "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
+            "observability": (
+                os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+            ),
             "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
             "hitl_enabled": hitl_enabled,
         },
@@ -800,11 +806,17 @@ Available {config.module} MCP tools:
             confidence_threshold=70.0,
         )
 
+        # Create feedback injection hook for system prompt modification
+        feedback_injection_hook = HITLFeedbackInjectionHook(
+            feedback_manager=feedback_manager
+        )
+
         print_status("HITL system enabled - human feedback available", "SUCCESS")
 
     hooks = [react_hooks, prompt_rebuild_hook]
     if hitl_hook:
         hooks.append(hitl_hook)
+        hooks.append(feedback_injection_hook)
 
     # Create model based on provider type
     try:

@@ -2143,15 +2143,15 @@ const method = latestInput.method || 'GET';
 
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Text color="cyan" bold>✓ Feedback Submitted to Agent</Text>
+          <Text color="yellow" bold>✓ Feedback Submitted to Agent</Text>
           <Box marginLeft={2} marginTop={1}>
             <Text dimColor>Type: </Text>
-            <Text color="cyan">{feedbackType}</Text>
+            <Text color="yellow">{feedbackType}</Text>
           </Box>
           {preview && (
             <Box marginLeft={2} flexDirection="column">
               <Text dimColor>Content:</Text>
-              <Text color="cyan">{preview}</Text>
+              <Text color="yellow">{preview}</Text>
             </Box>
           )}
           <Box marginLeft={2} marginTop={1}>
