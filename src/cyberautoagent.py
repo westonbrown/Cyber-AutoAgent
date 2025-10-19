@@ -673,9 +673,6 @@ def main():
             # Continue until stop condition is met
             while not interrupted:
                 try:
-<<<<<<< HEAD
-                    _ensure_prompt_within_budget(agent)
-=======
                     # Check for HITL feedback before executing agent
                     if feedback_manager:
                         feedback_message = feedback_manager.get_pending_feedback_message()
@@ -684,7 +681,6 @@ def main():
                             current_message = feedback_message
                             feedback_manager.clear_pending_feedback()
 
->>>>>>> 001eaf2 (Implement HITL feedback injection in agent execution loop)
                     # Execute agent with current message
                     result = agent(current_message)
 
