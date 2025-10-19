@@ -322,7 +322,9 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
           />
         )}
 
-        {!hideInput && activeModal === ModalType.NONE && (!showOperationStream || appState.userHandoffActive) && (
+        {!hideInput && activeModal === ModalType.NONE &&
+         !appState.hitlPendingTool && !appState.hitlInterpretation &&
+         (!showOperationStream || appState.userHandoffActive) && (
           <UnifiedInputPrompt
             flowState={assessmentFlowState}
             onInput={onInput}
