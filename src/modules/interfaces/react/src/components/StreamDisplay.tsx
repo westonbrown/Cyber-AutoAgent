@@ -1592,9 +1592,7 @@ const method = latestInput.method || 'GET';
 
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Box borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0}>
-            <Text color="yellow" bold>⚠️  HITL: Tool execution paused for review</Text>
-          </Box>
+          <Text color="yellow" bold>⚠️  HITL: Tool execution paused for review</Text>
           <Box marginLeft={2} marginTop={1}>
             <Text>Tool: <Text bold color="cyan">{toolName}</Text></Text>
           </Box>
@@ -1618,21 +1616,19 @@ const method = latestInput.method || 'GET';
       const preview = content.length > 80 ? content.substring(0, 80) + '...' : content;
 
       return (
-        <Box marginTop={1} marginBottom={1} borderStyle="round" borderColor="cyan" padding={1}>
-          <Box marginBottom={1}>
-            <Text color="cyan" bold>✓ Feedback Submitted to Agent</Text>
-          </Box>
-          <Box marginBottom={1}>
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Text color="cyan" bold>✓ Feedback Submitted to Agent</Text>
+          <Box marginLeft={2} marginTop={1}>
             <Text dimColor>Type: </Text>
             <Text color="cyan">{feedbackType}</Text>
           </Box>
           {preview && (
-            <Box marginBottom={1} flexDirection="column">
+            <Box marginLeft={2} flexDirection="column">
               <Text dimColor>Content:</Text>
               <Text color="cyan">{preview}</Text>
             </Box>
           )}
-          <Box>
+          <Box marginLeft={2} marginTop={1}>
             <Text dimColor>→ Agent will process in next step</Text>
           </Box>
         </Box>
