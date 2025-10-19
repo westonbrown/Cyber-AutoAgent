@@ -1593,7 +1593,7 @@ const method = latestInput.method || 'GET';
       return (
         <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Box borderStyle="round" borderColor="yellow" paddingX={1} paddingY={0}>
-            <Text color="yellow" bold> ⚠️  HITL: Tool execution paused for review </Text>
+            <Text color="yellow" bold>⚠️  HITL: Tool execution paused for review</Text>
           </Box>
           <Box marginLeft={2} marginTop={1}>
             <Text>Tool: <Text bold color="cyan">{toolName}</Text></Text>

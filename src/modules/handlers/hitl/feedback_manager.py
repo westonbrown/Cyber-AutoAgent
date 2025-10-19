@@ -142,9 +142,15 @@ class FeedbackManager:
             tool_id: Tool invocation ID
         """
         logger.info(
-            "Feedback submitted for tool %s: type=%s",
+            "[HITL-FM] Feedback submitted for tool %s: type=%s, operation=%s",
             tool_id,
             feedback_type.value,
+            self.operation_id,
+        )
+        logger.info(
+            "[HITL-FM] Feedback content (length=%d):\n%s",
+            len(content),
+            content[:200] + "..." if len(content) > 200 else content,
         )
 
         feedback = UserFeedback(
@@ -156,6 +162,12 @@ class FeedbackManager:
 
         self.pending_feedback = feedback
         self.feedback_queue[tool_id] = feedback
+
+        logger.debug(
+            "[HITL-FM] Feedback stored - pending_feedback=%s, queue_size=%d",
+            self.pending_feedback is not None,
+            len(self.feedback_queue),
+        )
 
         # Emit feedback event to backend
         if self.emitter:
@@ -279,6 +291,7 @@ class FeedbackManager:
             Formatted message if feedback pending, None otherwise
         """
         if not self.pending_feedback:
+            logger.debug("[HITL-FM] No pending feedback to retrieve")
             return None
 
         feedback = self.pending_feedback
@@ -290,12 +303,28 @@ Content: {feedback.content}
 
 Please incorporate this feedback and adjust your approach accordingly. Continue the security assessment with this guidance in mind."""
 
+        logger.info(
+            "[HITL-FM] Formatted pending feedback into message (type=%s, length=%d)",
+            feedback.feedback_type.value,
+            len(message),
+        )
+        logger.debug("[HITL-FM] Formatted message preview:\n%s", message[:300])
+
         return message
 
     def clear_pending_feedback(self) -> None:
         """Clear pending feedback after it has been injected into agent context."""
-        self.pending_feedback = None
-        logger.debug("Pending feedback cleared after injection")
+        if self.pending_feedback:
+            logger.info(
+                "[HITL-FM] Clearing pending feedback after injection (type=%s, tool_id=%s)",
+                self.pending_feedback.feedback_type.value,
+                self.pending_feedback.tool_id,
+            )
+            self.pending_feedback = None
+        else:
+            logger.warning(
+                "[HITL-FM] clear_pending_feedback called but no feedback was pending"
+            )
 
     def _store_intervention(self, feedback: UserFeedback) -> None:
         """Store intervention in memory and logs.
