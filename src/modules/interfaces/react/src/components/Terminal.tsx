@@ -623,6 +623,11 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
               confidence: event.confidence
             }
           });
+          // Set userHandoffActive to prevent ESC from terminating the operation
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: true
+          });
         }
         results.push(event as DisplayStreamEvent);
         break;
@@ -647,6 +652,11 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
         // Clear HITL state when feedback is submitted or execution resumes
         if (dispatch) {
           dispatch({ type: ActionType.CLEAR_HITL_STATE });
+          // Clear userHandoffActive to restore normal ESC behavior
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: false
+          });
         }
         results.push(event as DisplayStreamEvent);
         break;
