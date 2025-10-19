@@ -95,6 +95,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   useInput((input, key) => {
     if (!hitlPendingTool && !hitlInterpretation) return;
 
+    const isManualIntervention = hitlPendingTool?.toolName === 'manual_intervention';
+
     // Escape key - cancel intervention and resume
     if (key.escape) {
       if (dispatch) {
@@ -103,26 +105,29 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       return;
     }
 
-    // Review mode: a/c/s/r keys
+    // Manual intervention - only handle Esc, all other keys handled by panel
+    if (isManualIntervention) {
+      // TextInput in panel handles all input
+      return;
+    }
+
+    // Destructive operation review mode: a/c/r keys
     if (hitlPendingTool && !hitlInterpretation) {
       if (input === 'a') {
         submitFeedback('approval', 'Approved - continuing as planned', hitlPendingTool.toolId);
         if (dispatch) {
           dispatch({ type: ActionType.CLEAR_HITL_STATE });
         }
-      } else if (input === 'c' || input === 's') {
-        // Note: Text input is handled by HITLInterventionPanel's TextInput component
-        // The panel switches to feedback mode internally when c/s is pressed
-        // We don't handle it here to avoid conflicts
       } else if (input === 'r') {
         submitFeedback('rejection', 'Rejected - stopping execution', hitlPendingTool.toolId);
         if (dispatch) {
           dispatch({ type: ActionType.CLEAR_HITL_STATE });
         }
       }
+      // [c] is handled by HITLInterventionPanel to switch to feedback mode
     }
 
-    // Confirmation mode: y/n keys
+    // Confirmation mode: y/n keys (for destructive operations after agent interprets feedback)
     if (hitlInterpretation) {
       if (input === 'y') {
         confirmInterpretation(true, hitlInterpretation.toolId);
