@@ -1614,9 +1614,27 @@ const method = latestInput.method || 'GET';
 
     case 'hitl_feedback_submitted': {
       const feedbackType = 'feedback_type' in event ? String(event.feedback_type) : 'unknown';
+      const content = 'content' in event ? String(event.content) : '';
+      const preview = content.length > 80 ? content.substring(0, 80) + '...' : content;
+
       return (
-        <Box marginTop={1}>
-          <Text color="cyan">💬 Feedback submitted: <Text bold>{feedbackType}</Text></Text>
+        <Box marginTop={1} marginBottom={1} borderStyle="round" borderColor="cyan" padding={1}>
+          <Box marginBottom={1}>
+            <Text color="cyan" bold>✓ Feedback Submitted to Agent</Text>
+          </Box>
+          <Box marginBottom={1}>
+            <Text dimColor>Type: </Text>
+            <Text color="cyan">{feedbackType}</Text>
+          </Box>
+          {preview && (
+            <Box marginBottom={1} flexDirection="column">
+              <Text dimColor>Content:</Text>
+              <Text color="cyan">{preview}</Text>
+            </Box>
+          )}
+          <Box>
+            <Text dimColor>→ Agent will process in next step</Text>
+          </Box>
         </Box>
       );
     }
