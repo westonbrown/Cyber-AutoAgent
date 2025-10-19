@@ -28,8 +28,6 @@ const sendHITLCommand = async (command: Record<string, any>): Promise<void> => {
     const commandJson = JSON.stringify(command);
     const formattedCommand = `__HITL_COMMAND__${commandJson}__HITL_COMMAND_END__`;
 
-    console.log('[HITL] Sending command:', command);
-
     // Send via execution service to Python process stdin
     if (_executionService && 'sendUserInput' in _executionService) {
       await (_executionService as any).sendUserInput(formattedCommand);
