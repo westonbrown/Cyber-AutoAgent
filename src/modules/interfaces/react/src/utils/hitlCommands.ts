@@ -16,6 +16,7 @@ const sendHITLCommand = (command: Record<string, any>): void => {
     const commandJson = JSON.stringify(command);
     const formattedCommand = `__HITL_COMMAND__${commandJson}__HITL_COMMAND_END__\n`;
 
+    console.log('[HITL] Sending command:', command);
     // Write to stdin for the Python process to receive
     process.stdin.write(formattedCommand);
   } catch (error) {
