@@ -15,15 +15,31 @@ from strands.agent.conversation_manager import SlidingWindowConversationManager
 from strands.models import BedrockModel
 from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
-from strands_tools import editor, http_request, load_tool, python_repl, shell, stop, swarm
+from strands_tools import (
+    editor,
+    http_request,
+    load_tool,
+    python_repl,
+    shell,
+    stop,
+    swarm,
+)
 
 from modules import prompts
-from modules.prompts import get_system_prompt  # Backward-compat import for tests
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
-from modules.handlers.hitl import FeedbackInputHandler, FeedbackManager, HITLHookProvider
+from modules.handlers.hitl import (
+    FeedbackInputHandler,
+    FeedbackManager,
+    HITLHookProvider,
+)
+from modules.handlers.hitl.feedback_injection_hook import HITLFeedbackInjectionHook
 from modules.handlers.utils import print_status, sanitize_target_name
-from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
+from modules.tools.memory import (
+    get_memory_client,
+    initialize_memory_system,
+    mem0_memory,
+)
 from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -111,18 +127,20 @@ def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
                 pkl_file = os.path.join(memory_base_path, "mem0.pkl")
 
                 # In some environments, test fixture paths use underscore in sanitized name
-                alt_memory_base_path = os.path.join(output_dir, target_name.replace(".", "_"), "memory")
+                alt_memory_base_path = os.path.join(
+                    output_dir, target_name.replace(".", "_"), "memory"
+                )
                 alt_faiss = os.path.join(alt_memory_base_path, "mem0.faiss")
                 alt_pkl = os.path.join(alt_memory_base_path, "mem0.pkl")
 
                 # Verify both FAISS index files exist with non-zero size
                 # In unit tests, getsize is mocked to 100; treat >0 as meaningful
-                has_faiss = (os.path.exists(faiss_file) and os.path.getsize(faiss_file) > 0) or (
-                    os.path.exists(alt_faiss) and os.path.getsize(alt_faiss) > 0
-                )
-                has_pkl = (os.path.exists(pkl_file) and os.path.getsize(pkl_file) > 0) or (
-                    os.path.exists(alt_pkl) and os.path.getsize(alt_pkl) > 0
-                )
+                has_faiss = (
+                    os.path.exists(faiss_file) and os.path.getsize(faiss_file) > 0
+                ) or (os.path.exists(alt_faiss) and os.path.getsize(alt_faiss) > 0)
+                has_pkl = (
+                    os.path.exists(pkl_file) and os.path.getsize(pkl_file) > 0
+                ) or (os.path.exists(alt_pkl) and os.path.getsize(alt_pkl) > 0)
                 if has_faiss and has_pkl:
                     return True
 
@@ -148,7 +166,10 @@ def _create_remote_model(
     # This prevents ReadTimeoutError during long-running operations
     boto_config = BotocoreConfig(
         region_name=region_name,
-        retries={"max_attempts": 10, "mode": "adaptive"},  # Higher retry count for long sessions
+        retries={
+            "max_attempts": 10,
+            "mode": "adaptive",
+        },  # Higher retry count for long sessions
         read_timeout=420,  # 7 minutes read timeout
         connect_timeout=60,  # 1 minute connection timeout
         max_pool_connections=100,  # Larger pool for long sessions with tools
@@ -348,7 +369,6 @@ def create_agent(
     if config.model_id is None:
         config.model_id = server_config.llm.model_id
 
-
     # Use provided operation_id or generate new one
     if not config.op_id:
         operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -374,14 +394,22 @@ def create_agent(
     # Skip check if user explicitly wants fresh memory
     if config.memory_mode == "fresh":
         has_existing_memories = False
-        print_status("Using fresh memory mode - ignoring any existing memories", "WARNING")
+        print_status(
+            "Using fresh memory mode - ignoring any existing memories", "WARNING"
+        )
     else:
         has_existing_memories = check_existing_memories(config.target, config.provider)
         # Log the result for debugging container vs local issues
         if has_existing_memories:
-            print_status(f"Previous memories detected for {config.target} - will be loaded", "SUCCESS")
+            print_status(
+                f"Previous memories detected for {config.target} - will be loaded",
+                "SUCCESS",
+            )
         else:
-            print_status(f"No previous memories found for {config.target} - will create new", "INFO")
+            print_status(
+                f"No previous memories found for {config.target} - will create new",
+                "INFO",
+            )
 
     # Initialize memory system
     target_name = sanitize_target_name(config.target)
@@ -391,7 +419,9 @@ def create_agent(
         paths = config_manager.ensure_operation_output_dirs(
             config.provider, target_name, operation_id, module=config.module
         )
-        print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
+        print_status(
+            f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS"
+        )
     except Exception:
         # Non-fatal: proceed even if directory creation logs an error
         pass
@@ -417,7 +447,9 @@ def create_agent(
     except Exception:
         logger.debug("Unable to set overlay environment context", exc_info=True)
 
-    initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
+    initialize_memory_system(
+        memory_config, operation_id, target_name, has_existing_memories
+    )
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
 
     # Get memory overview for system prompt enhancement and UI display
@@ -426,9 +458,13 @@ def create_agent(
         try:
             memory_client = get_memory_client()
             if memory_client:
-                memory_overview = memory_client.get_memory_overview(user_id="cyber_agent")
+                memory_overview = memory_client.get_memory_overview(
+                    user_id="cyber_agent"
+                )
         except Exception as e:
-            agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
+            agent_logger.debug(
+                "Could not get memory overview for system prompt: %s", str(e)
+            )
 
     # Load module-specific tools and prepare for injection
     module_tools_context = ""
@@ -447,7 +483,9 @@ def create_agent(
                 try:
                     # Load the module
                     module_name = f"operation_plugin_tool_{Path(tool_path).stem}"
-                    spec = importlib.util.spec_from_file_location(module_name, tool_path)
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, tool_path
+                    )
                     if spec and spec.loader:
                         tool_module = importlib.util.module_from_spec(spec)
                         sys.modules[module_name] = tool_module
@@ -462,9 +500,15 @@ def create_agent(
                                 agent_logger.debug("Found module tool: %s", attr_name)
 
                 except Exception as e:
-                    agent_logger.warning("Failed to load tool from %s: %s", tool_path, e)
+                    agent_logger.warning(
+                        "Failed to load tool from %s: %s", tool_path, e
+                    )
 
-            tool_names = [tool.__name__ for tool in loaded_module_tools] if loaded_module_tools else []
+            tool_names = (
+                [tool.__name__ for tool in loaded_module_tools]
+                if loaded_module_tools
+                else []
+            )
 
             if tool_names:
                 print_status(
@@ -494,7 +538,9 @@ def create_agent(
             if loaded_module_tools:
                 # Tools are pre-loaded
                 for tool_name in tool_names:
-                    tool_examples.append(f"{tool_name}()  # Pre-loaded and ready to use")
+                    tool_examples.append(
+                        f"{tool_name}()  # Pre-loaded and ready to use"
+                    )
             else:
                 # Fallback to load_tool instructions using discovered absolute paths
                 # This works in both local CLI and Docker since module_tool_paths are resolved in the current runtime
@@ -508,7 +554,9 @@ def create_agent(
                     except Exception:
                         # As a last resort, include a name-only hint
                         tool_name = Path(tool_path).stem
-                        tool_examples.append(f"# load_tool path resolution failed for {tool_name}")
+                        tool_examples.append(
+                            f"# load_tool path resolution failed for {tool_name}"
+                        )
 
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
@@ -520,7 +568,9 @@ Available {config.module} module tools:
 {chr(10).join(f"- {example}" for example in tool_examples)}
 """
         else:
-            print_status(f"No module-specific tools found for '{config.module}'", "INFO")
+            print_status(
+                f"No module-specific tools found for '{config.module}'", "INFO"
+            )
     except Exception as e:
         logger.warning("Error discovering module tools for '%s': %s", config.module, e)
 
@@ -555,18 +605,29 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             config.module, operation_root=operation_root_path
         )
         if module_execution_prompt:
-            print_status(f"Loaded module-specific execution prompt for '{config.module}'", "SUCCESS")
+            print_status(
+                f"Loaded module-specific execution prompt for '{config.module}'",
+                "SUCCESS",
+            )
         else:
-            print_status(f"No module-specific execution prompt found for '{config.module}' - using default", "INFO")
+            print_status(
+                f"No module-specific execution prompt found for '{config.module}' - using default",
+                "INFO",
+            )
         # Emit explicit config log for module and execution prompt source
-        exec_src = getattr(module_loader, "last_loaded_execution_prompt_source", None) or "default (none found)"
+        exec_src = (
+            getattr(module_loader, "last_loaded_execution_prompt_source", None)
+            or "default (none found)"
+        )
         agent_logger.info(
             "CYBERAUTOAGENT: module='%s', execution_prompt_source='%s'",
             config.module,
             exec_src,
         )
     except Exception as e:
-        logger.warning("Error loading module execution prompt for '%s': %s", config.module, e)
+        logger.warning(
+            "Error loading module execution prompt for '%s': %s", config.module, e
+        )
 
     # Optionally build a concise plan snapshot from memory (best-effort, no hard dependency)
     plan_snapshot = None
@@ -589,7 +650,10 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                         # Find current phase details
                         current_phase_info = None
                         for phase in phases:
-                            if phase.get("id") == plan_current_phase or phase.get("status") == "active":
+                            if (
+                                phase.get("id") == plan_current_phase
+                                or phase.get("status") == "active"
+                            ):
                                 current_phase_info = phase
                                 break
 
@@ -597,8 +661,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                         snap_lines = []
                         snap_lines.append(f"Objective: {objective}")
                         if current_phase_info:
-                            snap_lines.append(f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})")
-                            snap_lines.append(f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}")
+                            snap_lines.append(
+                                f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})"
+                            )
+                            snap_lines.append(
+                                f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}"
+                            )
 
                         plan_snapshot = "\n".join(snap_lines)
                     except Exception as e:
@@ -640,7 +708,10 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                                 phases = plan_json.get("phases") or []
                                 if isinstance(phases, list):
                                     for ph in phases:
-                                        if isinstance(ph, dict) and ph.get("status") == "active":
+                                        if (
+                                            isinstance(ph, dict)
+                                            and ph.get("status") == "active"
+                                        ):
                                             pid = ph.get("id")
                                             if isinstance(pid, int):
                                                 plan_current_phase = pid
@@ -651,7 +722,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                     snap_lines = []
                     if phase_line:
                         # Clean up the phase line for display
-                        clean_phase = phase_line.replace("[ACTIVE]", "").replace("[PENDING]", "").replace("[COMPLETED]", "").strip()
+                        clean_phase = (
+                            phase_line.replace("[ACTIVE]", "")
+                            .replace("[PENDING]", "")
+                            .replace("[COMPLETED]", "")
+                            .strip()
+                        )
                         snap_lines.append(f"CurrentPhase: {clean_phase}")
                     # Derive sub-objective from phase goal portion if present
                     sub_obj = None
@@ -684,7 +760,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
-        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "artifacts_path": paths.get("artifacts"), "tools_path": paths.get("tools")},
+        output_config={
+            "base_dir": server_config.output.base_dir,
+            "target_name": target_name,
+            "artifacts_path": paths.get("artifacts"),
+            "tools_path": paths.get("tools"),
+        },
         plan_snapshot=plan_snapshot,
         plan_current_phase=plan_current_phase,
     )
@@ -729,11 +810,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             "provider": config.provider,
             "model": config.model_id,
             "region": config.region_name,
-            "tools_available": len(config.available_tools) if config.available_tools else 0,
+            "tools_available": len(config.available_tools)
+            if config.available_tools
+            else 0,
             "memory": {
                 "mode": config.memory_mode,
                 "path": config.memory_path or None,
-                "has_existing": has_existing_memories if "has_existing_memories" in locals() else False,
+                "has_existing": has_existing_memories
+                if "has_existing_memories" in locals()
+                else False,
                 "reused": (
                     (has_existing_memories and config.memory_mode != "fresh")
                     if "has_existing_memories" in locals()
@@ -744,9 +829,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                     if os.getenv("MEM0_API_KEY")
                     else ("opensearch" if os.getenv("OPENSEARCH_HOST") else "faiss")
                 ),
-                **(memory_overview if memory_overview and isinstance(memory_overview, dict) else {}),
+                **(
+                    memory_overview
+                    if memory_overview and isinstance(memory_overview, dict)
+                    else {}
+                ),
             },
-            "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
+            "observability": (
+                os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+            ),
             "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
             "hitl_enabled": hitl_enabled,
         },
@@ -757,7 +848,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     from modules.handlers.react.hooks import ReactHooks
 
     # Use the same emitter as the callback handler for consistency
-    react_hooks = ReactHooks(emitter=callback_handler.emitter, operation_id=operation_id)
+    react_hooks = ReactHooks(
+        emitter=callback_handler.emitter, operation_id=operation_id
+    )
 
     # Create prompt rebuild hook for intelligent prompt updates
     from modules.handlers.prompt_rebuild_hook import PromptRebuildHook
@@ -799,11 +892,17 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             confidence_threshold=70.0,
         )
 
+        # Create feedback injection hook for system prompt modification
+        feedback_injection_hook = HITLFeedbackInjectionHook(
+            feedback_manager=feedback_manager
+        )
+
         print_status("HITL system enabled - human feedback available", "SUCCESS")
 
     hooks = [react_hooks, prompt_rebuild_hook]
     if hitl_hook:
         hooks.append(hitl_hook)
+        hooks.append(feedback_injection_hook)
 
     # Create model based on provider type
     try:
@@ -813,11 +912,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             print_status(f"Ollama model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(config.model_id, config.region_name, config.provider)
+            model = _create_remote_model(
+                config.model_id, config.region_name, config.provider
+            )
             print_status(f"Bedrock model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
-            model = _create_litellm_model(config.model_id, config.region_name, config.provider)
+            model = _create_litellm_model(
+                config.model_id, config.region_name, config.provider
+            )
             print_status(f"LiteLLM model initialized: {config.model_id}", "SUCCESS")
         else:
             raise ValueError(f"Unsupported provider: {config.provider}")
@@ -843,7 +946,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     # Inject module-specific tools if available
     if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
-        agent_logger.info("Injected %d module tools into agent", len(loaded_module_tools))
+        agent_logger.info(
+            "Injected %d module tools into agent", len(loaded_module_tools)
+        )
 
     agent_logger.debug("Creating autonomous agent")
 
@@ -897,7 +1002,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             # Model configuration
             "model.provider": config.provider,
             "model.id": config.model_id,
-            "model.region": config.region_name if config.provider in ["bedrock", "litellm"] else "local",
+            "model.region": config.region_name
+            if config.provider in ["bedrock", "litellm"]
+            else "local",
             "gen_ai.request.model": config.model_id,
             # Tool configuration
             "tools.available": len(tools_list),

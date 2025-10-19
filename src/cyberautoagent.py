@@ -642,46 +642,13 @@ def main():
             )
 
             current_message = initial_prompt
-            feedback_injected_this_turn = False
-
             # Continue until stop condition is met
             while not interrupted:
                 try:
-                    # Check for HITL feedback before executing agent
-                    if feedback_manager:
-                        feedback_message = (
-                            feedback_manager.get_pending_feedback_message()
-                        )
-                        if feedback_message:
-                            logger.info(
-                                "[HITL] Feedback detected for operation %s - preparing injection",
-                                local_operation_id,
-                            )
-                            logger.info(
-                                "[HITL] Feedback message content (length=%d chars):\n%s",
-                                len(feedback_message),
-                                feedback_message[:500] + "..."
-                                if len(feedback_message) > 500
-                                else feedback_message,
-                            )
-                            current_message = feedback_message
-                            feedback_manager.clear_pending_feedback()
-                            feedback_injected_this_turn = True
-                            logger.info(
-                                "[HITL] Feedback injection prepared, will pass to agent on next call"
-                            )
-
                     # Execute agent with current message
-                    logger.debug(
-                        "[HITL] Calling agent with message (feedback_injected=%s, message_length=%d)",
-                        feedback_injected_this_turn,
-                        len(current_message),
-                    )
+                    # Note: HITL feedback is now injected via HITLFeedbackInjectionHook
+                    # which modifies the system prompt in BeforeModelInvocationEvent
                     result = agent(current_message)
-                    logger.debug(
-                        "[HITL] Agent call completed (feedback_injected=%s)",
-                        feedback_injected_this_turn,
-                    )
 
                     # Pass the metrics from the result to the callback handler
                     if (
@@ -730,40 +697,28 @@ def main():
                             print_status("No actions taken - completing", "SUCCESS")
                             break
 
-                    # Generate continuation prompt (skip if feedback was just injected)
-                    if feedback_injected_this_turn:
-                        # Feedback was injected this turn, don't overwrite with continuation
-                        logger.info(
-                            "[HITL] Skipping continuation prompt - feedback was injected this turn"
-                        )
-                        feedback_injected_this_turn = False
+                    # Generate continuation prompt
+                    remaining_steps = (
+                        args.iterations - callback_handler.current_step
+                        if callback_handler
+                        else args.iterations
+                    )
+                    logger.warning(
+                        "Remaining steps check: iterations=%d, current_step=%d, remaining=%d",
+                        args.iterations,
+                        callback_handler.current_step if callback_handler else 0,
+                        remaining_steps,
+                    )
+                    if remaining_steps > 0:
+                        # Simple continuation message
+                        current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
                         logger.debug(
-                            "[HITL] Feedback injection flag reset - next iteration will use continuation"
+                            "Generated continuation message for next iteration (length=%d)",
+                            len(current_message),
                         )
                     else:
-                        remaining_steps = (
-                            args.iterations - callback_handler.current_step
-                            if callback_handler
-                            else args.iterations
-                        )
-                        logger.warning(
-                            "Remaining steps check: iterations=%d, current_step=%d, remaining=%d",
-                            args.iterations,
-                            callback_handler.current_step if callback_handler else 0,
-                            remaining_steps,
-                        )
-                        if remaining_steps > 0:
-                            # Simple continuation message
-                            current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
-                            logger.debug(
-                                "[HITL] Generated continuation message for next iteration (length=%d)",
-                                len(current_message),
-                            )
-                        else:
-                            logger.info(
-                                "[HITL] No remaining steps - breaking execution loop"
-                            )
-                            break
+                        logger.info("No remaining steps - breaking execution loop")
+                        break
 
                 except StepLimitReached:
                     # Handle step limit reached gracefully without context errors
