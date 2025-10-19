@@ -93,18 +93,11 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
       <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
         <Box marginBottom={1}>
           <Text bold color="cyan">
-            💬 MANUAL INTERVENTION
-          </Text>
-        </Box>
-
-        <Box marginBottom={1}>
-          <Text dimColor>
-            Agent execution paused. Provide feedback to guide the agent:
+            💬 Provide Feedback to Agent
           </Text>
         </Box>
 
         <Box marginBottom={1} flexDirection="column">
-          <Text>Feedback:</Text>
           <Box marginTop={1}>
             <Text color="cyan">&gt; </Text>
             <TextInput
@@ -122,7 +115,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
         </Box>
 
         <Box>
-          <Text dimColor>Press [Esc] to cancel and resume</Text>
+          <Text dimColor>Press [Esc] to cancel</Text>
         </Box>
       </Box>
     );
