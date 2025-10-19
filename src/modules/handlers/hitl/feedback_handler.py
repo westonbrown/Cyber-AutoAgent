@@ -95,6 +95,8 @@ class FeedbackInputHandler:
             self._handle_submit_feedback(command)
         elif command_type == "confirm_interpretation":
             self._handle_confirm_interpretation(command)
+        elif command_type == "request_manual_intervention":
+            self._handle_manual_intervention(command)
         else:
             logger.warning("Unknown feedback command type: %s", command_type)
 
@@ -143,3 +145,16 @@ class FeedbackInputHandler:
 
         except Exception as e:
             logger.error("Failed to confirm interpretation: %s", e, exc_info=True)
+
+    def _handle_manual_intervention(self, command: dict) -> None:
+        """Handle manual intervention request.
+
+        Args:
+            command: Command dict (no parameters required)
+        """
+        try:
+            self.feedback_manager.request_manual_pause()
+            logger.info("Manual intervention initiated")
+
+        except Exception as e:
+            logger.error("Failed to request manual intervention: %s", e, exc_info=True)

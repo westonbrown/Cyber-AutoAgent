@@ -94,6 +94,40 @@ class FeedbackManager:
 
         self.state = HITLState.AWAITING_FEEDBACK
 
+    def request_manual_pause(self) -> None:
+        """Request manual intervention pause initiated by user.
+
+        Creates a synthetic tool invocation for user-requested intervention.
+        """
+        timestamp = int(time.time() * 1000)
+        tool_id = f"manual_{timestamp}"
+
+        logger.info("Manual intervention requested by user (id=%s)", tool_id)
+
+        self.state = HITLState.PAUSE_REQUESTED
+        self.pending_tool = ToolInvocation(
+            tool_name="manual_intervention",
+            tool_id=tool_id,
+            parameters={},
+            confidence=None,
+            reason="User requested manual intervention",
+        )
+
+        # Emit pause event to UI
+        if self.emitter:
+            self.emitter.emit(
+                {
+                    "type": "hitl_pause_requested",
+                    "tool_name": "manual_intervention",
+                    "tool_id": tool_id,
+                    "parameters": {},
+                    "confidence": None,
+                    "reason": "User requested manual intervention",
+                }
+            )
+
+        self.state = HITLState.AWAITING_FEEDBACK
+
     def submit_feedback(
         self,
         feedback_type: FeedbackType,
