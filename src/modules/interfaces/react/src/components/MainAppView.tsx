@@ -15,9 +15,11 @@ import { Footer } from './Footer.js';
 import { UnifiedInputPrompt } from './UnifiedInputPrompt.js';
 import { Terminal } from './Terminal.js';
 import { ModalRegistry } from './ModalRegistry.js';
+import { HITLInterventionPanel } from './HITLInterventionPanel.js';
+import { submitFeedback, confirmInterpretation } from '../utils/hitlCommands.js';
 
 // Types
-import { ApplicationState } from '../hooks/useApplicationState.js';
+import { ApplicationState, ActionType } from '../hooks/useApplicationState.js';
 import { OperationHistoryEntry } from '../hooks/useOperationManager.js';
 import { ModalType } from '../hooks/useModalManager.js';
 
@@ -289,6 +291,37 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
 
       {/* INPUT & FOOTER AREA: Static at the bottom */}
       <Box flexDirection="column">
+        {/* HITL Intervention Panel - Pinned above footer */}
+        {appState.hitlEnabled && activeModal === ModalType.NONE && (
+          <HITLInterventionPanel
+            toolName={appState.hitlPendingTool?.toolName || ''}
+            toolId={appState.hitlPendingTool?.toolId || appState.hitlInterpretation?.toolId || ''}
+            parameters={appState.hitlPendingTool?.parameters || {}}
+            reason={appState.hitlPendingTool?.reason}
+            confidence={appState.hitlPendingTool?.confidence}
+            interpretation={
+              appState.hitlInterpretation
+                ? {
+                    text: appState.hitlInterpretation.text,
+                    modifiedParameters: appState.hitlInterpretation.modifiedParameters
+                  }
+                : undefined
+            }
+            isActive={!!(appState.hitlPendingTool || appState.hitlInterpretation)}
+            onSubmitFeedback={(feedbackType: string, content: string) => {
+              if (appState.hitlPendingTool) {
+                submitFeedback(feedbackType as any, content, appState.hitlPendingTool.toolId);
+              }
+            }}
+            onConfirmInterpretation={(approved: boolean) => {
+              if (appState.hitlInterpretation && dispatch) {
+                confirmInterpretation(approved, appState.hitlInterpretation.toolId);
+                dispatch({ type: ActionType.CLEAR_HITL_STATE });
+              }
+            }}
+          />
+        )}
+
         {!hideInput && activeModal === ModalType.NONE && (!showOperationStream || appState.userHandoffActive) && (
           <UnifiedInputPrompt
             flowState={assessmentFlowState}
@@ -297,7 +330,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
             userHandoffActive={appState.userHandoffActive}
           />
         )}
-        
+
         {/* Spacer above footer when streaming to preserve breathing room */}
         {showOperationStream && (
           <Box>
