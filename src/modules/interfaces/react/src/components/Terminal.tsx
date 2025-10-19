@@ -20,9 +20,8 @@ import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { calculateAvailableHeight } from '../utils/layoutConstants.js';
-import { HITLInterventionPanel } from './HITLInterventionPanel.js';
 import { submitFeedback, confirmInterpretation, requestManualIntervention, setExecutionServiceForHITL } from '../utils/hitlCommands.js';
-import { useApplicationState, ActionType } from '../hooks/useApplicationState.js';
+import { ActionType } from '../hooks/useApplicationState.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
 export const buildTrimmedReportContent = (raw: string): string => {
@@ -1737,49 +1736,8 @@ completedBufRef.current.pushMany(newCompletedEvents);
   const hasOnlyThinkingInActive = activeEvents.length > 0 &&
     activeEvents.every(e => e.type === 'thinking' || e.type === 'thinking_end');
 
-  // Determine if HITL panel should be active
-  const hitlPanelActive = !!(hitlPendingTool || hitlInterpretation);
-
-  // Handlers for HITL panel callbacks
-  const handleSubmitFeedback = (feedbackType: string, content: string) => {
-    if (hitlPendingTool) {
-      submitFeedback(feedbackType as any, content, hitlPendingTool.toolId);
-    }
-  };
-
-  const handleConfirmInterpretation = (approved: boolean) => {
-    if (hitlInterpretation) {
-      confirmInterpretation(approved, hitlInterpretation.toolId);
-      if (dispatch) {
-        dispatch({ type: ActionType.CLEAR_HITL_STATE });
-      }
-    }
-  };
-
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {/* HITL Intervention Panel - always visible when HITL is enabled */}
-      {hitlEnabled && (
-        <HITLInterventionPanel
-          toolName={hitlPendingTool?.toolName || ''}
-          toolId={hitlPendingTool?.toolId || hitlInterpretation?.toolId || ''}
-          parameters={hitlPendingTool?.parameters || {}}
-          reason={hitlPendingTool?.reason}
-          confidence={hitlPendingTool?.confidence}
-          interpretation={
-            hitlInterpretation
-              ? {
-                  text: hitlInterpretation.text,
-                  modifiedParameters: hitlInterpretation.modifiedParameters
-                }
-              : undefined
-          }
-          isActive={hitlPanelActive}
-          onSubmitFeedback={handleSubmitFeedback}
-          onConfirmInterpretation={handleConfirmInterpretation}
-        />
-      )}
-
       {/* Completed events - rendered normally (Static component broke rendering) */}
       {completedEvents.length > 0 && (
         <StaticStreamDisplay
