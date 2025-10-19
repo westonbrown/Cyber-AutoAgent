@@ -5,20 +5,37 @@
  * to the Python backend via stdin using the __HITL_COMMAND__ protocol.
  */
 
+import { ExecutionService } from '../services/ExecutionService.js';
+
+// Global reference to execution service for HITL commands
+let _executionService: ExecutionService | null = null;
+
+/**
+ * Set the execution service reference for HITL commands
+ */
+export const setExecutionServiceForHITL = (service: ExecutionService | null): void => {
+  _executionService = service;
+};
+
 /**
  * Send a HITL command to the Python process via stdin
  *
  * Commands are wrapped in __HITL_COMMAND__<json>__HITL_COMMAND_END__
  * format for the Python FeedbackInputHandler to parse.
  */
-const sendHITLCommand = (command: Record<string, any>): void => {
+const sendHITLCommand = async (command: Record<string, any>): Promise<void> => {
   try {
     const commandJson = JSON.stringify(command);
-    const formattedCommand = `__HITL_COMMAND__${commandJson}__HITL_COMMAND_END__\n`;
+    const formattedCommand = `__HITL_COMMAND__${commandJson}__HITL_COMMAND_END__`;
 
     console.log('[HITL] Sending command:', command);
-    // Write to stdin for the Python process to receive
-    process.stdin.write(formattedCommand);
+
+    // Send via execution service to Python process stdin
+    if (_executionService && 'sendUserInput' in _executionService) {
+      await (_executionService as any).sendUserInput(formattedCommand);
+    } else {
+      console.error('[HITL] No execution service available to send command');
+    }
   } catch (error) {
     console.error('Failed to send HITL command:', error);
   }
