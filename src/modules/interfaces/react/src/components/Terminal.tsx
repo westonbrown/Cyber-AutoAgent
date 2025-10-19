@@ -95,17 +95,30 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   useInput((input, key) => {
     if (!hitlPendingTool && !hitlInterpretation) return;
 
+    // Escape key - cancel intervention and resume
+    if (key.escape) {
+      if (dispatch) {
+        dispatch({ type: ActionType.CLEAR_HITL_STATE });
+      }
+      return;
+    }
+
     // Review mode: a/c/s/r keys
     if (hitlPendingTool && !hitlInterpretation) {
       if (input === 'a') {
-        submitFeedback('approval', 'Approved', hitlPendingTool.toolId);
-      } else if (input === 'c') {
-        // TODO: Enter feedback input mode
-        submitFeedback('correction', 'User requested correction', hitlPendingTool.toolId);
-      } else if (input === 's') {
-        submitFeedback('suggestion', 'User requested suggestion', hitlPendingTool.toolId);
+        submitFeedback('approval', 'Approved - continuing as planned', hitlPendingTool.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+      } else if (input === 'c' || input === 's') {
+        // Note: Text input is handled by HITLInterventionPanel's TextInput component
+        // The panel switches to feedback mode internally when c/s is pressed
+        // We don't handle it here to avoid conflicts
       } else if (input === 'r') {
-        submitFeedback('rejection', 'Rejected', hitlPendingTool.toolId);
+        submitFeedback('rejection', 'Rejected - stopping execution', hitlPendingTool.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
       }
     }
 
