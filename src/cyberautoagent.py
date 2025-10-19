@@ -580,7 +580,7 @@ def main():
             memory_mode=args.memory_mode,
             module=args.module,
         )
-        agent, callback_handler = create_agent(
+        agent, callback_handler, feedback_manager = create_agent(
             target=args.target,
             objective=args.objective,
             config=config,
@@ -614,6 +614,14 @@ def main():
             # Continue until stop condition is met
             while not interrupted:
                 try:
+                    # Check for HITL feedback before executing agent
+                    if feedback_manager:
+                        feedback_message = feedback_manager.get_pending_feedback_message()
+                        if feedback_message:
+                            logger.info("HITL feedback detected - injecting into agent conversation")
+                            current_message = feedback_message
+                            feedback_manager.clear_pending_feedback()
+
                     # Execute agent with current message
                     result = agent(current_message)
 
