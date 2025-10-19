@@ -927,4 +927,4 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         pass
 
     agent_logger.debug("Agent initialized successfully")
-    return agent, callback_handler
+    return agent, callback_handler, feedback_manager
