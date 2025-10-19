@@ -52,3 +52,12 @@ export const confirmInterpretation = (
     tool_id: toolId,
   });
 };
+
+/**
+ * Request manual intervention (pause agent for human review)
+ */
+export const requestManualIntervention = (): void => {
+  sendHITLCommand({
+    type: 'request_manual_intervention',
+  });
+};

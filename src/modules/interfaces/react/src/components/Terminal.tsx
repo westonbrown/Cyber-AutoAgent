@@ -21,7 +21,7 @@ import { DISPLAY_LIMITS } from '../constants/config.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { calculateAvailableHeight } from '../utils/layoutConstants.js';
 import { HITLInterventionPanel } from './HITLInterventionPanel.js';
-import { submitFeedback, confirmInterpretation } from '../utils/hitlCommands.js';
+import { submitFeedback, confirmInterpretation, requestManualIntervention } from '../utils/hitlCommands.js';
 import { useApplicationState, ActionType } from '../hooks/useApplicationState.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
@@ -76,6 +76,14 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   // Use production-grade terminal size hook with resize handling
   const { availableWidth, availableHeight, columns } = useTerminalSize();
   const terminalWidth = propsTerminalWidth || availableWidth;
+
+  // Manual intervention handler - [i] key (always active when HITL enabled)
+  useInput((input, key) => {
+    if (!hitlEnabled) return;
+    if (input?.toLowerCase() === 'i' && !hitlPendingTool && !hitlInterpretation) {
+      requestManualIntervention();
+    }
+  });
 
   // HITL keyboard handler
   useInput((input, key) => {
