@@ -272,6 +272,31 @@ class FeedbackManager:
             HITLState.AWAITING_CONFIRMATION,
         )
 
+    def get_pending_feedback_message(self) -> Optional[str]:
+        """Get pending feedback formatted as agent message.
+
+        Returns:
+            Formatted message if feedback pending, None otherwise
+        """
+        if not self.pending_feedback:
+            return None
+
+        feedback = self.pending_feedback
+
+        message = f"""HUMAN FEEDBACK RECEIVED:
+
+Type: {feedback.feedback_type.value}
+Content: {feedback.content}
+
+Please incorporate this feedback and adjust your approach accordingly. Continue the security assessment with this guidance in mind."""
+
+        return message
+
+    def clear_pending_feedback(self) -> None:
+        """Clear pending feedback after it has been injected into agent context."""
+        self.pending_feedback = None
+        logger.debug("Pending feedback cleared after injection")
+
     def _store_intervention(self, feedback: UserFeedback) -> None:
         """Store intervention in memory and logs.
 
