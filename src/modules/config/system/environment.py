@@ -409,6 +409,13 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     root_file_handler.setFormatter(formatter)
     root_logger.addHandler(root_file_handler)
 
+    # In verbose mode, also send INFO logs to console for all modules
+    if verbose:
+        root_console_handler = logging.StreamHandler(sys.__stdout__)
+        root_console_handler.setLevel(logging.INFO)
+        root_console_handler.setFormatter(formatter)
+        root_logger.addHandler(root_console_handler)
+
     # Suppress verbose AWS credential detection messages
     logging.getLogger("boto3").setLevel(logging.WARNING)
     logging.getLogger("botocore").setLevel(logging.WARNING)
