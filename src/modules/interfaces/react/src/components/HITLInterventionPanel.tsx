@@ -49,6 +49,23 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
 }) => {
   const isManualIntervention = toolName === 'manual_intervention';
   const [feedbackText, setFeedbackText] = useState('');
+  const [mode, setMode] = useState<'review' | 'feedback'>('review');
+
+  // Keyboard handler for destructive operations
+  useInput((input, key) => {
+    if (!isActive || isManualIntervention) return;
+
+    // Switch to feedback mode when [c] pressed for destructive operations
+    if (mode === 'review' && input === 'c') {
+      setMode('feedback');
+    }
+
+    // Escape to go back to review mode
+    if (mode === 'feedback' && key.escape) {
+      setMode('review');
+      setFeedbackText('');
+    }
+  });
 
   // Show idle state when HITL is enabled but no intervention needed
   if (!isActive) {
@@ -159,13 +176,13 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
     );
   }
 
-  // Feedback input mode
+  // Feedback input mode (for destructive operations when user presses [c])
   if (mode === 'feedback') {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
         <Box marginBottom={1}>
           <Text bold color="cyan">
-            💬 Provide Feedback
+            💬 Provide Correction
           </Text>
         </Box>
 
@@ -176,7 +193,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
         </Box>
 
         <Box marginBottom={1} flexDirection="column">
-          <Text>Enter your feedback (press Enter to submit):</Text>
+          <Text>Enter modified parameters or instructions:</Text>
           <Box marginTop={1}>
             <Text color="cyan">&gt; </Text>
             <TextInput
@@ -184,7 +201,6 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
               onChange={setFeedbackText}
               onSubmit={(value) => {
                 if (value.trim()) {
-                  // Determine feedback type based on earlier selection
                   onSubmitFeedback('correction', value);
                   setFeedbackText('');
                   setMode('review');
@@ -201,8 +217,8 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
     );
   }
 
-  // Confirmation mode - review agent interpretation
-  if (mode === 'confirm' && interpretation) {
+  // Agent interpretation confirmation (only used for destructive operations after correction)
+  if (interpretation) {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="green" padding={1}>
         <Box marginBottom={1}>
