@@ -2823,6 +2823,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         {"type": "assessment_complete", "operation_id": self.operation_id, "report_path": report_path}
                     )
 
+                    if hasattr(self.emitter, 'flush_immediate'):
+                        self.emitter.flush_immediate()
+
                     logger.info("Report saved to %s", report_path)
 
                 except Exception as save_error:
