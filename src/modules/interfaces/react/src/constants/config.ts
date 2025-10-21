@@ -48,6 +48,12 @@ export const DISPLAY_LIMITS = {
   REPORT_MAX_LINES: Infinity,  // Never collapse final reports
   REPORT_PREVIEW_LINES: 100,  // Show first 100 lines when collapsed (unused for final reports)
   REPORT_TAIL_LINES: 20,  // Show last 20 lines when collapsed (unused for final reports)
+  // report_content event limits (inline display from event payload)
+  REPORT_CONTENT_MAX_LINES: 150,  // Maximum lines to show inline for report_content events
+  REPORT_CONTENT_PREVIEW_LINES: 100,  // Show first 100 lines
+  REPORT_CONTENT_TAIL_LINES: 30,  // Show last 30 lines when truncated
+  REPORT_CONTENT_MAX_LINE_LENGTH: 320,  // Maximum characters per line
+  REPORT_CONTENT_MAX_TOTAL_CHARS: 30000,  // Maximum total characters to render inline
   OPERATION_SUMMARY_LINES: 200,  // Show all operation summary info including paths
   DEFAULT_COLLAPSE_LINES: 20,  // Normal output collapse threshold
   TOOL_OUTPUT_COLLAPSE_LINES: 300,  // Collapse tool outputs beyond this many lines

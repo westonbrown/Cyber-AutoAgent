@@ -656,18 +656,31 @@ export const EventLine: React.FC<EventLineProps> = React.memo(({
           );
         case 'mem0_memory': {
           const action = latestInput?.action || 'list';
-          const content = latestInput?.content || latestInput?.query || '';
+          const rawContent = latestInput?.content || latestInput?.query || '';
+          // Ensure content is always a string (handle plan objects, etc.)
+          let content: string;
+          if (typeof rawContent === 'string') {
+            content = rawContent;
+          } else if (rawContent && typeof rawContent === 'object') {
+            try {
+              content = JSON.stringify(rawContent);
+            } catch {
+              content = String(rawContent);
+            }
+          } else {
+            content = String(rawContent);
+          }
           const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
-          
+
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: mem0_memory</Text>
               <Box marginLeft={2}>
-                <Text dimColor>├─ action: {action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
+                <Text dimColor>├─ action: {action === 'store_plan' ? 'store_plan' : action === 'store' ? 'storing' : action === 'retrieve' ? 'retrieving' : action}</Text>
               </Box>
               {preview && (
                 <Box marginLeft={2}>
-                  <Text dimColor>└─ {action === 'store' ? 'content' : 'query'}: {preview}</Text>
+                  <Text dimColor>└─ {action === 'store_plan' ? 'plan' : action === 'store' ? 'content' : 'query'}: {preview}</Text>
                 </Box>
               )}
               {!preview && (
@@ -1084,23 +1097,78 @@ const method = latestInput.method || 'GET';
 
     case 'report_content': {
       // Render the final report content directly from the event
+      // This handles massive reports (1000+ lines) that can overwhelm terminal rendering
       try {
         const content = typeof (event as any).content === 'string' ? (event as any).content : JSON.stringify((event as any).content, null, 2);
         const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-        const maxHead = DISPLAY_LIMITS.REPORT_PREVIEW_LINES || 50;
-        const maxTail = DISPLAY_LIMITS.REPORT_TAIL_LINES || 30;
+
+        // Safety limits to prevent terminal overload
+        const maxHead = DISPLAY_LIMITS.REPORT_CONTENT_PREVIEW_LINES || 100;
+        const maxTail = DISPLAY_LIMITS.REPORT_CONTENT_TAIL_LINES || 30;
+        const maxLineLength = DISPLAY_LIMITS.REPORT_CONTENT_MAX_LINE_LENGTH || 320;
+        const maxTotalChars = DISPLAY_LIMITS.REPORT_CONTENT_MAX_TOTAL_CHARS || 30000;
+        const maxLines = DISPLAY_LIMITS.REPORT_CONTENT_MAX_LINES || 150;
+
+        // Calculate total character count for safety check
+        const totalChars = content.length;
+
+        // If content is extremely large, show minimal preview with clear message
+        if (totalChars > maxTotalChars || lines.length > maxLines) {
+          // Get report path if available from related events
+          const reportPathHint = operationContext?.reportPath
+            ? operationContext.reportPath
+            : 'Check operation output directory for security_assessment_report.md';
+
+          return (
+            <Box flexDirection="column" marginTop={1} marginBottom={1}>
+              <Box borderStyle="double" borderColor="yellow" paddingX={1}>
+                <Text color="yellow" bold>SECURITY ASSESSMENT REPORT (Preview Truncated)</Text>
+              </Box>
+              <Box flexDirection="column" marginTop={1} paddingX={1}>
+                <Text color="yellow" bold>Report size: {lines.length.toLocaleString()} lines ({Math.round(totalChars / 1024)}KB)</Text>
+                <Text dimColor>Inline preview suppressed to prevent terminal overload.</Text>
+                <Text> </Text>
+                <Text color="cyan" bold>Full report saved to disk:</Text>
+                <Text color="cyan">{reportPathHint}</Text>
+                <Text> </Text>
+                <Text dimColor>First {Math.min(20, lines.length)} lines:</Text>
+                {lines.slice(0, Math.min(20, lines.length)).map((line, i) => {
+                  const truncated = line.length > maxLineLength
+                    ? line.slice(0, maxLineLength) + '…'
+                    : line;
+                  return <Text key={i} dimColor>{truncated}</Text>;
+                })}
+                <Text> </Text>
+                <Text dimColor>... ({lines.length - 20} more lines in saved file)</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        // For reasonable-sized reports, show truncated inline version
         const displayLines = lines.length > (maxHead + maxTail)
           ? [...lines.slice(0, maxHead), '', '... (content continues)', '', ...lines.slice(-maxTail)]
           : lines;
+
+        // Truncate individual lines to prevent terminal width issues
+        const truncatedLines = displayLines.map(line =>
+          line.length > maxLineLength ? line.slice(0, maxLineLength) + '…' : line
+        );
+
         return (
           <Box flexDirection="column" marginTop={1} marginBottom={1}>
             <Box borderStyle="double" borderColor="cyan" paddingX={1}>
               <Text color="cyan" bold>SECURITY ASSESSMENT REPORT</Text>
             </Box>
             <Box flexDirection="column" marginTop={1} paddingX={1}>
-              {displayLines.map((line, i) => (
+              {truncatedLines.map((line, i) => (
                 <Text key={i}>{line}</Text>
               ))}
+              {lines.length > (maxHead + maxTail) && (
+                <Box marginTop={1}>
+                  <Text dimColor>Full report saved to disk - check operation output directory</Text>
+                </Box>
+              )}
             </Box>
           </Box>
         );
