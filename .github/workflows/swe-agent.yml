@@ -9,8 +9,8 @@ on:
 jobs:
   swe-agent:
     if: |
-      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'swe-agent') ||
-      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'swe-agent') && contains(github.event.comment.body, '@swe-agent'))
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'caa-swe-agent') ||
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'caa-swe-agent') && contains(github.event.comment.body, '@caa-swe-agent'))
 
     runs-on: ubuntu-latest
 
@@ -38,8 +38,8 @@ jobs:
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          trigger_phrase: "@swe-agent"
-          label_trigger: "swe-agent"
+          trigger_phrase: "@caa-swe-agent"
+          label_trigger: "caa-swe-agent"
           prompt: |
             You are swe-agent, an autonomous development agent for Cyber-AutoAgent.
 
