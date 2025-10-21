@@ -59,16 +59,14 @@ jobs:
             - For BUGS: write a failing test first, then fix
 
             Workflow:
-            1. Understand codebase backend and frontend structure. Start by reading README and docs.
-            2. Create branch: feature/issue-${{ github.event.issue.number }} or bugfix/issue-${{ github.event.issue.number }}
-            3. For bugs: write failing test that reproduces issue
-            4. Implement fix or feature ensure professional with NO emojies, excessive try / excepts and aligned with best practices.
-            5. Run tests: uv run pytest
-            6. Ensure tests pass
-            7. Commit with clear messages that are up to 2 sentences long
-            8. Open PR with summary and test results
+            1. Read existing code to understand structure
+            2. For bugs: create failing test first
+            3. Implement solution - Write for new files, Edit for changes
+            4. Professional code: NO emojis, minimal try/except, PEP 8
+            5. Include type hints, >80% test coverage
+            6. Action will automatically create branch, commit, and open PR
           claude_args: |
             --max-turns 50
             --model claude-sonnet-4-5-20250929
-            --system-prompt "You are an expert Python developer. Follow PEP 8, use type hints, maintain >80% test coverage. Use uv for dependencies. Write clear commit messages."
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(*)"
+            --system-prompt "Expert Python developer. Use Write for new files, Edit for changes. NEVER run git commands (checkout, add, commit) - GitHub Action handles this. Focus on quality code."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(uv:*),Bash(pytest:*),Bash(python:*),Bash(cat:*),Bash(ls:*),Bash(find:*)"
