@@ -19,6 +19,7 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      actions: read
 
     steps:
       - name: Checkout repository
@@ -40,7 +41,14 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           trigger_phrase: "@caa-swe-agent"
           label_trigger: "caa-swe-agent"
+          bot_id: "2152368"
+          bot_name: "caa-swe-agent[bot]"
+          additional_permissions: |
+            actions: read
           prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+
             You are swe-agent, an autonomous development agent for Cyber-AutoAgent.
 
             Read the issue carefully and:
@@ -54,6 +62,10 @@ jobs:
             4. Implement fix or feature ensure professional with NO emojies, excessive try / excepts and aligned with best practices.
             5. Run tests: uv run pytest
             6. Ensure tests pass
-            7. Commit with clear messages that are up to 2 sentances long
+            7. Commit with clear messages that are up to 2 sentences long
             8. Open PR with summary and test results
-          claude_args: "--max-turns 50 --model claude-sonnet-4-5-20250929"
+          claude_args: |
+            --max-turns 50
+            --model claude-sonnet-4-5-20250929
+            --system-prompt "You are an expert Python developer. Follow PEP 8, use type hints, maintain >80% test coverage. Use uv for dependencies. Write clear commit messages."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(*)"
