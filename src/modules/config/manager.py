@@ -852,10 +852,10 @@ class ConfigManager:
             if mem0_provider == "aws_bedrock":
                 embedder_config["config"]["aws_region"] = memory_config.embedder.aws_region
             elif mem0_provider == "azure_openai":
-                # Azure OpenAI requires azure_kwargs configuration
+                embedder_config["config"]["model"] = model_name
                 embedder_config["config"]["azure_kwargs"] = {
                     "api_key": os.getenv("AZURE_API_KEY"),
-                    "azure_deployment": model_name,  # Deployment name from model string
+                    "azure_deployment": model_name,
                     "azure_endpoint": os.getenv("AZURE_API_BASE"),
                     "api_version": os.getenv("AZURE_API_VERSION"),
                 }
@@ -892,10 +892,10 @@ class ConfigManager:
                 },
             }
             if mem0_llm_provider == "azure_openai":
-                # Azure OpenAI requires azure_kwargs configuration
+                llm_config["config"]["model"] = model_name
                 llm_config["config"]["azure_kwargs"] = {
                     "api_key": os.getenv("AZURE_API_KEY"),
-                    "azure_deployment": model_name,  # Deployment name from model string
+                    "azure_deployment": model_name,
                     "azure_endpoint": os.getenv("AZURE_API_BASE"),
                     "api_version": os.getenv("AZURE_API_VERSION"),
                 }
