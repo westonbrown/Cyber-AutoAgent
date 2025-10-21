@@ -1,0 +1,59 @@
+name: SWE-Agent
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  swe-agent:
+    if: |
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'swe-agent') ||
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'swe-agent') && contains(github.event.comment.body, '@swe-agent'))
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWE_AGENT_APP_ID }}
+          private-key: ${{ secrets.SWE_AGENT_PRIVATE_KEY }}
+
+      - name: Run SWE-Agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "@swe-agent"
+          label_trigger: "swe-agent"
+          prompt: |
+            You are swe-agent, an autonomous development agent for Cyber-AutoAgent.
+
+            Read the issue carefully and:
+            - For FEATURES: implement following project conventions
+            - For BUGS: write a failing test first, then fix
+
+            Workflow:
+            1. Understand codebase backend and frontend structure. Start by reading README and docs.
+            2. Create branch: feature/issue-${{ github.event.issue.number }} or bugfix/issue-${{ github.event.issue.number }}
+            3. For bugs: write failing test that reproduces issue
+            4. Implement fix or feature ensure professional with NO emojies, excessive try / excepts and aligned with best practices.
+            5. Run tests: uv run pytest
+            6. Ensure tests pass
+            7. Commit with clear messages that are up to 2 sentances long
+            8. Open PR with summary and test results
+          claude_args: "--max-turns 50 --model claude-sonnet-4-5-20250929"
