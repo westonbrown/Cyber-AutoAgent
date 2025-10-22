@@ -1,0 +1,76 @@
+name: Claude Agent
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude-agent:
+    if: |
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'claude') && contains(github.event.comment.body, '@claude'))
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWE_AGENT_APP_ID }}
+          private-key: ${{ secrets.SWE_AGENT_PRIVATE_KEY }}
+
+      - name: Run Claude Agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "@claude"
+          label_trigger: "claude"
+          bot_id: "2152368"
+          bot_name: "caa-swe-agent[bot]"
+          additional_permissions: |
+            actions: read
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+            ISSUE TITLE: ${{ github.event.issue.title }}
+            ISSUE BODY:
+            ${{ github.event.issue.body }}
+
+            You are Claude, an autonomous development agent for Cyber-AutoAgent.
+
+            Read the issue carefully and:
+            - For FEATURES: implement following project conventions
+            - For BUGS: write a failing test first, then fix
+
+            Workflow:
+            1. Check current branch with 'git branch --show-current' - you are on a feature branch
+            2. Read existing code to understand structure
+            3. For bugs: create failing test first
+            4. Implement solution - Write for new files, Edit for changes
+            5. Professional code: NO emojis, minimal try/except, PEP 8
+            6. Include type hints, >80% test coverage
+            7. git add and commit your changes
+            8. Push to YOUR CURRENT BRANCH using: git push origin HEAD (NEVER push to main)
+            9. Open a PR with: gh pr create --base main --head $(git branch --show-current)
+          claude_args: |
+            --max-turns 100
+            --model claude-sonnet-4-5-20250929
+            --system-prompt "Expert Python developer. Follow PEP 8, use type hints. CRITICAL: You are on a feature branch. NEVER push to main. Always use 'git push origin HEAD' to push to your current branch. Then open PR with gh pr create."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(git add:*),Bash(git commit:*),Bash(git push origin HEAD:*),Bash(git push origin claude*),Bash(git status:*),Bash(git diff:*),Bash(git branch:*),Bash(uv:*),Bash(pytest:*),Bash(python:*),Bash(cat:*),Bash(ls:*),Bash(find:*),Bash(gh pr:*)"
+            --disallowedTools "Bash(git push origin main:*),Bash(git push * main)"
