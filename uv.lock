@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -494,6 +494,7 @@ dependencies = [
     { name = "langchain-aws" },
     { name = "langchain-ollama" },
     { name = "langfuse" },
+    { name = "litellm" },
     { name = "mem0ai" },
     { name = "ollama" },
     { name = "opensearch-py" },
@@ -538,6 +539,7 @@ requires-dist = [
     { name = "langchain-aws", specifier = ">=0.2.0" },
     { name = "langchain-ollama", specifier = ">=0.2.0" },
     { name = "langfuse", specifier = ">=2.0.0" },
+    { name = "litellm", specifier = ">=1.77.1" },
     { name = "mem0ai" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "ollama", specifier = ">=0.1.0" },
