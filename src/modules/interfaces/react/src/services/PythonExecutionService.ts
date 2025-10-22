@@ -351,16 +351,33 @@ export class PythonExecutionService extends EventEmitter {
    * Send user input to the active Python process (newline-terminated)
    */
   public async sendUserInput(input: string): Promise<void> {
+    const timestamp = new Date().toISOString();
+    this.logger.debug(`[${timestamp}] [HITL-ExecService] sendUserInput called with ${input.length} chars`);
+    this.logger.debug(`[${timestamp}] [HITL-ExecService] Input preview: ${input.substring(0, 200)}`);
+
     if (!this.activeProcess || !this.activeProcess.stdin) {
+      this.logger.error(`[${timestamp}] [HITL-ExecService] ERROR: No active Python process`);
+      this.logger.error(`[${timestamp}] [HITL-ExecService] activeProcess=${!!this.activeProcess}, stdin=${!!this.activeProcess?.stdin}`);
       throw new Error('No active Python process to receive input');
     }
+
+    this.logger.debug(`[${timestamp}] [HITL-ExecService] Writing to stdin...`);
+
     return new Promise<void>((resolve, reject) => {
       try {
-        this.activeProcess!.stdin!.write(input.endsWith('\n') ? input : input + '\n', (err?: Error) => {
-          if (err) return reject(err);
+        const finalInput = input.endsWith('\n') ? input : input + '\n';
+        this.logger.debug(`[${timestamp}] [HITL-ExecService] Final input length: ${finalInput.length} chars`);
+
+        this.activeProcess!.stdin!.write(finalInput, (err?: Error) => {
+          if (err) {
+            this.logger.error(`[${timestamp}] [HITL-ExecService] ERROR: Stdin write failed:`, err);
+            return reject(err);
+          }
+          this.logger.info(`[${timestamp}] [HITL-ExecService] ✓ Stdin write successful`);
           resolve();
         });
       } catch (err) {
+        this.logger.error(`[${timestamp}] [HITL-ExecService] ERROR: Exception during write:`, err);
         reject(err as Error);
       }
     });
