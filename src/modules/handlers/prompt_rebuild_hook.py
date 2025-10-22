@@ -23,6 +23,15 @@ from strands.hooks import HookProvider, HookRegistry
 
 logger = logging.getLogger(__name__)
 
+# Import HITL logger for debugging hook interactions
+try:
+    from modules.handlers.hitl.hitl_logger import log_hitl
+    HITL_LOGGING_AVAILABLE = True
+except ImportError:
+    HITL_LOGGING_AVAILABLE = False
+    def log_hitl(*args, **kwargs):
+        pass
+
 
 class PromptRebuildHook(HookProvider):
     """Trigger-based prompt rebuilding (not every step).
@@ -125,12 +134,27 @@ class PromptRebuildHook(HookProvider):
         )
 
         if not should_rebuild:
+            logger.debug(
+                "Prompt rebuild skipped at step %d (last rebuild: step %d)",
+                current_step,
+                self.last_rebuild_step
+            )
+            log_hitl(
+                "PromptRebuild",
+                f"Rebuild skipped at step {current_step} (interval not reached)",
+                "DEBUG"
+            )
             return  # Keep using existing prompt
 
         logger.info(
             "Prompt rebuild triggered at step %d (last rebuild: step %d)",
             current_step,
             self.last_rebuild_step
+        )
+        log_hitl(
+            "PromptRebuild",
+            f"⚠️  Prompt rebuild TRIGGERED at step {current_step} (last: {self.last_rebuild_step})",
+            "WARNING"
         )
 
         # Rebuild prompt with fresh context
@@ -177,7 +201,15 @@ class PromptRebuildHook(HookProvider):
                 logger.warning("Failed to reload execution prompt during rebuild: %s", e)
 
             # Update agent's system prompt
+            old_prompt_len = len(event.agent.system_prompt) if event.agent.system_prompt else 0
             event.agent.system_prompt = new_prompt
+            new_prompt_len = len(new_prompt)
+
+            log_hitl(
+                "PromptRebuild",
+                f"✓ Prompt completely rebuilt: {old_prompt_len} → {new_prompt_len} chars",
+                "WARNING"
+            )
 
             # Update tracking
             self.last_rebuild_step = current_step

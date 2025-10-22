@@ -80,7 +80,11 @@ export type AdditionalStreamEvent =
   | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
   | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any }
-  | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any };
+  | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any }
+  | { type: 'hitl_pause_requested'; tool_name?: string; tool_id?: string; parameters?: any; reason?: string; confidence?: number; [key: string]: any }
+  | { type: 'hitl_feedback_submitted'; feedback_type?: string; content?: string; tool_id?: string; [key: string]: any }
+  | { type: 'hitl_agent_interpretation'; tool_id?: string; interpretation?: string; modified_parameters?: any; awaiting_approval?: boolean; [key: string]: any }
+  | { type: 'hitl_resume'; tool_id?: string; modified_parameters?: any; approved?: boolean; [key: string]: any };
 
 // Combined event type supporting both SDK-aligned and additional events
 export type DisplayStreamEvent = StreamEvent | AdditionalStreamEvent;
@@ -1777,12 +1781,88 @@ const method = latestInput.method || 'GET';
           {('observability' in event) && (
             <Text dimColor>  Observability: {event.observability ? 'enabled' : 'disabled'}</Text>
           )}
+          {('hitl_enabled' in event) && event.hitl_enabled && (
+            <Text color="#A6E3A1">  HITL: enabled - human feedback available</Text>
+          )}
           {('tools_available' in event && event.tools_available) ? (
             <Text dimColor>  Available Tools: {event.tools_available}</Text>
           ) : null}
         </Box>
       );
       
+    case 'hitl_pause_requested': {
+      const toolName = 'tool_name' in event ? String(event.tool_name) : 'unknown';
+      const reason = 'reason' in event ? String(event.reason) : undefined;
+      const confidence = 'confidence' in event && typeof event.confidence === 'number' ? event.confidence : undefined;
+
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Text color="yellow" bold>⚠️  HITL: Tool execution paused for review</Text>
+          <Box marginLeft={2} marginTop={1}>
+            <Text>Tool: <Text bold color="cyan">{toolName}</Text></Text>
+          </Box>
+          {reason && (
+            <Box marginLeft={2}>
+              <Text>Reason: <Text color="yellow">{reason}</Text></Text>
+            </Box>
+          )}
+          {confidence !== undefined && (
+            <Box marginLeft={2}>
+              <Text>Confidence: <Text color={confidence < 50 ? 'red' : confidence < 70 ? 'yellow' : 'green'}>{confidence}%</Text></Text>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    case 'hitl_feedback_submitted': {
+      const feedbackType = 'feedback_type' in event ? String(event.feedback_type) : 'unknown';
+      const content = 'content' in event ? String(event.content) : '';
+      const preview = content.length > 80 ? content.substring(0, 80) + '...' : content;
+
+      return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
+          <Text color="yellow" bold>✓ Feedback Submitted to Agent</Text>
+          <Box marginLeft={2} marginTop={1}>
+            <Text dimColor>Type: </Text>
+            <Text color="yellow">{feedbackType}</Text>
+          </Box>
+          {preview && (
+            <Box marginLeft={2} flexDirection="column">
+              <Text dimColor>Content:</Text>
+              <Text color="yellow">{preview}</Text>
+            </Box>
+          )}
+          <Box marginLeft={2} marginTop={1}>
+            <Text dimColor>→ Agent will process in next step</Text>
+          </Box>
+        </Box>
+      );
+    }
+
+    case 'hitl_agent_interpretation': {
+      const interpretation = 'interpretation' in event ? String(event.interpretation) : '';
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="green" bold>✓ Agent Interpretation:</Text>
+          <Box marginLeft={2}>
+            <Text color="green">{interpretation}</Text>
+          </Box>
+        </Box>
+      );
+    }
+
+    case 'hitl_resume': {
+      const approved = 'approved' in event ? Boolean(event.approved) : false;
+      return (
+        <Box marginTop={1}>
+          <Text color={approved ? 'green' : 'yellow'}>
+            {approved ? '✓ Execution resumed' : '⚠️  Interpretation rejected'}
+          </Text>
+        </Box>
+      );
+    }
+
     default:
       return null;
   }
