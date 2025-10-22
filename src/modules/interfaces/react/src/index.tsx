@@ -156,14 +156,14 @@ const runAutoAssessment = async () => {
   if (cli.flags.autoRun && cli.flags.target) {
     loggingService.info(`🔐 Starting assessment: ${cli.flags.module} → ${cli.flags.target}`);
     loggingService.info(`📌 Objective: ${cli.flags.objective || 'General security assessment'}`);
-    
+
     try {
       // Import config system to get proper defaults and merge with CLI overrides
       const configModule = await import('./contexts/ConfigContext.js');
-      
+
       // Load default config and apply CLI overrides
       const configOverrides: Partial<Config> = {};
-      
+
       // Apply CLI flag overrides
       if (cli.flags.provider) configOverrides.modelProvider = cli.flags.provider as 'bedrock' | 'ollama' | 'litellm';
       if (cli.flags.model) configOverrides.modelId = cli.flags.model;
@@ -172,7 +172,7 @@ const runAutoAssessment = async () => {
       if (cli.flags.observability !== undefined) configOverrides.observability = cli.flags.observability;
       if (cli.flags.debug) configOverrides.verbose = cli.flags.debug;
       if (cli.flags.deploymentMode) configOverrides.deploymentMode = cli.flags.deploymentMode as 'local-cli' | 'single-container' | 'full-stack';
-      
+
       // Use the imported default config
       const defaultConfig = configModule.defaultConfig || {
         // Fallback defaults if import fails
@@ -223,9 +223,22 @@ const runAutoAssessment = async () => {
         minContextPrecisionScore: 0.8,
         isConfigured: true
       };
-      
-      // Merge defaults with CLI overrides
-      const finalConfig = { ...defaultConfig, ...configOverrides } as Config;
+
+      // Load saved configuration from file if it exists
+      let savedConfig: Partial<Config> = {};
+      const configPath = path.join(os.homedir(), '.cyber-autoagent', 'config.json');
+      try {
+        const configData = await fs.promises.readFile(configPath, 'utf-8');
+        savedConfig = JSON.parse(configData);
+        loggingService.info(`📂 Loaded configuration from ${configPath}`);
+      } catch (error) {
+        // Config file doesn't exist or is invalid - use defaults
+        loggingService.info(`📂 No saved configuration found, using defaults`);
+      }
+
+      // Merge: defaults <- saved config <- CLI overrides
+      // This ensures CLI flags have highest priority, saved config has medium priority, defaults have lowest
+      const finalConfig = { ...defaultConfig, ...savedConfig, ...configOverrides } as Config;
       
       loggingService.info(`⚙️  Config: ${finalConfig.iterations} iterations, ${finalConfig.modelProvider}/${finalConfig.modelId}`);
       loggingService.info(`🔭 Observability: ${finalConfig.observability ? 'enabled' : 'disabled'}`);
