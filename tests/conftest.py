@@ -8,8 +8,22 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+# Disable dotenv loading in tests by setting LITELLM_MODE before any imports
+os.environ["LITELLM_MODE"] = "PRODUCTION"
+
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# Ensure provider override envs do not leak into tests expecting defaults
+for _var in (
+    "CYBER_AGENT_PROVIDER",
+    "CYBER_AGENT_LLM_MODEL",
+    "CYBER_AGENT_EMBEDDING_MODEL",
+    "AZURE_API_BASE",
+    "AZURE_API_KEY",
+    "AZURE_API_VERSION",
+):
+    os.environ.pop(_var, None)
 
 
 @pytest.fixture

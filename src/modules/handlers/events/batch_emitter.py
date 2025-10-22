@@ -60,7 +60,7 @@ class BatchingEmitter:
         Returns:
             True if event should bypass batching
         """
-        critical_types = {"error", "user_handoff", "assessment_complete"}
+        critical_types = {"error", "user_handoff", "assessment_complete", "step_header", "report_content"}
         return event.get("type") in critical_types
 
     def _flush(self) -> None:
