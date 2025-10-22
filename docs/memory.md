@@ -343,3 +343,111 @@ Structured finding format ensures consistent evidence collection:
 ```
 
 Memory isolation ensures target-specific knowledge remains separated while enabling cumulative learning across multiple assessment operations against the same target.
+
+## Knowledge Base vs Operation Memory
+
+Cyber-AutoAgent includes two distinct knowledge systems designed for different purposes:
+
+### Knowledge Base (KB) - Static Domain Knowledge
+
+**Purpose:** Preloaded, offline reference knowledge for CVEs, TTPs, threat actors, and exploit patterns
+
+**Characteristics:**
+- **Read-only**: Cannot be modified during operations
+- **Cross-target**: Same knowledge available across all assessments
+- **Static**: Versioned bundles shipped with releases
+- **Offline**: Prebuilt embeddings, no runtime HTTP calls
+- **Deterministic**: Consistent results across operations
+
+**Storage:**
+- Location: `data/kb/content/*.jsonl`
+- Index: `data/kb/index/embeddings.faiss`
+- Structure: JSONL files with metadata (domain, category, tags)
+
+**Tool Interface:**
+```python
+retrieve_kb(
+    query="blind XSS detection techniques",
+    filters={"domain": "web"},
+    max_results=3
+)
+```
+
+**Use Cases:**
+- Lookup CVE exploitation patterns
+- Reference threat actor TTPs
+- Retrieve payload templates
+- Query MITRE ATT&CK techniques
+
+### Operation Memory - Dynamic Assessment Evidence
+
+**Purpose:** Per-target findings, plans, and evidence collected during operations
+
+**Characteristics:**
+- **Read-write**: Actively written during assessments
+- **Target-specific**: Isolated per target
+- **Dynamic**: Grows with each operation
+- **Persistent**: Maintains context across runs
+- **Adaptive**: Enables plan refinement and reflection
+
+**Storage:**
+- Location: `./outputs/<target>/memory/`
+- Structure: FAISS vector store with metadata
+- Backend: FAISS (local) or OpenSearch (AWS)
+
+**Tool Interface:**
+```python
+mem0_memory(
+    action="store",
+    content="[WHAT] SQL injection [WHERE] /login...",
+    metadata={"category": "finding", "severity": "critical"}
+)
+```
+
+**Use Cases:**
+- Store discovered vulnerabilities
+- Track assessment plans and phases
+- Record exploitation attempts
+- Maintain reflection insights
+
+### When to Use Each System
+
+| Task | Use KB | Use Operation Memory |
+|------|--------|---------------------|
+| Look up CVE-2021-44228 (Log4Shell) details | ✅ | ❌ |
+| Store discovered SQL injection in /login | ❌ | ✅ |
+| Reference XSS payload templates | ✅ | ❌ |
+| Record assessment plan phases | ❌ | ✅ |
+| Query APT28 TTPs | ✅ | ❌ |
+| Track evidence artifacts | ❌ | ✅ |
+| Retrieve SSTI detection techniques | ✅ | ❌ |
+| Store reflection on strategy pivot | ❌ | ✅ |
+
+### Configuration
+
+**Knowledge Base:**
+```bash
+# Enable/disable KB
+--kb-enabled
+
+# Max results per query
+--kb-max-results 5
+
+# Environment variables
+export CYBER_KB_ENABLED=true
+export CYBER_KB_MAX_RESULTS=3
+```
+
+**Operation Memory:**
+```bash
+# Memory path
+--memory-path ./outputs/<target>/memory/
+
+# Memory mode
+--memory-mode auto|fresh
+
+# Keep memory after completion
+--keep-memory
+```
+
+Both systems complement each other: KB provides static reference knowledge while operation memory captures dynamic assessment evidence. This separation ensures clean boundaries between curated domain knowledge and operation-specific findings.

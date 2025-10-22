@@ -340,6 +340,18 @@ def main():
         action="store_true",
         help="Enable rubric-based evaluation in addition to Ragas metrics",
     )
+    parser.add_argument(
+        "--kb-enabled",
+        action="store_true",
+        default=True,
+        help="Enable knowledge base for domain knowledge retrieval (default: true)",
+    )
+    parser.add_argument(
+        "--kb-max-results",
+        type=int,
+        default=3,
+        help="Maximum KB results to return per query (default: 3)",
+    )
 
     args = parser.parse_args()
 
@@ -416,6 +428,12 @@ def main():
     # Toggle rubric evaluation via CLI flag
     if args.eval_rubric:
         os.environ["EVAL_RUBRIC_ENABLED"] = "true"
+
+    # Set KB environment variables from CLI flags
+    if hasattr(args, 'kb_enabled'):
+        os.environ["CYBER_KB_ENABLED"] = "true" if args.kb_enabled else "false"
+    if hasattr(args, 'kb_max_results'):
+        os.environ["CYBER_KB_MAX_RESULTS"] = str(args.kb_max_results)
 
     # Ensure PROVIDER env reflects CLI for downstream modules (evaluator)
     os.environ["PROVIDER"] = args.provider

@@ -123,6 +123,16 @@ class VectorStoreConfig:
 
 
 @dataclass
+class KBConfig:
+    """Configuration for Knowledge Base system."""
+
+    enabled: bool = field(default_factory=lambda: os.getenv("CYBER_KB_ENABLED", "true").lower() == "true")
+    max_results: int = field(default_factory=lambda: int(os.getenv("CYBER_KB_MAX_RESULTS", "3")))
+    index_path: str = field(default_factory=lambda: os.getenv("CYBER_KB_INDEX_PATH", "data/kb/index/embeddings.faiss"))
+    version: str = field(default_factory=lambda: os.getenv("CYBER_KB_VERSION", "v0.1.0"))
+
+
+@dataclass
 class MemoryLLMConfig(ModelConfig):
     """Configuration for memory-specific LLM models."""
 
@@ -295,6 +305,7 @@ class ServerConfig:
     memory: MemoryConfig
     evaluation: EvaluationConfig
     swarm: SwarmConfig
+    kb: KBConfig = field(default_factory=KBConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     sdk: SDKConfig = field(default_factory=SDKConfig)
     host: Optional[str] = None
@@ -587,6 +598,9 @@ class ConfigManager:
         # Build swarm configuration
         swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(provider, defaults))
 
+        # Build KB configuration
+        kb_config = KBConfig()
+
         # Build output configuration
         output_config = self._get_output_config(provider, defaults, overrides)
 
@@ -609,6 +623,7 @@ class ConfigManager:
             memory=memory_config,
             evaluation=evaluation_config,
             swarm=swarm_config,
+            kb=kb_config,
             output=output_config,
             sdk=sdk_config,
             host=host,

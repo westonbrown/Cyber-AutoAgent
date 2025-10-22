@@ -147,12 +147,60 @@ outputs/
 
 ## Memory System
 
+Cyber-AutoAgent includes two knowledge systems:
+
+### Operation Memory (Dynamic)
+
+Per-target evidence and findings collected during assessments.
+
 | Mode | Behavior | Use Case |
 |------|----------|----------|
 | **auto** | Loads existing memory, stores new findings | Iterative testing |
 | **fresh** | Empty memory, no historical context | Baseline assessments |
 
 Control via `/config edit` or `--memory-mode` flag.
+
+**CLI Options:**
+```bash
+--memory-mode auto|fresh    # Memory initialization mode
+--keep-memory               # Persist memory after completion
+```
+
+### Knowledge Base (Static)
+
+Preloaded, offline domain knowledge for CVEs, TTPs, and exploit patterns.
+
+**Features:**
+- Read-only curated security knowledge
+- Cross-target reference (not operation-specific)
+- Offline access with no runtime HTTP calls
+- Includes CVEs, threat actors, MITRE ATT&CK, payloads
+
+**CLI Options:**
+```bash
+--kb-enabled                # Enable KB (default: true)
+--kb-max-results 5          # Max results per query
+```
+
+**Environment Variables:**
+```bash
+export CYBER_KB_ENABLED=true
+export CYBER_KB_MAX_RESULTS=3
+```
+
+**Usage Example:**
+```python
+# Agent queries KB for exploitation techniques
+retrieve_kb("blind XSS detection techniques", filters={"domain": "web"})
+```
+
+**Maintenance:**
+```bash
+# Regenerate KB index after adding new entries
+python data/kb/build_kb.py
+```
+
+See [memory.md](memory.md) for detailed comparison of operation memory vs knowledge base.
 
 ## Docker Management
 

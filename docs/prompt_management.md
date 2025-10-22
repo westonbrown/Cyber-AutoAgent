@@ -361,3 +361,204 @@ agent, callback_handler = create_agent(
 
 
 The module system provides a powerful way to specialize Cyber-AutoAgent for different security domains while maintaining consistent core functionality and user experience.
+
+## Knowledge Base Tool Usage
+
+The `retrieve_kb` tool provides offline access to curated security domain knowledge including CVEs, threat actors, TTPs, and payload patterns. Unlike operation memory (dynamic, per-target evidence), the KB is static, cross-target reference knowledge.
+
+### Tool Interface
+
+```python
+retrieve_kb(
+    query: str,
+    filters: Optional[Dict[str, str]] = None,
+    max_results: int = 3
+) -> str
+```
+
+### Usage Examples
+
+**Basic CVE Lookup:**
+```python
+retrieve_kb("Log4Shell exploitation techniques")
+```
+
+**Filtered Query:**
+```python
+retrieve_kb(
+    "blind XSS detection",
+    filters={"domain": "web"}
+)
+```
+
+**Tag-based Search:**
+```python
+retrieve_kb(
+    "credential access techniques",
+    filters={"tactic": "credential_access"}
+)
+```
+
+**Multi-filter Query:**
+```python
+retrieve_kb(
+    "SSTI payloads",
+    filters={"domain": "web", "category": "payload"}
+)
+```
+
+### Available Filters
+
+- **domain**: web, network, api, cloud
+- **category**: cve, technique, payload, actor
+- **tags**: Any tag from KB entries (e.g., xss, sqli, rce, python)
+- **cve**: Specific CVE identifier
+- **tactic**: MITRE ATT&CK tactic
+
+### Response Format
+
+```json
+{
+  "status": "success",
+  "count": 2,
+  "query": "blind XSS detection",
+  "filters": {"domain": "web"},
+  "results": [
+    {
+      "id": "xss-blind-detection",
+      "domain": "web",
+      "category": "technique",
+      "content": "Blind XSS requires out-of-band exfiltration...",
+      "tags": ["xss", "oob", "blind"],
+      "source": "OWASP XSS Guide"
+    }
+  ]
+}
+```
+
+### Integration Patterns
+
+**Pre-Exploitation Research:**
+```python
+# Before attempting exploitation, lookup known patterns
+kb_result = retrieve_kb("SSTI Jinja2 RCE")
+# Extract payload templates from results
+# Apply payloads to target
+```
+
+**Threat Intelligence:**
+```python
+# Identify adversary TTPs during investigation
+kb_result = retrieve_kb("APT28 credential access")
+# Cross-reference with observed behavior
+```
+
+**Payload Generation:**
+```python
+# Retrieve payload templates
+kb_result = retrieve_kb(
+    "XSS payload templates",
+    filters={"domain": "web", "category": "payload"}
+)
+# Adapt payloads to target context
+```
+
+### Best Practices
+
+**1. Query Early:**
+Query the KB at the beginning of exploitation attempts to leverage known patterns:
+```python
+# Good: Research before exploitation
+kb_payloads = retrieve_kb("SQLi union payloads", filters={"domain": "web"})
+# Then apply payloads to target
+```
+
+**2. Use Filters:**
+Narrow results with filters to get more relevant knowledge:
+```python
+# More specific than generic query
+retrieve_kb("RCE techniques", filters={"domain": "web", "category": "technique"})
+```
+
+**3. Limit Results:**
+Use `max_results` to control token usage:
+```python
+retrieve_kb("XSS payloads", max_results=2)  # Only top 2 matches
+```
+
+**4. Combine with Operation Memory:**
+Use KB for reference, operation memory for findings:
+```python
+# KB: Lookup known exploitation pattern
+kb_pattern = retrieve_kb("XXE file read techniques")
+
+# Memory: Store discovered vulnerability
+mem0_memory(
+    action="store",
+    content="[WHAT] XXE [WHERE] /upload [EVIDENCE] /etc/passwd read successful",
+    metadata={"category": "finding", "severity": "high"}
+)
+```
+
+### Configuration
+
+**Environment Variables:**
+```bash
+export CYBER_KB_ENABLED=true          # Enable/disable KB
+export CYBER_KB_MAX_RESULTS=3         # Default max results
+export CYBER_KB_BASE_DIR=data/kb      # KB data directory
+```
+
+**CLI Flags:**
+```bash
+python src/cyberautoagent.py \
+  --kb-enabled \
+  --kb-max-results 5 \
+  --target example.com \
+  --objective "Web application assessment"
+```
+
+### Maintenance
+
+**Updating KB Content:**
+
+1. Edit JSONL files in `data/kb/content/`
+2. Run build script to regenerate index:
+   ```bash
+   python data/kb/build_kb.py
+   ```
+3. Commit updated files
+
+**Adding New Entries:**
+
+```json
+{
+  "id": "unique-identifier",
+  "domain": "web|network|api|cloud",
+  "category": "cve|technique|payload|actor",
+  "content": "Concise description (200-400 tokens)",
+  "tags": ["tag1", "tag2", "tag3"],
+  "source": "Reference source"
+}
+```
+
+**KB Versioning:**
+
+The KB is versioned via `manifest.json`:
+```json
+{
+  "version": "v0.1.0",
+  "created_at": "2025-10-22T02:38:00Z",
+  "entry_count": 20,
+  "has_faiss_index": true
+}
+```
+
+### Limitations
+
+- **Read-only**: Cannot modify KB during operations
+- **Static**: Updates require rebuilding the index
+- **Offline-first**: No live threat intelligence feeds
+- **Curated**: Limited to preloaded entries
+
+For dynamic, operation-specific knowledge, use operation memory (`mem0_memory` tool) instead.
