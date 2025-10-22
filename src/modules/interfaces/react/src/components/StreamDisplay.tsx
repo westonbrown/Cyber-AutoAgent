@@ -1114,10 +1114,15 @@ const method = latestInput.method || 'GET';
 
         // If content is extremely large, show minimal preview with clear message
         if (totalChars > maxTotalChars || lines.length > maxLines) {
-          // Get report path if available from related events
-          const reportPathHint = operationContext?.reportPath
-            ? operationContext.reportPath
-            : 'Check operation output directory for security_assessment_report.md';
+          // Extract report path from content if backend prepended it
+          const pathMatch = content.match(/^\[REPORT_PATH: ([^\]]+)\]/);
+          const reportPathHint = pathMatch
+            ? pathMatch[1]
+            : operationContext?.reportPath || 'Check operation output directory for security_assessment_report.md';
+
+          // Remove path marker from display if present
+          const displayContent = pathMatch ? content.replace(/^\[REPORT_PATH: [^\]]+\]\n\n/, '') : content;
+          const displayLines = displayContent.split('\n');
 
           return (
             <Box flexDirection="column" marginTop={1} marginBottom={1}>
@@ -1131,15 +1136,15 @@ const method = latestInput.method || 'GET';
                 <Text color="cyan" bold>Full report saved to disk:</Text>
                 <Text color="cyan">{reportPathHint}</Text>
                 <Text> </Text>
-                <Text dimColor>First {Math.min(20, lines.length)} lines:</Text>
-                {lines.slice(0, Math.min(20, lines.length)).map((line, i) => {
+                <Text dimColor>First {Math.min(20, displayLines.length)} lines:</Text>
+                {displayLines.slice(0, Math.min(20, displayLines.length)).map((line, i) => {
                   const truncated = line.length > maxLineLength
                     ? line.slice(0, maxLineLength) + '…'
                     : line;
                   return <Text key={i} dimColor>{truncated}</Text>;
                 })}
                 <Text> </Text>
-                <Text dimColor>... ({lines.length - 20} more lines in saved file)</Text>
+                <Text dimColor>... ({displayLines.length - 20} more lines in saved file)</Text>
               </Box>
             </Box>
           );
@@ -1172,8 +1177,22 @@ const method = latestInput.method || 'GET';
             </Box>
           </Box>
         );
-      } catch {
-        return null;
+      } catch (error) {
+        // Fallback if rendering fails - at least show something to the user
+        return (
+          <Box flexDirection="column" marginTop={1} marginBottom={1}>
+            <Box borderStyle="double" borderColor="red" paddingX={1}>
+              <Text color="red" bold>REPORT GENERATION ERROR</Text>
+            </Box>
+            <Box flexDirection="column" marginTop={1} paddingX={1}>
+              <Text color="red">Failed to render report content</Text>
+              <Text dimColor>Report was generated but could not be displayed inline</Text>
+              <Text> </Text>
+              <Text color="cyan">Full report saved to:</Text>
+              <Text color="cyan">./outputs/[target]/[operation_id]/security_assessment_report.md</Text>
+            </Box>
+          </Box>
+        );
       }
     }
 

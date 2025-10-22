@@ -2794,21 +2794,21 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
 
-                    # Emit the full report content to the UI using a dedicated event understood by the React frontend
-                    # This avoids heavy generic 'output' rendering and ensures consistent report presentation.
+                    # Emit report content - truncate if needed to stay under IPC buffer limits
+                    # Docker/IPC drops events >50KB silently. Truncate to ~200 lines (~12KB) and
+                    # let React's StreamDisplay.tsx handle display/truncation from there
                     try:
-                        self._emit_ui_event({"type": "report_content", "content": report_content})
-                    except Exception:
-                        # Fallback: if dedicated event emission fails, send a truncated output preview
-                        try:
-                            if len(report_content) > 20000:
-                                preview = report_content[:20000] + "\n... (truncated - see saved file for full report)"
-                                self._emit_ui_event({"type": "output", "content": preview})
-                            else:
-                                self._emit_ui_event({"type": "output", "content": report_content})
-                        except Exception:
-                            # Final fallback note
-                            self._emit_ui_event({"type": "output", "content": "⚠️ Report generated but could not be inlined due to size. See saved file path below."})
+                        if len(report_content) > 15000:  # 15KB threshold for IPC safety
+                            # Truncate to first 200 lines to ensure event reaches React
+                            lines = report_content.split('\n')
+                            truncated_content = '\n'.join(lines[:200])
+                            logger.info(f"Report truncated from {len(lines)} to 200 lines for IPC transmission ({len(report_content)} -> {len(truncated_content)} chars)")
+                            self._emit_ui_event({"type": "report_content", "content": truncated_content})
+                        else:
+                            self._emit_ui_event({"type": "report_content", "content": report_content})
+                    except Exception as e:
+                        logger.warning(f"Failed to emit report content: {e}")
+                        self._emit_ui_event({"type": "output", "content": f"Report generated: {report_path}"})
 
                     # Also emit file path information for reference
                     self._emit_ui_event(
