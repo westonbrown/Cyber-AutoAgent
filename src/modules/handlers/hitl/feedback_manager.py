@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
+from .hitl_logger import log_hitl
 from .types import (
     AgentInterpretation,
     FeedbackType,
@@ -141,6 +142,15 @@ class FeedbackManager:
             content: Feedback content
             tool_id: Tool invocation ID
         """
+        log_hitl(
+            "FeedbackMgr",
+            "submit_feedback() called",
+            "INFO",
+            feedback_type=feedback_type.value,
+            content_length=len(content),
+            tool_id=tool_id,
+        )
+
         logger.info(
             "[HITL-FM] Feedback submitted for tool %s: type=%s, operation=%s",
             tool_id,
@@ -160,8 +170,22 @@ class FeedbackManager:
             timestamp=time.time(),
         )
 
+        log_hitl(
+            "FeedbackMgr",
+            f"Created UserFeedback object at timestamp={feedback.timestamp}",
+            "DEBUG",
+        )
+
+        old_state = self.state
         self.pending_feedback = feedback
         self.feedback_queue[tool_id] = feedback
+
+        log_hitl(
+            "FeedbackMgr",
+            f"✓ Feedback stored in state - pending_feedback={'SET' if self.pending_feedback else 'None'}",
+            "INFO",
+            queue_size=len(self.feedback_queue),
+        )
 
         logger.debug(
             "[HITL-FM] Feedback stored - pending_feedback=%s, queue_size=%d",
@@ -186,6 +210,11 @@ class FeedbackManager:
             self._store_intervention(feedback)
 
         self.state = HITLState.AWAITING_CONFIRMATION
+        log_hitl(
+            "FeedbackMgr",
+            f"State transitioned: {old_state.name} → {self.state.name}",
+            "INFO",
+        )
 
     def set_agent_interpretation(
         self,
@@ -290,8 +319,11 @@ class FeedbackManager:
         Returns:
             Formatted message if feedback pending, None otherwise
         """
+        log_hitl("FeedbackMgr", "get_pending_feedback_message() called", "INFO")
+
         if not self.pending_feedback:
             logger.debug("[HITL-FM] No pending feedback to retrieve")
+            log_hitl("FeedbackMgr", "No pending feedback found - returning None", "INFO")
             return None
 
         feedback = self.pending_feedback
@@ -310,21 +342,38 @@ Please incorporate this feedback and adjust your approach accordingly. Continue 
         )
         logger.debug("[HITL-FM] Formatted message preview:\n%s", message[:300])
 
+        log_hitl(
+            "FeedbackMgr",
+            f"✓ Formatted feedback message: {len(message)} chars",
+            "INFO",
+            feedback_type=feedback.feedback_type.value,
+            message_preview=message[:100],
+        )
+
         return message
 
     def clear_pending_feedback(self) -> None:
         """Clear pending feedback after it has been injected into agent context."""
+        log_hitl("FeedbackMgr", "clear_pending_feedback() called", "INFO")
+
         if self.pending_feedback:
+            feedback_info = f"type={self.pending_feedback.feedback_type.value}, tool_id={self.pending_feedback.tool_id}"
             logger.info(
                 "[HITL-FM] Clearing pending feedback after injection (type=%s, tool_id=%s)",
                 self.pending_feedback.feedback_type.value,
                 self.pending_feedback.tool_id,
             )
             self.pending_feedback = None
+            log_hitl(
+                "FeedbackMgr",
+                f"✓ Cleared pending feedback: {feedback_info}",
+                "INFO",
+            )
         else:
             logger.warning(
                 "[HITL-FM] clear_pending_feedback called but no feedback was pending"
             )
+            log_hitl("FeedbackMgr", "WARNING: No feedback to clear", "WARNING")
 
     def _store_intervention(self, feedback: UserFeedback) -> None:
         """Store intervention in memory and logs.

@@ -24,18 +24,27 @@ export const setExecutionServiceForHITL = (service: ExecutionService | null): vo
  * format for the Python FeedbackInputHandler to parse.
  */
 const sendHITLCommand = async (command: Record<string, any>): Promise<void> => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [HITL-UI] Preparing to send command:`, JSON.stringify(command, null, 2));
+
   try {
     const commandJson = JSON.stringify(command);
     const formattedCommand = `__HITL_COMMAND__${commandJson}__HITL_COMMAND_END__`;
 
+    console.log(`[${timestamp}] [HITL-UI] Formatted command length: ${formattedCommand.length} chars`);
+    console.log(`[${timestamp}] [HITL-UI] Formatted command:`, formattedCommand);
+
     // Send via execution service to Python process stdin
     if (_executionService && 'sendUserInput' in _executionService) {
+      console.log(`[${timestamp}] [HITL-UI] Execution service available, calling sendUserInput`);
       await (_executionService as any).sendUserInput(formattedCommand);
+      console.log(`[${timestamp}] [HITL-UI] sendUserInput completed successfully`);
     } else {
-      console.error('[HITL] No execution service available to send command');
+      console.error(`[${timestamp}] [HITL-UI] ERROR: No execution service available to send command`);
+      console.error(`[${timestamp}] [HITL-UI] _executionService:`, _executionService);
     }
   } catch (error) {
-    console.error('Failed to send HITL command:', error);
+    console.error(`[${timestamp}] [HITL-UI] ERROR: Failed to send HITL command:`, error);
   }
 };
 
@@ -47,6 +56,14 @@ export const submitFeedback = (
   content: string,
   toolId: string
 ): void => {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] [HITL-UI] submitFeedback() called:`, {
+    feedbackType,
+    contentLength: content.length,
+    toolId,
+    contentPreview: content.substring(0, 100)
+  });
+
   sendHITLCommand({
     type: 'submit_feedback',
     feedback_type: feedbackType,
