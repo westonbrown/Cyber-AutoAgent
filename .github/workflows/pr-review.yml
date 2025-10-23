@@ -1,16 +1,16 @@
 name: PR Review
 
 on:
-  pull_request_review_comment:
-    types: [created]
   issue_comment:
+    types: [created]
+  pull_request_review_comment:
     types: [created]
 
 jobs:
   pr-review:
     if: |
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude'))
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
 
     runs-on: ubuntu-latest
 
@@ -43,6 +43,6 @@ jobs:
           bot_name: "caa-swe-agent[bot]"
           track_progress: true
           claude_args: |
-            --max-turns 30
+            --max-turns 50
             --model claude-sonnet-4-5-20250929
             --system-prompt "Code reviewer for Cyber-AutoAgent. Review for: PEP 8 compliance, logical code flow, no over-engineering, no emojis, minimal try/except blocks, proper error handling, security issues, test coverage >80%, type hints required. Flag: unnecessary abstractions, excessive nesting, missing edge cases. Be direct and constructive. No praise without substance."
