@@ -168,6 +168,25 @@ export interface Config {
   theme: 'default' | 'dark' | 'light' | 'hacker' | 'retro';
   showMemoryUsage: boolean;
   showOperationId: boolean; // Show operation ID in UI
+
+  // UI Stream Settings - NPM App Hardening
+  ui?: {
+    stream?: {
+      maxEvents?: number; // Maximum events to keep in memory (default: 3000)
+    };
+    metrics?: {
+      showByDefault?: boolean; // Show metrics panel by default (default: false)
+    };
+    input?: {
+      history?: {
+        enabled?: boolean; // Enable command input history (default: true)
+        maxItems?: number; // Maximum history items to keep (default: 50)
+      };
+    };
+    session?: {
+      autoArchive?: boolean; // Automatically archive sessions on completion (default: false)
+    };
+  };
   
   // Environment Variables
   environment: EnvironmentMap;
@@ -431,6 +450,25 @@ export const defaultConfig: Config = {
   theme: 'retro', // Default to retro theme for 80s aesthetic
   showMemoryUsage: false,
   showOperationId: true, // Show operation ID for tracking
+
+  // UI Stream Settings - NPM App Hardening
+  ui: {
+    stream: {
+      maxEvents: Number(process.env.CYBER_MAX_EVENTS) || 3000
+    },
+    metrics: {
+      showByDefault: false // Default to collapsed for small terminals
+    },
+    input: {
+      history: {
+        enabled: true, // Enable command history by default
+        maxItems: 50
+      }
+    },
+    session: {
+      autoArchive: false // Manual archive by default
+    }
+  },
   
   // Environment Variables
   environment: {} as EnvironmentMap,
