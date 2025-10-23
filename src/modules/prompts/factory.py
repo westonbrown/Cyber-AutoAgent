@@ -669,6 +669,21 @@ def get_system_prompt(
             # Only append tools_guide if we have a valid absolute path to inject
             if tools_path:
                 tools_guide = tools_guide.replace("{{operation_tools_dir}}", tools_path)
+
+                # Inject KB configuration if enabled
+                kb_enabled = os.getenv("CYBER_KB_ENABLED", "true").lower() == "true"
+                kb_max_results = os.getenv("CYBER_KB_MAX_RESULTS", "3")
+                if kb_enabled:
+                    kb_section = (
+                        f"\n\n**retrieve_kb** (Knowledge Base)\n"
+                        f"- Purpose: Query preloaded security domain knowledge (CVEs, TTPs, payloads, threat actors)\n"
+                        f"- Usage: retrieve_kb(query, filters={{}}, max_results={kb_max_results})\n"
+                        f"- Examples: retrieve_kb(\"blind XSS detection\") | retrieve_kb(\"SSTI Twig2\", filters={{\"domain\": \"web\"}})\n"
+                        f"- Returns: Concise passages (200-400 tokens each) from curated offline knowledge\n"
+                        f"- Distinction: KB = static cross-target reference | mem0_memory = dynamic per-target evidence\n"
+                    )
+                    tools_guide = tools_guide + kb_section
+
                 parts.append(tools_guide.strip())
     except Exception:
         pass

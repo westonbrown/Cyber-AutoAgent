@@ -156,13 +156,21 @@ const CONFIG_FIELDS: ConfigField[] = [
       { label: 'HTML', value: 'html' }
     ]
   },
-  { key: 'unifiedOutput', label: 'Unified Output Structure', type: 'boolean', section: 'Output' }
+  { key: 'unifiedOutput', label: 'Unified Output Structure', type: 'boolean', section: 'Output' },
+
+  // Knowledge Base
+  { key: 'kbEnabled', label: 'Enable Knowledge Base', type: 'boolean', section: 'Knowledge Base' },
+  { key: 'kbMaxResults', label: 'Max KB Results', type: 'number', section: 'Knowledge Base',
+    description: 'Maximum number of knowledge base results to return (1-10)' },
+  { key: 'kbVersion', label: 'KB Version', type: 'text', section: 'Knowledge Base',
+    description: 'Current knowledge base version (read-only)' }
 ];
 
 const SECTIONS: ConfigSection[] = [
   { name: 'Models', label: 'Models & Credentials', description: 'AI provider and authentication', expanded: false },
   { name: 'Operations', label: 'Operations', description: 'Execution parameters', expanded: false },
   { name: 'Memory', label: 'Memory', description: 'Vector storage configuration', expanded: false },
+  { name: 'Knowledge Base', label: 'Knowledge Base', description: 'Preloaded security domain knowledge (read-only, cross-target)', expanded: false },
   { name: 'Observability', label: 'Observability', description: 'Remote tracing (auto-detected, token counting always enabled)', expanded: false },
   { name: 'Evaluation', label: 'Evaluation', description: 'Quality assessment with Ragas (auto-detected)', expanded: false },
   { name: 'Pricing', label: 'Model Pricing', description: 'Token cost configuration per 1K tokens', expanded: false },
@@ -698,6 +706,11 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
     // Prevent editing of read-only fields
     if (field.key === 'modelPricingInfo') {
       showMessage('Model pricing is configured in ~/.cyber-autoagent/config.json under "modelPricing"', 'info');
+      return;
+    }
+
+    if (field.key === 'kbVersion') {
+      showMessage('KB version is read-only. Version is set in data/kb/manifest.json', 'info');
       return;
     }
 

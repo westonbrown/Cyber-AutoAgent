@@ -79,6 +79,8 @@ export type AdditionalStreamEvent =
   | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any }
   | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
+  | { type: 'kb_query'; query: string; filters?: Record<string, string>; [key: string]: any }
+  | { type: 'kb_result'; query: string; results: any[]; count?: number; [key: string]: any }
   | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any }
   | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any };
 
@@ -1538,18 +1540,18 @@ const method = latestInput.method || 'GET';
       if (!('tool' in event) || !('output' in event)) {
         return null;
       }
-      
+
       const toolName = event.tool as string;
       const toolStatus = (event.status as string) || 'success';
       const output = event.output as any;
-      
+
       // Extract text content
       const outputText = output?.text || '';
-      
+
       if (!outputText.trim()) {
         return null;
       }
-      
+
       return (
         <Box flexDirection="column" marginTop={1}>
           <Box>
@@ -1560,6 +1562,58 @@ const method = latestInput.method || 'GET';
           <Box marginLeft={2}>
             <Text>{outputText}</Text>
           </Box>
+        </Box>
+      );
+    }
+
+    case 'kb_query': {
+      // Knowledge Base query event
+      const query = event.query as string;
+      const filters = event.filters as Record<string, string> | undefined;
+
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color="cyan" bold>📚 KB Query: </Text>
+            <Text>{query}</Text>
+          </Box>
+          {filters && Object.keys(filters).length > 0 && (
+            <Box marginLeft={2}>
+              <Text dimColor>Filters: {JSON.stringify(filters)}</Text>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    case 'kb_result': {
+      // Knowledge Base result event
+      const query = event.query as string;
+      const results = event.results as any[];
+      const count = event.count as number || results?.length || 0;
+
+      if (!results || results.length === 0) {
+        return (
+          <Box marginLeft={2}>
+            <Text dimColor>No KB results found</Text>
+          </Box>
+        );
+      }
+
+      return (
+        <Box flexDirection="column" marginLeft={2}>
+          <Text color="green">✓ Found {count} KB result{count !== 1 ? 's' : ''}</Text>
+          {results.slice(0, 3).map((result: any, index: number) => (
+            <Box key={index} flexDirection="column" marginTop={1} paddingLeft={2}>
+              <Text bold>{result.id || `Result ${index + 1}`}</Text>
+              {result.category && <Text dimColor>Category: {result.category}</Text>}
+              {result.domain && <Text dimColor>Domain: {result.domain}</Text>}
+              <Text>{(result.content || '').substring(0, 200)}{(result.content || '').length > 200 ? '...' : ''}</Text>
+            </Box>
+          ))}
+          {results.length > 3 && (
+            <Text dimColor marginTop={1}>... and {results.length - 3} more result{results.length - 3 !== 1 ? 's' : ''}</Text>
+          )}
         </Box>
       );
     }

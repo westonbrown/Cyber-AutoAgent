@@ -1,0 +1,25 @@
+{
+  "version": "v0.1.0",
+  "created_at": "2025-10-22T02:38:00Z",
+  "description": "Preloaded offline security domain knowledge base",
+  "embedding_model": "amazon.titan-embed-text-v2:0",
+  "embedding_dims": 1024,
+  "sources": [
+    "OWASP Top 10",
+    "MITRE ATT&CK",
+    "CVE Database",
+    "Common Exploit Patterns"
+  ],
+  "categories": [
+    "cve",
+    "technique",
+    "payload",
+    "actor"
+  ],
+  "domains": [
+    "web",
+    "network",
+    "api",
+    "cloud"
+  ]
+}
