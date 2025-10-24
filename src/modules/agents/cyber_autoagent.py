@@ -329,14 +329,21 @@ def _create_litellm_model(
         if sagemaker_base_url:
             client_args["sagemaker_base_url"] = sagemaker_base_url
 
+    # Check if this is a reasoning model (OpenAI O1/O3/GPT-5)
+    # These models require temperature=1.0 and don't support top_p
+    is_reasoning_model = any(
+        identifier in model_id.lower()
+        for identifier in ["o1-", "o3-", "gpt-5", "reasoning"]
+    )
+
     # Build params dict with optional reasoning parameters
     params = {
-        "temperature": config["temperature"],
+        "temperature": 1.0 if is_reasoning_model else config["temperature"],
         "max_tokens": config["max_tokens"],
     }
 
-    # Only include top_p if present in config (avoid provider conflicts)
-    if "top_p" in config:
+    # Only include top_p if present in config and not a reasoning model
+    if "top_p" in config and not is_reasoning_model:
         params["top_p"] = config["top_p"]
 
     # Add reasoning parameters if set (O1/GPT-5 support)
