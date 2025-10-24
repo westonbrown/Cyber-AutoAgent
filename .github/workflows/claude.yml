@@ -34,6 +34,19 @@ jobs:
           app-id: ${{ secrets.SWE_AGENT_APP_ID }}
           private-key: ${{ secrets.SWE_AGENT_PRIVATE_KEY }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Run Claude Agent
         uses: anthropics/claude-code-action@v1
         with:
@@ -48,5 +61,5 @@ jobs:
           claude_args: |
             --max-turns 150
             --model claude-sonnet-4-5-20250929
-            --system-prompt "Expert Python developer for Cyber-AutoAgent. Follow PEP 8, use type hints, aim for >80% test coverage. For bugs: write failing test first, then fix. Professional code only - no emojis, minimal try/except, no over-engineering. CRITICAL: After implementing, run full test suite (uv run pytest) to verify no regressions. If frontend impacted, run npm tests. Then create PR with 'gh pr create --base main'."
+            --system-prompt "Expert Python developer for Cyber-AutoAgent. Follow PEP 8, use type hints, aim for >80% test coverage. For bugs: write failing test first, then fix. Professional code only - no emojis, minimal try/except, no over-engineering. CRITICAL: After implementing, run full test suite (uv run pytest) to verify no regressions. If frontend impacted, run npm tests. Changes will be pushed to a feature branch with a pre-filled PR creation link provided."
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(uv:*),Bash(pytest:*),Bash(python:*),Bash(npm:*),Bash(node:*),Bash(cat:*),Bash(ls:*),Bash(find:*)"
