@@ -90,8 +90,7 @@ const cli = meow(`
     },
     iterations: {
       type: 'number',
-      shortFlag: 'i',
-      default: 100  // Match Python CLI and config defaults
+      shortFlag: 'i'
     },
     autoRun: {
       type: 'boolean',
@@ -106,19 +105,16 @@ const cli = meow(`
       default: 'auto'
     },
     provider: {
-      type: 'string',
-      default: 'bedrock'
+      type: 'string'
     },
     model: {
       type: 'string'
     },
     region: {
-      type: 'string',
-      default: 'us-east-1'
+      type: 'string'
     },
     observability: {
-      type: 'boolean',
-      default: true
+      type: 'boolean'
     },
     debug: {
       type: 'boolean',
@@ -129,8 +125,7 @@ const cli = meow(`
       default: false
     },
     deploymentMode: {
-      type: 'string',
-      default: 'local-cli'
+      type: 'string'
     }
   }
 });
