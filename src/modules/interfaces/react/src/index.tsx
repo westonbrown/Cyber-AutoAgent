@@ -90,8 +90,7 @@ const cli = meow(`
     },
     iterations: {
       type: 'number',
-      shortFlag: 'i',
-      default: 100  // Match Python CLI and config defaults
+      shortFlag: 'i'
     },
     autoRun: {
       type: 'boolean',
@@ -106,19 +105,16 @@ const cli = meow(`
       default: 'auto'
     },
     provider: {
-      type: 'string',
-      default: 'bedrock'
+      type: 'string'
     },
     model: {
       type: 'string'
     },
     region: {
-      type: 'string',
-      default: 'us-east-1'
+      type: 'string'
     },
     observability: {
-      type: 'boolean',
-      default: true
+      type: 'boolean'
     },
     debug: {
       type: 'boolean',
@@ -129,8 +125,7 @@ const cli = meow(`
       default: false
     },
     deploymentMode: {
-      type: 'string',
-      default: 'local-cli'
+      type: 'string'
     }
   }
 });
@@ -224,8 +219,21 @@ const runAutoAssessment = async () => {
         isConfigured: true
       };
       
-      // Merge defaults with CLI overrides
-      const finalConfig = { ...defaultConfig, ...configOverrides } as Config;
+      // Load saved configuration from file if it exists
+      let savedConfig: Partial<Config> = {};
+      const configPath = path.join(os.homedir(), '.cyber-autoagent', 'config.json');
+      try {
+        const configData = await fs.promises.readFile(configPath, 'utf-8');
+        savedConfig = JSON.parse(configData);
+        loggingService.info(`📂 Loaded configuration from ${configPath}`);
+      } catch (error) {
+        // Config file doesn't exist or is invalid - use defaults
+        loggingService.info(`📂 No saved configuration found, using defaults`);
+      }
+
+      // Merge: defaults <- saved config <- CLI overrides
+      // This ensures CLI flags have highest priority, saved config has medium priority, defaults have lowest
+      const finalConfig = { ...defaultConfig, ...savedConfig, ...configOverrides } as Config;
       
       loggingService.info(`⚙️  Config: ${finalConfig.iterations} iterations, ${finalConfig.modelProvider}/${finalConfig.modelId}`);
       loggingService.info(`🔭 Observability: ${finalConfig.observability ? 'enabled' : 'disabled'}`);
