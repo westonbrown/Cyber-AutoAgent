@@ -20,7 +20,7 @@ import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { calculateAvailableHeight } from '../utils/layoutConstants.js';
-import { submitFeedback, confirmInterpretation, requestManualIntervention, setExecutionServiceForHITL } from '../utils/hitlCommands.js';
+import { submitFeedback, requestManualIntervention, setExecutionServiceForHITL } from '../utils/hitlCommands.js';
 import { ActionType } from '../hooks/useApplicationState.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
@@ -124,21 +124,6 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         }
       }
       // [c] is handled by HITLInterventionPanel to switch to feedback mode
-    }
-
-    // Confirmation mode: y/n keys (for destructive operations after agent interprets feedback)
-    if (hitlInterpretation) {
-      if (input === 'y') {
-        confirmInterpretation(true, hitlInterpretation.toolId);
-        if (dispatch) {
-          dispatch({ type: ActionType.CLEAR_HITL_STATE });
-        }
-      } else if (input === 'n') {
-        confirmInterpretation(false, hitlInterpretation.toolId);
-        if (dispatch) {
-          dispatch({ type: ActionType.CLEAR_HITL_STATE });
-        }
-      }
     }
   });
 
@@ -671,21 +656,6 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
           dispatch({
             type: ActionType.SET_USER_HANDOFF,
             payload: true
-          });
-        }
-        results.push(event as DisplayStreamEvent);
-        break;
-
-      case 'hitl_agent_interpretation':
-        // Update HITL state when agent provides interpretation
-        if (dispatch && event.awaiting_approval) {
-          dispatch({
-            type: ActionType.SET_HITL_INTERPRETATION,
-            payload: {
-              toolId: event.tool_id || '',
-              text: event.interpretation || '',
-              modifiedParameters: event.modified_parameters || {}
-            }
           });
         }
         results.push(event as DisplayStreamEvent);

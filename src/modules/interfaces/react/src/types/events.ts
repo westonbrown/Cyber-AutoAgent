@@ -205,8 +205,6 @@ export enum EventType {
   HITL_PAUSE_REQUESTED = 'hitl_pause_requested',
   /** User feedback submitted for pending tool */
   HITL_FEEDBACK_SUBMITTED = 'hitl_feedback_submitted',
-  /** Agent interpretation of user feedback */
-  HITL_AGENT_INTERPRETATION = 'hitl_agent_interpretation',
   /** Execution resumed after feedback processing */
   HITL_RESUME = 'hitl_resume',
 
@@ -449,7 +447,7 @@ export interface AgentEvent extends BaseEvent {
 
 // HITL (Human-in-the-Loop) events
 export interface HITLEvent extends BaseEvent {
-  type: EventType.HITL_PAUSE_REQUESTED | EventType.HITL_FEEDBACK_SUBMITTED | EventType.HITL_AGENT_INTERPRETATION | EventType.HITL_RESUME;
+  type: EventType.HITL_PAUSE_REQUESTED | EventType.HITL_FEEDBACK_SUBMITTED | EventType.HITL_RESUME;
   /** Tool name being reviewed */
   tool_name?: string;
   /** Unique tool invocation ID */
@@ -464,14 +462,6 @@ export interface HITLEvent extends BaseEvent {
   feedback_type?: string;
   /** Feedback content from user */
   content?: string;
-  /** Agent's interpretation of feedback */
-  interpretation?: string;
-  /** Modified parameters after feedback */
-  modified_parameters?: Record<string, any>;
-  /** Whether interpretation awaits user approval */
-  awaiting_approval?: boolean;
-  /** Whether interpretation was approved */
-  approved?: boolean;
 }
 
 // Python event system events

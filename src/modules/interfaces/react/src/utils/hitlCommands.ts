@@ -73,20 +73,6 @@ export const submitFeedback = (
 };
 
 /**
- * Confirm or reject the agent's interpretation of feedback
- */
-export const confirmInterpretation = (
-  approved: boolean,
-  toolId: string
-): void => {
-  sendHITLCommand({
-    type: 'confirm_interpretation',
-    approved,
-    tool_id: toolId,
-  });
-};
-
-/**
  * Request manual intervention (pause agent for human review)
  */
 export const requestManualIntervention = (): void => {

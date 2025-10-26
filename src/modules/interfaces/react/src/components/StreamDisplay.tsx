@@ -86,8 +86,7 @@ export type AdditionalStreamEvent =
   | { type: 'report_paths'; operation_id?: string; target?: string; outputDir?: string; reportPath?: string; logPath?: string; memoryPath?: string; [key: string]: any }
   | { type: 'hitl_pause_requested'; tool_name?: string; tool_id?: string; parameters?: any; reason?: string; confidence?: number; [key: string]: any }
   | { type: 'hitl_feedback_submitted'; feedback_type?: string; content?: string; tool_id?: string; [key: string]: any }
-  | { type: 'hitl_agent_interpretation'; tool_id?: string; interpretation?: string; modified_parameters?: any; awaiting_approval?: boolean; [key: string]: any }
-  | { type: 'hitl_resume'; tool_id?: string; modified_parameters?: any; approved?: boolean; [key: string]: any };
+  | { type: 'hitl_resume'; tool_id?: string; [key: string]: any };
 
 // Combined event type supporting both SDK-aligned and additional events
 export type DisplayStreamEvent = StreamEvent | AdditionalStreamEvent;
@@ -2244,12 +2243,9 @@ const method = latestInput.method || 'GET';
     }
 
     case 'hitl_resume': {
-      const approved = 'approved' in event ? Boolean(event.approved) : false;
       return (
         <Box marginTop={1}>
-          <Text color={approved ? 'green' : 'yellow'}>
-            {approved ? '✓ Execution resumed' : '⚠️  Interpretation rejected'}
-          </Text>
+          <Text color="green">✓ Execution resumed</Text>
         </Box>
       );
     }

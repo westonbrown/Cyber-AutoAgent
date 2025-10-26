@@ -20,17 +20,10 @@ interface HITLInterventionPanelProps {
   reason?: string;
   /** Confidence score if available (0-100) */
   confidence?: number;
-  /** Agent interpretation awaiting approval */
-  interpretation?: {
-    text: string;
-    modifiedParameters: Record<string, any>;
-  };
   /** Whether panel is currently active */
   isActive: boolean;
   /** Callback for submitting feedback */
   onSubmitFeedback: (feedbackType: string, content: string) => void;
-  /** Callback for confirming interpretation */
-  onConfirmInterpretation: (approved: boolean) => void;
 }
 
 /**
@@ -42,10 +35,8 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   parameters,
   reason,
   confidence,
-  interpretation,
   isActive,
   onSubmitFeedback,
-  onConfirmInterpretation,
 }) => {
   const isManualIntervention = toolName === 'manual_intervention';
   const [feedbackText, setFeedbackText] = useState('');
@@ -88,7 +79,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   };
 
   // Manual Intervention - Direct text input
-  if (isManualIntervention && !interpretation) {
+  if (isManualIntervention) {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
         <Box marginBottom={1}>
@@ -122,7 +113,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   }
 
   // Auto-pause (Destructive Operation) - Show tool details with approval options
-  if (!isManualIntervention && !interpretation) {
+  if (!isManualIntervention) {
     const hasParameters = parameters && Object.keys(parameters).length > 0;
 
     return (
@@ -205,39 +196,6 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
 
         <Box>
           <Text dimColor>Press Esc to cancel</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Agent interpretation confirmation (only used for destructive operations after correction)
-  if (interpretation) {
-    return (
-      <Box flexDirection="column" borderStyle="round" borderColor="green" padding={1}>
-        <Box marginBottom={1}>
-          <Text bold color="green">
-            ✓ Agent Interpretation
-          </Text>
-        </Box>
-
-        <Box marginBottom={1} flexDirection="column">
-          <Text bold>Interpretation:</Text>
-          <Text color="green">{interpretation.text}</Text>
-        </Box>
-
-        <Box marginBottom={1} flexDirection="column">
-          <Text bold>Modified Parameters:</Text>
-          <Text color="gray">{formatParameters(interpretation.modifiedParameters)}</Text>
-        </Box>
-
-        <Box marginBottom={1} flexDirection="column">
-          <Text bold>Options:</Text>
-          <Text>  [y] Yes - approve and proceed</Text>
-          <Text>  [n] No - reject and provide new feedback</Text>
-        </Box>
-
-        <Box>
-          <Text dimColor>Press y or n to choose...</Text>
         </Box>
       </Box>
     );
