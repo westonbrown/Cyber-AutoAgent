@@ -1,6 +1,7 @@
 """Feedback manager for HITL workflows."""
 
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -40,7 +41,7 @@ class FeedbackManager:
         self.operation_id = operation_id
         self.emitter = emitter
 
-        # Store timeout configuration for pause mechanism (Phase 4)
+        # Store timeout configuration for pause mechanism
         if hitl_config:
             self.manual_pause_timeout = hitl_config.manual_pause_timeout
             self.auto_pause_timeout = hitl_config.auto_pause_timeout
@@ -53,6 +54,11 @@ class FeedbackManager:
         self.state = HITLState.ACTIVE
         self.pending_tool: Optional[ToolInvocation] = None
         self.pending_feedback: Optional[UserFeedback] = None
+
+        # Pause mechanism using threading.Event for blocking coordination
+        self._pause_event = threading.Event()
+        self._pause_event.set()  # Start in non-paused state (event is set)
+        self._is_manual_pause = False  # Track if current pause is manual vs auto
 
         # Feedback queue for tools awaiting approval
         self.feedback_queue: Dict[str, UserFeedback] = {}
@@ -92,6 +98,11 @@ class FeedbackManager:
             reason=reason,
         )
 
+        # Block execution by clearing the event (auto-pause)
+        self._is_manual_pause = False
+        self._pause_event.clear()
+        log_hitl("FeedbackMgr", f"Execution blocked (auto-pause) for tool {tool_name}", "INFO")
+
         # Emit pause event to UI
         if self.emitter:
             self.emitter.emit(
@@ -124,6 +135,11 @@ class FeedbackManager:
             reason="User requested manual intervention",
         )
 
+        # Block execution by clearing the event (manual pause)
+        self._is_manual_pause = True
+        self._pause_event.clear()
+        log_hitl("FeedbackMgr", "Execution blocked (manual pause)", "INFO")
+
         # Emit pause event to UI
         if self.emitter:
             self.emitter.emit(
@@ -136,6 +152,52 @@ class FeedbackManager:
                     "reason": "User requested manual intervention",
                 }
             )
+
+    def wait_for_feedback(self) -> bool:
+        """Block execution until feedback is received or timeout expires.
+
+        Uses appropriate timeout based on pause type (manual vs auto).
+        Returns True if feedback received, False if timeout.
+        """
+        if self.state != HITLState.PAUSED:
+            # Not paused, no need to wait
+            return True
+
+        # Use appropriate timeout based on pause type
+        timeout = self.manual_pause_timeout if self._is_manual_pause else self.auto_pause_timeout
+        pause_type = "manual" if self._is_manual_pause else "auto"
+
+        log_hitl(
+            "FeedbackMgr",
+            f"Waiting for feedback ({pause_type} pause, timeout={timeout}s)",
+            "INFO"
+        )
+        logger.info(
+            "[HITL-FM] Blocking execution - waiting for feedback (%s pause, timeout=%ds)",
+            pause_type,
+            timeout
+        )
+
+        # Block until event is set (feedback received) or timeout expires
+        feedback_received = self._pause_event.wait(timeout=timeout)
+
+        if feedback_received:
+            log_hitl("FeedbackMgr", "Feedback received, execution resuming", "INFO")
+            logger.info("[HITL-FM] Feedback received, execution resuming")
+            return True
+        else:
+            log_hitl(
+                "FeedbackMgr",
+                f"Timeout expired ({timeout}s), auto-resuming execution",
+                "WARNING"
+            )
+            logger.warning(
+                "[HITL-FM] Timeout expired after %ds, auto-resuming execution",
+                timeout
+            )
+            # Auto-resume on timeout
+            self.resume()
+            return False
 
     def submit_feedback(
         self,
@@ -217,6 +279,10 @@ class FeedbackManager:
         if self.memory:
             self._store_intervention(feedback)
 
+        # Signal the pause event to unblock wait_for_feedback()
+        self._pause_event.set()
+        log_hitl("FeedbackMgr", "Signaled pause event - unblocking execution", "INFO")
+
         # State remains PAUSED until explicitly resumed
         log_hitl(
             "FeedbackMgr",
@@ -246,6 +312,11 @@ class FeedbackManager:
         self.state = HITLState.ACTIVE
         self.pending_tool = None
         self.pending_feedback = None
+
+        # Signal the pause event to unblock wait_for_feedback()
+        self._pause_event.set()
+        self._is_manual_pause = False
+        log_hitl("FeedbackMgr", "Signaled pause event and cleared pause type", "INFO")
 
     def get_pending_feedback_message(self) -> Optional[str]:
         """Get pending feedback formatted as agent message.
