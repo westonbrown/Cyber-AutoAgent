@@ -20,6 +20,8 @@ interface HITLInterventionPanelProps {
   reason?: string;
   /** Confidence score if available (0-100) */
   confidence?: number;
+  /** Timeout in seconds for pause duration */
+  timeoutSeconds?: number;
   /** Whether panel is currently active */
   isActive: boolean;
   /** Callback for submitting feedback */
@@ -35,6 +37,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   parameters,
   reason,
   confidence,
+  timeoutSeconds,
   isActive,
   onSubmitFeedback,
 }) => {
@@ -82,10 +85,15 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   if (isManualIntervention) {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
-        <Box marginBottom={1}>
+        <Box marginBottom={1} flexDirection="column">
           <Text bold color="cyan">
             💬 Provide Feedback to Agent
           </Text>
+          {timeoutSeconds && (
+            <Text color="gray" dimColor>
+              ⏱ Timeout: {timeoutSeconds}s
+            </Text>
+          )}
         </Box>
 
         <Box marginBottom={1} flexDirection="column">
@@ -118,10 +126,15 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1}>
-        <Box marginBottom={1}>
+        <Box marginBottom={1} flexDirection="column">
           <Text bold color="yellow">
             ⚠️  DESTRUCTIVE OPERATION - REVIEW REQUIRED
           </Text>
+          {timeoutSeconds && (
+            <Text color="gray" dimColor>
+              ⏱ Timeout: {timeoutSeconds}s
+            </Text>
+          )}
         </Box>
 
         <Box marginBottom={1}>

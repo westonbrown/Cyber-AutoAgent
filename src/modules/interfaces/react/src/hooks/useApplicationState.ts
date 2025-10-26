@@ -60,6 +60,7 @@ export interface ApplicationState {
     parameters: Record<string, any>;
     reason?: string;
     confidence?: number;
+    timeoutSeconds?: number;
   } | null;
   hitlInterpretation: {
     toolId: string;
@@ -134,7 +135,7 @@ type Action =
   | { type: ActionType.SET_DOCKER_AVAILABLE; payload: boolean }
   | { type: ActionType.UPDATE_CONTEXT_USAGE; payload: number }
   | { type: ActionType.SET_HITL_ENABLED; payload: boolean }
-  | { type: ActionType.SET_HITL_PENDING_TOOL; payload: { toolName: string; toolId: string; parameters: Record<string, any>; reason?: string; confidence?: number } | null }
+  | { type: ActionType.SET_HITL_PENDING_TOOL; payload: { toolName: string; toolId: string; parameters: Record<string, any>; reason?: string; confidence?: number; timeoutSeconds?: number } | null }
   | { type: ActionType.SET_HITL_INTERPRETATION; payload: { toolId: string; text: string; modifiedParameters: Record<string, any> } | null }
   | { type: ActionType.CLEAR_HITL_STATE };
 

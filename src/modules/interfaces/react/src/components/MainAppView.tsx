@@ -299,6 +299,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
             parameters={appState.hitlPendingTool?.parameters || {}}
             reason={appState.hitlPendingTool?.reason}
             confidence={appState.hitlPendingTool?.confidence}
+            timeoutSeconds={appState.hitlPendingTool?.timeoutSeconds}
             isActive={!!appState.hitlPendingTool}
             onSubmitFeedback={(feedbackType: string, content: string) => {
               if (appState.hitlPendingTool) {

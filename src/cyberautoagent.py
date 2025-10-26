@@ -672,6 +672,16 @@ def main():
             # Continue until stop condition is met
             while not interrupted:
                 try:
+                    # Check for HITL pause before executing agent
+                    # The feedback handler already blocks in wait_for_feedback() in its thread.
+                    # Here we just wait for the pause event to be signaled (either by feedback or timeout).
+                    if feedback_manager and feedback_manager.is_paused():
+                        logger.info("[HITL] Execution paused - waiting for resume signal")
+                        # Wait for the pause event to be set (by submit_feedback or timeout)
+                        # This allows all waiting threads to wake up when the event is set
+                        feedback_manager._pause_event.wait()
+                        logger.info("[HITL] Resume signal received, continuing execution")
+
                     # Execute agent with current message
                     # Note: HITL feedback is now injected via HITLFeedbackInjectionHook
                     # which modifies the system prompt in BeforeModelInvocationEvent

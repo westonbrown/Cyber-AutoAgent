@@ -649,7 +649,8 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
               toolId: event.tool_id || '',
               parameters: event.parameters || {},
               reason: event.reason,
-              confidence: event.confidence
+              confidence: event.confidence,
+              timeoutSeconds: event.timeout_seconds
             }
           });
           // Set userHandoffActive to prevent ESC from terminating the operation

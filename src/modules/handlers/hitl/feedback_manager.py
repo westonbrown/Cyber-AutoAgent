@@ -117,6 +117,11 @@ class FeedbackManager:
 
         # Emit pause event to UI
         if self.emitter:
+            # Include timeout for UI display
+            timeout_seconds = (
+                self.manual_pause_timeout if is_manual else self.auto_pause_timeout
+            )
+
             self.emitter.emit(
                 {
                     "type": "hitl_pause_requested",
@@ -126,6 +131,7 @@ class FeedbackManager:
                     "confidence": confidence,
                     "reason": reason,
                     "is_manual": is_manual,
+                    "timeout_seconds": timeout_seconds,
                 }
             )
 

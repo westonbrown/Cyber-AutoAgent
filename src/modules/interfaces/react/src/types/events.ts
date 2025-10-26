@@ -462,6 +462,8 @@ export interface HITLEvent extends BaseEvent {
   feedback_type?: string;
   /** Feedback content from user */
   content?: string;
+  /** Timeout in seconds for pause duration */
+  timeout_seconds?: number;
 }
 
 // Python event system events
