@@ -212,6 +212,9 @@ def create_agent(
 
     server_config = config_manager.get_server_config(config.provider, **overrides)
 
+    # Get HITL configuration
+    hitl_config = server_config.hitl
+
     # Get centralized region configuration
     if config.region_name is None:
         config.region_name = config_manager.get_default_region()
@@ -685,7 +688,7 @@ Available {config.module} MCP tools:
         pass
 
     # Check if HITL is enabled before creating handler so we can include it in init_context
-    hitl_enabled = os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true"
+    hitl_enabled = hitl_config.enabled
 
     callback_handler = ReactBridgeHandler(
         max_steps=config.max_steps,
@@ -803,11 +806,12 @@ Available {config.module} MCP tools:
         setup_hitl_logging(log_dir)
         log_hitl("CyberAgent", "HITL logging initialized", "INFO", operation_id=operation_id)
 
-        # Initialize feedback manager
+        # Initialize feedback manager with configuration
         feedback_manager = FeedbackManager(
             memory=memory_client,
             operation_id=operation_id,
             emitter=callback_handler.emitter,
+            hitl_config=hitl_config,
         )
         log_hitl("CyberAgent", "FeedbackManager created", "INFO")
 
@@ -816,12 +820,12 @@ Available {config.module} MCP tools:
         feedback_handler.start_listening()
         log_hitl("CyberAgent", "FeedbackInputHandler started listening", "INFO")
 
-        # Create HITL hook provider
+        # Create HITL hook provider using centralized configuration
         hitl_hook = HITLHookProvider(
             feedback_manager=feedback_manager,
-            auto_pause_on_destructive=True,
-            auto_pause_on_low_confidence=False,  # TODO: Enable when confidence scoring available
-            confidence_threshold=70.0,
+            auto_pause_on_destructive=hitl_config.auto_pause_on_destructive,
+            auto_pause_on_low_confidence=hitl_config.auto_pause_on_low_confidence,
+            confidence_threshold=hitl_config.confidence_threshold,
         )
         log_hitl("CyberAgent", "HITLHookProvider created", "INFO")
 

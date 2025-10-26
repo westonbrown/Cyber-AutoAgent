@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .hitl_logger import log_hitl
 from .types import (
@@ -11,6 +11,9 @@ from .types import (
     ToolInvocation,
     UserFeedback,
 )
+
+if TYPE_CHECKING:
+    from modules.config.manager import HITLConfig
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,7 @@ class FeedbackManager:
         memory=None,
         operation_id: Optional[str] = None,
         emitter=None,
+        hitl_config: Optional["HITLConfig"] = None,
     ):
         """Initialize feedback manager.
 
@@ -30,10 +34,20 @@ class FeedbackManager:
             memory: Memory client for storing interventions
             operation_id: Operation identifier
             emitter: Event emitter for UI communication
+            hitl_config: HITL configuration with timeout settings
         """
         self.memory = memory
         self.operation_id = operation_id
         self.emitter = emitter
+
+        # Store timeout configuration for pause mechanism (Phase 4)
+        if hitl_config:
+            self.manual_pause_timeout = hitl_config.manual_pause_timeout
+            self.auto_pause_timeout = hitl_config.auto_pause_timeout
+        else:
+            # Default timeouts if no config provided
+            self.manual_pause_timeout = 120
+            self.auto_pause_timeout = 30
 
         # State tracking
         self.state = HITLState.ACTIVE
