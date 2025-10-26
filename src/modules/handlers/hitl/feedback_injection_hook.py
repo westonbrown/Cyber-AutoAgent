@@ -2,7 +2,7 @@
 
 import logging
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from strands.experimental.hooks.events import BeforeModelInvocationEvent
 from strands.hooks import HookProvider, HookRegistry
@@ -51,11 +51,12 @@ class HITLFeedbackInjectionHook(HookProvider):
             f"HITLFeedbackInjectionHook initialized for operation {feedback_manager.operation_id}"
         )
 
-    def register_hooks(self, registry: HookRegistry):
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any):
         """Register BeforeModelInvocationEvent callback.
 
         Args:
             registry: Hook registry to register callback with
+            **kwargs: Additional keyword arguments from base class
         """
         registry.add_callback(BeforeModelInvocationEvent, self.inject_feedback)
         logger.debug("[HITL-HOOK] Registered BeforeModelInvocationEvent callback")
@@ -78,7 +79,9 @@ class HITLFeedbackInjectionHook(HookProvider):
             "INFO",
         )
 
-        original_prompt_len = len(event.agent.system_prompt) if event.agent.system_prompt else 0
+        original_prompt_len = (
+            len(event.agent.system_prompt) if event.agent.system_prompt else 0
+        )
         log_hitl(
             "InjectionHook",
             f"Current system prompt length: {original_prompt_len} chars",
@@ -110,7 +113,8 @@ class HITLFeedbackInjectionHook(HookProvider):
             direct_log("Appending feedback to event.agent.system_prompt")
             log_hitl("InjectionHook", "Appending feedback to system prompt", "INFO")
 
-            event.agent.system_prompt += f"\n\n{feedback_message}"
+            current_prompt = event.agent.system_prompt or ""
+            event.agent.system_prompt = f"{current_prompt}\n\n{feedback_message}"
             new_prompt_len = len(event.agent.system_prompt)
 
             direct_log("Feedback appended successfully")
@@ -122,7 +126,9 @@ class HITLFeedbackInjectionHook(HookProvider):
 
             # Verify the prompt was actually set
             verification_prompt = event.agent.system_prompt
-            direct_log(f"VERIFICATION: Prompt after setting = {len(verification_prompt)} chars")
+            direct_log(
+                f"VERIFICATION: Prompt after setting = {len(verification_prompt)} chars"
+            )
             direct_log(f"VERIFICATION: First 100 chars = {verification_prompt[:100]}")
             log_hitl(
                 "InjectionHook",

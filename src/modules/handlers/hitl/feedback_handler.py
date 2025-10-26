@@ -68,7 +68,9 @@ class FeedbackInputHandler:
             try:
                 # Check if stdin has data available (non-blocking)
                 if select.select([sys.stdin], [], [], 0.5)[0]:
-                    log_hitl("InputHandler", "Stdin data available - reading line", "DEBUG")
+                    log_hitl(
+                        "InputHandler", "Stdin data available - reading line", "DEBUG"
+                    )
                     line = sys.stdin.readline()
                     if line:
                         log_hitl(
@@ -112,7 +114,9 @@ class FeedbackInputHandler:
                 self.handle_feedback_command(command)
             except (ValueError, json.JSONDecodeError) as e:
                 logger.warning("Failed to parse HITL command: %s", e)
-                log_hitl("InputHandler", f"ERROR: Failed to parse command: {e}", "ERROR")
+                log_hitl(
+                    "InputHandler", f"ERROR: Failed to parse command: {e}", "ERROR"
+                )
         else:
             log_hitl("InputHandler", "No HITL markers in line - ignoring", "DEBUG")
 
@@ -132,15 +136,14 @@ class FeedbackInputHandler:
         if command_type == "submit_feedback":
             log_hitl("InputHandler", "→ Calling _handle_submit_feedback()", "INFO")
             self._handle_submit_feedback(command)
-        elif command_type == "confirm_interpretation":
-            log_hitl("InputHandler", "→ Calling _handle_confirm_interpretation()", "INFO")
-            self._handle_confirm_interpretation(command)
         elif command_type == "request_manual_intervention":
             log_hitl("InputHandler", "→ Calling _handle_manual_intervention()", "INFO")
             self._handle_manual_intervention(command)
         else:
             logger.warning("Unknown feedback command type: %s", command_type)
-            log_hitl("InputHandler", f"ERROR: Unknown command type: {command_type}", "ERROR")
+            log_hitl(
+                "InputHandler", f"ERROR: Unknown command type: {command_type}", "ERROR"
+            )
 
     def _handle_submit_feedback(self, command: dict) -> None:
         """Handle feedback submission command.
@@ -180,27 +183,6 @@ class FeedbackInputHandler:
         except Exception as e:
             logger.error("Failed to submit feedback: %s", e, exc_info=True)
             log_hitl("InputHandler", f"ERROR: Failed to submit feedback: {e}", "ERROR")
-
-    def _handle_confirm_interpretation(self, command: dict) -> None:
-        """Handle interpretation confirmation command.
-
-        Args:
-            command: Command dict with approved (bool), tool_id
-        """
-        try:
-            self.feedback_manager.confirm_interpretation(
-                approved=command.get("approved", False),
-                tool_id=command.get("tool_id", ""),
-            )
-
-            logger.info(
-                "Interpretation confirmed: approved=%s, tool_id=%s",
-                command.get("approved"),
-                command.get("tool_id"),
-            )
-
-        except Exception as e:
-            logger.error("Failed to confirm interpretation: %s", e, exc_info=True)
 
     def _handle_manual_intervention(self, command: dict) -> None:
         """Handle manual intervention request.

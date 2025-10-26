@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional
 
 from .hitl_logger import log_hitl
 from .types import (
-    AgentInterpretation,
     FeedbackType,
     HITLState,
     ToolInvocation,
@@ -40,7 +39,6 @@ class FeedbackManager:
         self.state = HITLState.ACTIVE
         self.pending_tool: Optional[ToolInvocation] = None
         self.pending_feedback: Optional[UserFeedback] = None
-        self.pending_interpretation: Optional[AgentInterpretation] = None
 
         # Feedback queue for tools awaiting approval
         self.feedback_queue: Dict[str, UserFeedback] = {}
@@ -71,7 +69,7 @@ class FeedbackManager:
             reason,
         )
 
-        self.state = HITLState.PAUSE_REQUESTED
+        self.state = HITLState.PAUSED
         self.pending_tool = ToolInvocation(
             tool_name=tool_name,
             tool_id=tool_id,
@@ -93,8 +91,6 @@ class FeedbackManager:
                 }
             )
 
-        self.state = HITLState.AWAITING_FEEDBACK
-
     def request_manual_pause(self) -> None:
         """Request manual intervention pause initiated by user.
 
@@ -105,7 +101,7 @@ class FeedbackManager:
 
         logger.info("Manual intervention requested by user (id=%s)", tool_id)
 
-        self.state = HITLState.PAUSE_REQUESTED
+        self.state = HITLState.PAUSED
         self.pending_tool = ToolInvocation(
             tool_name="manual_intervention",
             tool_id=tool_id,
@@ -126,8 +122,6 @@ class FeedbackManager:
                     "reason": "User requested manual intervention",
                 }
             )
-
-        self.state = HITLState.AWAITING_FEEDBACK
 
     def submit_feedback(
         self,
@@ -209,90 +203,12 @@ class FeedbackManager:
         if self.memory:
             self._store_intervention(feedback)
 
-        self.state = HITLState.AWAITING_CONFIRMATION
+        # State remains PAUSED until explicitly resumed
         log_hitl(
             "FeedbackMgr",
-            f"State transitioned: {old_state.name} → {self.state.name}",
+            f"Feedback stored - state remains: {self.state.name}",
             "INFO",
         )
-
-    def set_agent_interpretation(
-        self,
-        tool_id: str,
-        interpretation: str,
-        modified_parameters: Dict[str, Any],
-    ) -> None:
-        """Set agent's interpretation of feedback.
-
-        Args:
-            tool_id: Tool invocation ID
-            interpretation: Agent's interpretation text
-            modified_parameters: Modified tool parameters
-        """
-        logger.info("Agent interpretation set for tool %s", tool_id)
-
-        self.pending_interpretation = AgentInterpretation(
-            tool_id=tool_id,
-            interpretation=interpretation,
-            modified_parameters=modified_parameters,
-            awaiting_approval=True,
-        )
-
-        # Emit interpretation event to UI
-        if self.emitter:
-            self.emitter.emit(
-                {
-                    "type": "hitl_agent_interpretation",
-                    "tool_id": tool_id,
-                    "interpretation": interpretation,
-                    "modified_parameters": modified_parameters,
-                    "awaiting_approval": True,
-                }
-            )
-
-    def confirm_interpretation(self, approved: bool, tool_id: str) -> None:
-        """Confirm or reject agent interpretation.
-
-        Args:
-            approved: Whether interpretation is approved
-            tool_id: Tool invocation ID
-        """
-        logger.info(
-            "Interpretation %s for tool %s",
-            "approved" if approved else "rejected",
-            tool_id,
-        )
-
-        if approved:
-            self.state = HITLState.ACTIVE
-        else:
-            self.state = HITLState.REJECTED
-
-        # Emit resume or rejection event
-        if self.emitter:
-            if approved and self.pending_interpretation:
-                self.emitter.emit(
-                    {
-                        "type": "hitl_resume",
-                        "tool_id": tool_id,
-                        "modified_parameters": self.pending_interpretation.modified_parameters,
-                        "approved": True,
-                    }
-                )
-            else:
-                self.emitter.emit(
-                    {
-                        "type": "hitl_resume",
-                        "tool_id": tool_id,
-                        "approved": False,
-                    }
-                )
-
-        # Clear pending state
-        if approved:
-            self.pending_tool = None
-            self.pending_feedback = None
-            self.pending_interpretation = None
 
     def get_pending_feedback(self, tool_id: str) -> Optional[UserFeedback]:
         """Get pending feedback for tool.
@@ -307,11 +223,15 @@ class FeedbackManager:
 
     def is_paused(self) -> bool:
         """Check if currently paused."""
-        return self.state in (
-            HITLState.PAUSE_REQUESTED,
-            HITLState.AWAITING_FEEDBACK,
-            HITLState.AWAITING_CONFIRMATION,
-        )
+        return self.state == HITLState.PAUSED
+
+    def resume(self) -> None:
+        """Resume execution from paused state."""
+        log_hitl("FeedbackMgr", "Resuming execution", "INFO")
+        logger.info("[HITL-FM] Resuming execution from paused state")
+        self.state = HITLState.ACTIVE
+        self.pending_tool = None
+        self.pending_feedback = None
 
     def get_pending_feedback_message(self) -> Optional[str]:
         """Get pending feedback formatted as agent message.
@@ -323,7 +243,9 @@ class FeedbackManager:
 
         if not self.pending_feedback:
             logger.debug("[HITL-FM] No pending feedback to retrieve")
-            log_hitl("FeedbackMgr", "No pending feedback found - returning None", "INFO")
+            log_hitl(
+                "FeedbackMgr", "No pending feedback found - returning None", "INFO"
+            )
             return None
 
         feedback = self.pending_feedback

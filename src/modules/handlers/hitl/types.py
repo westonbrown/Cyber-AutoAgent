@@ -8,11 +8,8 @@ from typing import Any, Dict, Optional
 class HITLState(Enum):
     """HITL workflow states."""
 
-    ACTIVE = "active"
-    PAUSE_REQUESTED = "pause_requested"
-    AWAITING_FEEDBACK = "awaiting_feedback"
-    AWAITING_CONFIRMATION = "awaiting_confirmation"
-    REJECTED = "rejected"
+    ACTIVE = "active"  # Normal execution
+    PAUSED = "paused"  # Execution paused, waiting for feedback
 
 
 class FeedbackType(Enum):
@@ -43,13 +40,3 @@ class UserFeedback:
     content: str
     tool_id: str
     timestamp: float
-
-
-@dataclass
-class AgentInterpretation:
-    """Agent's interpretation of user feedback."""
-
-    tool_id: str
-    interpretation: str
-    modified_parameters: Dict[str, Any]
-    awaiting_approval: bool = True
