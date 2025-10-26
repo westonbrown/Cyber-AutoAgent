@@ -14,6 +14,8 @@ from .types import (
 )
 
 if TYPE_CHECKING:
+    # Import only during type checking to avoid circular dependencies at runtime
+    # This pattern allows type hints without creating import cycles
     from modules.config.manager import HITLConfig
 
 logger = logging.getLogger(__name__)
@@ -67,24 +69,34 @@ class FeedbackManager:
 
     def request_pause(
         self,
-        tool_name: str,
-        tool_id: str,
-        parameters: Dict[str, Any],
+        tool_name: Optional[str] = None,
+        tool_id: Optional[str] = None,
+        parameters: Optional[Dict[str, Any]] = None,
         confidence: Optional[float] = None,
         reason: Optional[str] = None,
+        is_manual: bool = False,
     ) -> None:
-        """Request pause for tool review.
+        """Request execution pause (auto or manual).
 
         Args:
-            tool_name: Name of the tool to review
-            tool_id: Unique tool invocation ID
-            parameters: Tool parameters
-            confidence: Confidence score (0-100)
-            reason: Reason for pause (e.g., "destructive_operation")
+            tool_name: Name of tool to review (auto-generated for manual pause)
+            tool_id: Unique tool invocation ID (auto-generated for manual pause)
+            parameters: Tool parameters (empty dict for manual pause)
+            confidence: Confidence score 0-100 (None for manual pause)
+            reason: Reason for pause
+            is_manual: True for user-triggered pause, False for auto-pause
         """
+        # Generate synthetic data for manual pauses
+        if is_manual:
+            tool_name = tool_name or "manual_intervention"
+            tool_id = tool_id or f"manual_{int(time.time() * 1000)}"
+            parameters = parameters or {}
+            reason = reason or "User requested manual intervention"
+
+        log_msg = "manual pause" if is_manual else f"auto-pause for {tool_name}"
         logger.info(
-            "Pause requested for tool %s (id=%s, reason=%s)",
-            tool_name,
+            "Pause requested: %s (id=%s, reason=%s)",
+            log_msg,
             tool_id,
             reason,
         )
@@ -98,10 +110,10 @@ class FeedbackManager:
             reason=reason,
         )
 
-        # Block execution by clearing the event (auto-pause)
-        self._is_manual_pause = False
+        # Block execution by clearing the event
+        self._is_manual_pause = is_manual
         self._pause_event.clear()
-        log_hitl("FeedbackMgr", f"Execution blocked (auto-pause) for tool {tool_name}", "INFO")
+        log_hitl("FeedbackMgr", f"Execution blocked ({log_msg})", "INFO")
 
         # Emit pause event to UI
         if self.emitter:
@@ -113,43 +125,7 @@ class FeedbackManager:
                     "parameters": parameters,
                     "confidence": confidence,
                     "reason": reason,
-                }
-            )
-
-    def request_manual_pause(self) -> None:
-        """Request manual intervention pause initiated by user.
-
-        Creates a synthetic tool invocation for user-requested intervention.
-        """
-        timestamp = int(time.time() * 1000)
-        tool_id = f"manual_{timestamp}"
-
-        logger.info("Manual intervention requested by user (id=%s)", tool_id)
-
-        self.state = HITLState.PAUSED
-        self.pending_tool = ToolInvocation(
-            tool_name="manual_intervention",
-            tool_id=tool_id,
-            parameters={},
-            confidence=None,
-            reason="User requested manual intervention",
-        )
-
-        # Block execution by clearing the event (manual pause)
-        self._is_manual_pause = True
-        self._pause_event.clear()
-        log_hitl("FeedbackMgr", "Execution blocked (manual pause)", "INFO")
-
-        # Emit pause event to UI
-        if self.emitter:
-            self.emitter.emit(
-                {
-                    "type": "hitl_pause_requested",
-                    "tool_name": "manual_intervention",
-                    "tool_id": tool_id,
-                    "parameters": {},
-                    "confidence": None,
-                    "reason": "User requested manual intervention",
+                    "is_manual": is_manual,
                 }
             )
 
@@ -164,18 +140,22 @@ class FeedbackManager:
             return True
 
         # Use appropriate timeout based on pause type
-        timeout = self.manual_pause_timeout if self._is_manual_pause else self.auto_pause_timeout
+        timeout = (
+            self.manual_pause_timeout
+            if self._is_manual_pause
+            else self.auto_pause_timeout
+        )
         pause_type = "manual" if self._is_manual_pause else "auto"
 
         log_hitl(
             "FeedbackMgr",
             f"Waiting for feedback ({pause_type} pause, timeout={timeout}s)",
-            "INFO"
+            "INFO",
         )
         logger.info(
             "[HITL-FM] Blocking execution - waiting for feedback (%s pause, timeout=%ds)",
             pause_type,
-            timeout
+            timeout,
         )
 
         # Block until event is set (feedback received) or timeout expires
@@ -189,11 +169,10 @@ class FeedbackManager:
             log_hitl(
                 "FeedbackMgr",
                 f"Timeout expired ({timeout}s), auto-resuming execution",
-                "WARNING"
+                "WARNING",
             )
             logger.warning(
-                "[HITL-FM] Timeout expired after %ds, auto-resuming execution",
-                timeout
+                "[HITL-FM] Timeout expired after %ds, auto-resuming execution", timeout
             )
             # Auto-resume on timeout
             self.resume()
@@ -205,7 +184,10 @@ class FeedbackManager:
         content: str,
         tool_id: str,
     ) -> None:
-        """Submit user feedback for pending tool.
+        """Submit user feedback and auto-resume execution.
+
+        Feedback submission indicates user intent to continue.
+        Execution resumes immediately after storing feedback.
 
         Args:
             feedback_type: Type of feedback
@@ -246,7 +228,6 @@ class FeedbackManager:
             "DEBUG",
         )
 
-        old_state = self.state
         self.pending_feedback = feedback
         self.feedback_queue[tool_id] = feedback
 
@@ -279,16 +260,13 @@ class FeedbackManager:
         if self.memory:
             self._store_intervention(feedback)
 
-        # Signal the pause event to unblock wait_for_feedback()
+        # Auto-resume execution (user intent to continue)
+        # Note: Don't clear pending_feedback yet - injection hook needs it
         self._pause_event.set()
-        log_hitl("FeedbackMgr", "Signaled pause event - unblocking execution", "INFO")
-
-        # State remains PAUSED until explicitly resumed
-        log_hitl(
-            "FeedbackMgr",
-            f"Feedback stored - state remains: {self.state.name}",
-            "INFO",
-        )
+        self.state = HITLState.ACTIVE
+        self._is_manual_pause = False
+        log_hitl("FeedbackMgr", "Auto-resuming execution after feedback", "INFO")
+        logger.info("[HITL-FM] Execution auto-resumed after feedback submission")
 
     def get_pending_feedback(self, tool_id: str) -> Optional[UserFeedback]:
         """Get pending feedback for tool.

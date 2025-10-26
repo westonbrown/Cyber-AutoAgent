@@ -77,6 +77,7 @@ export const submitFeedback = (
  */
 export const requestManualIntervention = (): void => {
   sendHITLCommand({
-    type: 'request_manual_intervention',
+    type: 'request_pause',
+    is_manual: true,
   });
 };

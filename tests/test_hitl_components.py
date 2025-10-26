@@ -196,13 +196,15 @@ class TestFeedbackCommandParsing:
     def test_manual_intervention_command_format(self):
         """Test manual intervention command JSON format."""
         command = {
-            "type": "request_manual_intervention",
+            "type": "request_pause",
+            "is_manual": True,
         }
 
         command_json = json.dumps(command)
         parsed = json.loads(command_json)
 
-        assert parsed["type"] == "request_manual_intervention"
+        assert parsed["type"] == "request_pause"
+        assert parsed["is_manual"] is True
 
 
 class TestStateTransitions:
@@ -217,12 +219,10 @@ class TestStateTransitions:
         assert feedback_manager.state == HITLState.PAUSED
         assert feedback_manager.is_paused()
 
-        # Submit feedback (stays paused)
-        feedback_manager.submit_feedback(FeedbackType.CORRECTION, "Use safer command", "test_123")
-        assert feedback_manager.state == HITLState.PAUSED
-
-        # Resume execution
-        feedback_manager.resume()
+        # Submit feedback (auto-resumes)
+        feedback_manager.submit_feedback(
+            FeedbackType.CORRECTION, "Use safer command", "test_123"
+        )
         assert feedback_manager.state == HITLState.ACTIVE
         assert not feedback_manager.is_paused()
 
@@ -231,18 +231,15 @@ class TestStateTransitions:
         assert feedback_manager.state == HITLState.ACTIVE
 
         # User requests manual pause
-        feedback_manager.request_manual_pause()
+        feedback_manager.request_pause(is_manual=True)
         assert feedback_manager.state == HITLState.PAUSED
         assert feedback_manager.pending_tool is not None
         assert feedback_manager.pending_tool.tool_name == "manual_intervention"
 
-        # User provides guidance
+        # User provides guidance (auto-resumes)
         tool_id = feedback_manager.pending_tool.tool_id
         feedback_manager.submit_feedback(
             FeedbackType.SUGGESTION, "Check XYZ before continuing", tool_id
         )
-        assert feedback_manager.state == HITLState.PAUSED
-
-        # Resume execution
-        feedback_manager.resume()
         assert feedback_manager.state == HITLState.ACTIVE
+        assert not feedback_manager.is_paused()

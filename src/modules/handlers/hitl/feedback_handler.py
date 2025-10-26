@@ -125,7 +125,7 @@ class FeedbackInputHandler:
 
         Args:
             command: Feedback command dictionary with fields:
-                - type: Command type ("submit_feedback", "confirm_interpretation")
+                - type: Command type ("submit_feedback", "request_pause")
                 - Additional fields depending on type
         """
         command_type = command.get("type")
@@ -136,9 +136,9 @@ class FeedbackInputHandler:
         if command_type == "submit_feedback":
             log_hitl("InputHandler", "→ Calling _handle_submit_feedback()", "INFO")
             self._handle_submit_feedback(command)
-        elif command_type == "request_manual_intervention":
-            log_hitl("InputHandler", "→ Calling _handle_manual_intervention()", "INFO")
-            self._handle_manual_intervention(command)
+        elif command_type == "request_pause":
+            log_hitl("InputHandler", "→ Calling _handle_pause_request()", "INFO")
+            self._handle_pause_request(command)
         else:
             logger.warning("Unknown feedback command type: %s", command_type)
             log_hitl(
@@ -184,15 +184,26 @@ class FeedbackInputHandler:
             logger.error("Failed to submit feedback: %s", e, exc_info=True)
             log_hitl("InputHandler", f"ERROR: Failed to submit feedback: {e}", "ERROR")
 
-    def _handle_manual_intervention(self, command: dict) -> None:
-        """Handle manual intervention request.
+    def _handle_pause_request(self, command: dict) -> None:
+        """Handle pause request from user.
+
+        Blocks listener thread until feedback received or timeout.
 
         Args:
-            command: Command dict (no parameters required)
+            command: Command dict with optional 'is_manual' field
         """
         try:
-            self.feedback_manager.request_manual_pause()
-            logger.info("Manual intervention initiated")
+            is_manual = command.get("is_manual", True)
+            self.feedback_manager.request_pause(is_manual=is_manual)
+
+            # Block until feedback or timeout
+            # This runs on listener thread, so it doesn't block agent
+            feedback_received = self.feedback_manager.wait_for_feedback()
+
+            if feedback_received:
+                logger.info("Pause resumed after feedback")
+            else:
+                logger.warning("Pause timed out - auto-resumed")
 
         except Exception as e:
-            logger.error("Failed to request manual intervention: %s", e, exc_info=True)
+            logger.error("Failed to handle pause request: %s", e, exc_info=True)
