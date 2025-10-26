@@ -64,7 +64,7 @@ class TestFeedbackManager:
             reason="destructive_operation",
         )
 
-        assert feedback_manager.state == HITLState.AWAITING_FEEDBACK
+        assert feedback_manager.state == HITLState.PAUSED
         assert feedback_manager.pending_tool is not None
         assert feedback_manager.pending_tool.tool_name == "shell"
         assert mock_emitter.emit.called
@@ -84,42 +84,18 @@ class TestFeedbackManager:
         assert "test_123" in feedback_manager.feedback_queue
         assert mock_memory.add.called
 
-    def test_confirm_interpretation_approved(self, feedback_manager, mock_emitter):
-        """Test interpretation approval resumes execution."""
+    def test_resume_from_paused(self, feedback_manager):
+        """Test resuming execution from paused state."""
         feedback_manager.request_pause(
             tool_name="shell", tool_id="test_123", parameters={"command": "test"}
         )
-        feedback_manager.submit_feedback(
-            FeedbackType.CORRECTION, "Modified command", "test_123"
-        )
-        feedback_manager.set_agent_interpretation(
-            tool_id="test_123",
-            interpretation="Will use modified command",
-            modified_parameters={"command": "safe_test"},
-        )
+        assert feedback_manager.state == HITLState.PAUSED
 
-        feedback_manager.confirm_interpretation(approved=True, tool_id="test_123")
+        feedback_manager.resume()
 
         assert feedback_manager.state == HITLState.ACTIVE
         assert feedback_manager.pending_tool is None
-
-    def test_confirm_interpretation_rejected(self, feedback_manager):
-        """Test interpretation rejection sets REJECTED state."""
-        feedback_manager.request_pause(
-            tool_name="shell", tool_id="test_123", parameters={"command": "test"}
-        )
-        feedback_manager.submit_feedback(
-            FeedbackType.CORRECTION, "Modified command", "test_123"
-        )
-        feedback_manager.set_agent_interpretation(
-            tool_id="test_123",
-            interpretation="Will use modified command",
-            modified_parameters={"command": "safe_test"},
-        )
-
-        feedback_manager.confirm_interpretation(approved=False, tool_id="test_123")
-
-        assert feedback_manager.state == HITLState.REJECTED
+        assert feedback_manager.pending_feedback is None
 
     def test_get_pending_feedback(self, feedback_manager):
         """Test retrieving pending feedback."""
@@ -217,45 +193,56 @@ class TestFeedbackCommandParsing:
         assert parsed["feedback_type"] == "correction"
         assert parsed["tool_id"] == "test_123"
 
-    def test_confirm_interpretation_command_format(self):
-        """Test interpretation confirmation JSON format."""
+    def test_manual_intervention_command_format(self):
+        """Test manual intervention command JSON format."""
         command = {
-            "type": "confirm_interpretation",
-            "approved": True,
-            "tool_id": "test_123",
+            "type": "request_manual_intervention",
         }
 
         command_json = json.dumps(command)
         parsed = json.loads(command_json)
 
-        assert parsed["type"] == "confirm_interpretation"
-        assert parsed["approved"] is True
+        assert parsed["type"] == "request_manual_intervention"
 
 
 class TestStateTransitions:
     """Tests for HITL state machine transitions."""
 
-    def test_full_approval_workflow(self, feedback_manager):
-        """Test complete approval workflow."""
+    def test_pause_and_resume_workflow(self, feedback_manager):
+        """Test complete pause and resume workflow."""
         assert feedback_manager.state == HITLState.ACTIVE
 
+        # Pause for review
         feedback_manager.request_pause("shell", "test_123", {"command": "test"})
-        assert feedback_manager.state == HITLState.AWAITING_FEEDBACK
+        assert feedback_manager.state == HITLState.PAUSED
+        assert feedback_manager.is_paused()
 
-        feedback_manager.submit_feedback(FeedbackType.APPROVAL, "Approved", "test_123")
-        feedback_manager.set_agent_interpretation(
-            "test_123", "Proceeding", {"command": "test"}
+        # Submit feedback (stays paused)
+        feedback_manager.submit_feedback(FeedbackType.CORRECTION, "Use safer command", "test_123")
+        assert feedback_manager.state == HITLState.PAUSED
+
+        # Resume execution
+        feedback_manager.resume()
+        assert feedback_manager.state == HITLState.ACTIVE
+        assert not feedback_manager.is_paused()
+
+    def test_manual_intervention_workflow(self, feedback_manager):
+        """Test user-requested manual intervention."""
+        assert feedback_manager.state == HITLState.ACTIVE
+
+        # User requests manual pause
+        feedback_manager.request_manual_pause()
+        assert feedback_manager.state == HITLState.PAUSED
+        assert feedback_manager.pending_tool is not None
+        assert feedback_manager.pending_tool.tool_name == "manual_intervention"
+
+        # User provides guidance
+        tool_id = feedback_manager.pending_tool.tool_id
+        feedback_manager.submit_feedback(
+            FeedbackType.SUGGESTION, "Check XYZ before continuing", tool_id
         )
-        assert feedback_manager.state == HITLState.AWAITING_CONFIRMATION
+        assert feedback_manager.state == HITLState.PAUSED
 
-        feedback_manager.confirm_interpretation(True, "test_123")
+        # Resume execution
+        feedback_manager.resume()
         assert feedback_manager.state == HITLState.ACTIVE
-
-    def test_rejection_workflow(self, feedback_manager):
-        """Test rejection workflow sets REJECTED state."""
-        feedback_manager.request_pause("shell", "test_123", {"command": "test"})
-        feedback_manager.submit_feedback(FeedbackType.REJECTION, "Rejected", "test_123")
-        feedback_manager.set_agent_interpretation("test_123", "Modified", {})
-
-        feedback_manager.confirm_interpretation(False, "test_123")
-        assert feedback_manager.state == HITLState.REJECTED
