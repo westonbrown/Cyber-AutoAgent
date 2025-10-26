@@ -94,6 +94,14 @@ class HITLHookProvider(HookProvider):
                 reason=reason,
             )
 
+            # Block execution until feedback received or timeout
+            feedback_received = self.feedback_manager.wait_for_feedback()
+            if not feedback_received:
+                logger.warning(
+                    "Timeout expired waiting for feedback on tool %s - auto-resuming",
+                    tool_name
+                )
+
     def _should_pause_for_tool(
         self,
         tool_name: str,
