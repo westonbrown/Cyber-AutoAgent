@@ -319,10 +319,10 @@ class HITLConfig:
     )
 
     # Timeout for manual (user-triggered via [i] key) pauses in seconds
-    manual_pause_timeout: int = 120
+    manual_pause_timeout: int = 180
 
     # Timeout for auto-pause (destructive operations/low confidence) in seconds
-    auto_pause_timeout: int = 30
+    auto_pause_timeout: int = 120
 
     # Auto-pause triggers
     auto_pause_on_destructive: bool = True
