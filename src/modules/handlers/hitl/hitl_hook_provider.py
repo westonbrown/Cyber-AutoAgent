@@ -3,10 +3,14 @@
 import logging
 from typing import Optional
 
-from strands.experimental.hooks.events import BeforeToolInvocationEvent
+from strands.experimental.hooks.events import (
+    BeforeModelInvocationEvent,
+    BeforeToolInvocationEvent,
+)
 from strands.hooks import HookProvider, HookRegistry
 
 from .feedback_manager import FeedbackManager
+from .hitl_logger import log_hitl
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +64,8 @@ class HITLHookProvider(HookProvider):
         """
         logger.debug("Registering HITL hooks")
         registry.add_callback(BeforeToolInvocationEvent, self._on_before_tool_call)
-        logger.info("HITL hooks registered successfully")
+        registry.add_callback(BeforeModelInvocationEvent, self._check_manual_pause)
+        logger.info("HITL hooks registered successfully (tool + model invocation)")
 
     def _on_before_tool_call(self, event: BeforeToolInvocationEvent) -> None:
         """Handle before tool call event.
@@ -99,7 +104,44 @@ class HITLHookProvider(HookProvider):
             if not feedback_received:
                 logger.warning(
                     "Timeout expired waiting for feedback on tool %s - auto-resuming",
-                    tool_name
+                    tool_name,
+                )
+
+    def _check_manual_pause(self, event: BeforeModelInvocationEvent) -> None:
+        """Check for manual pause before each model invocation.
+
+        This ensures manual pause requests (via [i] key) are honored even when
+        the agent is not calling tools.
+
+        Args:
+            event: BeforeModelInvocationEvent from Strands SDK
+        """
+        if self.feedback_manager.is_paused():
+            log_hitl(
+                "HITLHook",
+                "⏸️ Manual pause detected before model invocation - blocking",
+                "WARNING",
+            )
+            logger.info("[HITL-Hook] Manual pause detected - waiting for feedback")
+
+            # Block until feedback received or timeout
+            feedback_received = self.feedback_manager.wait_for_feedback()
+
+            if feedback_received:
+                log_hitl(
+                    "HITLHook",
+                    "▶️ Manual pause cleared - continuing execution",
+                    "WARNING",
+                )
+                logger.info("[HITL-Hook] Feedback received - resuming execution")
+            else:
+                log_hitl(
+                    "HITLHook",
+                    "⏱ Manual pause timeout expired - auto-resuming",
+                    "WARNING",
+                )
+                logger.warning(
+                    "[HITL-Hook] Manual pause timeout expired - auto-resuming"
                 )
 
     def _should_pause_for_tool(

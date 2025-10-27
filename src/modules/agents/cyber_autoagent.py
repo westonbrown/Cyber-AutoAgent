@@ -804,7 +804,9 @@ Available {config.module} MCP tools:
         log_dir = os.path.join(artifacts_path, "logs")
         os.makedirs(log_dir, exist_ok=True)
         setup_hitl_logging(log_dir)
-        log_hitl("CyberAgent", "HITL logging initialized", "INFO", operation_id=operation_id)
+        log_hitl(
+            "CyberAgent", "HITL logging initialized", "INFO", operation_id=operation_id
+        )
 
         # Initialize feedback manager with configuration
         feedback_manager = FeedbackManager(
@@ -819,6 +821,28 @@ Available {config.module} MCP tools:
         feedback_handler = FeedbackInputHandler(feedback_manager=feedback_manager)
         feedback_handler.start_listening()
         log_hitl("CyberAgent", "FeedbackInputHandler started listening", "INFO")
+
+        # Verify thread is actually running
+        import time
+
+        time.sleep(0.5)  # Give thread time to start
+        if (
+            feedback_handler._listener_thread
+            and feedback_handler._listener_thread.is_alive()
+        ):
+            log_hitl(
+                "CyberAgent",
+                f"✓ Listener thread CONFIRMED running (ID: {feedback_handler._listener_thread.ident}, name: {feedback_handler._listener_thread.name})",
+                "INFO",
+            )
+            logger.info(
+                "[HITL] Listener thread verified: ID=%s, alive=%s",
+                feedback_handler._listener_thread.ident,
+                feedback_handler._listener_thread.is_alive(),
+            )
+        else:
+            log_hitl("CyberAgent", "✗ WARNING: Listener thread NOT running!", "ERROR")
+            logger.error("[HITL] WARNING: Listener thread failed to start!")
 
         # Create HITL hook provider using centralized configuration
         hitl_hook = HITLHookProvider(
@@ -844,7 +868,7 @@ Available {config.module} MCP tools:
         log_hitl(
             "CyberAgent",
             f"Hooks registered: {[type(h).__name__ for h in hooks]}",
-            "INFO"
+            "INFO",
         )
 
     # Create model based on provider type
