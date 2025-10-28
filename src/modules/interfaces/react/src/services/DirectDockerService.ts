@@ -369,6 +369,12 @@ export class DirectDockerService extends EventEmitter {
         env.push(`CYBER_AGENT_EVALUATION_MODEL=${config.evaluationModel}`);
       }
 
+      // MCP Servers
+      if (config.mcp.enabled && config.mcp.connections) {
+        env.push("CYBER_MCP_ENABLED=true")
+        env.push(`CYBER_MCP_CONNECTIONS=${JSON.stringify(config.mcp.connections)}`)
+      }
+
       // Debug logging: what we're about to send to Docker
       const maskEnv = (vars: string[]) => {
         const SENSITIVE = new Set([

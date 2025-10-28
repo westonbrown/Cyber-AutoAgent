@@ -366,6 +366,16 @@ def main():
         action="store_true",
         help="Enable rubric-based evaluation in addition to Ragas metrics",
     )
+    parser.add_argument(
+        "--mcp-enabled",
+        action="store_true",
+        help="Enable MCP servers",
+    )
+    parser.add_argument(
+        "--mcp-conns",
+        action=str,
+        help="Configure MCP servers, requires --mcp-enabled to be applied",
+    )
 
     args = parser.parse_args()
 
@@ -431,6 +441,11 @@ def main():
         args.region = config_manager.get_default_region()
 
     os.environ["AWS_REGION"] = args.region
+
+    if args.mcp_enabled:
+        os.environ["CYBER_MCP_ENABLED"] = "true"
+    if args.mcp_conns:
+        os.environ["CYBER_MCP_CONNECTIONS"] = args.mcp_conns
 
     # Get configuration from ConfigManager with CLI overrides
     config_manager = get_config_manager()
@@ -588,6 +603,7 @@ def main():
 {Colors.BOLD}Max Iterations:{Colors.RESET} {args.iterations} steps
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
 {Colors.BOLD}Output Path:{Colors.RESET}  {output_path_display}
+{Colors.BOLD}MCP enabled:{Colors.RESET}  {args.mcp_enabled and args.mcp_conns}
 """,
             Colors.CYAN,
             "🎯",

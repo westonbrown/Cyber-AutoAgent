@@ -215,6 +215,65 @@ export interface Config {
   // Backward compatibility
   enableObservability?: boolean; // Deprecated, use observability instead
   updateChannel?: string; // Update channel for future use
+
+  // Model Context Protocol servers
+  mcp: MCPConfig;
+}
+
+/**
+ * MCP Configuration
+ *
+ * Defines the configuration schema for Model Context Protocol (MCP) connections.
+ * Supports multiple transports (stdio, sse, streamable_http) with per-connection
+ * execution and plugin settings.
+ */
+export interface MCPConfig {
+  /** Whether MCP integration is enabled globally */
+  enabled: boolean;
+
+  /** List of configured MCP connections */
+  connections: MCPConnection[];
+}
+
+/**
+ * MCP Connection Configuration
+ *
+ * Describes a single MCP connection, including its transport type, startup
+ * command or remote endpoint, and operational limits.
+ */
+export interface MCPConnection {
+  /** Unique identifier for the MCP connection */
+  id: string;
+
+  /** Transport protocol for communication */
+  transport: 'stdio' | 'sse' | 'streamable_http';
+
+  /**
+   * Command to start the MCP server (for stdio-based transports).
+   * Example: ["python", "-m", "mymcp.server"]
+   */
+  command?: string[];
+
+  /**
+   * URL of the MCP server (for HTTP-based transports such as streamable_http).
+   * Example: "https://htb-mcp.example.com/mcp"
+   */
+  server_url?: string;
+
+  /**
+   * Optional HTTP headers to send with requests (for HTTP-based transports).
+   * Supports environment variable substitution via ${VAR_NAME}.
+   */
+  headers?: Record<string, string>;
+
+  /** List of plugins to enable (use ["*"] for all plugins) */
+  plugins: string[];
+
+  /** Maximum allowed execution time for MCP tools (in seconds) */
+  timeoutSeconds?: number;
+
+  /** Maximum number of tools that can run concurrently */
+  toolLimit?: number;
 }
 
 /**
@@ -472,7 +531,13 @@ export const defaultConfig: Config = {
   
   // Setup Status
   isConfigured: false,
-  deploymentMode: 'local-cli' // Default to Local CLI for minimal setup
+  deploymentMode: 'local-cli', // Default to Local CLI for minimal setup
+
+  // MCP
+  mcp: {
+    enabled: false,
+    connections: [],
+  }
 };
 
 export const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
