@@ -66,6 +66,8 @@ const cli = meow(`
     --debug, -d         Enable debug mode
     --headless          Run in headless mode for scripting
     --deployment-mode   Deployment mode: local-cli, single-container, full-stack
+    --mcp-enabled       Enable MCP servers
+    --mcp-conns         Define MCP servers using JSON
 
   Examples
     $ cyber-react
@@ -131,6 +133,12 @@ const cli = meow(`
     deploymentMode: {
       type: 'string',
       default: 'local-cli'
+    },
+    mcpEnabled: {
+      type: 'boolean',
+    },
+    mcpConns: {
+      type: 'string',
     }
   }
 });
@@ -212,7 +220,7 @@ const runAutoAssessment = async () => {
           }
         }
       }
-      
+
       // Use the imported default config
       const defaultConfig = configModule.defaultConfig || {
         // Fallback defaults if import fails
