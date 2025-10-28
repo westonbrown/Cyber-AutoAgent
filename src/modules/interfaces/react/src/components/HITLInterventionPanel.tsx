@@ -47,17 +47,20 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
 
   // Keyboard handler for destructive operations
   useInput((input, key) => {
+    // Only handle keyboard for non-manual interventions when active
     if (!isActive || isManualIntervention) return;
 
     // Switch to feedback mode when [c] pressed for destructive operations
     if (mode === 'review' && input === 'c') {
       setMode('feedback');
+      return;
     }
 
     // Escape to go back to review mode
     if (mode === 'feedback' && key.escape) {
       setMode('review');
       setFeedbackText('');
+      return;
     }
   });
 
@@ -121,14 +124,14 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   }
 
   // Auto-pause (Destructive Operation) - Show tool details with approval options
-  if (!isManualIntervention) {
+  if (!isManualIntervention && mode === 'review') {
     const hasParameters = parameters && Object.keys(parameters).length > 0;
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
         <Box marginBottom={1} flexDirection="column">
           <Text bold color="yellow">
-            ⚠️  DESTRUCTIVE OPERATION - REVIEW REQUIRED
+            ⚠️  Potentially destructive operation - review required
           </Text>
           {timeoutSeconds && (
             <Text color="gray" dimColor>
@@ -161,8 +164,8 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
         <Box marginBottom={1} flexDirection="column">
           <Text bold>Options:</Text>
           <Text>  [a] Approve - proceed with operation</Text>
-          <Text>  [c] Correction - provide modified parameters</Text>
           <Text>  [r] Reject - cancel this operation</Text>
+          <Text>  [c] Correction - provide modified parameters</Text>
           <Text dimColor>  [Esc] Cancel and resume</Text>
         </Box>
 
@@ -174,9 +177,9 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
   }
 
   // Feedback input mode (for destructive operations when user presses [c])
-  if (mode === 'feedback') {
+  if (!isManualIntervention && mode === 'feedback') {
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor="cyan" padding={1}>
+      <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
         <Box marginBottom={1}>
           <Text bold color="cyan">
             💬 Provide Correction
@@ -196,6 +199,7 @@ export const HITLInterventionPanel: React.FC<HITLInterventionPanelProps> = ({
             <TextInput
               value={feedbackText}
               onChange={setFeedbackText}
+              placeholder="Type your correction and press Enter..."
               onSubmit={(value) => {
                 if (value.trim()) {
                   onSubmitFeedback('correction', value);

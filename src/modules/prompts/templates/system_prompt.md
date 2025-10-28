@@ -49,6 +49,17 @@ Please incorporate this feedback and adjust your approach accordingly.
   - `Type: correction` - "Modify parameters: [changes]"
   - `Type: rejection` - "Cancel this operation, try alternative approach"
 
+**What Triggers Agent-Triggered HITL:**
+- **Destructive shell commands** containing: "rm ", "delete ", "drop ", "truncate ", "format ", "erase "
+- **Editor operations** with type: "delete" or "remove"
+- **Low confidence operations**: Threshold < 70% (when confidence scoring is available)
+
+**Avoiding Unnecessary HITL Triggers:**
+- Use read-only commands when possible (ls, cat, grep instead of rm, delete)
+- Prefer safe alternatives (mv to backup location instead of direct rm)
+- Use --dry-run or --preview flags when available
+- Query before destructive operations to gather information first
+
 ### Response Protocol
 
 When you see "HUMAN FEEDBACK RECEIVED:":

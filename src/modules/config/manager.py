@@ -326,8 +326,8 @@ class HITLConfig:
 
     # Auto-pause triggers
     auto_pause_on_destructive: bool = True
-    auto_pause_on_low_confidence: bool = False
-    confidence_threshold: int = 70  # Threshold for low confidence (0-100)
+    auto_pause_on_low_confidence: bool = True
+    confidence_threshold: int = 90  # Threshold for low confidence (0-100)
 
 
 @dataclass

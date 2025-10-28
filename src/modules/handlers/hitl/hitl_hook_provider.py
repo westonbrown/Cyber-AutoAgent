@@ -72,6 +72,9 @@ class HITLHookProvider(HookProvider):
 
         Args:
             event: BeforeToolInvocationEvent from Strands SDK
+
+        Raises:
+            RuntimeError: If user rejects the tool execution
         """
         tool_use = event.tool_use
         tool_name = tool_use.get("name", "unknown")
@@ -105,6 +108,25 @@ class HITLHookProvider(HookProvider):
                 logger.warning(
                     "Timeout expired waiting for feedback on tool %s - auto-resuming",
                     tool_name,
+                )
+                return
+
+            # Check if user rejected the operation
+            feedback = self.feedback_manager.get_pending_feedback(tool_id)
+            if feedback and feedback.feedback_type.value == "rejection":
+                logger.info(
+                    "Tool %s rejected by user - preventing execution",
+                    tool_name,
+                )
+                log_hitl(
+                    "HITLHook",
+                    f"🚫 Tool {tool_name} rejected by user - raising exception to prevent execution",
+                    "WARNING",
+                )
+                # Raise exception to prevent tool from executing
+                # The agent will see the rejection feedback at next model invocation
+                raise RuntimeError(
+                    f"Tool execution cancelled by user (tool={tool_name}, reason=rejection)"
                 )
 
     def _check_manual_pause(self, event: BeforeModelInvocationEvent) -> None:
