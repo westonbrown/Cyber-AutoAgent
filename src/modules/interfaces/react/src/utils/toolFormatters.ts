@@ -240,7 +240,27 @@ export const toolFormatters: Record<string, ToolFormatter> = {
     const url = input.url || '';
     return `method: ${method} | url: ${url}`;
   },
-  
+
+  browser_set_headers: (input) => {
+    const headers = input.headers || {};
+    return `headers: ${JSON.stringify(headers)}`;
+  },
+
+  browser_goto_url: (input) => {
+    const url = input.url || 'unknown';
+    return `url: ${url}`;
+  },
+
+  browser_perform_action: (input) => {
+    const action = input.action || 'unknown';
+    return `action: ${action}`;
+  },
+
+  browser_observe_page: (input) => {
+    const instruction = input.instruction || 'unknown';
+    return `instruction: ${instruction}`;
+  },
+
   file_write: (input) => {
     const filePath = input.path || 'unknown';
     const fileContent = input.content || '';

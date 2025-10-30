@@ -28,6 +28,14 @@ from modules.prompts import get_system_prompt  # Backward-compat import for test
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
 from modules.handlers.utils import print_status, sanitize_target_name
+from modules.tools.browser import (
+    initialize_browser,
+    browser_goto_url,
+    browser_observe_page,
+    browser_get_page_html,
+    browser_set_headers,
+    browser_perform_action,
+)
 from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
 from modules.tools.prompt_optimizer import prompt_optimizer
 
@@ -37,6 +45,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from strands.hooks.events import BeforeToolCallEvent  # type: ignore
 
 logger = logging.getLogger(__name__)
+
 
 # Minimal tool router hook to map unknown tool names to the shell tool
 class _ToolRouterHook:
@@ -65,6 +74,7 @@ class _ToolRouterHook:
             if isinstance(raw_input, str) and raw_input.strip().startswith("{"):
                 try:
                     import json as _json
+
                     maybe = _json.loads(raw_input)
                     if isinstance(maybe, dict):
                         params = maybe
@@ -451,7 +461,6 @@ def create_agent(
     if config.model_id is None:
         config.model_id = server_config.llm.model_id
 
-
     # Use provided operation_id or generate new one
     if not config.op_id:
         operation_id = f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -520,6 +529,7 @@ def create_agent(
     except Exception:
         logger.debug("Unable to set overlay environment context", exc_info=True)
 
+    initialize_browser(provider=config.provider, model=config.model_id, artifacts_dir=paths.get("artifacts"))
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
 
@@ -605,9 +615,7 @@ def create_agent(
                     try:
                         abs_path = str(Path(tool_path).resolve())
                         tool_name = Path(tool_path).stem
-                        tool_examples.append(
-                            f'load_tool(path="{abs_path}", name="{tool_name}")'
-                        )
+                        tool_examples.append(f'load_tool(path="{abs_path}", name="{tool_name}")')
                     except Exception:
                         # As a last resort, include a name-only hint
                         tool_name = Path(tool_path).stem
@@ -700,7 +708,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                         snap_lines = []
                         snap_lines.append(f"Objective: {objective}")
                         if current_phase_info:
-                            snap_lines.append(f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})")
+                            snap_lines.append(
+                                f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})"
+                            )
                             snap_lines.append(f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}")
 
                         plan_snapshot = "\n".join(snap_lines)
@@ -754,7 +764,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                     snap_lines = []
                     if phase_line:
                         # Clean up the phase line for display
-                        clean_phase = phase_line.replace("[ACTIVE]", "").replace("[PENDING]", "").replace("[COMPLETED]", "").strip()
+                        clean_phase = (
+                            phase_line.replace("[ACTIVE]", "")
+                            .replace("[PENDING]", "")
+                            .replace("[COMPLETED]", "")
+                            .strip()
+                        )
                         snap_lines.append(f"CurrentPhase: {clean_phase}")
                     # Derive sub-objective from phase goal portion if present
                     sub_obj = None
@@ -787,18 +802,19 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         has_existing_memories=has_existing_memories,
         memory_overview=memory_overview,
         tools_context=full_tools_context if full_tools_context else None,
-        output_config={"base_dir": server_config.output.base_dir, "target_name": target_name, "artifacts_path": paths.get("artifacts"), "tools_path": paths.get("tools")},
+        output_config={
+            "base_dir": server_config.output.base_dir,
+            "target_name": target_name,
+            "artifacts_path": paths.get("artifacts"),
+            "tools_path": paths.get("tools"),
+        },
         plan_snapshot=plan_snapshot,
         plan_current_phase=plan_current_phase,
     )
 
     # If a module-specific execution prompt exists, append it to the system prompt
     if module_execution_prompt:
-        system_prompt = (
-            system_prompt
-            + "\n\n## MODULE EXECUTION GUIDANCE\n"
-            + module_execution_prompt.strip()
-        )
+        system_prompt = system_prompt + "\n\n## MODULE EXECUTION GUIDANCE\n" + module_execution_prompt.strip()
 
     # It works in both CLI and React modes
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
@@ -911,6 +927,11 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         stop,
         http_request,
         python_repl,
+        browser_set_headers,
+        browser_get_page_html,
+        browser_goto_url,
+        browser_perform_action,
+        browser_observe_page,
     ]
 
     # Inject module-specific tools if available
@@ -983,6 +1004,11 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                 "stop",
                 "http_request",
                 "python_repl",
+                "browser_set_headers",
+                "browser_goto_url",
+                "browser_get_page_html",
+                "browser_perform_action",
+                "browser_observe_page",
             ],
             "tools.parallel_limit": 8,
             # Memory configuration

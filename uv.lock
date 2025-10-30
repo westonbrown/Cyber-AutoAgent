@@ -126,6 +126,25 @@ wheels = [
 ]
 
 [[package]]
+name = "anthropic"
+version = "0.72.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "docstring-parser" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/07/61f3ca8e69c5dcdaec31b36b79a53ea21c5b4ca5e93c7df58c71f43bf8d8/anthropic-0.72.0.tar.gz", hash = "sha256:8971fe76dcffc644f74ac3883069beb1527641115ae0d6eb8fa21c1ce4082f7a", size = 493721, upload-time = "2025-10-28T19:13:01.755Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/b7/160d4fb30080395b4143f1d1a4f6c646ba9105561108d2a434b606c03579/anthropic-0.72.0-py3-none-any.whl", hash = "sha256:0e9f5a7582f038cab8efbb4c959e49ef654a56bfc7ba2da51b5a7b8a84de2e4d", size = 357464, upload-time = "2025-10-28T19:13:00.215Z" },
+]
+
+[[package]]
 name = "anyio"
 version = "4.10.0"
 source = { registry = "https://pypi.org/simple" }
@@ -273,6 +292,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ff/f3/7bf4913b4b61416c014cfee38211d071f75894cca37f7234519c4d8676d1/botocore-1.40.9.tar.gz", hash = "sha256:f4a9c6ed08e8637138e1b5534f89d38c02650974b6458a07690493130e295f68", size = 14325768, upload-time = "2025-08-13T19:20:22.393Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/e9/367e81e114deb92a6e0d5740f0bff4548af710be318af65265b9aad72237/botocore-1.40.9-py3-none-any.whl", hash = "sha256:d4960a39aab9658bcd0272490003001cb4a8d12b89bb297ccef994ee023fb638", size = 13990592, upload-time = "2025-08-13T19:20:16.942Z" },
+]
+
+[[package]]
+name = "browserbase"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/df/17ac5e1116ab8f1264c6a9718f935358d20bdcd8ae0e3d1f18fd580cd871/browserbase-1.4.0.tar.gz", hash = "sha256:e2ed36f513c8630b94b826042c4bb9f497c333f3bd28e5b76cb708c65b4318a0", size = 122103, upload-time = "2025-05-16T20:50:40.802Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/13/4191423982a2ec69dc8c10a1c4b94a50a0861f49be81ffc19621b75841bc/browserbase-1.4.0-py3-none-any.whl", hash = "sha256:ea9f1fb4a88921975b8b9606835c441a59d8ce82ce00313a6d48bbe8e30f79fb", size = 98044, upload-time = "2025-05-16T20:50:39.331Z" },
 ]
 
 [[package]]
@@ -501,10 +537,13 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "pyarrow" },
+    { name = "pymitter" },
     { name = "ragas" },
     { name = "requests" },
+    { name = "stagehand" },
     { name = "strands-agents", extra = ["litellm", "ollama", "otel"] },
     { name = "strands-agents-tools" },
+    { name = "tldextract" },
 ]
 
 [package.optional-dependencies]
@@ -546,13 +585,16 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.30.0" },
     { name = "opentelemetry-sdk" },
     { name = "pyarrow", specifier = ">=14.0.0,<20.0.0" },
+    { name = "pymitter", specifier = ">=1.1.3" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "ragas", specifier = ">=0.3.0" },
     { name = "requests", specifier = ">=2.25.0" },
+    { name = "stagehand", specifier = ">=0.5.0" },
     { name = "strands-agents", extras = ["ollama", "otel", "litellm"], specifier = "==1.11.0" },
     { name = "strands-agents-tools", specifier = "==0.2.9" },
+    { name = "tldextract", specifier = ">=5.3.0" },
 ]
 provides-extras = ["dev"]
 
@@ -2256,6 +2298,25 @@ wheels = [
 ]
 
 [[package]]
+name = "playwright"
+version = "1.55.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "greenlet" },
+    { name = "pyee" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/3a/c81ff76df266c62e24f19718df9c168f49af93cabdbc4608ae29656a9986/playwright-1.55.0-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:d7da108a95001e412effca4f7610de79da1637ccdf670b1ae3fdc08b9694c034", size = 40428109, upload-time = "2025-08-28T15:46:20.357Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/f5/bdb61553b20e907196a38d864602a9b4a461660c3a111c67a35179b636fa/playwright-1.55.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:8290cf27a5d542e2682ac274da423941f879d07b001f6575a5a3a257b1d4ba1c", size = 38687254, upload-time = "2025-08-28T15:46:23.925Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/64/48b2837ef396487807e5ab53c76465747e34c7143fac4a084ef349c293a8/playwright-1.55.0-py3-none-macosx_11_0_universal2.whl", hash = "sha256:25b0d6b3fd991c315cca33c802cf617d52980108ab8431e3e1d37b5de755c10e", size = 40428108, upload-time = "2025-08-28T15:46:27.119Z" },
+    { url = "https://files.pythonhosted.org/packages/08/33/858312628aa16a6de97839adc2ca28031ebc5391f96b6fb8fdf1fcb15d6c/playwright-1.55.0-py3-none-manylinux1_x86_64.whl", hash = "sha256:c6d4d8f6f8c66c483b0835569c7f0caa03230820af8e500c181c93509c92d831", size = 45905643, upload-time = "2025-08-28T15:46:30.312Z" },
+    { url = "https://files.pythonhosted.org/packages/83/83/b8d06a5b5721931aa6d5916b83168e28bd891f38ff56fe92af7bdee9860f/playwright-1.55.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:29a0777c4ce1273acf90c87e4ae2fe0130182100d99bcd2ae5bf486093044838", size = 45296647, upload-time = "2025-08-28T15:46:33.221Z" },
+    { url = "https://files.pythonhosted.org/packages/06/2e/9db64518aebcb3d6ef6cd6d4d01da741aff912c3f0314dadb61226c6a96a/playwright-1.55.0-py3-none-win32.whl", hash = "sha256:29e6d1558ad9d5b5c19cbec0a72f6a2e35e6353cd9f262e22148685b86759f90", size = 35476046, upload-time = "2025-08-28T15:46:36.184Z" },
+    { url = "https://files.pythonhosted.org/packages/46/4f/9ba607fa94bb9cee3d4beb1c7b32c16efbfc9d69d5037fa85d10cafc618b/playwright-1.55.0-py3-none-win_amd64.whl", hash = "sha256:7eb5956473ca1951abb51537e6a0da55257bb2e25fc37c2b75af094a5c93736c", size = 35476048, upload-time = "2025-08-28T15:46:38.867Z" },
+    { url = "https://files.pythonhosted.org/packages/21/98/5ca173c8ec906abde26c28e1ecb34887343fd71cc4136261b90036841323/playwright-1.55.0-py3-none-win_arm64.whl", hash = "sha256:012dc89ccdcbd774cdde8aeee14c08e0dd52ddb9135bf10e9db040527386bd76", size = 31225543, upload-time = "2025-08-28T15:46:41.613Z" },
+]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2585,6 +2646,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pyee"
+version = "13.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/95/03/1fd98d5841cd7964a27d729ccf2199602fe05eb7a405c1462eb7277945ed/pyee-13.0.0.tar.gz", hash = "sha256:b391e3c5a434d1f5118a25615001dbc8f669cf410ab67d04c4d4e07c55481c37", size = 31250, upload-time = "2025-03-17T18:53:15.955Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/4d/b9add7c84060d4c1906abe9a7e5359f2a60f7a9a4f67268b2766673427d8/pyee-13.0.0-py3-none-any.whl", hash = "sha256:48195a3cddb3b1515ce0695ed76036b5ccc2ef3a9f963ff9f77aec0139845498", size = 15730, upload-time = "2025-03-17T18:53:14.532Z" },
+]
+
+[[package]]
 name = "pyflakes"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2628,6 +2701,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9d/58/1f614a84d3295c542e9f6e2c764533eea3f318f4592dc1ea06c797114767/pylint-3.3.8.tar.gz", hash = "sha256:26698de19941363037e2937d3db9ed94fb3303fdadf7d98847875345a8bb6b05", size = 1523947, upload-time = "2025-08-09T09:12:57.234Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/1a/711e93a7ab6c392e349428ea56e794a3902bb4e0284c1997cff2d7efdbc1/pylint-3.3.8-py3-none-any.whl", hash = "sha256:7ef94aa692a600e82fabdd17102b73fc226758218c97473c7ad67bd4cb905d83", size = 523153, upload-time = "2025-08-09T09:12:54.836Z" },
+]
+
+[[package]]
+name = "pymitter"
+version = "1.1.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7a/d6/87fa9e93640938fe1836a12157eac2ab36299ff1549dae30a677bf764789/pymitter-1.1.3.tar.gz", hash = "sha256:8f29abbaf1f2152b27dd092c7d2e557e06bcd0c7a560105689fd889e0c3d944d", size = 14716, upload-time = "2025-07-11T17:03:41.732Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/9d/34257252be022b7e776794e9ee30abc88322adb70e3cbb15bdfd44afe88d/pymitter-1.1.3-py3-none-any.whl", hash = "sha256:7e7644af9393f06b446c55c33ea5e4f31d0e2557971339a971f736467201f901", size = 8513, upload-time = "2025-07-11T17:03:39.711Z" },
 ]
 
 [[package]]
@@ -2927,6 +3012,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-file"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
+]
+
+[[package]]
 name = "requests-toolbelt"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3214,6 +3311,27 @@ wheels = [
 ]
 
 [[package]]
+name = "stagehand"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anthropic" },
+    { name = "browserbase" },
+    { name = "httpx" },
+    { name = "litellm" },
+    { name = "openai" },
+    { name = "playwright" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b8/36/e1e5f5c1048e345bc4b09cdaa638134c613f8c6d056b32ac542a7f38c91e/stagehand-0.5.0.tar.gz", hash = "sha256:58d11bc05178033e0f224c2d7969cff8945d0e5b1416dc88b30e4d578f309cdc", size = 90959, upload-time = "2025-07-28T23:44:40.164Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/5c/9adaf1c9ee3457d906d84071a705cbe22583ab581d533c6483251feaef60/stagehand-0.5.0-py3-none-any.whl", hash = "sha256:4b7a61e414c8680ed601d7b3ddc1ea46b4b308d649a286f65db0f17b28f19a68", size = 102142, upload-time = "2025-07-28T23:44:38.951Z" },
+]
+
+[[package]]
 name = "starlette"
 version = "0.47.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3341,6 +3459,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/52/d5/a0dcdb40dd2ea357e83cb36258967f0ae96f5dd40c722d6e382ceee6bba9/tiktoken-0.11.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7fb4effe60574675118b73c6fbfd3b5868e5d7a1f570d6cc0d18724b09ecf318", size = 1182743, upload-time = "2025-08-08T23:57:56.307Z" },
     { url = "https://files.pythonhosted.org/packages/3b/17/a0fc51aefb66b7b5261ca1314afa83df0106b033f783f9a7bcbe8e741494/tiktoken-0.11.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:94f984c9831fd32688aef4348803b0905d4ae9c432303087bae370dc1381a2b8", size = 1244057, upload-time = "2025-08-08T23:57:57.628Z" },
     { url = "https://files.pythonhosted.org/packages/50/79/bcf350609f3a10f09fe4fc207f132085e497fdd3612f3925ab24d86a0ca0/tiktoken-0.11.0-cp313-cp313-win_amd64.whl", hash = "sha256:2177ffda31dec4023356a441793fed82f7af5291120751dee4d696414f54db0c", size = 883901, upload-time = "2025-08-08T23:57:59.359Z" },
+]
+
+[[package]]
+name = "tldextract"
+version = "5.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "requests-file" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/97/78/182641ea38e3cfd56e9c7b3c0d48a53d432eea755003aa544af96403d4ac/tldextract-5.3.0.tar.gz", hash = "sha256:b3d2b70a1594a0ecfa6967d57251527d58e00bb5a91a74387baa0d87a0678609", size = 128502, upload-time = "2025-04-22T06:19:37.491Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/7c/ea488ef48f2f544566947ced88541bc45fae9e0e422b2edbf165ee07da99/tldextract-5.3.0-py3-none-any.whl", hash = "sha256:f70f31d10b55c83993f55e91ecb7c5d84532a8972f22ec578ecfbe5ea2292db2", size = 107384, upload-time = "2025-04-22T06:19:36.304Z" },
 ]
 
 [[package]]

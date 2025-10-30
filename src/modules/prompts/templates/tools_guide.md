@@ -34,6 +34,24 @@
 - Categories: finding | signal | decision | artifact | observation | plan
 - Content: Paths only, no binary blobs
 
+**browser_ tools**
+- Usage: ONLY for modern web applications when js rendering is required to fully render or to mimic user interactions
+- Browser: Only a single browser window is available
+- **browser_set_headers**
+  - Purpose: to set headers on all browser requests if required by objective
+- **browser_goto_url**
+  - Purpose: to navigate to a URL in a web browser
+  - Results: Summary of all network requests made by the browser during the navigation
+- **browser_get_page_html**
+  - Purpose: to get the HTML of the current page in a web browser
+  - Large responses (HTML/JS): Save raw to <artifacts_path>/*.html, grep/sed to extract relevant data, store only file path in findings
+- **browser_perform_action**
+  - Purpose: to perform an interaction in the current page of the web browser
+  - Results: Summary of all network requests made by the browser during the interaction
+- **browser_observe_page**
+  - Purpose: to observe interesting elements on the current page of the web browser 
+  - Results: A list of descriptions of interesting elements observed on the page based 
+
 **swarm**
 - Purpose: Multi-agent collaboration for parallel capability testing
 - Configuration: 2-3 agents max, max_handoffs=3, max_iterations=8, node_timeout=3200, execution_timeout=3800

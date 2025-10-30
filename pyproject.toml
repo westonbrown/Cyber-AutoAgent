@@ -30,7 +30,7 @@ classifiers = [
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "strands-agents[ollama,otel,litellm]==1.11.0",
-    "strands-agents-tools==0.2.9", 
+    "strands-agents-tools==0.2.9",
     "mem0ai",
     "boto3>=1.39.10",
     "botocore>=1.39.10",
@@ -45,7 +45,10 @@ dependencies = [
     "ragas>=0.3.0",
     "langfuse>=2.0.0",
     "langchain-aws>=0.2.0",
-    "langchain-ollama>=0.2.0"
+    "langchain-ollama>=0.2.0",
+    "stagehand>=0.5.0",
+    "pymitter>=1.1.3",
+    "tldextract>=5.3.0",
 ]
 
 [project.optional-dependencies]
