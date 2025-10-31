@@ -1,16 +1,47 @@
+import csv
+import functools
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Optional, Any, Union
+from urllib.parse import urlparse
 
 from playwright.async_api import Page, BrowserContext, Response
 from pymitter import EventEmitter
+from six import StringIO
 from stagehand import StagehandConfig, Stagehand, StagehandPage
 from stagehand.context import StagehandContext
 from strands import tool
 from tldextract import tldextract
 
 logger = logging.getLogger(__name__)
+
+
+@functools.cache
+def extract_domain(url_or_fqdn: str) -> str:
+    """
+    Extracts the domain from a given URL or fully qualified domain name (FQDN).
+    The function uses the `tldextract` library to parse the input and retrieve the primary
+    domain and suffix. If no suffix is found, it is assumed to be a local domain,
+    and only the domain is returned. Typical use cases include extracting useful
+    domain information from URLs or processing local domains.
+
+    Args:
+        url_or_fqdn: A string representing a URL or fully qualified domain name from
+        which the domain will be extracted.
+
+    Returns:
+        A string representing the extracted domain. For example, for input
+        "www.example.com", "example.com" is returned. For local domains such as
+        "server.local", "server" is returned.
+    """
+    domain_extract = tldextract.extract(url_or_fqdn)
+    if not domain_extract.suffix:
+        # Suffix can be empty for local domains such as `something.mine.local` or `server.orb.local`
+        return domain_extract.domain
+
+    return f"{domain_extract.domain}.{domain_extract.suffix}"
 
 
 class BrowserService(EventEmitter):
@@ -42,7 +73,11 @@ class BrowserService(EventEmitter):
         self.provider = provider
         self.model = model
         self.artifacts_dir = artifacts_dir
-        launch_options: dict[str, Any] = {"viewPort": {"width": 1280, "height": 720}}
+        launch_options: dict[str, Any] = {
+            "headless": True,
+            "viewPort": {"width": 1280, "height": 720},
+            "args": ["--disable-blink-features=AutomationControlled", "--disable-smooth-scrolling"],
+        }
 
         if extra_http_headers:
             launch_options["extra_http_headers"] = extra_http_headers
@@ -59,7 +94,13 @@ class BrowserService(EventEmitter):
             )
 
         self.stagehand_config = StagehandConfig(
-            env="LOCAL", modelName=model, modelApiKey=api_key, selfHeal=True, localBrowserLaunchOptions=launch_options
+            env="LOCAL",
+            modelName=model,
+            modelApiKey=api_key,
+            selfHeal=True,
+            localBrowserLaunchOptions=launch_options,
+            verbose=0,  # errors only. keep output minimal
+            use_rich_logging=False,  # ensure ansi does not pollute outputs
         )
         self.stagehand = Stagehand(self.stagehand_config)
 
@@ -75,8 +116,7 @@ class BrowserService(EventEmitter):
         Returns:
             str: The domain of the page extracted from its URL.
         """
-        parsed_domain = tldextract.extract(self.page.url)
-        return f"{parsed_domain.domain}.{parsed_domain.suffix}"
+        return extract_domain(self.page.url)
 
     @property
     def page(self) -> Union[Page, StagehandPage]:
@@ -137,9 +177,14 @@ class BrowserService(EventEmitter):
         responses: list[Response] = []
 
         def capture_response(response: Response):
+            if response.request.method == "OPTIONS":
+                return
+
+            request_url_hostname = urlparse(response.request.url).hostname
+
             if only_domains:
                 for filter_domain in only_domains:
-                    if response.url.endswith(filter_domain):
+                    if request_url_hostname.endswith(filter_domain):
                         responses.append(response)
                         return
             else:
@@ -184,9 +229,15 @@ def format_headers(headers: dict[str, str]) -> str:
         "cookie",
         "set-cookie",
     ]
-    return "\n".join(
-        [f"\t`{k}`: `{v}`" for k, v in headers.items() if k.lower() in important_headers or k.lower().startswith("x-")]
-    )
+
+    filtered_headers = [
+        f"\t`{k}`: `{v}`" for k, v in headers.items() if k.lower() in important_headers or k.lower().startswith("x-")
+    ]
+
+    if len(filtered_headers) == 0:
+        return ""
+
+    return "\n".join(filtered_headers)
 
 
 async def simplify_responses_for_llm(responses: list[Response]) -> str:
@@ -208,22 +259,29 @@ async def simplify_responses_for_llm(responses: list[Response]) -> str:
     for response in responses:
         simplified_request = [
             f"`{response.request.method}` `{response.request.url}`",
-            "Request Headers:",
-            format_headers(response.request.headers),
         ]
+
+        if formatted_request_headers := format_headers(response.request.headers):
+            simplified_request.extend(["Request Headers:", formatted_request_headers])
 
         if request_body := response.request.post_data_buffer:
             simplified_request.append(f"Request Body: ```{request_body}```")
 
         simplified_response = [
             f"Status Code: `{response.status}`",
-            "Response Headers:",
-            format_headers(response.headers),
         ]
+
+        if formatted_response_headers := format_headers(response.headers):
+            simplified_response.extend(
+                ["Response Headers:", formatted_response_headers],
+            )
 
         simplified_responses.append("\n".join(simplified_request + simplified_response))
 
-    return "<network_call>" + "</network_call>\n<network_call>".join(simplified_responses) + "</network_call>"
+    simplified_text = (
+        "<network_call>\n" + "\n</network_call>\n\n<network_call>\n".join(simplified_responses) + "\n</network_call>"
+    )
+    return simplified_text
 
 
 @tool
@@ -253,10 +311,7 @@ async def browser_goto_url(url: str):
         A collection of network responses captured during the navigation.
     """
     browser = await get_browser()
-    url_domain = tldextract.extract(url)
-    async with browser.network_capture(
-        only_domains=[browser.page_domain, f"{url_domain.domain}.{url_domain.suffix}"]
-    ) as responses:
+    async with browser.network_capture(only_domains=[browser.page_domain, extract_domain(url)]) as responses:
         await browser.page.goto(url)
         return await simplify_responses_for_llm(responses)
 
@@ -269,10 +324,62 @@ async def browser_get_page_html() -> str:
     Use this tool to retrieve the HTML content of the current page in the browser.
 
     Returns:
-        The HTML content of the current page in the browser.
+        The path of the downloaded HTML file artifact.
     """
     browser = await get_browser()
-    return await browser.page.content()
+    page_html = await browser.page.content()
+    html_artifact_file = os.path.join(browser.artifacts_dir, f"browser_page_{time.time_ns()}.html")
+    with open(html_artifact_file, "w") as f:
+        f.write(page_html)
+    return f"HTML content saved to artifact: {html_artifact_file}"
+
+
+@tool
+async def browser_evaluate_js(expression: str):
+    """
+    Evaluate a javascript expression in the current page in the browser.
+
+    Use this tool if you want to run some javascript in the browser.
+
+    Examples:
+        - `() => document.location.href`
+        - `async () => { response = await fetch(location.href); return response.status; }`
+        - `() => JSON.stringify(localStorage)`
+
+    Args:
+        expression (str): The javascript expression to evaluate. The expression has to be a function that returns a value.
+    """
+    browser = await get_browser()
+    return await browser.page.evaluate(expression)
+
+
+@tool
+async def browser_get_cookies():
+    """
+    Get the current active cookies from the browser
+
+    Use this tool to get all available cookies from the browser.
+
+    Returns:
+        str: A string in CSV format containing all the browser cookies, including
+             attributes such as 'name', 'value', 'domain', 'path', 'expires',
+             'httpOnly', 'secure', and 'sameSite'. If no cookies are found,
+             a message string indicating this is returned.
+    """
+    browser = await get_browser()
+    cookies = await browser.context.cookies()
+    if len(cookies) == 0:
+        return "No cookies found"
+
+    csv_buffer = StringIO()
+    writer = csv.DictWriter(
+        csv_buffer, fieldnames=["name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite"]
+    )
+    writer.writeheader()
+    for cookie in cookies:
+        writer.writerow(dict(cookie))
+
+    return csv_buffer.getvalue()
 
 
 @tool

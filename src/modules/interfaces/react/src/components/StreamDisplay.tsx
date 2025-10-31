@@ -832,7 +832,7 @@ const method = latestInput.method || 'GET';
 
         case 'browser_perform_action': {
           const action = latestInput.action || '';
-          const actionDisplay = action && action.trim().length > 0 ? url : '(awaiting args …)';
+          const actionDisplay = action && action.trim().length > 0 ? action : '(awaiting args …)';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: browser_perform_action</Text>
@@ -845,13 +845,34 @@ const method = latestInput.method || 'GET';
 
         case 'browser_observe_page': {
           const instruction = latestInput.instruction || '';
-          const instructionDisplay = action && instruction.trim().length > 0 ? url : '(awaiting args …)';
+          const instructionDisplay = instruction && instruction.trim().length > 0 ? instruction : '(awaiting args …)';
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: browser_observe_page</Text>
               <Box marginLeft={2}>
-                <Text dimColor>└─ instruction: {instruction}</Text>
+                <Text dimColor>└─ instruction: {instructionDisplay}</Text>
               </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_evaluate_js': {
+          const expression = latestInput.expression || '';
+          const expressionDisplay = expression && expression.trim().length > 0 ? expression : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_evaluate_js</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ instruction: {expressionDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_get_cookies': {
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_get_cookies</Text>
             </Box>
           );
         }

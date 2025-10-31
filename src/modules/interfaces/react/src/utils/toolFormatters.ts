@@ -261,6 +261,11 @@ export const toolFormatters: Record<string, ToolFormatter> = {
     return `instruction: ${instruction}`;
   },
 
+  browser_evaluate_js: (input) => {
+    const expression = input.expression || 'unknown';
+    return `expression: ${expression}`;
+  },
+
   file_write: (input) => {
     const filePath = input.path || 'unknown';
     const fileContent = input.content || '';

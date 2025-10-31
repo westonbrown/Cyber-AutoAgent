@@ -35,6 +35,8 @@ from modules.tools.browser import (
     browser_get_page_html,
     browser_set_headers,
     browser_perform_action,
+    browser_evaluate_js,
+    browser_get_cookies,
 )
 from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
 from modules.tools.prompt_optimizer import prompt_optimizer
@@ -932,6 +934,8 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         browser_goto_url,
         browser_perform_action,
         browser_observe_page,
+        browser_evaluate_js,
+        browser_get_cookies,
     ]
 
     # Inject module-specific tools if available

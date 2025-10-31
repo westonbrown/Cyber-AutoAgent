@@ -44,7 +44,13 @@
   - Results: Summary of all network requests made by the browser during the navigation
 - **browser_get_page_html**
   - Purpose: to get the HTML of the current page in a web browser
-  - Large responses (HTML/JS): Save raw to <artifacts_path>/*.html, grep/sed to extract relevant data, store only file path in findings
+  - Large responses: Files are saved to <artifacts_path>/*.html and full path is returned in tool output, grep/sed to extract relevant data, store only file path in findings
+- **browser_evaluate_js**
+  - Purpose: to evaluate a javascript expression in the current page
+  - Results: The output of the javascript function expression that was evaluated
+- **browser_get_cookies**
+  - Purpose: to get all cookies in the web browser
+  - Results: A csv string of all cookies in the web browser
 - **browser_perform_action**
   - Purpose: to perform an interaction in the current page of the web browser
   - Results: Summary of all network requests made by the browser during the interaction
