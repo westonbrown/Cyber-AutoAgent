@@ -691,6 +691,150 @@ class TestConfigManager:
             assert "claude-3-5-sonnet" in os.environ["MEM0_LLM_MODEL"]
             assert "titan-embed" in os.environ["MEM0_EMBEDDING_MODEL"]
 
+    @patch.dict(os.environ, {"CYBER_MCP_ENABLED": "false"})
+    def test_get_mcp_config_disabled(self):
+        """Test MCP empty configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert not config.enabled
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": "[]",
+    })
+    def test_get_mcp_config_empty(self):
+        """Test MCP empty configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert config.enabled
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """
+[
+    {
+        "id": "mcp1",
+        "transport": "stdio",
+        "command": ["python3","-m","mymcp.server"],
+        "plugins": ["general"],
+        "timeoutSeconds": 900,
+        "toolLimit": 8
+    },
+    {
+        "id": "mcp2",
+        "transport": "streamable-http",
+        "server_url": "http://127.0.0.1:8000/mcp",
+        "headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
+        "plugins": ["general","ctf"]
+    }
+]
+""",
+    })
+    def test_get_mcp_config_two(self):
+        """Test two MCP servers configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert config.enabled
+        assert len(config.connections) == 2
+
+        mcp = config.connections[0]
+        assert mcp.id == "mcp1"
+        assert mcp.transport == "stdio"
+        assert mcp.command == ["python3","-m","mymcp.server"]
+        assert mcp.plugins == ["general"]
+        assert mcp.timeoutSeconds == 900
+        assert mcp.toolLimit == 8
+
+        mcp = config.connections[1]
+        assert mcp.id == "mcp2"
+        assert mcp.transport == "streamable-http"
+        assert mcp.server_url == "http://127.0.0.1:8000/mcp"
+        assert mcp.headers == {"Authorization": "Bearer ${MCP_TOKEN}"}
+        assert mcp.plugins == ["general","ctf"]
+
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """
+[
+    {
+        "id": "mcp1",
+        "transport": "stdio",
+        "command": ["python3","-m","mymcp.server"]
+    },
+    {
+        "id": "mcp1",
+        "transport": "streamable-http",
+        "server_url": "http://127.0.0.1:8000/mcp"
+    }
+]
+""",
+    })
+    def test_get_mcp_config_duplicate_id_validation(self):
+        """Test MCP duplicate ID configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="id property must be unique"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "stdio","server_url": "http://127.0.0.1:8000/mcp"}]""",
+    })
+    def test_get_mcp_config_stdio_command_validation(self):
+        """Test MCP stdio requires command property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="stdio transport requires the command property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "sse","command": ["python3","-m","mymcp.server"]}]""",
+    })
+    def test_get_mcp_config_sse_command_validation(self):
+        """Test MCP see does not use the command property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="network transports do not use the command property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "streamable-http"}]""",
+    })
+    def test_get_mcp_config_streamable_http_server_url_validation(self):
+        """Test MCP streamable-http requires server_url property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="network transports require the server_url property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "telnet"}]""",
+    })
+    def test_get_mcp_config_transport_validation(self):
+        """Test MCP validate transport property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="does not have a valid transport"):
+            self.config_manager.get_mcp_config("bedrock")
+
 
 class TestGlobalFunctions:
     """Test global convenience functions."""

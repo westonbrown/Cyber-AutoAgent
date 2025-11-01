@@ -280,6 +280,67 @@ class TestMainFunction:
 
         assert exc_info.value.code == 1
 
+    @patch("cyberautoagent.setup_logging")
+    @patch("cyberautoagent.auto_setup")
+    @patch("cyberautoagent.create_agent")
+    @patch("cyberautoagent.get_initial_prompt")
+    @patch("cyberautoagent.print_banner")
+    @patch("cyberautoagent.print_section")
+    @patch("cyberautoagent.print_status")
+    @patch(
+        "sys.argv",
+        [
+            "cyberautoagent.py",
+            "--target",
+            "test.com",
+            "--objective",
+            "test objective",
+            "--provider",
+            "ollama",
+            "--mcp-enabled",
+            "--mcp-conns",
+            """[{"id":"mcp1","transport":"streamable-http","server_url":"http://127.0.0.1:8000/mcp"}]""",
+        ],
+    )
+    def test_main_local_mcp_flow(
+            self,
+            mock_print_status,
+            mock_print_section,
+            mock_print_banner,
+            mock_get_prompt,
+            mock_create_agent,
+            mock_auto_setup,
+            mock_setup_logging,
+    ):
+        """Test main function execution with local server and an MCP"""
+
+        # Setup mocks
+        mock_agent = Mock()
+        mock_handler = Mock()
+        mock_handler.steps = 5
+        mock_handler.has_reached_limit.return_value = False
+        mock_handler.get_summary.return_value = {
+            "total_steps": 5,
+            "tools_created": 2,
+            "evidence_collected": 3,
+            "memory_operations": 4,
+            "capability_expansion": ["tool1", "tool2"],
+        }
+        mock_handler.get_evidence_summary.return_value = []
+
+        mock_create_agent.return_value = (mock_agent, mock_handler)
+        mock_auto_setup.return_value = []
+        mock_get_prompt.return_value = "test prompt"
+
+        # Mock agent execution to return normally, then trigger completion
+        mock_agent.return_value = "Agent response"
+
+        try:
+            cyberautoagent.main()
+        except SystemExit as e:
+            # main() calls sys.exit(0) on success, which is expected
+            assert e.code in [None, 0]
+
 
 class TestEnvironmentVariables:
     """Test environment variable handling"""
