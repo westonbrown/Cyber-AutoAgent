@@ -373,7 +373,7 @@ def main():
     )
     parser.add_argument(
         "--mcp-conns",
-        action=str,
+        type=str,
         help="Configure MCP servers, requires --mcp-enabled to be applied",
     )
 
@@ -442,11 +442,6 @@ def main():
 
     os.environ["AWS_REGION"] = args.region
 
-    if args.mcp_enabled:
-        os.environ["CYBER_MCP_ENABLED"] = "true"
-    if args.mcp_conns:
-        os.environ["CYBER_MCP_CONNECTIONS"] = args.mcp_conns
-
     # Get configuration from ConfigManager with CLI overrides
     config_manager = get_config_manager()
     config_overrides = {}
@@ -456,6 +451,11 @@ def main():
     config_overrides["enable_unified_output"] = True
     if args.model:
         config_overrides["model_id"] = args.model
+    # MCP overrides
+    if args.mcp_enabled:
+        config_overrides["mcp_enabled"] = True
+    if args.mcp_conns:
+        config_overrides["mcp_conns"] = args.mcp_conns
 
     # Toggle rubric evaluation via CLI flag
     if args.eval_rubric:
@@ -477,6 +477,12 @@ def main():
 
     # Expose operation ID to tools via environment for consistent evidence tagging
     os.environ["CYBER_OPERATION_ID"] = local_operation_id
+
+    mcp_config = config_manager.get_mcp_config(args.provider, **config_overrides)
+    if mcp_config.enabled:
+        mcp_connections = list(filter(lambda c: '*' in c.plugins or args.module in c.plugins, mcp_config.connections))
+    else:
+        mcp_connections = []
 
     # Initialize logger using unified output system
     log_path = get_output_path(
@@ -602,8 +608,8 @@ def main():
 {Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET} (sanitized: {target_sanitized})
 {Colors.BOLD}Max Iterations:{Colors.RESET} {args.iterations} steps
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
+{Colors.BOLD}MCP:{Colors.RESET}          {len(mcp_connections)} server(s) available
 {Colors.BOLD}Output Path:{Colors.RESET}  {output_path_display}
-{Colors.BOLD}MCP enabled:{Colors.RESET}  {args.mcp_enabled and args.mcp_conns}
 """,
             Colors.CYAN,
             "🎯",
@@ -628,6 +634,7 @@ def main():
             memory_path=args.memory_path,
             memory_mode=args.memory_mode,
             module=args.module,
+            mcp_connections=mcp_connections,
         )
         agent, callback_handler = create_agent(
             target=args.target,

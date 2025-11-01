@@ -23,6 +23,8 @@ from strands_tools.stop import stop
 from strands_tools.swarm import swarm
 
 from modules import prompts
+from modules.prompts import get_system_prompt  # Backward-compat import for tests
+from modules.config.manager import get_config_manager, MCPConnection
 from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
 from modules.config.logger_factory import get_logger
 from modules.handlers import ReasoningHandler
@@ -400,6 +402,7 @@ class AgentConfig:
     memory_path: Optional[str] = None
     memory_mode: str = "auto"
     module: str = "general"
+    mcp_connections: Optional[List[MCPConnection]] = None
 
 
 def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
@@ -1078,6 +1081,10 @@ Available {config.module} module tools:
             )
     except Exception as e:
         logger.warning("Error discovering module tools for '%s': %s", config.module, e)
+
+    # Load MCP tools and prepare for injection
+    for mcp_conn in (config.mcp_connections or []):
+        agent_logger.warning("TODO: Discover MCP tools from: %s", mcp_conn)
 
     tools_context = ""
     if config.available_tools:
