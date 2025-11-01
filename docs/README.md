@@ -48,6 +48,7 @@ This directory contains comprehensive technical documentation for Cyber-AutoAgen
 - Module selection
 - Provider configuration
 - Output management
+- MCP configuration
 - Troubleshooting
 
 ### Operations
