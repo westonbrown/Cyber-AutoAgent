@@ -167,6 +167,7 @@ The compose stack automatically provides:
 
 - **Autonomous Operation**: Conducts security assessments with minimal human intervention
 - **Intelligent Tool Selection**: Automatically chooses appropriate security tools (nmap, sqlmap, nikto, etc.)
+- **Model Context Protocol (MCP)**: MCP support for local and remote, fine-grained tool selection
 - **Natural Language Reasoning**: Uses Strands framework with metacognitive architecture
 - **Evidence Collection**: Automatically stores findings with Mem0 memory (category="finding")
 - **Meta-Tool Creation**: Dynamically creates custom exploitation tools when needed
@@ -613,6 +614,8 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--memory-mode`: Memory initialization mode - `auto` (loads existing) or `fresh` (starts new), default: auto
 - `--keep-memory`: Keep memory data after operation completes (default: true)
 - `--output-dir`: Custom output directory (default: ./outputs)
+- `--mcp-enabled`: Enable MCP tools
+- `--mcp-conns`: Provide JSON of MCP server, the same `mcp.connections` block present in the configuration file 
 
 ### Usage Examples
 
@@ -649,6 +652,15 @@ docker run --rm \
   --target "http://testphp.vulnweb.com" \
   --objective "Comprehensive SQL injection and XSS assessment" \
   --iterations 25
+
+# Using MCP
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Find SQL injection vulnerabilities" \
+  --provider bedrock \
+  --iterations 50 \
+  --mcp-enabled \
+  --map-conns '[{"id":"mcp1","transport":"stdio","command":["python","-m","mymcp.server"]}]'
 ```
 
 ## Security
