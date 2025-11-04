@@ -1,13 +1,15 @@
+import asyncio
+import contextlib
 import csv
 import functools
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Optional, Any, Union
 from urllib.parse import urlparse
 
-from playwright.async_api import Page, BrowserContext, Response
+from playwright.async_api import Page, BrowserContext, Response, TimeoutError, Request
 from pymitter import EventEmitter
 from six import StringIO
 from stagehand import StagehandConfig, Stagehand, StagehandPage
@@ -152,10 +154,11 @@ class BrowserService(EventEmitter):
             return
         await self.stagehand.init()
         self._initialized = True
-        self.page.on(
-            "response",
-            lambda response: self.emit_async("response", response),
-        )
+        for network_event in ("request", "response", "requestfailed", "requestfinished"):  # type: Any
+            self.page.on(
+                network_event,
+                lambda response: self.emit_async(network_event, response),
+            )
 
     @asynccontextmanager
     async def network_capture(self, only_domains: Optional[list[str]] = None):
@@ -171,30 +174,39 @@ class BrowserService(EventEmitter):
             only_domains (Optional[list[str]]): Optional domains to filter responses by.
 
         Yields:
-            list[Response]: A list of captured responses generated during the
+            list[Request]: A list of captured requests generated during the
             context manager's scope.
         """
-        responses: list[Response] = []
+        requests: list[Request] = []
 
-        def capture_response(response: Response):
-            if response.request.method == "OPTIONS":
+        def capture_request(request: Request):
+            if request.method == "OPTIONS" or request in requests:
                 return
 
-            request_url_hostname = urlparse(response.request.url).hostname
+            request_url_hostname = urlparse(request.url).hostname
 
             if only_domains:
                 for filter_domain in only_domains:
                     if request_url_hostname.endswith(filter_domain):
-                        responses.append(response)
+                        requests.append(request)
                         return
             else:
-                responses.append(response)
+                requests.append(request)
 
+        def capture_response(response: Response):
+            capture_request(response.request)
+
+        self.on("request", capture_request)
+        self.on("requestfinished", capture_request)
+        self.on("requestfailed", capture_request)
         self.on("response", capture_response)
         try:
-            yield responses
+            yield requests
         finally:
-            self.off("responses", capture_response)
+            self.off("request", capture_request)
+            self.off("requestfinished", capture_request)
+            self.off("requestfailed", capture_request)
+            self.off("response", capture_response)
 
 
 _BROWSER: Optional[BrowserService] = None
@@ -240,7 +252,7 @@ def format_headers(headers: dict[str, str]) -> str:
     return "\n".join(filtered_headers)
 
 
-async def simplify_responses_for_llm(responses: list[Response]) -> str:
+async def simplify_requests_for_llm(requests: list[Request]) -> str:
     """
     Simplifies a list of response objects into a human-readable format suitable
     for large language models (LLMs). The function extracts key details
@@ -255,31 +267,44 @@ async def simplify_responses_for_llm(responses: list[Response]) -> str:
     list[str]
         A list of simplified string representations for the provided responses.
     """
-    simplified_responses: list[str] = []
-    for response in responses:
+    simplified_request_responses: list[str] = []
+    for request in requests:
         simplified_request = [
-            f"`{response.request.method}` `{response.request.url}`",
+            f"`{request.method}` `{request.url}`",
         ]
 
-        if formatted_request_headers := format_headers(response.request.headers):
+        if formatted_request_headers := format_headers(request.headers):
             simplified_request.extend(["Request Headers:", formatted_request_headers])
 
-        if request_body := response.request.post_data_buffer:
+        if request_body := request.post_data_buffer:
             simplified_request.append(f"Request Body: ```{request_body}```")
 
-        simplified_response = [
-            f"Status Code: `{response.status}`",
-        ]
+        response: Response | None = None
+        with suppress(asyncio.TimeoutError):
+            async with asyncio.timeout(
+                60
+            ):  # Wait for up to 60 seconds for the response object to be available (Status/headers first).
+                response = await request.response()
 
-        if formatted_response_headers := format_headers(response.headers):
-            simplified_response.extend(
-                ["Response Headers:", formatted_response_headers],
-            )
+        if response:
+            simplified_response = [
+                f"Status Code: `{response.status}`",
+            ]
+            if formatted_response_headers := format_headers(response.headers):
+                simplified_response.extend(
+                    ["Response Headers:", formatted_response_headers],
+                )
+        else:
+            simplified_response = [
+                "No Response was received",
+            ]
 
-        simplified_responses.append("\n".join(simplified_request + simplified_response))
+        simplified_request_responses.append("\n".join(simplified_request + simplified_response))
 
     simplified_text = (
-        "<network_call>\n" + "\n</network_call>\n\n<network_call>\n".join(simplified_responses) + "\n</network_call>"
+        "<network_call>\n"
+        + "\n</network_call>\n\n<network_call>\n".join(simplified_request_responses)
+        + "\n</network_call>"
     )
     return simplified_text
 
@@ -311,9 +336,9 @@ async def browser_goto_url(url: str):
         A collection of network responses captured during the navigation.
     """
     browser = await get_browser()
-    async with browser.network_capture(only_domains=[browser.page_domain, extract_domain(url)]) as responses:
+    async with browser.network_capture(only_domains=[browser.page_domain, extract_domain(url)]) as requests:
         await browser.page.goto(url)
-        return await simplify_responses_for_llm(responses)
+        return await simplify_requests_for_llm(requests)
 
 
 @tool
@@ -406,9 +431,11 @@ async def browser_perform_action(action: str):
         - A collection of network responses captured during the course of this action.
     """
     browser = await get_browser()
-    async with browser.network_capture(only_domains=[browser.page_domain]) as responses:
+    async with browser.network_capture(only_domains=[browser.page_domain]) as requests:
         await browser.page.act(action)
-        return await simplify_responses_for_llm(responses)
+        with contextlib.suppress(TimeoutError):
+            await browser.page.wait_for_load_state("networkidle", timeout=60000)
+        return await simplify_requests_for_llm(requests)
 
 
 @tool
