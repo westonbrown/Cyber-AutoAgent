@@ -24,9 +24,10 @@ from modules.prompts.factory import (
 )
 from modules.tools.memory import Mem0ServiceClient, get_memory_client
 from modules.config.manager import get_config_manager
+from modules.config.logger_factory import get_logger
 from modules.handlers.core.utils import sanitize_target_name
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Tools.ReportBuilder")
 
 MAX_REPORT_FINDINGS = int(os.getenv("CYBER_REPORT_MAX_FINDINGS", "50"))
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}

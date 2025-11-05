@@ -17,9 +17,10 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from modules.agents.report_agent import ReportGenerator
+from modules.config.logger_factory import get_logger
 from modules.tools.memory import get_memory_client
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Handlers.ReportGenerator")
 
 
 def generate_security_report(

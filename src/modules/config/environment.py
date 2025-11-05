@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List
 
 from modules.handlers.utils import print_status
+from modules.config.logger_factory import get_logger, initialize_logger_factory
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
@@ -21,7 +22,7 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
         operation_id: The operation identifier
         target_name: The sanitized target name (optional, for unified output structure)
     """
-    logger = logging.getLogger(__name__)
+    logger = get_logger("Config.Environment")
     logger.debug(
         "clean_operation_memory called with operation_id=%s, target_name=%s",
         operation_id,
@@ -354,8 +355,14 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
 
     atexit.register(cleanup_tee_outputs)
 
+    # Initialize the logger factory with configuration
+    initialize_logger_factory(log_file=log_file, verbose=verbose)
+
     # Traditional logger setup for structured logging
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    formatter = logging.Formatter(
+        fmt="%(asctime)s - [%(name)s] - %(levelname)s - [%(threadName)s] - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
     # File handler - log INFO and above to file
     file_handler = logging.FileHandler(log_file, mode="a")

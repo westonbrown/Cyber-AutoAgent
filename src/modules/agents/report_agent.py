@@ -17,9 +17,10 @@ from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
 
 from modules.config.manager import get_config_manager
+from modules.config.logger_factory import get_logger
 from modules.prompts.factory import get_report_agent_system_prompt
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Agents.ReportAgent")
 
 
 class NoOpCallbackHandler(PrintingCallbackHandler):

@@ -29,13 +29,14 @@ import ollama
 import requests
 
 from modules.handlers.utils import get_output_path, sanitize_target_name
+from modules.config.logger_factory import get_logger
 
 litellm.drop_params = True
 litellm.modify_params = True
 litellm.num_retries = 5
 litellm.respect_retry_after_header = True
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Config.Manager")
 
 
 LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {

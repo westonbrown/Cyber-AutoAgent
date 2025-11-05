@@ -110,10 +110,12 @@ from rich.table import Table
 from rich.text import Text
 from strands import tool
 
+<<<<<<< HEAD
 from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
+from modules.config.logger_factory import get_logger
 
 # Set up logging
-logger = logging.getLogger(__name__)
+logger = get_logger("Tools.Memory")
 
 # Initialize Rich console
 console = Console()
@@ -649,8 +651,7 @@ class Mem0ServiceClient:
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
-        mem_logger = logging.getLogger("CyberAutoAgent")
-        mem_logger.debug("Calling mem0.get_all with user_id=%s, agent_id=%s", user_id, agent_id)
+        logger.debug("Calling mem0.get_all with user_id=%s, agent_id=%s", user_id, agent_id)
 
         # Determine effective limit from env or passed arg
         try:
@@ -669,7 +670,7 @@ class Mem0ServiceClient:
                     result = self.mem0.get_all(user_id=user_id, agent_id=agent_id, limit=eff_limit)
                 except TypeError:
                     result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
-            mem_logger.debug("mem0.get_all returned type: %s", type(result))
+            logger.debug("mem0.get_all returned type: %s", type(result))
             # Normalize structures
             normalised = self._normalise_results_list(result)
             if normalised:
@@ -678,7 +679,7 @@ class Mem0ServiceClient:
                 return result[:eff_limit]
             return result
         except Exception as e:
-            mem_logger.error("Error in mem0.get_all: %s", e)
+            logger.error("Error in mem0.get_all: %s", e)
             raise
 
     def search_memories(self, query: str, user_id: Optional[str] = None, agent_id: Optional[str] = None):
@@ -1138,23 +1139,22 @@ Include: objective, current_phase=1, phases with clear criteria for each.
         """
         try:
             # Get all memories for the user
-            overview_logger = logging.getLogger("CyberAutoAgent")
-            overview_logger.debug("Getting memory overview for user_id: %s", user_id)
+            logger.debug("Getting memory overview for user_id: %s", user_id)
 
             memories_response = self.list_memories(user_id=user_id)
-            overview_logger.debug("Memory overview raw response type: %s", type(memories_response))
-            overview_logger.debug("Memory overview raw response: %s", memories_response)
+            logger.debug("Memory overview raw response type: %s", type(memories_response))
+            logger.debug("Memory overview raw response: %s", memories_response)
 
             # Parse response format
             if isinstance(memories_response, dict):
                 raw_memories = memories_response.get("memories", memories_response.get("results", []))
-                overview_logger.debug("Dict response: found %d memories", len(raw_memories))
+                logger.debug("Dict response: found %d memories", len(raw_memories))
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
-                overview_logger.debug("List response: found %d memories", len(raw_memories))
+                logger.debug("List response: found %d memories", len(raw_memories))
             else:
                 raw_memories = []
-                overview_logger.debug("Unexpected response type, using empty list")
+                logger.debug("Unexpected response type, using empty list")
 
             # Analyze memories
             total_count = len(raw_memories)
@@ -1728,25 +1728,24 @@ def mem0_memory(
             memories = _MEMORY_CLIENT.list_memories(user_id, agent_id, limit=list_limit)
 
             # Debug logging to understand the response structure
-            list_logger = logging.getLogger("CyberAutoAgent")
-            list_logger.debug("Memory list raw response type: %s", type(memories))
-            list_logger.debug("Memory list raw response: %s", memories)
+            logger.debug("Memory list raw response type: %s", type(memories))
+            logger.debug("Memory list raw response: %s", memories)
 
             # Normalize to list with better error handling
             if memories is None:
                 results_list = []
-                list_logger.debug("memories is None, returning empty list")
+                logger.debug("memories is None, returning empty list")
             elif isinstance(memories, list):
                 results_list = memories
-                list_logger.debug("memories is list with %d items", len(memories))
+                logger.debug("memories is list with %d items", len(memories))
             elif isinstance(memories, dict):
                 # Check for different possible dict structures
                 if "results" in memories:
                     results_list = memories.get("results", [])
-                    list_logger.debug("Found 'results' key with %d items", len(results_list))
+                    logger.debug("Found 'results' key with %d items", len(results_list))
                 elif "memories" in memories:
                     results_list = memories.get("memories", [])
-                    list_logger.debug("Found 'memories' key with %d items", len(results_list))
+                    logger.debug("Found 'memories' key with %d items", len(results_list))
                 else:
                     # If dict doesn't have expected keys, treat as single memory
                     results_list = [memories] if memories else []

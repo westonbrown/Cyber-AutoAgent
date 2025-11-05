@@ -29,10 +29,11 @@ from ragas.metrics import (
 from ragas.run_config import RunConfig
 
 from modules.config.manager import get_config_manager
+from modules.config.logger_factory import get_logger
 
 from .trace_parser import TraceParser
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Evaluation.Evaluation")
 
 # Default topics used only as a last-resort fallback
 DEFAULT_SECURITY_TOPICS = [

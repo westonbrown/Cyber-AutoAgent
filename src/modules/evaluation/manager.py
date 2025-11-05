@@ -20,8 +20,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .evaluation import CyberAgentEvaluator
+from modules.config.logger_factory import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Evaluation.Manager")
 
 
 class TraceType(Enum):

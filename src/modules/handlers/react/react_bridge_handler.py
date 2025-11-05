@@ -19,8 +19,9 @@ from strands.handlers import PrintingCallbackHandler
 from ..events import EventEmitter, get_emitter
 from ..output_interceptor import get_buffered_output, get_buffered_error_output, set_tool_execution_state
 from .tool_emitters import ToolEventEmitter
+from modules.config.logger_factory import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Handlers.ReactBridge")
 
 
 class ReactBridgeHandler(PrintingCallbackHandler):
