@@ -261,22 +261,55 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
     const deploymentMode = this.mode === ExecutionMode.DOCKER_STACK ? 'full-stack' : 'single-container';
     await this.containerManager.switchToMode(deploymentMode);
 
-    // Start the Docker execution
+    // Create a promise that resolves when the assessment actually completes
+    // This waits for the 'complete' event from DirectDockerService, not just the exec start
+    const resultPromise = new Promise<ExecutionResult>((resolve, reject) => {
+      const completeHandler = () => {
+        cleanup();
+        resolve({
+          success: true,
+          durationMs: Date.now() - startTime,
+          stepsExecuted: config.iterations,
+          findingsCount: 0 // Findings are tracked in the output reports
+        });
+      };
+
+      const errorHandler = (error: Error) => {
+        cleanup();
+        resolve({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+          durationMs: Date.now() - startTime
+        });
+      };
+
+      const stoppedHandler = () => {
+        cleanup();
+        resolve({
+          success: false,
+          error: 'Assessment stopped before completion',
+          durationMs: Date.now() - startTime
+        });
+      };
+
+      const cleanup = () => {
+        this.dockerService.removeListener('complete', completeHandler);
+        this.dockerService.removeListener('error', errorHandler);
+        this.dockerService.removeListener('stopped', stoppedHandler);
+      };
+
+      this.dockerService.once('complete', completeHandler);
+      this.dockerService.once('error', errorHandler);
+      this.dockerService.once('stopped', stoppedHandler);
+    });
+
+    // Start the Docker execution (returns immediately after starting container exec)
     const executionPromise = this.dockerService.executeAssessment(params, config);
 
     const handle: ExecutionHandle = {
       id: handleId,
       pid: undefined, // Docker manages container processes
-      result: executionPromise.then(() => ({
-        success: true,
-        durationMs: Date.now() - startTime,
-        stepsExecuted: config.iterations,
-        findingsCount: 0 // Findings are tracked in the output reports
-      })).catch((error) => ({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startTime
-      })),
+      result: resultPromise,
       stop: async () => {
         await this.dockerService.stop();
       },
@@ -284,10 +317,10 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
     };
 
     this.activeHandle = handle;
-    
-    // Execute in background
+
+    // Handle immediate execution errors
     executionPromise.catch((error) => {
-      logger.error('Docker execution failed:', error);
+      logger.error('Docker execution failed to start:', error);
       this.emit('error', error);
     });
 
