@@ -1,13 +1,18 @@
 import asyncio
+import base64
 import contextlib
 import csv
+import datetime
 import functools
+import json
 import logging
 import os
 import time
 from contextlib import asynccontextmanager, suppress
+from http.cookies import SimpleCookie, Morsel
 from typing import Optional, Any, Union
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
+from modules import __version__
 
 from playwright.async_api import Page, BrowserContext, Response, TimeoutError, Request
 from pymitter import EventEmitter
@@ -160,6 +165,182 @@ class BrowserService(EventEmitter):
                 lambda response: self.emit_async(network_event, response),
             )
 
+    async def simplify_requests_for_llm(self, requests: list[Request]) -> str:
+        """
+        Simplifies a list of response objects into a human-readable format suitable
+        for large language models (LLMs). The function extracts key details
+        from the request and response, including HTTP method, URL, headers,
+        request body (if present), status code, and response body size.
+
+        Parameters:
+        responses: list[Response]
+            A list of Response objects to be simplified.
+
+        Returns:
+        list[str]
+            A list of simplified string representations for the provided responses.
+        """
+        network_calls: list[str] = []
+        har_entries: list[dict] = []
+
+        har_file_path = os.path.join(self.artifacts_dir, f"network_calls_{time.time_ns()}.har")
+
+        har_data = {
+            "log": {
+                "version": "1.2",
+                "creator": {"name": "Cyber-AutoAgent", "version": __version__, "comment": ""},
+                "browser": {
+                    "name": self.context.browser.browser_type.name,
+                    "version": self.context.browser.version,
+                    "comment": "",
+                },
+                "entries": har_entries,
+            }
+        }
+
+        for index, request in enumerate(requests):
+            try:
+                parsed_url = urlparse(request.url)
+                all_request_headers = await request.all_headers()
+                pw_timings = request.timing
+                timings = {
+                    "blocked": 0,
+                    "dns": (
+                        -1
+                        if pw_timings["domainLookupEnd"] == -1
+                        else pw_timings["domainLookupEnd"] - pw_timings["domainLookupStart"]
+                    ),
+                    "connect": (
+                        -1 if pw_timings["connectEnd"] == -1 else pw_timings["connectEnd"] - pw_timings["connectStart"]
+                    ),
+                    "send": -1,
+                    "wait": (
+                        -1
+                        if pw_timings["responseStart"] == -1
+                        else pw_timings["responseStart"] - pw_timings["requestStart"]
+                    ),
+                    "receive": (
+                        -1
+                        if pw_timings["responseEnd"] == -1
+                        else pw_timings["responseEnd"] - pw_timings["responseStart"]
+                    ),
+                    "ssl": (
+                        -1
+                        if pw_timings["secureConnectionStart"] == -1
+                        else pw_timings["requestStart"] - pw_timings["secureConnectionStart"]
+                    ),
+                }
+
+                total_time_taken = sum([time_value for time_value in timings.values() if time_value > 0], 0)
+                started_date_time = datetime.datetime.fromtimestamp(
+                    request.timing["startTime"] / 1000.0, tz=datetime.timezone.utc
+                )
+                har_entry: dict[str, Any] = {
+                    "timings": timings,
+                    "time": total_time_taken,
+                    "startedDateTime": started_date_time.isoformat(),
+                    "request": {
+                        "method": request.method,
+                        "url": request.url,
+                        "httpVersion": "HTTP/1.1",
+                        "headers": [{"name": k, "value": v} for k, v in all_request_headers.items()],
+                        "queryString": [],
+                        "cookies": [],
+                        "bodySize": -1,
+                        "headersSize": -1,
+                    },
+                }
+
+                har_entries.append(har_entry)
+
+                if parsed_url.query:
+                    for name, values in parse_qs(parsed_url.query).items():
+                        for value in values:
+                            har_entry["request"]["queryString"].append({"name": name, "value": value})
+
+                if cookie_header := all_request_headers.get("cookie"):
+                    parsed_cookie = SimpleCookie(cookie_header)
+                    for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
+                        har_entry["request"]["cookies"].append({"name": cookie[0], "value": cookie[1].value})
+
+                simplified_request = [
+                    f"`{request.method}` `{request.url}`",
+                ]
+
+                if formatted_request_headers := format_headers(all_request_headers):
+                    simplified_request.extend(["Request Headers:", formatted_request_headers])
+
+                if request_body := request.post_data_buffer:
+                    har_entry["request"]["bodySize"] = len(request_body)
+                    post_data = har_entry["request"]["postData"] = form_har_body(
+                        request.headers.get("content-type", ""), request_body
+                    )
+                    if post_data["encoding"] == "utf-8":
+                        simplified_request.append(f"Request Body: ```{post_data['text']}```")
+                    else:
+                        simplified_request.append(f"Request Body: Non-UTF8 Binary")
+
+                response: Response | None = None
+
+                with suppress(asyncio.TimeoutError):
+                    async with asyncio.timeout(
+                        60
+                    ):  # Wait for up to 60 seconds for the response object to be available (Status/headers first).
+                        response = await request.response()
+
+                if response:
+                    all_response_headers = await response.all_headers()
+                    har_entry["response"] = har_entry_response = {
+                        "status": response.status,
+                        "statusText": response.status_text,
+                        "httpVersion": "HTTP/1.1",
+                        "headers": [{"name": k, "value": v} for k, v in all_response_headers.items()],
+                        "cookies": [],
+                        "headersSize": -1,
+                        "bodySize": -1,
+                    }  # type: dict[str, Any]
+
+                    if location_header := (all_response_headers.get("location")):
+                        har_entry_response["redirectURL"] = location_header
+
+                    for header, value in all_response_headers.items():
+                        if header.lower() == "set-cookie":
+                            parsed_cookie = SimpleCookie(value)
+                            for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
+                                har_entry_response["cookies"].append({"name": cookie[0], "value": cookie[1].value})
+
+                    with suppress(asyncio.TimeoutError):
+                        async with asyncio.timeout(
+                            60
+                        ):  # Wait for up to 60 seconds for the response body to be available
+                            content = await response.body()
+                            har_entry_response["bodySize"] = len(content)
+                            content_type = all_response_headers.get("content-type", "")
+                            har_entry_response["content"] = form_har_body(content_type, content)
+
+                    simplified_response = [
+                        f"Status Code: `{response.status}`",
+                    ]
+                    if formatted_response_headers := format_headers(all_response_headers):
+                        simplified_response.extend(
+                            ["Response Headers:", formatted_response_headers],
+                        )
+                else:
+                    simplified_response = [
+                        "No Response was received",
+                    ]
+
+                network_calls.append(
+                    f'<network_call har-entry-index="{len(har_entries) - 1}">\n{"\n".join(simplified_request + simplified_response)}\n</network_call>'
+                )
+            except Exception:
+                logger.exception(f"Error processing network call {index} {request.method} {request.url}")
+
+        with open(har_file_path, "w") as f:
+            json.dump(har_data, f, indent=2, ensure_ascii=False)
+
+        return f'<network_calls har-file-path="{har_file_path}">\n{"\n".join(network_calls)}\n</network_calls>'
+
     @asynccontextmanager
     async def network_capture(self, only_domains: Optional[list[str]] = None):
         """
@@ -179,34 +360,34 @@ class BrowserService(EventEmitter):
         """
         requests: list[Request] = []
 
-        def capture_request(request: Request):
+        def capture_request(request_or_response: Request | Response):
+            request: Request = (
+                request_or_response.request if isinstance(request_or_response, Response) else request_or_response
+            )
+
             if request.method == "OPTIONS" or request in requests:
                 return
 
-            request_url_hostname = urlparse(request.url).hostname
-
+            request_url_hostname: Optional[str] = urlparse(request.url).hostname
             if only_domains:
                 for filter_domain in only_domains:
-                    if request_url_hostname.endswith(filter_domain):
+                    if request_url_hostname is not None and request_url_hostname.endswith(filter_domain):
                         requests.append(request)
                         return
             else:
                 requests.append(request)
 
-        def capture_response(response: Response):
-            capture_request(response.request)
-
         self.on("request", capture_request)
         self.on("requestfinished", capture_request)
         self.on("requestfailed", capture_request)
-        self.on("response", capture_response)
+        self.on("response", capture_request)
         try:
             yield requests
         finally:
             self.off("request", capture_request)
             self.off("requestfinished", capture_request)
             self.off("requestfailed", capture_request)
-            self.off("response", capture_response)
+            self.off("response", capture_request)
 
 
 _BROWSER: Optional[BrowserService] = None
@@ -252,61 +433,40 @@ def format_headers(headers: dict[str, str]) -> str:
     return "\n".join(filtered_headers)
 
 
-async def simplify_requests_for_llm(requests: list[Request]) -> str:
+def form_har_body(content_type: str, data: bytes):
     """
-    Simplifies a list of response objects into a human-readable format suitable
-    for large language models (LLMs). The function extracts key details
-    from the request and response, including HTTP method, URL, headers,
-    request body (if present), status code, and response body size.
+    Generates a formatted HAR (HTTP Archive) body representation for given content
+    type and binary data. Handles encoding of the data as either UTF-8 text or
+    Base64, based on its ability to be decoded as UTF-8.
 
     Parameters:
-    responses: list[Response]
-        A list of Response objects to be simplified.
+    content_type: str
+        The MIME type of the data.
+    data: bytes
+        The binary data to be encoded and included in the HAR body.
 
     Returns:
-    list[str]
-        A list of simplified string representations for the provided responses.
+    dict
+        A dictionary containing the HAR body representation with fields 'mimeType',
+        'text', and 'encoding'. The 'text' field will hold the data in either
+        UTF-8 or Base64 encoding, and the 'encoding' field will specify the
+        corresponding encoding method.
+
+    Raises:
+        UnicodeDecodeError: If the data cannot be decoded as UTF-8, it will
+        automatically encode the data in Base64 without raising this error
+        to the caller.
     """
-    simplified_request_responses: list[str] = []
-    for request in requests:
-        simplified_request = [
-            f"`{request.method}` `{request.url}`",
-        ]
-
-        if formatted_request_headers := format_headers(request.headers):
-            simplified_request.extend(["Request Headers:", formatted_request_headers])
-
-        if request_body := request.post_data_buffer:
-            simplified_request.append(f"Request Body: ```{request_body}```")
-
-        response: Response | None = None
-        with suppress(asyncio.TimeoutError):
-            async with asyncio.timeout(
-                60
-            ):  # Wait for up to 60 seconds for the response object to be available (Status/headers first).
-                response = await request.response()
-
-        if response:
-            simplified_response = [
-                f"Status Code: `{response.status}`",
-            ]
-            if formatted_response_headers := format_headers(response.headers):
-                simplified_response.extend(
-                    ["Response Headers:", formatted_response_headers],
-                )
-        else:
-            simplified_response = [
-                "No Response was received",
-            ]
-
-        simplified_request_responses.append("\n".join(simplified_request + simplified_response))
-
-    simplified_text = (
-        "<network_call>\n"
-        + "\n</network_call>\n\n<network_call>\n".join(simplified_request_responses)
-        + "\n</network_call>"
-    )
-    return simplified_text
+    body_repr = {"mimeType": content_type}
+    try:
+        utf8_decoded_data = data.decode("utf-8")
+        body_repr["text"] = utf8_decoded_data
+        body_repr["encoding"] = "utf-8"
+    except UnicodeDecodeError:
+        base64_encoded_data = base64.b64encode(data).decode("utf-8")
+        body_repr["text"] = base64_encoded_data
+        body_repr["encoding"] = "base64"
+    return body_repr
 
 
 @tool
@@ -333,12 +493,20 @@ async def browser_goto_url(url: str):
         url: The URL to navigate to.
 
     Returns:
-        A collection of network responses captured during the navigation.
+        A collection of network responses captured during the navigation and observations of the current state of the page after the navigation.
     """
     browser = await get_browser()
     async with browser.network_capture(only_domains=[browser.page_domain, extract_domain(url)]) as requests:
         await browser.page.goto(url)
-        return await simplify_requests_for_llm(requests)
+        network_summary = await browser.simplify_requests_for_llm(requests)
+
+    # Eagerly returning relevant observations to reduce agent tool calls
+    observations = await browser_observe_page(
+        f"{url} was just opened. "
+        "give all important elements on the page that might be relevant to the next action. "
+        "observe the overall state of the page to understand the purpose of the page."
+    )
+    return f"<observations>\n{"\n".join(observations)}\n</observations>\n{network_summary}"
 
 
 @tool
@@ -428,14 +596,22 @@ async def browser_perform_action(action: str):
         - Click on Cars from the dropdown menu
 
     Returns:
-        - A collection of network responses captured during the course of this action.
+        - A collection of network responses captured during the course of this action and observations of the current state of the page after the action
     """
     browser = await get_browser()
     async with browser.network_capture(only_domains=[browser.page_domain]) as requests:
         await browser.page.act(action)
         with contextlib.suppress(TimeoutError):
             await browser.page.wait_for_load_state("networkidle", timeout=60000)
-        return await simplify_requests_for_llm(requests)
+        network_summary = await browser.simplify_requests_for_llm(requests)
+
+    # Eagerly returning relevant observations to reduce agent tool calls
+    observations = await browser_observe_page(
+        f"`{action}` action was just performed. "
+        "give all important elements on the page that might be relevant to the next action."
+        "observe the overall state of the page to understand the purpose of the page."
+    )
+    return f"<observations>\n{'\n'.join(observations)}\n</observations>\n{network_summary}"
 
 
 @tool
