@@ -22,6 +22,7 @@ import Dockerode from 'dockerode';
 import { Transform } from 'stream';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { AssessmentParams } from '../types/Assessment.js';
 import { Config } from '../contexts/ConfigContext.js';
 import { StreamEvent, EventType } from '../types/events.js';
@@ -40,6 +41,41 @@ function sanitizeTargetName(target: string): string {
     .replace(/\s+/g, '_')  // Replace spaces
     .replace(/_+/g, '_')  // Collapse multiple underscores
     .replace(/^_|_$/g, '');  // Trim underscores
+}
+
+/**
+ * Get Docker connection options from the current docker context
+ * Supports alternate docker providers by detecting the socket/host from docker context
+ * @returns Dockerode connection options
+ */
+function getDockerConnectionOptions(): Dockerode.DockerOptions {
+  try {
+    // Get the current docker context
+    const currentContext = execSync('docker context show', { encoding: 'utf8' }).trim();
+
+    // Get full context info as JSON
+    const contextInfo = JSON.parse(
+      execSync(`docker context inspect ${currentContext}`, { encoding: 'utf8' })
+    )[0];
+
+    // Extract socket or host
+    const endpoint = contextInfo?.Endpoints?.docker?.Host;
+
+    if (!endpoint) {
+      // If no endpoint found, fall back to default
+      return {};
+    }
+
+    // Normalize path if it's a unix socket
+    if (endpoint.startsWith('unix://')) {
+      return { socketPath: endpoint.replace('unix://', '') };
+    } else {
+      return { host: endpoint };
+    }
+  } catch (error) {
+    // If docker context commands fail, fall back to default dockerode behavior
+    return {};
+  }
 }
 
 /**
@@ -109,10 +145,11 @@ export class DirectDockerService extends EventEmitter {
 
   /**
    * Initialize the Docker service with connection to Docker daemon
+   * Automatically detects docker context for alternate docker providers
    */
   constructor() {
     super();
-    this.dockerClient = new Dockerode();
+    this.dockerClient = new Dockerode(getDockerConnectionOptions());
   }
 
   /**
@@ -1070,7 +1107,7 @@ export class DirectDockerService extends EventEmitter {
    */
   static async checkDocker(): Promise<boolean> {
     try {
-      const dockerClient = new Dockerode();
+      const dockerClient = new Dockerode(getDockerConnectionOptions());
       await dockerClient.ping();
       return true;
     } catch {
@@ -1298,8 +1335,8 @@ export class DirectDockerService extends EventEmitter {
    * Ensure required Docker resources exist
    */
   static async ensureDockerResources(): Promise<void> {
-    const dockerClient = new Dockerode();
-    
+    const dockerClient = new Dockerode(getDockerConnectionOptions());
+
     // Check if network exists
     try {
       await dockerClient.getNetwork('cyberagent-network').inspect();
@@ -1310,7 +1347,7 @@ export class DirectDockerService extends EventEmitter {
         Driver: 'bridge',
       });
     }
-    
+
     // Check if image exists
     try {
       await dockerClient.getImage('cyber-autoagent:sudo').inspect();

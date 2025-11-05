@@ -1,0 +1,52 @@
+name: Claude Agent
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  claude-agent:
+    if: |
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'claude') && contains(github.event.comment.body, '@claude'))
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWE_AGENT_APP_ID }}
+          private-key: ${{ secrets.SWE_AGENT_PRIVATE_KEY }}
+
+      - name: Run Claude Agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          trigger_phrase: "@claude"
+          label_trigger: "claude"
+          bot_id: "2152368"
+          bot_name: "caa-swe-agent[bot]"
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --max-turns 150
+            --model claude-sonnet-4-5-20250929
+            --system-prompt "Expert Python developer for Cyber-AutoAgent. Follow PEP 8, use type hints, aim for >80% test coverage. For bugs: write failing test first, then fix. Professional code only - no emojis, minimal try/except, no over-engineering. CRITICAL: After implementing, run full test suite (uv run pytest) to verify no regressions. If frontend impacted, run npm tests. Then create PR with 'gh pr create --base main'."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(uv:*),Bash(pytest:*),Bash(python:*),Bash(npm:*),Bash(node:*),Bash(cat:*),Bash(ls:*),Bash(find:*)"
