@@ -164,6 +164,21 @@ const runAutoAssessment = async () => {
       // Load default config and apply CLI overrides
       const configOverrides: Partial<Config> = {};
       
+      // Load saved configuration first to detect provider changes
+      const configDir = path.join(os.homedir(), '.cyber-autoagent');
+      const configPath = path.join(configDir, 'config.json');
+      let savedConfig: Partial<Config> | undefined;
+
+      if (fs.existsSync(configPath)) {
+        try {
+          const configData = fs.readFileSync(configPath, 'utf-8');
+          savedConfig = JSON.parse(configData);
+          loggingService.info(`📂 Loaded configuration from ${configPath}`);
+        } catch (error) {
+          loggingService.warn(`⚠️  Failed to load config: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
       // Apply CLI flag overrides
       if (cli.flags.provider) configOverrides.modelProvider = cli.flags.provider as 'bedrock' | 'ollama' | 'litellm';
       if (cli.flags.model) configOverrides.modelId = cli.flags.model;
@@ -172,6 +187,31 @@ const runAutoAssessment = async () => {
       if (cli.flags.observability !== undefined) configOverrides.observability = cli.flags.observability;
       if (cli.flags.debug) configOverrides.verbose = cli.flags.debug;
       if (cli.flags.deploymentMode) configOverrides.deploymentMode = cli.flags.deploymentMode as 'local-cli' | 'single-container' | 'full-stack';
+
+      // Handle provider prefix stripping when provider changes but model doesn't
+      // This fixes the bug where changing --provider without --model causes invalid model IDs
+      // Example: config has "litellm" + "bedrock/model-id", CLI has --provider bedrock
+      // Result should be "bedrock" + "model-id" (without prefix)
+      if (cli.flags.provider && !cli.flags.model && savedConfig?.modelId) {
+        const savedProvider = savedConfig.modelProvider;
+        const newProvider = cli.flags.provider;
+
+        // Only strip prefix if provider is actually changing
+        if (savedProvider !== newProvider) {
+          const modelId = savedConfig.modelId;
+          // Check if model ID has a provider prefix (format: "provider/model-name")
+          if (modelId.includes('/')) {
+            const [prefix, ...rest] = modelId.split('/');
+            const baseModelId = rest.join('/'); // Handle cases with multiple slashes
+
+            loggingService.info(`🔄 Provider changed from ${savedProvider} to ${newProvider}`);
+            loggingService.info(`   Stripping prefix from model ID: ${modelId} → ${baseModelId}`);
+
+            // Override the model ID with the stripped version
+            configOverrides.modelId = baseModelId;
+          }
+        }
+      }
       
       // Use the imported default config
       const defaultConfig = configModule.defaultConfig || {
@@ -224,8 +264,8 @@ const runAutoAssessment = async () => {
         isConfigured: true
       };
       
-      // Merge defaults with CLI overrides
-      const finalConfig = { ...defaultConfig, ...configOverrides } as Config;
+      // Merge in priority order: defaults → saved config → CLI overrides
+      const finalConfig = { ...defaultConfig, ...savedConfig, ...configOverrides } as Config;
       
       loggingService.info(`⚙️  Config: ${finalConfig.iterations} iterations, ${finalConfig.modelProvider}/${finalConfig.modelId}`);
       loggingService.info(`🔭 Observability: ${finalConfig.observability ? 'enabled' : 'disabled'}`);
