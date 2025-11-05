@@ -108,6 +108,35 @@ cyber-react \
 | `--memory-mode` | `auto` | Memory: auto or fresh |
 | `--deployment-mode` | Auto | local-cli, single-container, full-stack |
 
+### Configuration Loading Priority
+
+When using `--auto-run` mode, configuration is loaded and merged in the following priority order:
+
+1. **Default Configuration** (lowest priority) - Built-in defaults from the application
+2. **Saved Configuration** (medium priority) - User settings from `~/.cyber-autoagent/config.json`
+3. **Command Line Flags** (highest priority) - Flags specified on the command line
+
+This means:
+- Your saved configuration from the React UI is automatically loaded and used
+- Command line flags override any saved settings
+- Defaults are only used for values not specified in saved config or CLI flags
+
+**Example:**
+```bash
+# If your config.json has modelProvider: "ollama" and observability: true
+# This command will use:
+# - modelProvider: "bedrock" (from CLI flag, overrides saved config)
+# - observability: true (from saved config)
+# - iterations: 50 (from CLI flag)
+# - All other settings from saved config or defaults
+
+cyber-react \
+  --target "https://example.com" \
+  --provider bedrock \
+  --iterations 50 \
+  --auto-run
+```
+
 ## Operation Modules
 
 | Module | Purpose | Key Features |
