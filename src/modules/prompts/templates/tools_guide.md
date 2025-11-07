@@ -34,29 +34,16 @@
 - Categories: finding | signal | decision | artifact | observation | plan
 - Content: Paths only, no binary blobs
 
-**browser_ tools**
-- Usage: ONLY for modern web applications when js rendering is required to fully render or to mimic user interactions
-- Browser: Only a single browser window is available
-- **browser_set_headers**
-  - Purpose: to set headers on all browser requests if required by objective
-- **browser_goto_url**
-  - Purpose: to navigate to a URL in a web browser
-  - Results: Summary of observations on the page and all network requests made by the browser during the navigation. A har file with the full network details is also saved to `<artifacts_path>/*.har` and the full path is returned with the summary.
-- **browser_get_page_html**
-  - Purpose: to get the HTML of the current page in a web browser
-  - Large responses: Files are saved to `<artifacts_path>/*.html` and full path is returned in tool output, grep/sed to extract relevant data, store only file path in findings
-- **browser_evaluate_js**
-  - Purpose: to evaluate a javascript expression in the current page
-  - Results: The output of the javascript function expression that was evaluated
-- **browser_get_cookies**
-  - Purpose: to get all cookies in the web browser
-  - Results: A csv string of all cookies in the web browser
-- **browser_perform_action**
-  - Purpose: to perform an interaction in the current page of the web browser
-  - Results: Summary of observations on the page and all network requests made by the browser during the interaction. A har file with the full network details is also saved to `<artifacts_path>/*.har` and the full path is returned with the summary.
-- **browser_observe_page**
-  - Purpose: to observe interesting elements on the current page of the web browser 
-  - Results: A list of descriptions of interesting elements observed on the page based 
+**`browser_*` tools**
+- Purpose: Interact with web apps requiring JavaScript execution, DOM rendering, or session/cookie-based authentication
+- When to use: SPAs with dynamic content, login flows, client-side rendering, testing XSS/CSRF in browser context
+- When NOT: Static pages, API endpoints, simple HTTP requests (use http_request instead)
+- Constraints: Single browser instance, sequential execution only (NO concurrent tool calls), state persists across calls
+- Actions: Each action must be atomic (one click OR one input, never combined). "Click login then enter password" is WRONG - split into separate calls
+- Auto-captured artifacts: Network traffic (HAR), console logs, dialogs, downloads → `<artifacts_path>/*.{har,log,html}`
+- Large outputs: HTML snapshots saved to artifacts, use shell grep/sed to extract relevant data, store only paths in findings
+- Integration: Extract cookies/tokens → use with http_request for API testing, or evaluate JS for localStorage/session data
+- Anti-pattern: Using browser when http_request suffices (wastes resources, slower, more complex)
 
 **swarm**
 - Purpose: Multi-agent collaboration for parallel capability testing

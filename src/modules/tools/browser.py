@@ -14,7 +14,16 @@ from typing import Optional, Any, Union
 from urllib.parse import urlparse, parse_qs
 from modules import __version__
 
-from playwright.async_api import Page, BrowserContext, Response, TimeoutError, Request
+from playwright.async_api import (
+    Page,
+    BrowserContext,
+    Response,
+    TimeoutError,
+    Request,
+    Dialog,
+    Download,
+    ConsoleMessage,
+)
 from pymitter import EventEmitter
 from six import StringIO
 from stagehand import StagehandConfig, Stagehand, StagehandPage
@@ -157,13 +166,94 @@ class BrowserService(EventEmitter):
         """Lazy init stagehand when needed"""
         if self._initialized:
             return
+
         await self.stagehand.init()
         self._initialized = True
-        for network_event in ("request", "response", "requestfailed", "requestfinished"):  # type: Any
+
+        async def handle_dialog(dialog: Dialog):
+            """Auto accept all dialogs"""
+            await dialog.accept()
+            await self.emit_async("dialog", dialog)
+
+        async def handle_download(download: Download):
+            """Auto-save downloads to artifacts_dir"""
+            download_path = os.path.join(self.artifacts_dir, f"download_{time.time_ns()}_{download.suggested_filename}")
+            await download.save_as(download_path)
+            await self.emit_async("download", download_path)
+
+        self.page.on("dialog", handle_dialog)
+        self.page.on("download", handle_download)
+
+        for event_name in ("request", "response", "requestfailed", "requestfinished", "console"):  # type: Any
             self.page.on(
-                network_event,
-                lambda response: self.emit_async(network_event, response),
+                event_name,
+                functools.partial(lambda event, payload: self.emit_async(event, payload), event_name),
             )
+
+    async def simplify_metadata_for_llm(
+        self,
+        requests: list[Request],
+        downloads: list[str],
+        logs: list[dict[str, Any]],
+        dialogs: list[dict[str, Any]],
+    ) -> str:
+        """
+        Processes logs, dialogs, downloads, and requests to generate summarized metadata formatted
+        for use in an LLM. The metadata includes information about console logs, dialogs, downloaded
+        files, and requests.
+
+        Parameters:
+            requests: A list of Request objects to be summarized.
+            downloads: A list of file paths corresponding to downloaded files.
+            logs: A list of dictionaries containing log entries, where each dictionary includes information
+                  about log type and arguments.
+            dialogs: A list of dictionaries representing dialog entries, each containing a type and message.
+
+        Returns:
+            str: A string containing summarized metadata formatted for LLM consumption.
+
+        Raises:
+            Any exceptions encountered during file writing, JSON serialization, or processing of logs,
+            dialogs, downloads, or requests will be propagated.
+        """
+        metadata = []
+
+        if len(logs) > 0:
+            logs_summary = "\n".join(
+                map(
+                    lambda log: f"[{log['type']}] {" ".join(map(lambda arg: json.dumps(arg), log['args']))}".strip(),
+                    logs,
+                )
+            )
+            log_file = os.path.join(self.artifacts_dir, f"logs_{time.time_ns()}.log")
+            with open(log_file, "w") as f:
+                f.write(logs_summary)
+            metadata.append(f"<console-logs file='{log_file}'/>")
+
+        if len(dialogs) > 0:
+            dialogs_summary = "\n".join(
+                map(
+                    lambda dialog: f"- [{dialog['type']}]: {dialog['message']}".strip(),
+                    dialogs,
+                )
+            )
+            metadata.append(f"<dialogs>\n{dialogs_summary}\n</dialogs>")
+
+        if len(downloads) > 0:
+            downloads_summary = "\n".join(
+                map(
+                    lambda download_path: f"- `{download_path}`",
+                    downloads,
+                )
+            )
+            metadata.append(f"<downloaded_files>\n{downloads_summary}\n</downloaded_files>")
+
+        if len(requests) > 0:
+            requests_summary = await self.simplify_requests_for_llm(requests)
+            if requests_summary:
+                metadata.append(requests_summary)
+
+        return "\n".join(metadata)
 
     async def simplify_requests_for_llm(self, requests: list[Request]) -> str:
         """
@@ -336,35 +426,55 @@ class BrowserService(EventEmitter):
             except Exception:
                 logger.exception(f"Error processing network call {index} {request.method} {request.url}")
 
+        if len(har_entries) == 0:
+            return ""
+
         with open(har_file_path, "w") as f:
             json.dump(har_data, f, indent=2, ensure_ascii=False)
 
-        return f'<network_calls har-file-path="{har_file_path}">\n{"\n".join(network_calls)}\n</network_calls>'
+        return f'<network_calls har-file="{har_file_path}">\n{"\n".join(network_calls)}\n</network_calls>'
 
     @asynccontextmanager
-    async def network_capture(self, only_domains: Optional[list[str]] = None):
+    async def interaction_context_capture(self, only_domains: Optional[list[str]] = None):
         """
-        Async context manager to capture network responses during its usage.
+        An asynchronous context manager for capturing various web interactions including network requests, downloads,
+        console messages, and dialog events. Allows optional filtering of network requests based on specified domains.
+        The captured data is organized and simplified into a structure that includes requests, downloads, logs, and dialogs.
 
-        This context manager listens to network responses that occur during its
-        scope and provides a list of responses upon exiting. It attaches an event
-        listener to capture specific responses and removes the listener once the
-        context is exited.
-
-        Args:
-            only_domains (Optional[list[str]]): Optional domains to filter responses by.
+        Parameters:
+            only_domains (Optional[list[str]]): A list of domain filters to capture requests only for specific domains.
+            If None, all requests are captured.
 
         Yields:
-            list[Request]: A list of captured requests generated during the
-            context manager's scope.
+            Any: A simplified metadata object containing captured requests, downloads, logs, and dialogs.
+
+        Context Behavior:
+            - On context entry, sets up event listeners to capture specified web interactions.
+            - On context exit, removes the event listeners to prevent further interception of events.
         """
         requests: list[Request] = []
+        downloads: list[str] = []
+        logs: list[dict[str, Any]] = []
+        dialogs: list[dict[str, Any]] = []
 
         def capture_request(request_or_response: Request | Response):
+            """
+            Captures an HTTP request or a response's associated request and stores it.
+
+            This function checks the provided input, which can be either an HTTP `Request`
+            or a `Response`. If the input is a `Response`, its associated request is captured.
+            It ensures that the captured request is added to a maintained list of requests only
+            if specific criteria are met, such as the request method being neither `OPTIONS`
+            nor already captured, and optionally filtered by domain names.
+
+            Parameters:
+                request_or_response: Request | Response
+                    The HTTP `Request` object or a `Response` object whose request needs
+                    to be captured.
+            """
             request: Request = (
                 request_or_response.request if isinstance(request_or_response, Response) else request_or_response
             )
-
             if request.method == "OPTIONS" or request in requests:
                 return
 
@@ -377,20 +487,66 @@ class BrowserService(EventEmitter):
             else:
                 requests.append(request)
 
+        async def capture_log(msg: ConsoleMessage):
+            """
+            Asynchronously captures a console log message.
+
+            This function processes a console message, extracts its arguments,
+            and converts them into JSON-compatible values. The resulting JSON values
+            and the type of the console message are then stored in a log entry.
+
+            Parameters:
+                msg (ConsoleMessage): The console message to be captured.
+
+            Raises:
+                None
+
+            Returns:
+                None
+            """
+            args: list[Any] = []
+            for arg in msg.args:
+                args.append(await arg.json_value())
+            logs.append(
+                {
+                    "type": msg.type,
+                    "args": args,
+                }
+            )
+
+        def capture_download(file_path: str):
+            downloads.append(file_path)
+
+        def capture_dialog(dialog: Dialog):
+            dialogs.append(
+                {
+                    "type": dialog.type,
+                    "message": dialog.message,
+                    "default_value": dialog.default_value,
+                }
+            )
+
         self.on("request", capture_request)
         self.on("requestfinished", capture_request)
         self.on("requestfailed", capture_request)
         self.on("response", capture_request)
+        self.on("console", capture_log)
+        self.on("download", capture_download)
+        self.on("dialog", capture_dialog)
         try:
-            yield requests
+            yield await self.simplify_metadata_for_llm(requests, downloads, dialogs, logs)
         finally:
             self.off("request", capture_request)
             self.off("requestfinished", capture_request)
             self.off("requestfailed", capture_request)
             self.off("response", capture_request)
+            self.off("console", capture_log)
+            self.off("download", capture_download)
+            self.off("dialog", capture_dialog)
 
 
 _BROWSER: Optional[BrowserService] = None
+_BROWSER_LOCK = asyncio.Lock()
 
 
 def initialize_browser(
@@ -399,19 +555,51 @@ def initialize_browser(
     artifacts_dir: Optional[str] = None,
     extra_http_headers: Optional[dict[str, str]] = None,
 ):
+    logger.info("[BROWSER] initialized")
     global _BROWSER
     _BROWSER = BrowserService(provider, model, artifacts_dir, extra_http_headers)
     return _BROWSER
 
 
+@asynccontextmanager
 async def get_browser():
+    """
+    An asynchronous context manager to access the browser instance.
+
+    This function provides access to a shared browser instance. It ensures the
+    browser has been initialized and acquires a lock to guarantee safe usage
+    across asynchronous operations. It also ensures the browser initialization
+    is complete before yielding the instance. Locking is required because the
+    LLM ends up calling multiple tools in parallel sometimes.
+
+    Raises:
+        ValueError: If the browser instance has not been initialized.
+
+    Yields:
+        The initialized browser instance ready for use.
+    """
     if not _BROWSER:
         raise ValueError("Browser not initialized. Please call initialize_browser first.")
-    await _BROWSER.ensure_init()
-    return _BROWSER
+    logger.info("[BROWSER] ENtering get_browser context manager.")
+    async with _BROWSER_LOCK:
+        logger.info("[BROWSER] ENtering get_browser context manager lock.")
+        await _BROWSER.ensure_init()
+        logger.info("[BROWSER] Done get_browser context manager ensure_init.")
+        yield _BROWSER
 
 
 def format_headers(headers: dict[str, str]) -> str:
+    """
+    Formats HTTP headers into a string representation including only relevant headers.
+
+    Parameters:
+        headers: dict[str, str]
+            A dictionary containing HTTP headers as key-value pairs.
+
+    Returns:
+        str
+            A formatted string containing the filtered and formatted HTTP headers.
+    """
     important_headers = [
         "content-type",
         "content-length",
@@ -451,11 +639,6 @@ def form_har_body(content_type: str, data: bytes):
         'text', and 'encoding'. The 'text' field will hold the data in either
         UTF-8 or Base64 encoding, and the 'encoding' field will specify the
         corresponding encoding method.
-
-    Raises:
-        UnicodeDecodeError: If the data cannot be decoded as UTF-8, it will
-        automatically encode the data in Base64 without raising this error
-        to the caller.
     """
     body_repr = {"mimeType": content_type}
     try:
@@ -477,8 +660,8 @@ async def browser_set_headers(headers: dict[str, str]):
     Parameters:
         headers (dict[str, str]): the headers to be sent with all requests
     """
-    browser = await get_browser()
-    await browser.context.set_extra_http_headers(headers)
+    async with get_browser() as browser:
+        await browser.context.set_extra_http_headers(headers)
 
 
 @tool
@@ -493,20 +676,24 @@ async def browser_goto_url(url: str):
         url: The URL to navigate to.
 
     Returns:
-        A collection of network responses captured during the navigation and observations of the current state of the page after the navigation.
+        - Any Network requests, dialogs, console logs and downloads captured during the navigation.
+        - Observations of the current page state after the navigation.
     """
-    browser = await get_browser()
-    async with browser.network_capture(only_domains=[browser.page_domain, extract_domain(url)]) as requests:
-        await browser.page.goto(url)
-        network_summary = await browser.simplify_requests_for_llm(requests)
+    logger.info("[BROWSER] entered goto url")
+    async with get_browser() as browser:
+        async with browser.interaction_context_capture(
+            only_domains=[browser.page_domain, extract_domain(url)]
+        ) as interaction_context:
+            await browser.page.goto(url)
+            interaction_context = interaction_context
 
-    # Eagerly returning relevant observations to reduce agent tool calls
-    observations = await browser_observe_page(
-        f"{url} was just opened. "
-        "give all important elements on the page that might be relevant to the next action. "
-        "observe the overall state of the page to understand the purpose of the page."
-    )
-    return f"<observations>\n{"\n".join(observations)}\n</observations>\n{network_summary}"
+        # Eagerly returning relevant observations to reduce agent tool calls
+        observations = await browser.page.observe(
+            f"{url} was just opened. "
+            "give all important elements on the page that might be relevant to the next action. "
+            "observe the overall state of the page to understand the purpose of the page."
+        )
+        return f"<observations>\n{'\n'.join(map(lambda obs: obs.description, observations))}\n</observations>\n{interaction_context}"
 
 
 @tool
@@ -519,12 +706,12 @@ async def browser_get_page_html() -> str:
     Returns:
         The path of the downloaded HTML file artifact.
     """
-    browser = await get_browser()
-    page_html = await browser.page.content()
-    html_artifact_file = os.path.join(browser.artifacts_dir, f"browser_page_{time.time_ns()}.html")
-    with open(html_artifact_file, "w") as f:
-        f.write(page_html)
-    return f"HTML content saved to artifact: {html_artifact_file}"
+    async with get_browser() as browser:
+        page_html = await browser.page.content()
+        html_artifact_file = os.path.join(browser.artifacts_dir, f"browser_page_{time.time_ns()}.html")
+        with open(html_artifact_file, "w") as f:
+            f.write(page_html)
+        return f"HTML content saved to artifact: {html_artifact_file}"
 
 
 @tool
@@ -541,9 +728,12 @@ async def browser_evaluate_js(expression: str):
 
     Args:
         expression (str): The javascript expression to evaluate. The expression has to be a function that returns a value.
+
+    Returns:
+        The result of the javascript expression.
     """
-    browser = await get_browser()
-    return await browser.page.evaluate(expression)
+    async with get_browser() as browser:
+        return await browser.page.evaluate(expression)
 
 
 @tool
@@ -559,20 +749,20 @@ async def browser_get_cookies():
              'httpOnly', 'secure', and 'sameSite'. If no cookies are found,
              a message string indicating this is returned.
     """
-    browser = await get_browser()
-    cookies = await browser.context.cookies()
-    if len(cookies) == 0:
-        return "No cookies found"
+    async with get_browser() as browser:
+        cookies = await browser.context.cookies()
+        if len(cookies) == 0:
+            return "No cookies found"
 
-    csv_buffer = StringIO()
-    writer = csv.DictWriter(
-        csv_buffer, fieldnames=["name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite"]
-    )
-    writer.writeheader()
-    for cookie in cookies:
-        writer.writerow(dict(cookie))
+        csv_buffer = StringIO()
+        writer = csv.DictWriter(
+            csv_buffer, fieldnames=["name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite"]
+        )
+        writer.writeheader()
+        for cookie in cookies:
+            writer.writerow(dict(cookie))
 
-    return csv_buffer.getvalue()
+        return csv_buffer.getvalue()
 
 
 @tool
@@ -596,26 +786,27 @@ async def browser_perform_action(action: str):
         - Click on Cars from the dropdown menu
 
     Returns:
-        - A collection of network responses captured during the course of this action and observations of the current state of the page after the action
+        - Any Network requests, dialogs, console logs and downloads captured during the interaction.
+        - Observations of the current page state after the interaction.
     """
-    browser = await get_browser()
-    async with browser.network_capture(only_domains=[browser.page_domain]) as requests:
-        await browser.page.act(action)
-        with contextlib.suppress(TimeoutError):
-            await browser.page.wait_for_load_state("networkidle", timeout=60000)
-        network_summary = await browser.simplify_requests_for_llm(requests)
+    async with get_browser() as browser:
+        async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as interaction_context:
+            await browser.page.act(action)
+            with contextlib.suppress(TimeoutError):
+                await browser.page.wait_for_load_state("networkidle", timeout=60000)
+            interaction_context = interaction_context
 
-    # Eagerly returning relevant observations to reduce agent tool calls
-    observations = await browser_observe_page(
-        f"`{action}` action was just performed. "
-        "give all important elements on the page that might be relevant to the next action."
-        "observe the overall state of the page to understand the purpose of the page."
-    )
-    return f"<observations>\n{'\n'.join(observations)}\n</observations>\n{network_summary}"
+        # Eagerly returning relevant observations to reduce agent tool calls
+        observations = await browser.page.observe(
+            f"`{action}` action was just performed. "
+            "give all important elements on the page that might be relevant to the next action."
+            "observe the overall state of the page to understand the purpose of the page."
+        )
+        return f"<observations>\n{'\n'.join(map(lambda obs: obs.description, observations))}\n</observations>\n{interaction_context}"
 
 
 @tool
-async def browser_observe_page(instruction: Optional[str] = None):
+async def browser_observe_page(instruction: Optional[str] = None) -> list[str]:
     """
     Observes the page and returns a list of descriptions of interesting elements on the page.
 
@@ -636,6 +827,6 @@ async def browser_observe_page(instruction: Optional[str] = None):
         List[str]: A list of descriptions derived from the observations recorded
             on the browser page.
     """
-    browser = await get_browser()
-    observations = await browser.page.observe(instruction)
-    return [observation.description for observation in observations]
+    async with get_browser() as browser:
+        observations = await browser.page.observe(instruction)
+        return [observation.description for observation in observations]
