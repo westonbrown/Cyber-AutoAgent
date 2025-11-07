@@ -11,6 +11,11 @@ import { Config } from './contexts/ConfigContext.js';
 import { loggingService } from './services/LoggingService.js';
 import { enableConsoleSilence } from './utils/consoleSilencer.js';
 
+// Check for --debug flag early (before meow parsing) to enable logging
+if (process.argv.includes('--debug') || process.argv.includes('-d')) {
+  process.env.CYBER_DEBUG = 'true';
+}
+
 // Default to production mode when NODE_ENV is unset
 try {
   if (!process.env.NODE_ENV) {
@@ -128,12 +133,6 @@ const cli = meow(`
     }
   }
 });
-
-// Set debug environment variable early if --debug flag is used
-// This must happen before logger initialization to enable INFO logs
-if (cli.flags.debug) {
-  process.env.CYBER_DEBUG = 'true';
-}
 
 // Emit an immediate welcome line in headless test mode to aid terminal capture timing
   try {
@@ -288,9 +287,18 @@ const runAutoAssessment = async () => {
         target: cli.flags.target,
         objective: cli.flags.objective || `Comprehensive ${cli.flags.module} security assessment`
       };
-      
+
       // Execute assessment and wait for completion
       const handle = await executionService.execute(assessmentParams, finalConfig);
+
+      // In auto-run mode, listen to events and display them to console
+      // This provides real-time progress visibility during assessment
+      executionService.on('event', (event: any) => {
+        if (event.type === 'output' && event.content) {
+          loggingService.info(event.content);
+        }
+      });
+
       const result = await handle.result;
       
       if (result.success) {
