@@ -23,7 +23,7 @@ try {
 const env = process.env.NODE_ENV || 'production';
   // Treat anything except explicit 'development' as production by default
   const isProd = env !== 'development';
-  const debugOn = process.env.DEBUG === 'true' || process.env.CYBER_DEBUG === 'true' || process.env.CYBER_TEST_MODE === 'true';
+  const debugOn = !!(process.env.DEBUG || process.env.CYBER_DEBUG || process.env.CYBER_TEST_MODE);
   if (isProd && !debugOn) {
     enableConsoleSilence();
   }
@@ -128,6 +128,12 @@ const cli = meow(`
     }
   }
 });
+
+// Set debug environment variable early if --debug flag is used
+// This must happen before logger initialization to enable INFO logs
+if (cli.flags.debug) {
+  process.env.CYBER_DEBUG = 'true';
+}
 
 // Emit an immediate welcome line in headless test mode to aid terminal capture timing
   try {
