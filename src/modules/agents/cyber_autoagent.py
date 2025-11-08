@@ -11,7 +11,7 @@ from typing import Any, List, Optional, Tuple
 import json
 
 from strands import Agent
-from strands.agent.conversation_manager import SlidingWindowConversationManager
+from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.models import BedrockModel
 from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
@@ -243,10 +243,10 @@ def _create_remote_model(
     # This prevents ReadTimeoutError during long-running operations
     boto_config = BotocoreConfig(
         region_name=region_name,
-        retries={"max_attempts": 10, "mode": "adaptive"},  # Higher retry count for long sessions
-        read_timeout=420,  # 7 minutes read timeout
-        connect_timeout=60,  # 1 minute connection timeout
-        max_pool_connections=100,  # Larger pool for long sessions with tools
+        retries={"max_attempts": 10, "mode": "adaptive"},
+        read_timeout=1200,  # 20 minutes
+        connect_timeout=1200,  # 20 minutes
+        max_pool_connections=100,
     )
 
     if config_manager.is_thinking_model(model_id):
@@ -959,8 +959,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         "callback_handler": callback_handler,
         "hooks": hooks if hooks else None,  # Add hooks if available
         # Use sliding-window conversation manager with fixed window size
-        "conversation_manager": SlidingWindowConversationManager(
-            window_size=100,
+        "conversation_manager": SummarizingConversationManager(
+            summary_ratio=0.3,
+            preserve_recent_messages=20,
         ),
         "load_tools_from_directory": True,
         "trace_attributes": {
