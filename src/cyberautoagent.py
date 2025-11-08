@@ -346,10 +346,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Always check environment variable first for objective (React UI passes it this way)
+    # React UI passes objective via environment variable
+    # Only apply env override if in React UI mode to preserve CLI arg priority
     env_objective = os.environ.get("CYBER_OBJECTIVE")
-    if env_objective:
-        args.objective = env_objective  # Env var takes precedence
+    if env_objective and os.environ.get("CYBER_UI_MODE") == "react":
+        args.objective = env_objective
 
     # Persist provider/model selections to environment for downstream configuration
     if args.provider:
