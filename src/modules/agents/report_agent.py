@@ -73,18 +73,16 @@ class ReportGenerator:
             boto_config = BotocoreConfig(
                 region_name=cfg.get_server_config("bedrock").region,
                 retries={"max_attempts": 10, "mode": "adaptive"},
-                read_timeout=420,
-                connect_timeout=60,
+                read_timeout=1200,
+                connect_timeout=1200,
                 max_pool_connections=100,
             )
 
             # Set appropriate token limits based on the model
             if "claude-3-5-sonnet" in mid or "claude-3-5-haiku" in mid:
-                # Claude 3.5 models have ~8k token output limits
-                max_tokens = 8000
+                max_tokens = 4000
             else:
-                # Default to 32k for non-3.5 models to satisfy provider limits
-                max_tokens = 32000
+                max_tokens = 8000
             # Ensure explicit region to avoid environment inconsistencies
             region = cfg.get_server_config("bedrock").region
             model = BedrockModel(
@@ -104,7 +102,17 @@ class ReportGenerator:
             llm_cfg = cfg.get_llm_config("litellm")
             # Only override if explicitly provided, otherwise use config
             mid = model_id if model_id else llm_cfg.model_id
-            model = LiteLLMModel(model_id=mid)
+            # Pass both token params - LiteLLM drop_params removes unsupported one
+            params = {
+                "temperature": 0.3,
+                "max_tokens": 4000,
+                "max_completion_tokens": 4000,
+            }
+            client_args = {
+                "num_retries": 5,
+                "timeout": 600,
+            }
+            model = LiteLLMModel(model_id=mid, params=params, client_args=client_args)
 
         # Import the report builder tool
         from modules.tools.report_builder import build_report_sections
