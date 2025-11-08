@@ -816,7 +816,88 @@ const method = latestInput.method || 'GET';
             </Box>
           );
         }
-          
+
+        case 'browser_goto_url': {
+          const url = latestInput.url || '';
+          const urlDisplay = url && url.trim().length > 0 ? url : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_goto_url</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ url: {urlDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_perform_action': {
+          const action = latestInput.action || '';
+          const actionDisplay = action && action.trim().length > 0 ? action : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_perform_action</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ action: {actionDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_observe_page': {
+          const instruction = latestInput.instruction || '';
+          const instructionDisplay = instruction && instruction.trim().length > 0 ? instruction : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_observe_page</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ instruction: {instructionDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_evaluate_js': {
+          const expression = latestInput.expression || '';
+          const expressionDisplay = expression && expression.trim().length > 0 ? expression : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_evaluate_js</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ instruction: {expressionDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
+        case 'browser_get_cookies': {
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_get_cookies</Text>
+            </Box>
+          );
+        }
+
+        case 'browser_get_page_html': {
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_get_page_html</Text>
+            </Box>
+          );
+        }
+
+        case 'browser_set_headers': {
+          const headers = latestInput.headers || {};
+          const headersDisplay = Object.keys(headers).length > 0 ? JSON.stringify(headers) : '(awaiting args …)';
+          return (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="green" bold>tool: browser_set_headers</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>├─ headers: {headersDisplay}</Text>
+              </Box>
+            </Box>
+          );
+        }
+
         case 'file_write': {
           const filePath = latestInput.path || 'unknown';
           const fileContent = latestInput.content || '';

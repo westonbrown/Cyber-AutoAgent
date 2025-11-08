@@ -167,6 +167,13 @@ RUN cd /app/src/modules/interfaces/react && \
     npm run build && \
     chown -R cyberagent:cyberagent /app/src/modules/interfaces/react
 
+# Install chromium browser for playwright to use
+# We use the PLAYWRIGHT_HOST_PLATFORM_OVERRIDE to force installation of Debian 13 packages on Kali Rolling since
+# Kali Rolling is based off Debian Testing and playwright does not have a specific Kali target.
+RUN env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="debian13-$(dpkg --print-architecture | sed 's/amd/x/')" uv run playwright install chromium --with-deps && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
 # Environment
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"

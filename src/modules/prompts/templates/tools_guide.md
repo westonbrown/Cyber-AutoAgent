@@ -34,6 +34,17 @@
 - Categories: finding | signal | decision | artifact | observation | plan
 - Content: Paths only, no binary blobs
 
+**`browser_*` tools**
+- Purpose: Interact with web apps requiring JavaScript execution, DOM rendering, or session/cookie-based authentication
+- When to use: SPAs with dynamic content, login flows, client-side rendering, testing XSS/CSRF in browser context
+- When NOT: Static pages, API endpoints, simple HTTP requests (use http_request instead)
+- Constraints: Single browser instance, sequential execution only (NO concurrent tool calls), state persists across calls
+- Actions: Each action must be atomic (one click OR one input, never combined). "Click login then enter password" is WRONG - split into separate calls
+- Auto-captured artifacts: Network traffic (HAR), console logs, dialogs, downloads → `<artifacts_path>/*.{har,log,html}`
+- Large outputs: HTML snapshots saved to artifacts, use shell grep/sed to extract relevant data, store only paths in findings
+- Integration: Extract cookies/tokens → use with http_request for API testing, or evaluate JS for localStorage/session data
+- Anti-pattern: Using browser when http_request suffices (wastes resources, slower, more complex)
+
 **swarm**
 - Purpose: Multi-agent collaboration for parallel capability testing
 - Configuration: 2-3 agents max, max_handoffs=3, max_iterations=8, node_timeout=3200, execution_timeout=3800
