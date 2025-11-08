@@ -294,7 +294,8 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
             return evidence
 
         # Retrieve memories for this operation
-        memories_response = memory_client.list_memories(user_id="cyber_agent")
+        # Pass both user_id and agent_id since memories are stored with both
+        memories_response = memory_client.list_memories(user_id="cyber_agent", agent_id="cyber_agent")
 
         # Parse memory response
         if isinstance(memories_response, dict):
