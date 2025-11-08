@@ -420,8 +420,9 @@ class BrowserService(EventEmitter):
                         "No Response was received",
                     ]
 
+                network_call_stringified = "\n".join(simplified_request + simplified_response)
                 network_calls.append(
-                    f'<network_call har-entry-index="{len(har_entries) - 1}">\n{"\n".join(simplified_request + simplified_response)}\n</network_call>'
+                    f'<network_call har-entry-index="{len(har_entries) - 1}">\n{network_call_stringified}\n</network_call>'
                 )
             except Exception:
                 logger.exception(f"Error processing network call {index} {request.method} {request.url}")
@@ -432,7 +433,8 @@ class BrowserService(EventEmitter):
         with open(har_file_path, "w") as f:
             json.dump(har_data, f, indent=2, ensure_ascii=False)
 
-        return f'<network_calls har-file="{har_file_path}">\n{"\n".join(network_calls)}\n</network_calls>'
+        network_calls_stringified = "\n".join(network_calls)
+        return f'<network_calls har-file="{har_file_path}">\n{network_calls_stringified}\n</network_calls>'
 
     @asynccontextmanager
     async def interaction_context_capture(self, only_domains: Optional[list[str]] = None):
@@ -449,7 +451,7 @@ class BrowserService(EventEmitter):
             Any: A simplified metadata object containing captured requests, downloads, logs, and dialogs.
 
         Context Behavior:
-            - On context entry, sets up event listeners to capture specified web interactions.
+            - On context entry, sets up event listeners to capture specified web  interactions.
             - On context exit, removes the event listeners to prevent further interception of events.
         """
         requests: list[Request] = []
@@ -688,12 +690,17 @@ async def browser_goto_url(url: str):
             interaction_context = interaction_context
 
         # Eagerly returning relevant observations to reduce agent tool calls
-        observations = await browser.page.observe(
-            f"{url} was just opened. "
-            "give all important elements on the page that might be relevant to the next action. "
-            "observe the overall state of the page to understand the purpose of the page."
+        observations = "\n".join(
+            map(
+                lambda obs: obs.description,
+                await browser.page.observe(
+                    f"{url} was just opened. "
+                    "give all important elements on the page that might be relevant to the next action. "
+                    "observe the overall state of the page to understand the purpose of the page."
+                ),
+            )
         )
-        return f"<observations>\n{'\n'.join(map(lambda obs: obs.description, observations))}\n</observations>\n{interaction_context}"
+        return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
 
 
 @tool
@@ -797,12 +804,17 @@ async def browser_perform_action(action: str):
             interaction_context = interaction_context
 
         # Eagerly returning relevant observations to reduce agent tool calls
-        observations = await browser.page.observe(
-            f"`{action}` action was just performed. "
-            "give all important elements on the page that might be relevant to the next action."
-            "observe the overall state of the page to understand the purpose of the page."
+        observations = "\n".join(
+            map(
+                lambda obs: obs.description,
+                await browser.page.observe(
+                    f"`{action}` action was just performed. "
+                    "give all important elements on the page that might be relevant to the next action."
+                    "observe the overall state of the page to understand the purpose of the page."
+                ),
+            )
         )
-        return f"<observations>\n{'\n'.join(map(lambda obs: obs.description, observations))}\n</observations>\n{interaction_context}"
+        return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
 
 
 @tool
