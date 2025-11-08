@@ -531,7 +531,7 @@ def create_agent(
     except Exception:
         logger.debug("Unable to set overlay environment context", exc_info=True)
 
-    initialize_browser(provider=config.provider, model=config.model_id, artifacts_dir=paths.get("artifacts"))
+    initialize_browser(provider=config.provider, model=config.model_id, artifacts_dir=os.getenv("CYBER_ARTIFACTS_DIR"))
     initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
 
