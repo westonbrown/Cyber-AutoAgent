@@ -24,10 +24,16 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
+import litellm
 import ollama
 import requests
 
 from modules.handlers.utils import get_output_path, sanitize_target_name
+
+litellm.drop_params = True
+litellm.modify_params = True
+litellm.num_retries = 5
+litellm.respect_retry_after_header = True
 
 logger = logging.getLogger(__name__)
 
@@ -1078,6 +1084,12 @@ class ConfigManager:
 
         llm_model = self.getenv("CYBER_AGENT_LLM_MODEL")
         if llm_model and llm_cfg is not None:
+            if llm_model != llm_cfg.model_id:
+                logger.info(
+                    "ENV override: CYBER_AGENT_LLM_MODEL=%s replaces config model=%s",
+                    llm_model,
+                    llm_cfg.model_id,
+                )
             llm_cfg = LLMConfig(
                 provider=llm_cfg.provider,
                 model_id=llm_model,
@@ -1111,6 +1123,12 @@ class ConfigManager:
         embedding_model = self.getenv("CYBER_AGENT_EMBEDDING_MODEL")
         if embedding_model and isinstance(defaults.get("embedding"), EmbeddingConfig):
             embedding_cfg = defaults["embedding"]
+            if embedding_model != embedding_cfg.model_id:
+                logger.info(
+                    "ENV override: CYBER_AGENT_EMBEDDING_MODEL=%s replaces config=%s",
+                    embedding_model,
+                    embedding_cfg.model_id,
+                )
             embedding_cfg.model_id = embedding_model
             embedding_cfg.parameters["dimensions"] = embedding_cfg.dimensions
 
