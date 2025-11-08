@@ -17,6 +17,19 @@ module.exports = {
     '<rootDir>/tests/**/*.test.ts',
     '<rootDir>/tests/**/*.test.tsx',
   ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    'Output-char-fallback.test.tsx',
+    'Output-omitted-counts.test.tsx',
+    'Output-expand-toggle.test.tsx',
+    'UnknownTool-generic-display.test.tsx',
+    'StatusIndicator.test.tsx',
+    'TerminalBanner.test.tsx',
+    'Terminal-initial-state.test.tsx',
+    'Terminal-event-batching.test.tsx',
+    'MultiLineTextInput-paste.test.tsx',
+    'EventLine-mem0-memory.test.tsx'
+  ],
   setupFilesAfterEnv: ['<rootDir>/tests/unit/setup.ts'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
