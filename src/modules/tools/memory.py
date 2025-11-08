@@ -1451,7 +1451,7 @@ def mem0_memory(
 
             results = _MEMORY_CLIENT.store_plan(plan_dict, user_id or "cyber_agent")
             if not strands_dev:
-                console.print("[green]✅ Strategic plan stored successfully[/green]")
+                console.print("[green]Strategic plan stored successfully[/green]")
             return json.dumps(results, indent=2)
 
         elif action == "get_plan":
@@ -1460,11 +1460,11 @@ def mem0_memory(
             plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent", operation_id=op_id)
             if plan:
                 if not strands_dev:
-                    console.print("[green]📋 Active plan retrieved[/green]")
+                    console.print("[green]Active plan retrieved[/green]")
                 return json.dumps(plan, indent=2)
             else:
                 if not strands_dev:
-                    console.print("[yellow]⚠️ No active plan found[/yellow]")
+                    console.print("[yellow]No active plan found[/yellow]")
                 return "No active plan found"
 
         elif action == "store":

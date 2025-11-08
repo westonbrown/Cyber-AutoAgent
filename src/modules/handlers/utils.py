@@ -250,15 +250,15 @@ def print_status(message, status="INFO"):
     if os.getenv("CYBERAGENT_NO_BANNER", "").lower() in ("1", "true", "yes"):
         return
 
-    # Print status for CLI mode
+    # Print status for CLI mode - professional symbols only
     status_config = {
-        "INFO": (Colors.BLUE, "ℹ️"),
-        "SUCCESS": (Colors.GREEN, "✅"),
-        "WARNING": (Colors.YELLOW, "⚠️"),
-        "ERROR": (Colors.RED, "❌"),
-        "THINKING": (Colors.MAGENTA, "🤔"),
-        "EXECUTING": (Colors.CYAN, "⚡"),
-        "FOUND": (Colors.GREEN, "[SCAN]"),
+        "INFO": (Colors.BLUE, "•"),
+        "SUCCESS": (Colors.GREEN, "✓"),
+        "WARNING": (Colors.YELLOW, "!"),
+        "ERROR": (Colors.RED, "✗"),
+        "THINKING": (Colors.MAGENTA, "→"),
+        "EXECUTING": (Colors.CYAN, "*"),
+        "FOUND": (Colors.GREEN, "+"),
     }
     color, prefix = status_config.get(status, (Colors.BLUE, "[INFO]"))
     timestamp = datetime.now().strftime("%H:%M:%S")
