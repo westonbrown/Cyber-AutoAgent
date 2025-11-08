@@ -58,10 +58,11 @@ class CyberAgentEvaluator:
 
     def __init__(self):
         """Initialize evaluator with Langfuse and evaluation metrics."""
+        config_manager = get_config_manager()
         self.langfuse = Langfuse(
-            public_key=os.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
-            secret_key=os.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
-            host=os.getenv(
+            public_key=config_manager.getenv("LANGFUSE_PUBLIC_KEY", "cyber-public"),
+            secret_key=config_manager.getenv("LANGFUSE_SECRET_KEY", "cyber-secret"),
+            host=config_manager.getenv(
                 "LANGFUSE_HOST",
                 (
                     "http://langfuse-web:3000"
@@ -77,21 +78,22 @@ class CyberAgentEvaluator:
 
     def setup_models(self):
         """Configure evaluation models based on server type."""
-        server_type = os.getenv("PROVIDER", "bedrock").lower()
+        config_manager = get_config_manager()
+        server_type = config_manager.getenv("PROVIDER", "bedrock").lower()
 
         # Get configuration from ConfigManager
-        config_manager = get_config_manager()
         server_config = config_manager.get_server_config(server_type)
 
         if server_type == "ollama":
             # Local mode using Ollama
+            ollama_host = config_manager.getenv("OLLAMA_HOST", "http://localhost:11434")
             langchain_chat = ChatOllama(
-                model=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
-                base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+                model=config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
+                base_url=ollama_host,
             )
             langchain_embeddings = OllamaEmbeddings(
-                model=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
-                base_url=os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+                model=config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
+                base_url=ollama_host,
             )
 
             self.llm = LangchainLLMWrapper(langchain_chat)
@@ -99,11 +101,11 @@ class CyberAgentEvaluator:
             self._chat_model = langchain_chat
         elif server_type == "litellm":
             # Universal mode using LiteLLM via LangChain community wrapper
-            model_id = os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id)
+            model_id = config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id)
             langchain_chat = ChatLiteLLM(model=model_id)
 
             # Embeddings for LiteLLM: prefer Bedrock embeddings when model has bedrock/ prefix
-            embed_model_id = os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id)
+            embed_model_id = config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id)
             if isinstance(embed_model_id, str) and embed_model_id.startswith("bedrock/"):
                 embed_id = embed_model_id.replace("bedrock/", "")
             else:
@@ -121,11 +123,11 @@ class CyberAgentEvaluator:
         else:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
-                model_id=os.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
+                model_id=config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
                 region_name=config_manager.get_default_region(),
             )
             langchain_embeddings = BedrockEmbeddings(
-                model_id=os.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
+                model_id=config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
                 region_name=config_manager.get_default_region(),
             )
 
@@ -234,7 +236,8 @@ class CyberAgentEvaluator:
             Dictionary mapping trace names to their evaluation scores
         """
         # Find all traces for this operation with bounded retry from config manager
-        eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+        config_manager = get_config_manager()
+        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
         max_wait = getattr(eval_cfg, "max_wait_secs", 30)
         poll_interval = getattr(eval_cfg, "poll_interval_secs", 5)
         waited = 0
@@ -625,7 +628,8 @@ class CyberAgentEvaluator:
 
         # Optionally short-circuit when insufficient evidence to avoid 0/1 collapse
         try:
-            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager = get_config_manager()
+        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
             min_tools = getattr(eval_cfg, "min_tool_calls", 3)
             min_evidence = getattr(eval_cfg, "min_evidence", 1)
             if len(parsed_trace.tool_calls) < min_tools and evidence_count < min_evidence:
@@ -848,7 +852,8 @@ class CyberAgentEvaluator:
         Returns JSON like: {"caps": {"metric": 0.7, ...}, "disable": ["metric_name", ...]}
         """
         try:
-            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager = get_config_manager()
+        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
         except Exception:
             return {}
 
@@ -922,7 +927,8 @@ class CyberAgentEvaluator:
         Returns a dict of metric_name -> (score_float, metadata_dict) when enabled, else {}.
         """
         try:
-            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager = get_config_manager()
+        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
         except Exception:
             return {}
 
@@ -1120,7 +1126,8 @@ class CyberAgentEvaluator:
         Objective, Methods, Evidence, Findings, Outcomes, Gaps.
         """
         try:
-            eval_cfg = get_config_manager().get_server_config(os.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager = get_config_manager()
+        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
             max_chars = int(getattr(eval_cfg, "summary_max_chars", 8000))
         except Exception:
             max_chars = 8000

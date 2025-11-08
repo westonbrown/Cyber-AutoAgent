@@ -320,24 +320,24 @@ def _create_litellm_model(
     # Configure AWS Bedrock models via LiteLLM
     if model_id.startswith(("bedrock/", "sagemaker/")):
         client_args["aws_region_name"] = region_name
-        aws_profile = os.getenv("AWS_PROFILE") or os.getenv("AWS_DEFAULT_PROFILE")
+        aws_profile = config_manager.getenv("AWS_PROFILE") or config_manager.getenv("AWS_DEFAULT_PROFILE")
         if aws_profile:
             client_args["aws_profile_name"] = aws_profile
-        role_arn = os.getenv("AWS_ROLE_ARN") or os.getenv("AWS_ROLE_NAME")
+        role_arn = config_manager.getenv("AWS_ROLE_ARN") or config_manager.getenv("AWS_ROLE_NAME")
         if role_arn:
             client_args["aws_role_name"] = role_arn
-        session_name = os.getenv("AWS_ROLE_SESSION_NAME")
+        session_name = config_manager.getenv("AWS_ROLE_SESSION_NAME")
         if session_name:
             client_args["aws_session_name"] = session_name
-        sts_endpoint = os.getenv("AWS_STS_ENDPOINT")
+        sts_endpoint = config_manager.getenv("AWS_STS_ENDPOINT")
         if sts_endpoint:
             client_args["aws_sts_endpoint"] = sts_endpoint
-        external_id = os.getenv("AWS_EXTERNAL_ID")
+        external_id = config_manager.getenv("AWS_EXTERNAL_ID")
         if external_id:
             client_args["aws_external_id"] = external_id
 
     if model_id.startswith("sagemaker/"):
-        sagemaker_base_url = os.getenv("SAGEMAKER_BASE_URL")
+        sagemaker_base_url = config_manager.getenv("SAGEMAKER_BASE_URL")
         if sagemaker_base_url:
             client_args["sagemaker_base_url"] = sagemaker_base_url
 
@@ -352,10 +352,12 @@ def _create_litellm_model(
         params["top_p"] = config["top_p"]
 
     # Add reasoning parameters if set (O1/GPT-5 support)
-    if os.getenv("REASONING_EFFORT"):
-        params["reasoning_effort"] = os.getenv("REASONING_EFFORT")
-    if os.getenv("MAX_COMPLETION_TOKENS"):
-        params["max_completion_tokens"] = int(os.getenv("MAX_COMPLETION_TOKENS"))
+    reasoning_effort = config_manager.getenv("REASONING_EFFORT")
+    if reasoning_effort:
+        params["reasoning_effort"] = reasoning_effort
+    max_completion_tokens = config_manager.getenv_int("MAX_COMPLETION_TOKENS", 0)
+    if max_completion_tokens > 0:
+        params["max_completion_tokens"] = max_completion_tokens
 
     return LiteLLMModel(
         client_args=client_args,
@@ -859,13 +861,13 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                 ),
                 "backend": (
                     "mem0_cloud"
-                    if os.getenv("MEM0_API_KEY")
-                    else ("opensearch" if os.getenv("OPENSEARCH_HOST") else "faiss")
+                    if config_manager.getenv("MEM0_API_KEY")
+                    else ("opensearch" if config_manager.getenv("OPENSEARCH_HOST") else "faiss")
                 ),
                 **(memory_overview if memory_overview and isinstance(memory_overview, dict) else {}),
             },
-            "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
-            "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
+            "observability": config_manager.getenv_bool("ENABLE_OBSERVABILITY", False),
+            "ui_mode": config_manager.getenv("CYBER_UI_MODE", "cli").lower(),
         },
     )
 
@@ -973,7 +975,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                 config.provider.upper(),
                 operation_id,
             ],
-            "langfuse.environment": os.getenv("DEPLOYMENT_ENV", "production"),
+            "langfuse.environment": config_manager.getenv("DEPLOYMENT_ENV", "production"),
             "langfuse.agent.type": "main_orchestrator",
             "langfuse.capabilities.swarm": True,
             # Standard OTEL attributes

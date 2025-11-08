@@ -16,6 +16,7 @@ Key Components:
 """
 
 import importlib.util
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -151,7 +152,7 @@ class MemoryLLMConfig(ModelConfig):
 
     temperature: float = 0.1
     max_tokens: int = 2000
-    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    aws_region: str = "us-east-1"  # Default, can be overridden via environment
 
     def __post_init__(self):
         super().__post_init__()
@@ -168,7 +169,7 @@ class MemoryLLMConfig(ModelConfig):
 class MemoryEmbeddingConfig(ModelConfig):
     """Configuration for memory-specific embedding models."""
 
-    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    aws_region: str = "us-east-1"  # Default, can be overridden via environment
     dimensions: int = 1024
 
     def __post_init__(self):
@@ -321,7 +322,7 @@ class ServerConfig:
     output: OutputConfig = field(default_factory=OutputConfig)
     sdk: SDKConfig = field(default_factory=SDKConfig)
     host: Optional[str] = None
-    region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    region: str = "us-east-1"  # Default, can be overridden via environment
 
 
 class ConfigManager:
@@ -329,16 +330,104 @@ class ConfigManager:
 
     Provides provider defaults with environment overrides and lightweight
     validation helpers. Caches computed ServerConfig objects per provider.
+
+    Serves as the single source of truth for all configuration access,
+    including environment variables. All env var access should go through
+    this class to ensure consistent behavior and proper cache invalidation.
     """
 
     def __init__(self):
         """Initialize configuration manager."""
         self._config_cache = {}
         self._default_configs = self._initialize_default_configs()
+        self._env_snapshot = self._capture_env_snapshot()
+
+    def _capture_env_snapshot(self) -> int:
+        """Capture hash of current environment state for cache invalidation."""
+        import hashlib
+        # Create a stable hash of relevant environment variables
+        env_data = json.dumps(dict(sorted(os.environ.items())), sort_keys=True)
+        return int(hashlib.md5(env_data.encode()).hexdigest(), 16)
+
+    def _has_env_changed(self) -> bool:
+        """Check if environment variables have changed since last snapshot."""
+        current_snapshot = self._capture_env_snapshot()
+        if current_snapshot != self._env_snapshot:
+            self._env_snapshot = current_snapshot
+            return True
+        return False
+
+    def getenv(self, key: str, default: str = "") -> str:
+        """Get environment variable value.
+
+        Centralized accessor for all environment variable reads.
+        Provides consistent interface and enables cache invalidation.
+
+        Args:
+            key: Environment variable name
+            default: Default value if variable not set
+
+        Returns:
+            Environment variable value or default
+        """
+        return os.getenv(key, default)
+
+    def getenv_bool(self, key: str, default: bool = False) -> bool:
+        """Get environment variable as boolean.
+
+        Args:
+            key: Environment variable name
+            default: Default value if variable not set
+
+        Returns:
+            Boolean value (true for "true", "1", "yes"; false otherwise)
+        """
+        value = os.getenv(key)
+        if value is None:
+            return default
+        return value.lower() in ("true", "1", "yes")
+
+    def getenv_int(self, key: str, default: int = 0) -> int:
+        """Get environment variable as integer.
+
+        Args:
+            key: Environment variable name
+            default: Default value if variable not set or invalid
+
+        Returns:
+            Integer value or default if conversion fails
+        """
+        value = os.getenv(key)
+        if value is None:
+            return default
+        try:
+            return int(float(value))
+        except (ValueError, TypeError):
+            logger.warning("Invalid integer value for %s: %s, using default %d", key, value, default)
+            return default
+
+    def getenv_float(self, key: str, default: float = 0.0) -> float:
+        """Get environment variable as float.
+
+        Args:
+            key: Environment variable name
+            default: Default value if variable not set or invalid
+
+        Returns:
+            Float value or default if conversion fails
+        """
+        value = os.getenv(key)
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            logger.warning("Invalid float value for %s: %s, using default %f", key, value, default)
+            return default
 
     def get_default_region(self) -> str:
         """Get the default AWS region with environment override support."""
-        return os.getenv("AWS_REGION", "us-east-1")
+        return self.getenv("AWS_REGION", "us-east-1")
 
     def get_thinking_models(self) -> List[str]:
         """Get list of models that support thinking capabilities."""
@@ -372,8 +461,8 @@ class ConfigManager:
             default_thinking_budget = 10000
 
         # Allow override via environment variables
-        max_tokens = int(os.getenv("MAX_TOKENS", default_max_tokens))
-        thinking_budget = int(os.getenv("THINKING_BUDGET", default_thinking_budget))
+        max_tokens = self.getenv_int("MAX_TOKENS", default_max_tokens)
+        thinking_budget = self.getenv_int("THINKING_BUDGET", default_thinking_budget)
 
         return {
             "model_id": model_id,
@@ -477,7 +566,7 @@ class ConfigManager:
                     model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                     temperature=0.1,
                     max_tokens=2000,
-                    aws_region=os.getenv("AWS_REGION", "us-east-1"),
+                    aws_region="us-east-1",  # Will be overridden by environment
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.AWS_BEDROCK,
@@ -492,7 +581,7 @@ class ConfigManager:
                     max_tokens=500,
                 ),
                 "host": None,
-                "region": os.getenv("AWS_REGION", "us-east-1"),
+                "region": "us-east-1",  # Will be overridden by environment
             },
             "litellm": {
                 "llm": LLMConfig(
@@ -512,7 +601,7 @@ class ConfigManager:
                     model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
                     temperature=0.1,
                     max_tokens=2000,
-                    aws_region=os.getenv("AWS_REGION", "us-east-1"),
+                    aws_region="us-east-1",  # Will be overridden by environment
                 ),
                 "evaluation_llm": LLMConfig(
                     provider=ModelProvider.LITELLM,
@@ -527,13 +616,19 @@ class ConfigManager:
                     max_tokens=500,
                 ),
                 "host": None,
-                "region": os.getenv("AWS_REGION", "us-east-1"),
+                "region": "us-east-1",  # Will be overridden by environment
             },
         }
 
     def get_server_config(self, provider: str, **overrides) -> ServerConfig:
         """Get complete provider configuration with optional overrides."""
         logger.debug("Getting server config for provider: %s", provider)
+
+        # Invalidate cache if environment has changed
+        if self._has_env_changed():
+            logger.debug("Environment changed, invalidating config cache")
+            self._config_cache.clear()
+
         cache_key = f"provider_{provider}_{hash(frozenset(overrides.items()))}"
         if cache_key in self._config_cache:
             return self._config_cache[cache_key]
@@ -592,19 +687,19 @@ class ConfigManager:
         evaluation_config = EvaluationConfig(
             llm=self._get_evaluation_llm_config(provider, defaults),
             embedding=self._get_evaluation_embedding_config(provider, defaults),
-            min_tool_calls=int(os.getenv("EVAL_MIN_TOOL_CALLS", "3")),
-            min_evidence=int(os.getenv("EVAL_MIN_EVIDENCE", "1")),
-            max_wait_secs=int(os.getenv("EVALUATION_MAX_WAIT_SECS", os.getenv("EVALUATION_WAIT_TIME", "30"))),
-            poll_interval_secs=int(os.getenv("EVALUATION_POLL_INTERVAL_SECS", "5")),
-            summary_max_chars=int(os.getenv("EVAL_SUMMARY_MAX_CHARS", "8000")),
-            rubric_enabled=os.getenv("EVAL_RUBRIC_ENABLED", "false").lower() == "true",
-            judge_temperature=float(os.getenv("EVAL_JUDGE_TEMPERATURE", "0.2")),
-            judge_max_tokens=int(os.getenv("EVAL_JUDGE_MAX_TOKENS", "800")),
-            rubric_profile=os.getenv("EVAL_RUBRIC_PROFILE", "default"),
-            judge_system_prompt=os.getenv("EVAL_JUDGE_SYSTEM_PROMPT"),
-            judge_user_template=os.getenv("EVAL_JUDGE_USER_TEMPLATE"),
-            skip_if_insufficient_evidence=os.getenv("EVAL_SKIP_IF_INSUFFICIENT_EVIDENCE", "true").lower() == "true",
-            rationale_persist_mode=os.getenv("EVAL_RATIONALE_PERSIST_MODE", "metadata"),
+            min_tool_calls=self.getenv_int("EVAL_MIN_TOOL_CALLS", 3),
+            min_evidence=self.getenv_int("EVAL_MIN_EVIDENCE", 1),
+            max_wait_secs=self.getenv_int("EVALUATION_MAX_WAIT_SECS", self.getenv_int("EVALUATION_WAIT_TIME", 30)),
+            poll_interval_secs=self.getenv_int("EVALUATION_POLL_INTERVAL_SECS", 5),
+            summary_max_chars=self.getenv_int("EVAL_SUMMARY_MAX_CHARS", 8000),
+            rubric_enabled=self.getenv_bool("EVAL_RUBRIC_ENABLED", False),
+            judge_temperature=self.getenv_float("EVAL_JUDGE_TEMPERATURE", 0.2),
+            judge_max_tokens=self.getenv_int("EVAL_JUDGE_MAX_TOKENS", 800),
+            rubric_profile=self.getenv("EVAL_RUBRIC_PROFILE", "default"),
+            judge_system_prompt=self.getenv("EVAL_JUDGE_SYSTEM_PROMPT"),
+            judge_user_template=self.getenv("EVAL_JUDGE_USER_TEMPLATE"),
+            skip_if_insufficient_evidence=self.getenv_bool("EVAL_SKIP_IF_INSUFFICIENT_EVIDENCE", True),
+            rationale_persist_mode=self.getenv("EVAL_RATIONALE_PERSIST_MODE", "metadata"),
         )
 
         # Build swarm configuration
@@ -622,7 +717,7 @@ class ConfigManager:
             enable_hooks=overrides.get("enable_hooks", True),
             enable_streaming=overrides.get("enable_streaming", True),
             conversation_window_size=overrides.get("conversation_window_size", 100),
-            enable_telemetry=os.getenv("ENABLE_SDK_TELEMETRY", "true").lower() == "true",
+            enable_telemetry=self.getenv_bool("ENABLE_SDK_TELEMETRY", True),
         )
 
         config = ServerConfig(
@@ -854,10 +949,10 @@ class ConfigManager:
             elif mem0_provider == "azure_openai":
                 embedder_config["config"]["model"] = model_name
                 embedder_config["config"]["azure_kwargs"] = {
-                    "api_key": os.getenv("AZURE_API_KEY"),
+                    "api_key": self.getenv("AZURE_API_KEY"),
                     "azure_deployment": model_name,
-                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
-                    "api_version": os.getenv("AZURE_API_VERSION"),
+                    "azure_endpoint": self.getenv("AZURE_API_BASE"),
+                    "api_version": self.getenv("AZURE_API_VERSION"),
                 }
         else:  # bedrock
             embedder_config = {
@@ -894,10 +989,10 @@ class ConfigManager:
             if mem0_llm_provider == "azure_openai":
                 llm_config["config"]["model"] = model_name
                 llm_config["config"]["azure_kwargs"] = {
-                    "api_key": os.getenv("AZURE_API_KEY"),
+                    "api_key": self.getenv("AZURE_API_KEY"),
                     "azure_deployment": model_name,
-                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
-                    "api_version": os.getenv("AZURE_API_VERSION"),
+                    "azure_endpoint": self.getenv("AZURE_API_BASE"),
+                    "api_version": self.getenv("AZURE_API_VERSION"),
                 }
         else:  # bedrock
             llm_config = {
@@ -910,11 +1005,12 @@ class ConfigManager:
             }
 
         # Build vector store config
-        if os.environ.get("OPENSEARCH_HOST"):
+        opensearch_host = self.getenv("OPENSEARCH_HOST")
+        if opensearch_host:
             vector_store_config = {
                 "provider": "opensearch",
                 "config": memory_config.vector_store.get_config_for_provider(
-                    "opensearch", host=os.environ.get("OPENSEARCH_HOST")
+                    "opensearch", host=opensearch_host
                 ),
             }
         else:
@@ -945,7 +1041,7 @@ class ConfigManager:
 
     def get_ollama_host(self) -> str:
         """Determine appropriate Ollama host based on environment."""
-        env_host = os.getenv("OLLAMA_HOST")
+        env_host = self.getenv("OLLAMA_HOST")
         if env_host:
             return env_host
 
@@ -980,7 +1076,7 @@ class ConfigManager:
         """Apply environment variable overrides to default configuration."""
         llm_cfg = defaults.get("llm") if isinstance(defaults.get("llm"), LLMConfig) else None
 
-        llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
+        llm_model = self.getenv("CYBER_AGENT_LLM_MODEL")
         if llm_model and llm_cfg is not None:
             llm_cfg = LLMConfig(
                 provider=llm_cfg.provider,
@@ -991,53 +1087,55 @@ class ConfigManager:
             )
             defaults["llm"] = llm_cfg
 
-        temperature_override = os.getenv("CYBER_AGENT_TEMPERATURE")
+        temperature_override = self.getenv("CYBER_AGENT_TEMPERATURE")
         if temperature_override and llm_cfg is not None:
-            try:
-                temperature = float(temperature_override)
+            temperature = self.getenv_float("CYBER_AGENT_TEMPERATURE", llm_cfg.temperature)
+            if temperature != llm_cfg.temperature:
                 llm_cfg.temperature = temperature
                 llm_cfg.parameters["temperature"] = temperature
-            except ValueError:
-                logger.warning("Invalid CYBER_AGENT_TEMPERATURE=%s - ignoring", temperature_override)
 
-        top_p_override = os.getenv("CYBER_AGENT_TOP_P")
+        top_p_override = self.getenv("CYBER_AGENT_TOP_P")
         if top_p_override and llm_cfg is not None:
-            try:
-                top_p = float(top_p_override)
+            top_p = self.getenv_float("CYBER_AGENT_TOP_P", llm_cfg.top_p if llm_cfg.top_p is not None else 0.0)
+            if top_p != llm_cfg.top_p:
                 llm_cfg.top_p = top_p
                 llm_cfg.parameters["top_p"] = top_p
-            except ValueError:
-                logger.warning("Invalid CYBER_AGENT_TOP_P=%s - ignoring", top_p_override)
 
-        max_tokens_override = os.getenv("CYBER_AGENT_MAX_TOKENS") or os.getenv("MAX_TOKENS")
+        max_tokens_override = self.getenv("CYBER_AGENT_MAX_TOKENS") or self.getenv("MAX_TOKENS")
         if max_tokens_override and llm_cfg is not None:
-            try:
-                max_tokens = int(float(max_tokens_override))
+            max_tokens = self.getenv_int("CYBER_AGENT_MAX_TOKENS", self.getenv_int("MAX_TOKENS", llm_cfg.max_tokens))
+            if max_tokens != llm_cfg.max_tokens:
                 llm_cfg.max_tokens = max_tokens
                 llm_cfg.parameters["max_tokens"] = max_tokens
-            except ValueError:
-                logger.warning("Invalid MAX_TOKENS override=%s - ignoring", max_tokens_override)
 
-        embedding_model = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+        embedding_model = self.getenv("CYBER_AGENT_EMBEDDING_MODEL")
         if embedding_model and isinstance(defaults.get("embedding"), EmbeddingConfig):
             embedding_cfg = defaults["embedding"]
             embedding_cfg.model_id = embedding_model
             embedding_cfg.parameters["dimensions"] = embedding_cfg.dimensions
 
-        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
+        eval_model = self.getenv("CYBER_AGENT_EVALUATION_MODEL") or self.getenv("RAGAS_EVALUATOR_MODEL")
         if eval_model and isinstance(defaults.get("evaluation_llm"), LLMConfig):
             evaluation_cfg = defaults["evaluation_llm"]
             evaluation_cfg.model_id = eval_model
 
-        swarm_model = os.getenv("CYBER_AGENT_SWARM_MODEL")
+        swarm_model = self.getenv("CYBER_AGENT_SWARM_MODEL")
         if swarm_model and isinstance(defaults.get("swarm_llm"), LLMConfig):
             swarm_cfg = defaults["swarm_llm"]
             swarm_cfg.model_id = swarm_model
 
-        memory_llm_model = os.getenv("MEM0_LLM_MODEL")
+        memory_llm_model = self.getenv("MEM0_LLM_MODEL")
         if memory_llm_model and isinstance(defaults.get("memory_llm"), MemoryLLMConfig):
             memory_llm_cfg = defaults["memory_llm"]
             memory_llm_cfg.model_id = memory_llm_model
+
+        # Apply AWS_REGION to region and aws_region fields (but not for ollama)
+        if _server not in ("ollama",):
+            aws_region = self.getenv("AWS_REGION", "us-east-1")
+            if defaults.get("region"):
+                defaults["region"] = aws_region
+            if isinstance(defaults.get("memory_llm"), MemoryLLMConfig):
+                defaults["memory_llm"].aws_region = aws_region
 
         return defaults
 
@@ -1106,7 +1204,7 @@ class ConfigManager:
                 str(e)
             )
 
-        embed_override = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+        embed_override = self.getenv("CYBER_AGENT_EMBEDDING_MODEL")
 
         for key in ("memory_llm", "evaluation_llm", "swarm_llm"):
             cfg = defaults.get(key)
@@ -1206,7 +1304,7 @@ class ConfigManager:
     def _get_output_config(self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]) -> OutputConfig:
         """Get output configuration with environment variable and override support."""
         # Get base output directory
-        base_dir = overrides.get("output_dir") or os.getenv("CYBER_AGENT_OUTPUT_DIR") or get_default_base_dir()
+        base_dir = overrides.get("output_dir") or self.getenv("CYBER_AGENT_OUTPUT_DIR") or get_default_base_dir()
 
         # Get target name
         target_name = overrides.get("target_name")
@@ -1217,7 +1315,7 @@ class ConfigManager:
         # Get feature flags - unified output is now enabled by default
         enable_unified_output = (
             overrides.get("enable_unified_output", True)
-            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
+            or self.getenv_bool("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", True)
         )
 
         return OutputConfig(
@@ -1305,10 +1403,12 @@ class ConfigManager:
         or Bedrock bearer token via AWS_BEARER_TOKEN_BEDROCK without mutating
         credential environment variables.
         """
-        bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+        bearer_token = self.getenv("AWS_BEARER_TOKEN_BEDROCK")
+        access_key = self.getenv("AWS_ACCESS_KEY_ID")
+        profile = self.getenv("AWS_PROFILE")
 
         # Verify AWS credentials are configured (standard creds OR bearer token)
-        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE") or bearer_token):
+        if not (access_key or profile or bearer_token):
             raise EnvironmentError(
                 "AWS credentials not configured for remote mode. "
                 "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, configure AWS_PROFILE, "
@@ -1316,7 +1416,7 @@ class ConfigManager:
             )
 
         # Prefer standard AWS credentials when present; use bearer token only if no standard credentials
-        if bearer_token and not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+        if bearer_token and not (access_key or profile):
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer_token
         else:
             # Ensure bearer token does not override SigV4 when standard creds are set
@@ -1337,7 +1437,7 @@ class ConfigManager:
         """
         # Get default LiteLLM model ID
         litellm_config = self._default_configs.get("litellm", {})
-        model_id = os.getenv("CYBER_AGENT_LLM_MODEL")
+        model_id = self.getenv("CYBER_AGENT_LLM_MODEL")
         if not model_id:
             llm_cfg = litellm_config.get("llm")
             model_id = llm_cfg.model_id if hasattr(llm_cfg, "model_id") else ""
@@ -1347,7 +1447,7 @@ class ConfigManager:
         # Check provider-specific requirements based on model prefix
         if model_id.startswith("bedrock/"):
             # LiteLLM does NOT support AWS bearer tokens - only standard credentials
-            if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+            if not (self.getenv("AWS_ACCESS_KEY_ID") or self.getenv("AWS_PROFILE")):
                 raise EnvironmentError(
                     "AWS credentials not configured for LiteLLM Bedrock models.\n"
                     "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE\n"
@@ -1355,43 +1455,43 @@ class ConfigManager:
                 )
 
         elif model_id.startswith("openai/"):
-            if not os.getenv("OPENAI_API_KEY"):
+            if not self.getenv("OPENAI_API_KEY"):
                 raise EnvironmentError(
                     "OPENAI_API_KEY not configured for LiteLLM OpenAI models. "
                     "Set OPENAI_API_KEY environment variable."
                 )
         elif model_id.startswith("anthropic/"):
-            if not os.getenv("ANTHROPIC_API_KEY"):
+            if not self.getenv("ANTHROPIC_API_KEY"):
                 raise EnvironmentError(
                     "ANTHROPIC_API_KEY not configured for LiteLLM Anthropic models. "
                     "Set ANTHROPIC_API_KEY environment variable."
                 )
         elif model_id.startswith("cohere/"):
-            if not os.getenv("COHERE_API_KEY"):
+            if not self.getenv("COHERE_API_KEY"):
                 raise EnvironmentError(
                     "COHERE_API_KEY not configured for LiteLLM Cohere models. "
                     "Set COHERE_API_KEY environment variable."
                 )
         elif model_id.startswith("azure/"):
-            if not os.getenv("AZURE_API_KEY"):
+            if not self.getenv("AZURE_API_KEY"):
                 raise EnvironmentError(
                     "AZURE_API_KEY not configured for LiteLLM Azure models. "
                     "Set AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION environment variables."
                 )
         elif model_id.startswith("gemini/"):
-            if not os.getenv("GEMINI_API_KEY"):
+            if not self.getenv("GEMINI_API_KEY"):
                 raise EnvironmentError(
                     "GEMINI_API_KEY not configured for LiteLLM Gemini models. "
                     "Set GEMINI_API_KEY environment variable."
                 )
         elif model_id.startswith("sagemaker/"):
-            has_std_creds = os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY")
-            if not (has_std_creds or os.getenv("AWS_PROFILE")):
+            has_std_creds = self.getenv("AWS_ACCESS_KEY_ID") and self.getenv("AWS_SECRET_ACCESS_KEY")
+            if not (has_std_creds or self.getenv("AWS_PROFILE")):
                 raise EnvironmentError(
                     "AWS credentials not configured for LiteLLM SageMaker models.\n"
                     "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE"
                 )
-            if not (os.getenv("AWS_REGION") or os.getenv("AWS_REGION_NAME")):
+            if not (self.getenv("AWS_REGION") or self.getenv("AWS_REGION_NAME")):
                 raise EnvironmentError(
                     "AWS region not configured for LiteLLM SageMaker models.\n"
                     "Set AWS_REGION or AWS_REGION_NAME environment variable."
