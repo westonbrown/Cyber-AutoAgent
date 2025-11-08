@@ -221,7 +221,7 @@ class BrowserService(EventEmitter):
         if len(logs) > 0:
             logs_summary = "\n".join(
                 map(
-                    lambda log: f"[{log['type']}] {" ".join(map(lambda arg: json.dumps(arg), log['args']))}".strip(),
+                    lambda log: f"[{log['type']}] {' '.join(map(lambda arg: json.dumps(arg), log['args']))}".strip(),
                     logs,
                 )
             )
@@ -368,7 +368,7 @@ class BrowserService(EventEmitter):
                     if post_data["encoding"] == "utf-8":
                         simplified_request.append(f"Request Body: ```{post_data['text']}```")
                     else:
-                        simplified_request.append(f"Request Body: Non-UTF8 Binary")
+                        simplified_request.append("Request Body: Non-UTF8 Binary")
 
                 response: Response | None = None
 
