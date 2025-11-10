@@ -174,6 +174,7 @@ class BrowserService(EventEmitter):
         if self._initialized:
             return
 
+        logger.info("Initializing browser")
         await self.stagehand.init()
         self._initialized = True
 
@@ -595,11 +596,9 @@ async def get_browser():
     """
     if not _BROWSER:
         raise ValueError("Browser not initialized. Please call initialize_browser first.")
-    logger.info("[BROWSER] ENtering get_browser context manager.")
+
     async with _BROWSER_LOCK:
-        logger.info("[BROWSER] ENtering get_browser context manager lock.")
         await _BROWSER.ensure_init()
-        logger.info("[BROWSER] Done get_browser context manager ensure_init.")
         yield _BROWSER
 
 
