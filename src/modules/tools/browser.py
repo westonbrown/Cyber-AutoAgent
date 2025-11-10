@@ -65,6 +65,7 @@ class BrowserService(EventEmitter):
 
     stagehand_config: StagehandConfig
     stagehand: Stagehand
+    default_timeout: float
     artifacts_dir: str
     provider: str
     model: str
@@ -109,6 +110,7 @@ class BrowserService(EventEmitter):
                 "No artifacts_dir provided. Browser will not persist network traffic, profile, downloads to artifacts."
             )
 
+        self.default_timeout = float(os.getenv("BROWSER_DEFAULT_TIMEOUT", "120000"))
         self.stagehand_config = StagehandConfig(
             env="LOCAL",
             modelName=model,
@@ -119,6 +121,11 @@ class BrowserService(EventEmitter):
             use_rich_logging=False,  # ensure ansi does not pollute outputs
         )
         self.stagehand = Stagehand(self.stagehand_config)
+
+    @asynccontextmanager
+    async def timeout(self):
+        async with asyncio.timeout((self.default_timeout / 1000) + 5):
+            yield
 
     @property
     def page_domain(self):
@@ -169,6 +176,12 @@ class BrowserService(EventEmitter):
 
         await self.stagehand.init()
         self._initialized = True
+
+        self.context.set_default_timeout(self.default_timeout)
+        self.context.set_default_navigation_timeout(self.default_timeout)
+
+        self.page.set_default_timeout(self.default_timeout)
+        self.page.set_default_navigation_timeout(self.default_timeout)
 
         async def handle_dialog(dialog: Dialog):
             """Auto accept all dialogs"""
@@ -686,20 +699,22 @@ async def browser_goto_url(url: str):
         async with browser.interaction_context_capture(
             only_domains=[browser.page_domain, extract_domain(url)]
         ) as interaction_context:
-            await browser.page.goto(url)
+            async with browser.timeout():
+                await browser.page.goto(url)
             interaction_context = interaction_context
 
         # Eagerly returning relevant observations to reduce agent tool calls
-        observations = "\n".join(
-            map(
-                lambda obs: obs.description,
-                await browser.page.observe(
-                    f"{url} was just opened. "
-                    "give all important elements on the page that might be relevant to the next action. "
-                    "observe the overall state of the page to understand the purpose of the page."
-                ),
+        async with browser.timeout():
+            observations = "\n".join(
+                map(
+                    lambda obs: obs.description,
+                    await browser.page.observe(
+                        f"{url} was just opened. "
+                        "give all important elements on the page that might be relevant to the next action. "
+                        "observe the overall state of the page to understand the purpose of the page."
+                    ),
+                )
             )
-        )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
 
 
@@ -714,7 +729,8 @@ async def browser_get_page_html() -> str:
         The path of the downloaded HTML file artifact.
     """
     async with get_browser() as browser:
-        page_html = await browser.page.content()
+        async with browser.timeout():
+            page_html = await browser.page.content()
         html_artifact_file = os.path.join(browser.artifacts_dir, f"browser_page_{time.time_ns()}.html")
         with open(html_artifact_file, "w") as f:
             f.write(page_html)
@@ -740,7 +756,8 @@ async def browser_evaluate_js(expression: str):
         The result of the javascript expression.
     """
     async with get_browser() as browser:
-        return await browser.page.evaluate(expression)
+        async with browser.timeout():
+            return await browser.page.evaluate(expression)
 
 
 @tool
@@ -757,7 +774,8 @@ async def browser_get_cookies():
              a message string indicating this is returned.
     """
     async with get_browser() as browser:
-        cookies = await browser.context.cookies()
+        async with browser.timeout():
+            cookies = await browser.context.cookies()
         if len(cookies) == 0:
             return "No cookies found"
 
@@ -798,22 +816,24 @@ async def browser_perform_action(action: str):
     """
     async with get_browser() as browser:
         async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as interaction_context:
-            await browser.page.act(action)
+            async with browser.timeout():
+                await browser.page.act(action)
             with contextlib.suppress(TimeoutError):
                 await browser.page.wait_for_load_state("networkidle", timeout=60000)
             interaction_context = interaction_context
 
         # Eagerly returning relevant observations to reduce agent tool calls
-        observations = "\n".join(
-            map(
-                lambda obs: obs.description,
-                await browser.page.observe(
-                    f"`{action}` action was just performed. "
-                    "give all important elements on the page that might be relevant to the next action."
-                    "observe the overall state of the page to understand the purpose of the page."
-                ),
+        async with browser.timeout():
+            observations = "\n".join(
+                map(
+                    lambda obs: obs.description,
+                    await browser.page.observe(
+                        f"`{action}` action was just performed. "
+                        "give all important elements on the page that might be relevant to the next action."
+                        "observe the overall state of the page to understand the purpose of the page."
+                    ),
+                )
             )
-        )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
 
 
@@ -840,5 +860,6 @@ async def browser_observe_page(instruction: Optional[str] = None) -> list[str]:
             on the browser page.
     """
     async with get_browser() as browser:
-        observations = await browser.page.observe(instruction)
+        async with browser.timeout():
+            observations = await browser.page.observe(instruction)
         return [observation.description for observation in observations]
