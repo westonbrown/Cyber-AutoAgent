@@ -328,7 +328,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       command: [],
       plugins: ['general'],
       timeoutSeconds: 300,
-      toolLimit: 8
+      allowedTools: ['*'],
     }];
     updateConfig({ mcp: { ...mcp, connections: nextConnections } });
     setSelectedMcpIndex(Math.max(0, nextConnections.length - 1));
@@ -384,8 +384,6 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       curr.server_url = String(value);
     } else if (key === 'timeoutSeconds') {
       curr.timeoutSeconds = Number(value);
-    } else if (key === 'toolLimit') {
-      curr.toolLimit = Number(value);
     } else {
       (curr as any)[key] = value;
     }
@@ -556,8 +554,8 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       { key: 'mcp.conn.command', label: 'Command (JSON array)', type: 'text', section: 'MCP', description: 'Example: ["python","-m","shyhurricane.server"]' },
       { key: 'mcp.conn.headers', label: 'Headers (JSON)', type: 'text', section: 'MCP', description: 'Example: {"Authorization":"Bearer ${HTB_TOKEN}"}' },
       { key: 'mcp.conn.plugins', label: 'Plugins', type: 'multiselect', section: 'MCP', options: MCP_PLUGIN_OPTIONS as any, description: "Select one or more. If '*' is selected it will be the only selection." },
+      { key: 'mcp.conn.allowedTools', label: 'Allowed Tools', type: 'multiselect', section: 'MCP', description: "Free-form list of tool names allowed for this connection. '*' allows all tools." },
       { key: 'mcp.conn.timeoutSeconds', label: 'Timeout (seconds)', type: 'number', section: 'MCP' },
-      { key: 'mcp.conn.toolLimit', label: 'Tool Limit', type: 'number', section: 'MCP' },
       { key: 'mcp.conn.test', label: 'Test Connection', type: 'text', section: 'MCP', description: 'Press Enter to run HTTP check against server_url' },
     ]);
   };
@@ -1107,8 +1105,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       if (key === 'mcp.conn.command') return Array.isArray(conn.command) ? JSON.stringify(conn.command) : '';
       if (key === 'mcp.conn.headers') return conn.headers ? JSON.stringify(conn.headers) : '';
       if (key === 'mcp.conn.plugins') return Array.isArray(conn.plugins) ? conn.plugins.join(', ') : '';
+      if (key === 'mcp.conn.allowedTools')
+        return Array.isArray(conn.allowedTools) ? conn.allowedTools.join(', ') : '';
       if (key === 'mcp.conn.timeoutSeconds') return String(conn.timeoutSeconds ?? '');
-      if (key === 'mcp.conn.toolLimit') return String(conn.toolLimit ?? '');
       if (key === 'mcp.conn.test') {
         const status = mcpTestStatus[selectedMcpIndex];
         return status ? `Press Enter to test — ${status}` : 'Press Enter to test';
@@ -1409,72 +1408,187 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       );
     }
 
-    // MCP plugins multiselect
+    // MCP plugins: custom free-form list editor (mirrors "Allowed Tools Section" UI)
     if (field.key === 'mcp.conn.plugins') {
       const conn = getSelectedMcp();
-      const initial = new Set<string>((conn?.plugins ?? []) as string[]);
-      const MultiSelect: React.FC<{ options: Array<{label:string; value:string}>; initial: Set<string>; onDone: (vals: string[]) => void; }> = ({ options, initial, onDone }) => {
-        const [cursor, setCursor] = useState(0);
-        const [sel, setSel] = useState<Set<string>>(new Set(initial));
-        useInput((input, key) => {
-          if (key.upArrow) setCursor(c => Math.max(0, c - 1));
-          if (key.downArrow) setCursor(c => Math.min(options.length - 1, c + 1));
-          if (key.escape) {
-            setEditingField(null);
-            setTempValue('');
-          }
-          if (input === ' ') {
-            const opt = options[cursor];
-            if (!opt) return;
-            const next = new Set(sel);
-            if (opt.value === '*') {
-              // Selecting '*' makes it the only selection
-              if (sel.has('*')) {
-                next.delete('*');
-              } else {
-                next.clear();
-                next.add('*');
-              }
-            } else {
-              // Selecting others removes '*'
-              next.delete('*');
-              if (next.has(opt.value)) next.delete(opt.value); else next.add(opt.value);
-            }
-            setSel(next);
-          }
-          if (key.return) {
-            const vals = Array.from(sel);
-            onDone(vals);
-          }
-        }, { isActive: true });
-        return (
-          <Box flexDirection="column">
-            {options.map((opt, i) => (
-              <Text key={opt.value} color={i === cursor ? theme.primary : theme.foreground}>
-                [{sel.has(opt.value) ? 'x' : ' '}] {opt.label}
+      const plugins: string[] = Array.isArray(conn?.plugins) ? conn.plugins : [];
+      const cleanPlugins = plugins.includes('*')
+        ? ['*']
+        : Array.from(new Set(plugins.filter(p => p && p !== '*')));
+
+      const handleAddPlugin = (raw: string) => {
+        const trimmed = raw.trim();
+        if (!trimmed) return;
+
+        let next: string[] = [];
+        if (trimmed === '*') {
+          next = ['*'];
+        } else {
+          next = cleanPlugins.filter(p => p !== '*');
+          if (!next.includes(trimmed)) next.push(trimmed);
+        }
+
+        updateMcpConnection('plugins', next);
+        setTempValue('');
+
+        // Remain in editing mode, keep MCP expanded, stay in fields navigation mode
+        setNavigationMode('fields');
+        const newSections = [...sections];
+        newSections[selectedSectionIndex].expanded = true;
+        setSections(newSections);
+      };
+
+      const handleRemovePlugin = (item: { label: string; value: string }) => {
+        const toRemove = item.value;
+        const next = cleanPlugins.filter(p => p !== toRemove);
+        updateMcpConnection('plugins', next);
+
+        // Remain in editing mode, keep MCP expanded, stay in fields navigation mode
+        setNavigationMode('fields');
+        const newSections = [...sections];
+        newSections[selectedSectionIndex].expanded = true;
+        setSections(newSections);
+      };
+
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Text color={theme.primary} bold>
+              Plugins:{' '}
+            </Text>
+            {cleanPlugins.length === 0 && <Text color={theme.muted}>[none]</Text>}
+            {cleanPlugins.map((p, idx) => (
+              <Text key={p} color={p === '*' ? theme.accent : theme.success}>
+                {' '}
+                ✓ {p}
+                {idx < cleanPlugins.length - 1 ? <Text color={theme.muted}>,</Text> : null}
               </Text>
             ))}
-            <Text color={theme.muted}>Space = toggle • Enter = save • Esc = cancel</Text>
           </Box>
-        );
+          <Box marginTop={1}>
+            <Text color={theme.muted}>
+              Type plugin name (or <Text color={theme.accent} bold>*</Text> for all), press Enter to add:
+            </Text>
+          </Box>
+          <Box>
+            <TextInput
+              value={tempValue}
+              onChange={v => setTempValue(v)}
+              onSubmit={v => handleAddPlugin(v)}
+              placeholder="plugin name or *"
+            />
+          </Box>
+          {cleanPlugins.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={theme.muted}>Select a plugin to remove:</Text>
+              <SelectInput
+                items={cleanPlugins.map(p => ({ label: p, value: p }))}
+                onSelect={handleRemovePlugin}
+                indicatorComponent={({ isSelected }) => (
+                  <Text color={isSelected ? theme.primary : 'transparent'}>❯ </Text>
+                )}
+                itemComponent={({ isSelected, label }) => (
+                  <Text color={isSelected ? theme.primary : theme.foreground}>{label}</Text>
+                )}
+              />
+            </Box>
+          )}
+          <Box marginTop={1}>
+            <Text color={theme.muted}>Enter = add • Select = remove • * = all plugins • Esc = done</Text>
+          </Box>
+        </Box>
+      );
+    }
+
+    // MCP allowed tools: free-form list editor (similar to plugins)
+    if (field.key === 'mcp.conn.allowedTools') {
+      const conn = getSelectedMcp();
+      const allowed: string[] = Array.isArray(conn?.allowedTools) ? conn.allowedTools : ['*'];
+      const cleanAllowed = allowed.includes('*')
+        ? ['*']
+        : Array.from(new Set(allowed.filter(t => t && t !== '*')));
+
+      const handleAddTool = (raw: string) => {
+        const trimmed = raw.trim();
+        if (!trimmed) return;
+
+        let next: string[] = [];
+        if (trimmed === '*') {
+          next = ['*'];
+        } else {
+          next = cleanAllowed.filter(t => t !== '*');
+          if (!next.includes(trimmed)) next.push(trimmed);
+        }
+
+        updateMcpConnection('allowedTools', next);
+        setTempValue('');
+
+        // Remain in editing mode, keep MCP expanded, stay in fields navigation mode
+        setNavigationMode('fields');
+        const newSections = [...sections];
+        newSections[selectedSectionIndex].expanded = true;
+        setSections(newSections);
       };
+
+      const handleRemoveTool = (item: { label: string; value: string }) => {
+        const remaining = cleanAllowed.filter(t => t !== item.value);
+        const next = remaining.length ? remaining : ['*'];
+        updateMcpConnection('allowedTools', next);
+
+        // Remain in editing mode, keep MCP expanded, stay in fields navigation mode
+        setNavigationMode('fields');
+        const newSections = [...sections];
+        newSections[selectedSectionIndex].expanded = true;
+        setSections(newSections);
+      };
+
       return (
-        <MultiSelect
-          options={MCP_PLUGIN_OPTIONS as any}
-          initial={initial}
-          onDone={(vals) => {
-            updateMcpConnection('plugins', vals);
-            setEditingField(null);
-            setTempValue('');
-            // Keep section expanded & remain in fields mode
-            setNavigationMode('fields');
-            const newSections = [...sections];
-            newSections[selectedSectionIndex].expanded = true;
-            setSections(newSections);
-            // Swallow next Enter from this commit
-            enterLatchRef.current = Date.now() + 250;
-          }}
-        />
+        <Box flexDirection="column">
+          <Box>
+            <Text color={theme.primary} bold>
+              Allowed Tools:{' '}
+            </Text>
+            {cleanAllowed.length === 0 && <Text color={theme.muted}>[none]</Text>}
+            {cleanAllowed.map((t, i) => (
+              <Text key={t} color={t === '*' ? theme.accent : theme.success}>
+                {' '}
+                ✓ {t}
+                {i < cleanAllowed.length - 1 ? <Text color={theme.muted}>,</Text> : null}
+              </Text>
+            ))}
+          </Box>
+          <Box marginTop={1}>
+            <Text color={theme.muted}>
+              Type tool name (or <Text color={theme.accent} bold>*</Text> for all), press Enter to add:
+            </Text>
+          </Box>
+          <Box>
+            <TextInput
+              value={tempValue}
+              onChange={v => setTempValue(v)}
+              onSubmit={v => handleAddTool(v)}
+              placeholder="tool name or *"
+            />
+          </Box>
+          {cleanAllowed.length > 0 && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color={theme.muted}>Select a tool to remove:</Text>
+              <SelectInput
+                items={cleanAllowed.map(t => ({ label: t, value: t }))}
+                onSelect={handleRemoveTool}
+                indicatorComponent={({ isSelected }) => (
+                  <Text color={isSelected ? theme.primary : 'transparent'}>❯ </Text>
+                )}
+                itemComponent={({ isSelected, label }) => (
+                  <Text color={isSelected ? theme.primary : theme.foreground}>{label}</Text>
+                )}
+              />
+            </Box>
+          )}
+          <Box marginTop={1}>
+            <Text color={theme.muted}>Enter = add • Select = remove • * = all tools • Esc = done</Text>
+          </Box>
+        </Box>
       );
     }
 
@@ -1529,7 +1643,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
               enterLatchRef.current = Date.now() + 250;
               return;
             }
-            if (field.key === 'mcp.conn.timeoutSeconds' || field.key === 'mcp.conn.toolLimit') {
+            if (field.key === 'mcp.conn.timeoutSeconds') {
               const num = parseInt(value, 10);
               if (!Number.isFinite(num)) {
                 showMessage('Enter a valid number', 'error', 3000);

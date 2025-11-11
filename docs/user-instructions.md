@@ -277,15 +277,15 @@ can be used to configure, command line options or environment variables.
     "connections": [
       {
         "id": "shyhurricane",
-        "transport": "stdio",  // or "sse", "streamable_http"
+        "transport": "stdio",  // or "sse", "streamable-http"
         "command": ["python", "-m", "shyhurricane.server"],
         "plugins": ["general"],  // or ["*"]
         "timeoutSeconds": 900,
-        "toolLimit": 8
+        "allowedTools": ["port_scan", "directory_buster"]  // or ["*"]
       },
       {
         "id": "htb-mcp",
-        "transport": "streamable_http",
+        "transport": "streamable-http",
         "server_url": "https://htb-mcp.example.com/mcp",
         "headers": {"Authorization": "Bearer ${HTB_TOKEN}"},
         "plugins": ["ctf"]

@@ -323,13 +323,13 @@ class OutputConfig:
 @dataclass
 class MCPConnection:
     id: str
-    transport: Literal["stdio", "sse", "streamable_http"]
+    transport: Literal["stdio", "sse", "streamable-http"]
     command: Optional[List[str]] = None
     server_url: Optional[str] = None
     headers: Optional[Dict[str, str]] = None
     plugins: List[str] = field(default_factory=list)
     timeoutSeconds: Optional[int] = None
-    toolLimit: Optional[int] = None
+    allowed_tools: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1538,9 +1538,9 @@ class ConfigManager:
 
                     mcp_transport = conn.get("transport")
                     if mcp_transport not in ["stdio", "sse", "streamable-http"]:
-                        raise ValueError(f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: stdio, see, streamable-http")
+                        raise ValueError(f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}")
 
-                    mcp_command = conn.get("command")
+                    mcp_command = conn.get("command") or None
                     if mcp_transport == "stdio":
                         if not mcp_command:
                             raise ValueError("CYBER_MCP_CONNECTIONS stdio transport requires the command property")
@@ -1552,7 +1552,7 @@ class ConfigManager:
                         if mcp_command is not None:
                             raise ValueError("CYBER_MCP_CONNECTIONS network transports do not use the command property")
 
-                    mcp_server_url = conn.get("server_url")
+                    mcp_server_url = conn.get("server_url") or None
                     if mcp_transport == "stdio":
                         if mcp_server_url:
                             raise ValueError("CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property")
@@ -1576,11 +1576,11 @@ class ConfigManager:
                     if mcp_timeout is not None and mcp_timeout < 0:
                         raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer")
 
-                    mcp_tool_limit = conn.get("toolLimit")
-                    if mcp_tool_limit is not None and not isinstance(mcp_tool_limit, int):
-                        raise ValueError("CYBER_MCP_CONNECTIONS toolLimit is expected to be an integer")
-                    if mcp_tool_limit is not None and mcp_tool_limit < 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS toolLimit is expected to be a positive integer")
+                    mcp_allowed_tools = conn.get("allowedTools")
+                    if mcp_allowed_tools is not None and not isinstance(mcp_allowed_tools, list):
+                        raise ValueError("CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list")
+                    if not mcp_allowed_tools or "*" in mcp_allowed_tools:
+                        mcp_allowed_tools = ["*"]
 
                     mcp_conn = MCPConnection(
                         id=mcp_id,
@@ -1590,7 +1590,7 @@ class ConfigManager:
                         headers=mcp_headers,
                         plugins=mcp_plugins,
                         timeoutSeconds=mcp_timeout,
-                        toolLimit=mcp_tool_limit,
+                        allowed_tools=mcp_allowed_tools,
                     )
                     connections.append(mcp_conn)
 

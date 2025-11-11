@@ -722,20 +722,27 @@ class TestConfigManager:
         "transport": "stdio",
         "command": ["python3","-m","mymcp.server"],
         "plugins": ["general"],
-        "timeoutSeconds": 900,
-        "toolLimit": 8
+        "timeoutSeconds": 900
     },
     {
         "id": "mcp2",
         "transport": "streamable-http",
         "server_url": "http://127.0.0.1:8000/mcp",
         "headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
-        "plugins": ["general","ctf"]
+        "plugins": ["general","ctf"],
+        "allowedTools": ["tool1", "tool2"]
+    },
+    {
+        "id": "mcp3",
+        "transport": "sse",
+        "server_url": "http://127.0.0.1:8000/sse",
+        "command": [],
+        "plugins": ["*"]
     }
 ]
 """,
     })
-    def test_get_mcp_config_two(self):
+    def test_get_mcp_config_three(self):
         """Test two MCP servers configuration."""
         # Clear cache to ensure fresh config
         self.config_manager._config_cache = {}
@@ -743,7 +750,7 @@ class TestConfigManager:
         config = self.config_manager.get_mcp_config("bedrock")
 
         assert config.enabled
-        assert len(config.connections) == 2
+        assert len(config.connections) == 3
 
         mcp = config.connections[0]
         assert mcp.id == "mcp1"
@@ -751,7 +758,7 @@ class TestConfigManager:
         assert mcp.command == ["python3","-m","mymcp.server"]
         assert mcp.plugins == ["general"]
         assert mcp.timeoutSeconds == 900
-        assert mcp.toolLimit == 8
+        assert mcp.allowed_tools == []
 
         mcp = config.connections[1]
         assert mcp.id == "mcp2"
@@ -759,6 +766,16 @@ class TestConfigManager:
         assert mcp.server_url == "http://127.0.0.1:8000/mcp"
         assert mcp.headers == {"Authorization": "Bearer ${MCP_TOKEN}"}
         assert mcp.plugins == ["general","ctf"]
+        assert mcp.allowed_tools == [ "tool1", "tool2" ]
+
+        mcp = config.connections[2]
+        assert mcp.id == "mcp3"
+        assert mcp.transport == "sse"
+        assert mcp.server_url == "http://127.0.0.1:8000/sse"
+        assert mcp.command is None
+        assert mcp.headers is None
+        assert mcp.plugins == ["*"]
+        assert mcp.allowed_tools == []
 
 
     @patch.dict(os.environ, {

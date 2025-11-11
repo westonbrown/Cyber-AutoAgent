@@ -246,7 +246,7 @@ export interface MCPConnection {
   id: string;
 
   /** Transport protocol for communication */
-  transport: 'stdio' | 'sse' | 'streamable_http';
+  transport: 'stdio' | 'sse' | 'streamable-http';
 
   /**
    * Command to start the MCP server (for stdio-based transports).
@@ -272,8 +272,8 @@ export interface MCPConnection {
   /** Maximum allowed execution time for MCP tools (in seconds) */
   timeoutSeconds?: number;
 
-  /** Maximum number of tools that can run concurrently */
-  toolLimit?: number;
+  /** List of allowed tools (use ["*"] for all tools) */
+  allowedTools: string[];
 }
 
 /**

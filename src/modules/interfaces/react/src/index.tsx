@@ -195,8 +195,8 @@ const runAutoAssessment = async () => {
       if (cli.flags.debug) configOverrides.verbose = cli.flags.debug;
       if (cli.flags.deploymentMode) configOverrides.deploymentMode = cli.flags.deploymentMode as 'local-cli' | 'single-container' | 'full-stack';
       if (cli.flags.mcpEnabled && cli.flags.mcpConns) {
-          configOverrides.mcp.enabled = true
-          configOverrides.mcp.connections = JSON.parse(cli.flags.mcpConns)
+        configOverrides.mcp.enabled = true
+        configOverrides.mcp.connections = JSON.parse(cli.flags.mcpConns)
       }
 
       // Handle provider prefix stripping when provider changes but model doesn't
