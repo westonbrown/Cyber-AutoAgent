@@ -8,9 +8,7 @@ Tests for StdoutEventEmitter behavior:
 
 import io
 import json
-import os
 from contextlib import redirect_stdout
-from unittest.mock import patch
 
 from modules.handlers.events.emitters import StdoutEventEmitter
 

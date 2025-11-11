@@ -3,7 +3,6 @@
 Unit tests for the PromptRebuildHook trigger-based prompt rebuilding system.
 """
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

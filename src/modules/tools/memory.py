@@ -98,7 +98,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import boto3
 from mem0 import Memory as Mem0Memory
@@ -110,7 +110,7 @@ from rich.table import Table
 from rich.text import Text
 from strands import tool
 
-from modules.config.manager import get_config_manager
+from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -257,11 +257,19 @@ class Mem0ServiceClient:
             return MemoryClient()
 
         # Determine provider type based on environment
-        # Use bedrock if OpenSearch is available, otherwise ollama
-        server_type = "bedrock" if os.environ.get("OPENSEARCH_HOST") else "ollama"
+        # When OpenSearch is enabled we default to Bedrock for AWS compatibility,
+        # otherwise align with the active CYBER_AGENT_PROVIDER (fallback to Ollama)
+        active_provider = os.environ.get("CYBER_AGENT_PROVIDER", "ollama").lower()
+        if os.environ.get("OPENSEARCH_HOST"):
+            server_type = "bedrock"
+        elif active_provider in ("litellm", "bedrock", "ollama"):
+            server_type = active_provider
+        else:
+            server_type = "ollama"
 
         if os.environ.get("OPENSEARCH_HOST"):
             merged_config = self._merge_config(config, server_type)
+            self._realign_provider_configs(merged_config)
             config_manager = get_config_manager()
 
             # Resolve provider labels
@@ -324,6 +332,7 @@ class Mem0ServiceClient:
         """
         # Set up AWS region - prioritize passed config, then environment, then default
         merged_config = self._merge_config(config, server)
+        self._realign_provider_configs(merged_config)
         config_manager = get_config_manager()
         config_region = merged_config.get("embedder", {}).get("config", {}).get("aws_region")
         self.region = config_region or os.environ.get("AWS_REGION") or config_manager.get_default_region()
@@ -482,6 +491,19 @@ class Mem0ServiceClient:
                 except Exception as retry_error:
                     logger.error("Retry failed: %s", retry_error)
                     raise retry_error
+            elif "Unknown provider in model" in error_msg:
+                logger.warning(
+                    "Mem0 provider mismatch detected (%s). Applying OpenAI-compatible fallback.",
+                    error_msg,
+                )
+                self._realign_provider_configs(merged_config, force_openai=True)
+                try:
+                    mem0_client = Mem0Memory.from_config(config_dict=merged_config)
+                    logger.info("Mem0Memory initialized successfully after provider fallback")
+                    return mem0_client
+                except Exception as retry_error:
+                    logger.error("Provider fallback failed: %s", retry_error)
+                    raise retry_error
             else:
                 logger.error("Failed to initialize Mem0Memory client: %s", e)
                 raise
@@ -508,6 +530,77 @@ class Mem0ServiceClient:
                 merged_config[key] = value
 
         return merged_config
+
+    @staticmethod
+    def _split_model_identifier(model_id: Any) -> Tuple[str, str]:
+        if not isinstance(model_id, str):
+            return "", ""
+        if "/" in model_id:
+            prefix, remainder = model_id.split("/", 1)
+            return prefix.lower(), remainder
+        return "", model_id
+
+    def _inject_azure_defaults(self, section_config: Dict[str, Any], deployment: str) -> None:
+        section_config["azure_kwargs"] = {
+            "api_key": os.getenv("AZURE_API_KEY", ""),
+            "azure_deployment": deployment,
+            "azure_endpoint": os.getenv("AZURE_API_BASE", ""),
+            "api_version": os.getenv("AZURE_API_VERSION", ""),
+        }
+        azure_kwargs = section_config["azure_kwargs"]
+        if not all(azure_kwargs.values()):
+            logger.warning(
+                "Azure OpenAI credentials appear incomplete. Values set: endpoint=%s, deployment=%s",
+                azure_kwargs.get("azure_endpoint"),
+                azure_kwargs.get("azure_deployment"),
+            )
+
+    def _realign_provider_configs(self, merged_config: Dict[str, Any], *, force_openai: bool = False) -> None:
+        """Ensure Mem0 provider sections match the selected model identifiers."""
+        for section_key in ("embedder", "llm"):
+            section = merged_config.get(section_key)
+            if not isinstance(section, dict):
+                continue
+            config_section = section.setdefault("config", {})
+            model_id = config_section.get("model")
+            provider = (section.get("provider") or "").lower()
+
+            if force_openai and section_key == "llm":
+                section["provider"] = "openai"
+                if not isinstance(model_id, str) or "/" in model_id or not model_id:
+                    config_section["model"] = os.getenv("MEM0_FALLBACK_LLM_MODEL", "gpt-4o-mini")
+                continue
+
+            if not isinstance(model_id, str):
+                continue
+            prefix, remainder = self._split_model_identifier(model_id)
+            if not prefix:
+                continue
+            mapped_provider = MEM0_PROVIDER_MAP.get(prefix)
+            if not mapped_provider:
+                continue
+
+            if mapped_provider == provider:
+                if mapped_provider == "azure_openai" and remainder:
+                    config_section["model"] = remainder
+                    self._inject_azure_defaults(config_section, remainder)
+                continue
+
+            if provider not in ("aws_bedrock", "", "ollama", "litellm"):
+                continue
+
+            section["provider"] = mapped_provider
+            if remainder:
+                config_section["model"] = remainder
+            if mapped_provider == "azure_openai":
+                self._inject_azure_defaults(config_section, remainder or config_section.get("model", ""))
+            logger.warning(
+                "Aligned Mem0 %s provider from '%s' to '%s' for model '%s'",
+                section_key,
+                provider or "unknown",
+                mapped_provider,
+                model_id,
+            )
 
     def store_memory(
         self,
@@ -548,21 +641,44 @@ class Mem0ServiceClient:
         """Get a memory by ID."""
         return self.mem0.get(memory_id)
 
-    def list_memories(self, user_id: Optional[str] = None, agent_id: Optional[str] = None):
-        """List all memories for a user or agent."""
+    def list_memories(self, user_id: Optional[str] = None, agent_id: Optional[str] = None, *, limit: Optional[int] = None, page: int = 1):
+        """List memories for a user/agent with safe defaults and pagination.
+
+        Falls back gracefully if backend doesn't support limit/page.
+        """
         if not user_id and not agent_id:
             raise ValueError("Either user_id or agent_id must be provided")
 
-        logger = logging.getLogger("CyberAutoAgent")
-        logger.debug("Calling mem0.get_all with user_id=%s, agent_id=%s", user_id, agent_id)
+        mem_logger = logging.getLogger("CyberAutoAgent")
+        mem_logger.debug("Calling mem0.get_all with user_id=%s, agent_id=%s", user_id, agent_id)
 
+        # Determine effective limit from env or passed arg
         try:
-            result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
-            logger.debug("mem0.get_all returned type: %s", type(result))
-            logger.debug("mem0.get_all returned: %s", result)
+            default_limit = int(os.getenv("MEM0_LIST_LIMIT", "20"))
+        except Exception:
+            default_limit = 20
+        eff_limit = int(limit) if isinstance(limit, int) and limit > 0 else default_limit
+
+        # Try variants: with limit/page, with limit only, then no args
+        # Normalize and slice to eff_limit as a last resort
+        try:
+            try:
+                result = self.mem0.get_all(user_id=user_id, agent_id=agent_id, limit=eff_limit, page=page)
+            except TypeError:
+                try:
+                    result = self.mem0.get_all(user_id=user_id, agent_id=agent_id, limit=eff_limit)
+                except TypeError:
+                    result = self.mem0.get_all(user_id=user_id, agent_id=agent_id)
+            mem_logger.debug("mem0.get_all returned type: %s", type(result))
+            # Normalize structures
+            normalised = self._normalise_results_list(result)
+            if normalised:
+                return normalised[:eff_limit]
+            if isinstance(result, list):
+                return result[:eff_limit]
             return result
         except Exception as e:
-            logger.error("Error in mem0.get_all: %s", e)
+            mem_logger.error("Error in mem0.get_all: %s", e)
             raise
 
     def search_memories(self, query: str, user_id: Optional[str] = None, agent_id: Optional[str] = None):
@@ -1022,23 +1138,23 @@ Include: objective, current_phase=1, phases with clear criteria for each.
         """
         try:
             # Get all memories for the user
-            logger = logging.getLogger("CyberAutoAgent")
-            logger.debug("Getting memory overview for user_id: %s", user_id)
+            overview_logger = logging.getLogger("CyberAutoAgent")
+            overview_logger.debug("Getting memory overview for user_id: %s", user_id)
 
             memories_response = self.list_memories(user_id=user_id)
-            logger.debug("Memory overview raw response type: %s", type(memories_response))
-            logger.debug("Memory overview raw response: %s", memories_response)
+            overview_logger.debug("Memory overview raw response type: %s", type(memories_response))
+            overview_logger.debug("Memory overview raw response: %s", memories_response)
 
             # Parse response format
             if isinstance(memories_response, dict):
                 raw_memories = memories_response.get("memories", memories_response.get("results", []))
-                logger.debug("Dict response: found %d memories", len(raw_memories))
+                overview_logger.debug("Dict response: found %d memories", len(raw_memories))
             elif isinstance(memories_response, list):
                 raw_memories = memories_response
-                logger.debug("List response: found %d memories", len(raw_memories))
+                overview_logger.debug("List response: found %d memories", len(raw_memories))
             else:
                 raw_memories = []
-                logger.debug("Unexpected response type, using empty list")
+                overview_logger.debug("Unexpected response type, using empty list")
 
             # Analyze memories
             total_count = len(raw_memories)
@@ -1350,9 +1466,10 @@ def mem0_memory(
     - Status values: 'active' (current), 'pending' (not started), 'done' (criteria met), 'partial_failure' (stuck, need pivot), 'blocked' (dependency failed)
 
     Failure-mode hardening (validation first):
-    - High/Critical findings require metadata.proof_pack with existing artifact paths; missing/invalid proof_pack → auto-downgrade validation_status to "hypothesis" and cap confidence.
-    - Pattern-only signals are capped at low confidence and marked as "pattern_match" evidence_type.
-    - Do not store success/verified booleans; use validation_status + proof_pack instead.
+    - HIGH/CRITICAL findings REQUIRE: (1) Artifact path in proof_pack (2) validation_status="verified" (3) Claimed data verified in artifact
+    - Before storing extraction claim: Verify target data IN response artifact (not just in payload sent)
+    - Pattern-only signals (response size diffs, status changes) = hypothesis/MEDIUM max
+    - Defensive layer responses (error pages, challenges) ≠ backend access = INFO/LOW max
 
     Structured finding content:
     [VULNERABILITY] title [WHERE] location [IMPACT] impact
@@ -1451,7 +1568,7 @@ def mem0_memory(
 
             results = _MEMORY_CLIENT.store_plan(plan_dict, user_id or "cyber_agent")
             if not strands_dev:
-                console.print("[green]✅ Strategic plan stored successfully[/green]")
+                console.print("[green]Strategic plan stored successfully[/green]")
             return json.dumps(results, indent=2)
 
         elif action == "get_plan":
@@ -1460,11 +1577,11 @@ def mem0_memory(
             plan = _MEMORY_CLIENT.get_active_plan(user_id or "cyber_agent", operation_id=op_id)
             if plan:
                 if not strands_dev:
-                    console.print("[green]📋 Active plan retrieved[/green]")
+                    console.print("[green]Active plan retrieved[/green]")
                 return json.dumps(plan, indent=2)
             else:
                 if not strands_dev:
-                    console.print("[yellow]⚠️ No active plan found[/yellow]")
+                    console.print("[yellow]No active plan found[/yellow]")
                 return "No active plan found"
 
         elif action == "store":
@@ -1603,28 +1720,33 @@ def mem0_memory(
             return json.dumps(memory, indent=2)
 
         elif action == "list":
-            memories = _MEMORY_CLIENT.list_memories(user_id, agent_id)
+            # Respect MEM0_LIST_LIMIT if set, default to 20
+            try:
+                list_limit = int(os.getenv("MEM0_LIST_LIMIT", "20"))
+            except Exception:
+                list_limit = 20
+            memories = _MEMORY_CLIENT.list_memories(user_id, agent_id, limit=list_limit)
 
             # Debug logging to understand the response structure
-            logger = logging.getLogger("CyberAutoAgent")
-            logger.debug("Memory list raw response type: %s", type(memories))
-            logger.debug("Memory list raw response: %s", memories)
+            list_logger = logging.getLogger("CyberAutoAgent")
+            list_logger.debug("Memory list raw response type: %s", type(memories))
+            list_logger.debug("Memory list raw response: %s", memories)
 
             # Normalize to list with better error handling
             if memories is None:
                 results_list = []
-                logger.debug("memories is None, returning empty list")
+                list_logger.debug("memories is None, returning empty list")
             elif isinstance(memories, list):
                 results_list = memories
-                logger.debug("memories is list with %d items", len(memories))
+                list_logger.debug("memories is list with %d items", len(memories))
             elif isinstance(memories, dict):
                 # Check for different possible dict structures
                 if "results" in memories:
                     results_list = memories.get("results", [])
-                    logger.debug("Found 'results' key with %d items", len(results_list))
+                    list_logger.debug("Found 'results' key with %d items", len(results_list))
                 elif "memories" in memories:
                     results_list = memories.get("memories", [])
-                    logger.debug("Found 'memories' key with %d items", len(results_list))
+                    list_logger.debug("Found 'memories' key with %d items", len(results_list))
                 else:
                     # If dict doesn't have expected keys, treat as single memory
                     results_list = [memories] if memories else []

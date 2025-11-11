@@ -20,7 +20,7 @@ class TestMemoryAwareAgentIntegration:
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     @patch("modules.agents.cyber_autoagent.get_memory_client")
     @patch("modules.agents.cyber_autoagent.check_existing_memories")
-    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.create_bedrock_model")
     @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_overview(
         self,
@@ -66,13 +66,15 @@ class TestMemoryAwareAgentIntegration:
         mock_create_model.return_value = mock_model
 
         # Create agent
-        agent, handler = create_agent(
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(
             target="test.com",
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
@@ -94,7 +96,7 @@ class TestMemoryAwareAgentIntegration:
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     @patch("modules.agents.cyber_autoagent.get_memory_client")
     @patch("modules.agents.cyber_autoagent.check_existing_memories")
-    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.create_bedrock_model")
     @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_fresh_start(
         self,
@@ -129,13 +131,15 @@ class TestMemoryAwareAgentIntegration:
         mock_create_model.return_value = mock_model
 
         # Create agent
-        agent, handler = create_agent(
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(
             target="test.com",
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
@@ -155,7 +159,7 @@ class TestMemoryAwareAgentIntegration:
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     @patch("modules.agents.cyber_autoagent.get_memory_client")
     @patch("modules.agents.cyber_autoagent.check_existing_memories")
-    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.create_bedrock_model")
     @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_with_memory_path(
         self,
@@ -204,7 +208,8 @@ class TestMemoryAwareAgentIntegration:
             patch("os.path.isdir", return_value=True),
         ):
             # Create agent with memory path
-            agent, handler = create_agent(
+            from modules.agents.cyber_autoagent import AgentConfig
+            config = AgentConfig(
                 target="test.com",
                 objective="test objective",
                 max_steps=50,
@@ -212,6 +217,7 @@ class TestMemoryAwareAgentIntegration:
                 provider="bedrock",
                 memory_path="/test/memory/path",
             )
+            agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify memory system was initialized with path
         mock_initialize_memory.assert_called_once()
@@ -229,7 +235,7 @@ class TestMemoryAwareAgentIntegration:
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     @patch("modules.agents.cyber_autoagent.get_memory_client")
     @patch("modules.agents.cyber_autoagent.check_existing_memories")
-    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.create_bedrock_model")
     @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_memory_overview_error_handling(
         self,
@@ -266,13 +272,15 @@ class TestMemoryAwareAgentIntegration:
         mock_create_model.return_value = mock_model
 
         # Create agent - should handle error gracefully
-        agent, handler = create_agent(
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(
             target="test.com",
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify agent was still created successfully
         assert agent is not None
@@ -286,7 +294,7 @@ class TestMemoryAwareAgentIntegration:
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     @patch("modules.agents.cyber_autoagent.get_memory_client")
     @patch("modules.agents.cyber_autoagent.check_existing_memories")
-    @patch("modules.agents.cyber_autoagent._create_local_model")
+    @patch("modules.agents.cyber_autoagent.create_local_model")
     @patch("modules.agents.cyber_autoagent.get_config_manager")
     def test_agent_creation_local_server_with_memory(
         self,
@@ -330,13 +338,15 @@ class TestMemoryAwareAgentIntegration:
         mock_create_model.return_value = mock_model
 
         # Create agent with local server
-        agent, handler = create_agent(
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(
             target="test.com",
             objective="test objective",
             max_steps=50,
             op_id="OP_20240101_120000",
             provider="ollama",
         )
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify agent was created successfully
         assert agent is not None

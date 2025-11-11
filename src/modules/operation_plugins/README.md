@@ -40,6 +40,14 @@ operation_plugins/
 
 ## Component Functions
 
+### Specialist Agents (General Module)
+The `general` module currently ships with a `validation_specialist` tool that spins up its own Strands `Agent` to run the seven-gate validation checklist before a finding is accepted. The tool lives under `tools/validation_specialist.py` and follows a repeatable pattern:
+
+- `_create_specialist_model()` pulls the same provider/model configuration used by the main agent.
+- The `@tool` entry point builds a Strands `Agent` with a focused system prompt plus the minimal tool set (`shell`, `http_request`, etc.) required for validation.
+
+You can add additional specialists (e.g., SQLi, XSS, SSRF) by copying this file, adjusting the prompt/available tools, and registering the new tool name in `module.yaml`. The runtime orchestration automatically exposes any `tools/*.py` entry that uses this pattern.
+
 ### module.yaml
 Defines module metadata and capabilities:
 

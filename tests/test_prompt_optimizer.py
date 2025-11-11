@@ -105,7 +105,7 @@ def test_prompt_optimizer_update_requires_prompt(tmp_path, monkeypatch):
 
 def test_prompt_optimizer_optimize_execution_handles_missing_file(tmp_path, monkeypatch):
     """Test optimize_execution handles missing execution_prompt_optimized.txt"""
-    root = _setup_env(tmp_path, monkeypatch)
+    _setup_env(tmp_path, monkeypatch)
 
     # Don't create execution_prompt_optimized.txt
 

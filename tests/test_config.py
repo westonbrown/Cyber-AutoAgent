@@ -4,7 +4,6 @@ Unit tests for the centralized model configuration system.
 """
 
 import os
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

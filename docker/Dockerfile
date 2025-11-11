@@ -168,9 +168,12 @@ RUN cd /app/src/modules/interfaces/react && \
     chown -R cyberagent:cyberagent /app/src/modules/interfaces/react
 
 # Install chromium browser for playwright to use
-# We use the PLAYWRIGHT_HOST_PLATFORM_OVERRIDE to force installation of Debian 13 packages on Kali Rolling since
-# Kali Rolling is based off Debian Testing and playwright does not have a specific Kali target.
-RUN env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="debian13-$(dpkg --print-architecture | sed 's/amd/x/')" uv run playwright install chromium --with-deps && \
+RUN env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="debian13-$(dpkg --print-architecture | sed 's/amd/x/')" \
+    PLAYWRIGHT_BROWSERS_PATH=/home/cyberagent/.cache/ms-playwright \
+    uv run playwright install chromium --with-deps && \
+    chown -R cyberagent:cyberagent /home/cyberagent/.cache && \
+    CHROME_BIN=$(find /home/cyberagent/.cache/ms-playwright -type f \( -name chrome -o -name chromium \) | head -n 1) && \
+    if [ -n "$CHROME_BIN" ]; then mkdir -p /usr/lib/chromium && ln -sf "$CHROME_BIN" /usr/lib/chromium/chromium; fi && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
@@ -178,6 +181,7 @@ RUN env PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="debian13-$(dpkg --print-architecture 
 ENV GOPATH="/home/cyberagent/go"
 ENV GOCACHE="/home/cyberagent/go/.cache"
 ENV PATH="/app/.venv/bin:/home/cyberagent/go/bin:$PATH"
+ENV PLAYWRIGHT_BROWSERS_PATH="/home/cyberagent/.cache/ms-playwright"
 ENV PYTHONPATH="/usr/lib/python3/dist-packages:/app/src"
 
 # Pre-install Go-based recon tools (mix of go build and prebuilt binaries)

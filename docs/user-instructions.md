@@ -36,15 +36,73 @@ Select during setup or change via `/setup` command.
 
 ## Configuration
 
-Configuration persists to `~/.cyber-autoagent/config.json`.
+Cyber-AutoAgent offers **3 configuration methods**:
 
-### Model Providers
+### Method 1: Config Editor UI (Recommended)
+
+Launch the React interface to configure via UI:
+
+```bash
+cd src/modules/interfaces/react
+npm start
+```
+
+**In the Terminal:**
+1. Type `/config` to open Config Editor
+2. Select **Provider**: `litellm` (supports 300+ models)
+3. Configure **LLM Settings**:
+   - Model ID: `azure/gpt-5`, `moonshot/kimi-k2-thinking`, `openrouter/openrouter/polaris-alpha`
+   - Temperature: `1.0` (for reasoning models) or `0.95` (default)
+   - Max Tokens: `32000`
+   - Reasoning Effort: `medium` (for GPT-5/o1 models)
+4. Configure **Embedding Model**: `azure/text-embedding-3-large`
+5. Add **Provider Credentials**:
+   - Azure: API Key, API Base, API Version
+   - Moonshot: API Key
+   - OpenRouter: API Key
+6. Save settings - persists to `~/.cyber-autoagent/config.json`
+7. Type `/help` for available commands
+
+**Using Saved Config:**
+```bash
+# Auto-run uses saved config
+npm start -- --auto-run --target https://example.com --iterations 50
+```
+
+### Method 2: Environment Variables
+
+Direct configuration for Python CLI:
+
+**Azure OpenAI (GPT-5):**
+```bash
+export AZURE_API_KEY=your_key
+export AZURE_API_BASE=https://your-endpoint.openai.azure.com/
+export AZURE_API_VERSION=2024-12-01-preview
+export CYBER_AGENT_LLM_MODEL=azure/gpt-5
+export CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+export REASONING_EFFORT=medium
+```
 
 **AWS Bedrock:**
 ```bash
 export AWS_ACCESS_KEY_ID=your_key
 export AWS_SECRET_ACCESS_KEY=your_secret
 export AWS_REGION=us-east-1
+```
+
+**OpenRouter:**
+```bash
+export OPENROUTER_API_KEY=your_key
+export CYBER_AGENT_LLM_MODEL=openrouter/openrouter/polaris-alpha
+export CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+```
+
+**Moonshot AI:**
+```bash
+export MOONSHOT_API_KEY=your_key
+export CYBER_AGENT_LLM_MODEL=moonshot/kimi-k2-thinking
+export CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+export MEM0_LLM_MODEL=azure/gpt-4o  # Separate LLM for memory system
 ```
 
 **Ollama (Local):**
@@ -60,6 +118,28 @@ export OPENAI_API_KEY=your_key
 # or
 export ANTHROPIC_API_KEY=your_key
 ```
+
+### Method 3: Config File (Direct Edit)
+
+Advanced users can directly edit `~/.cyber-autoagent/config.json`:
+
+```json
+{
+  "modelProvider": "litellm",
+  "modelId": "azure/gpt-5",
+  "embeddingModel": "azure/text-embedding-3-large",
+  "temperature": 1.0,
+  "maxTokens": 32000,
+  "reasoningEffort": "medium",
+  "azureApiKey": "your_key",
+  "azureApiBase": "https://your-endpoint.openai.azure.com/",
+  "azureApiVersion": "2024-12-01-preview",
+  "observability": false,
+  "autoEvaluation": false
+}
+```
+
+**Supported Providers:** `bedrock`, `ollama`, `litellm` (300+ models)
 
 ### Configuration Commands
 

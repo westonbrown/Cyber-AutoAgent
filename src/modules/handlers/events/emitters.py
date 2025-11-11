@@ -102,7 +102,7 @@ class StdoutEventEmitter:
             # Use ensure_ascii=True to properly escape control characters
             # This ensures that newlines in shell commands are properly escaped
             json_str = json.dumps(event, ensure_ascii=True)
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError):
             # If JSON serialization fails, try to clean up the event data
             try:
                 # Ensure output content is stringified to avoid "[object Object]" in UI
@@ -120,7 +120,7 @@ class StdoutEventEmitter:
                 # Use ensure_ascii=True to properly escape control characters
                 # This ensures that newlines in shell commands are properly escaped
                 json_str = json.dumps(event, ensure_ascii=True)
-            except (TypeError, ValueError) as e:
+            except (TypeError, ValueError):
                 # If JSON serialization fails, try to clean up the event data
                 try:
                     cleaned_event = self._clean_event_for_json(event)
@@ -129,7 +129,7 @@ class StdoutEventEmitter:
                     # Last resort: emit a simple error event
                     error_event = {
                         "type": "error",
-                        "error": f"Failed to serialize event: {str(e)}",
+                        "error": "Failed to serialize event; see logs for details",
                         "event_type": event.get("type", "unknown"),
                         "id": event.get("id", "unknown"),
                         "timestamp": event.get("timestamp", datetime.now().isoformat()),
