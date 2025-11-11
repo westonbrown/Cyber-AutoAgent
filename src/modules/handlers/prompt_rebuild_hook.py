@@ -16,7 +16,7 @@ Key Features:
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from strands.experimental.hooks.events import BeforeModelInvocationEvent
 from strands.hooks import HookProvider, HookRegistry
@@ -471,6 +471,5 @@ class PromptRebuildHook(HookProvider):
         except Exception as e:
             logger.error("Failed to auto-optimize execution prompt: %s", e, exc_info=True)
             # Continue operation with current prompt on optimization failure
-
 
 

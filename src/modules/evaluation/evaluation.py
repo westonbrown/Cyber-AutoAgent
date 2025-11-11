@@ -629,7 +629,9 @@ class CyberAgentEvaluator:
         # Optionally short-circuit when insufficient evidence to avoid 0/1 collapse
         try:
             config_manager = get_config_manager()
-        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+            eval_cfg = config_manager.get_server_config(
+                config_manager.getenv("PROVIDER", "bedrock")
+            ).evaluation
             min_tools = getattr(eval_cfg, "min_tool_calls", 3)
             min_evidence = getattr(eval_cfg, "min_evidence", 1)
             if len(parsed_trace.tool_calls) < min_tools and evidence_count < min_evidence:
@@ -657,12 +659,11 @@ class CyberAgentEvaluator:
                         min_evidence,
                     )
                     return None
-                else:
-                    logger.info(
-                        "Proceeding with minimal evaluation for report-generation trace despite low evidence (tool_calls=%d, evidence=%d)",
-                        len(parsed_trace.tool_calls),
-                        evidence_count,
-                    )
+                logger.info(
+                    "Proceeding with minimal evaluation for report-generation trace despite low evidence (tool_calls=%d, evidence=%d)",
+                    len(parsed_trace.tool_calls),
+                    evidence_count,
+                )
         except Exception:
             pass
 
@@ -853,7 +854,7 @@ class CyberAgentEvaluator:
         """
         try:
             config_manager = get_config_manager()
-        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
         except Exception:
             return {}
 
@@ -928,7 +929,9 @@ class CyberAgentEvaluator:
         """
         try:
             config_manager = get_config_manager()
-        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+            eval_cfg = config_manager.get_server_config(
+                config_manager.getenv("PROVIDER", "bedrock")
+            ).evaluation
         except Exception:
             return {}
 
@@ -948,22 +951,14 @@ class CyberAgentEvaluator:
             except Exception:
                 pass
 
-        # Build a compact context payload for the judge
+        # Build a compact context payload for the judge (best effort)
         try:
             context_summary = getattr(self, "_last_eval_summary_sha256", None)
-            summary_text = ""
-            if context_summary:
-                # We don't rehydrate the summary text from hash; use the current sample contexts if available
-                try:
-                    if hasattr(eval_data, "retrieved_contexts") and eval_data.retrieved_contexts:
-                        for c in eval_data.retrieved_contexts:
-                            if isinstance(c, str) and len(c) > 200:
-                                summary_text = c
-                                break
-                except Exception:
-                    pass
+            if context_summary and getattr(eval_data, "retrieved_contexts", None):
+                # Touch retrieved contexts to keep parity with previous behavior
+                _ = eval_data.retrieved_contexts[:1]
         except Exception:
-            summary_text = ""
+            pass
 
         # Compose prompts
         system_prompt = eval_cfg.judge_system_prompt or (
@@ -1118,6 +1113,7 @@ class CyberAgentEvaluator:
                 rubric_results[f"rubric/{dim}"] = (float(scores_obj[dim]), meta({"dimension": dim}))
 
         return rubric_results
+
     def _synthesize_context_summary(self, parsed_trace: Any) -> str:
         """
         Create a concise, rubric-ready EvaluationContext from the parsed trace using the evaluator LLM.
@@ -1127,7 +1123,9 @@ class CyberAgentEvaluator:
         """
         try:
             config_manager = get_config_manager()
-        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+            eval_cfg = config_manager.get_server_config(
+                config_manager.getenv("PROVIDER", "bedrock")
+            ).evaluation
             max_chars = int(getattr(eval_cfg, "summary_max_chars", 8000))
         except Exception:
             max_chars = 8000

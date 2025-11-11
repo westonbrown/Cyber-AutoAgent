@@ -6,11 +6,18 @@ This module constructs all prompts for the agent, including the system prompt,
 report generation prompts, and module-specific prompts.
 """
 
+import base64
+import json
 import logging
+import os
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 from textwrap import dedent
+from typing import Any, Dict, List, Optional
+from urllib import parse as _urlparse
+from urllib import request as _urlreq
 
 try:
     import yaml  # type: ignore
@@ -18,17 +25,6 @@ except Exception:  # pragma: no cover
     yaml = None  # Fallback when PyYAML is unavailable
 
 logger = logging.getLogger(__name__)
-
-# --- Langfuse Prompt Management (inline, minimal) ---
-# Aligned with observability: active only when BOTH ENABLE_OBSERVABILITY and ENABLE_LANGFUSE_PROMPTS are true.
-# Uses REST to GET/POST /api/public/v2/prompts with Basic Auth. Falls back silently on errors.
-import os
-import base64
-import json
-import time
-import threading
-from urllib import request as _urlreq
-from urllib import parse as _urlparse
 
 # In-memory cache with TTL (defaults to 300s, min 60s)
 _LF_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -595,11 +591,11 @@ def get_system_prompt(
         parts.append(f"Operation: {operation_id}")
         if isinstance(artifacts_path, str) and artifacts_path:
             rel_artifacts = artifacts_path.replace("/app/", "") if "/app/" in artifacts_path else artifacts_path
-            parts.append(f"\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):")
+            parts.append("\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):")
             parts.append(f"  → {rel_artifacts}")
         if isinstance(tools_path, str) and tools_path:
             rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
-            parts.append(f"\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
+            parts.append("\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
             parts.append(f"  → {rel_tools}")
 
     # Inject reflection snapshot with progressive checkpoint enforcement
@@ -627,7 +623,7 @@ def get_system_prompt(
             parts.append(f"\nCHECKPOINT {_checkpoint_pct_hit}%: Review plan, check confidence, pivot if <50%")
 
         parts.append(
-            f"\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
+            "\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
         )
     except Exception:
         pass

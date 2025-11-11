@@ -86,7 +86,6 @@ MEM0_PROVIDER_MAP: Dict[str, str] = {
 }
 
 
-
 class ModelProvider(Enum):
     """Supported model providers."""
 
@@ -828,10 +827,6 @@ class ConfigManager:
         Returns:
             Dict[str, str]: Absolute paths to {'root', 'artifacts', 'tools'}
         """
-        # Pull configured output base directory to ensure consistency
-        output_config = self.get_output_config(server, **overrides)
-        base_dir = output_config.base_dir
-
         # Build operation-specific paths from config
         root = self.get_unified_output_path(server, target_name, operation_id, "", **overrides)
         artifacts = self.get_unified_output_path(server, target_name, operation_id, "artifacts", **overrides)

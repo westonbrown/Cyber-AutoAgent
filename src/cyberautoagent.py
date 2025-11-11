@@ -30,26 +30,23 @@ import traceback
 import warnings
 from datetime import datetime
 
-# Third-party imports
-from dotenv import load_dotenv
 import requests
-from opentelemetry import trace
-from strands.telemetry.config import StrandsTelemetry
-
-load_dotenv()
-from requests.exceptions import ReadTimeout as RequestsReadTimeout, ConnectionError as RequestsConnectionError
 from botocore.exceptions import (
     ReadTimeoutError as BotoReadTimeoutError,
     EndpointConnectionError as BotoEndpointConnectionError,
     ConnectTimeoutError as BotoConnectTimeoutError,
 )
+from dotenv import load_dotenv
+from opentelemetry import trace
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import ReadTimeout as RequestsReadTimeout
+from strands.telemetry.config import StrandsTelemetry
+from strands.types.exceptions import MaxTokensReachedException
 
-# Local imports
-from modules.agents.cyber_autoagent import AgentConfig, create_agent
+from modules.agents.cyber_autoagent import AgentConfig, create_agent, _ensure_prompt_within_budget
 from modules.config.environment import auto_setup, clean_operation_memory, setup_logging
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
-from strands.types.exceptions import MaxTokensReachedException
 from modules.handlers.utils import (
     Colors,
     get_output_path,
@@ -59,6 +56,8 @@ from modules.handlers.utils import (
     print_status,
     sanitize_target_name,
 )
+
+load_dotenv()
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -618,6 +617,7 @@ def main():
             # Continue until stop condition is met
             while not interrupted:
                 try:
+                    _ensure_prompt_within_budget(agent)
                     # Execute agent with current message
                     result = agent(current_message)
 
@@ -686,7 +686,7 @@ def main():
                         break
                     # Continue to next iteration
 
-                except MaxTokensReachedException as error:
+                except MaxTokensReachedException:
                     # Emit explicit termination event for UI and generate final report
                     print_status("Token limit reached - generating final report", "WARNING")
                     try:
@@ -713,7 +713,7 @@ def main():
                     BotoReadTimeoutError,
                     BotoEndpointConnectionError,
                     BotoConnectTimeoutError,
-                ) as error:
+                ):
                     # Network/provider timeout: emit termination_reason and pivot to report
                     print_status("Network/provider timeout - generating final report", "WARNING")
                     try:
