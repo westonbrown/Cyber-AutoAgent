@@ -36,7 +36,9 @@ class TestMemoryPathIntegration:
                 "llm": {"provider": "aws_bedrock", "config": {"model": "test-llm"}},
             }
 
-            client = Mem0ServiceClient(config)
+            with patch("modules.tools.memory.Mem0Memory.from_config") as mock_from_config:
+                mock_from_config.return_value = MagicMock()
+                client = Mem0ServiceClient(config)
 
             # The client should have constructed the correct path
             # This tests the internal path construction logic

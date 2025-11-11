@@ -485,11 +485,6 @@ def _llm_rewrite_execution_prompt(
     """
     import os
     from modules.config.manager import get_config_manager
-    from modules.agents.cyber_autoagent import (
-        _create_local_model,
-        _create_remote_model,
-        _create_litellm_model,
-    )
     from strands import Agent
 
     # Load active provider configuration

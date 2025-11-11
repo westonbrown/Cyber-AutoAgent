@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import pathlib
-from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 

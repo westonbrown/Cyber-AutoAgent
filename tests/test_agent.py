@@ -146,15 +146,19 @@ class TestMemoryConfig:
         # The current implementation builds memory config inline in create_agent
         # We'll test that the right config is passed to initialize_memory_system
         with patch("modules.config.ConfigManager.validate_requirements"):
-            with patch("modules.agents.cyber_autoagent._create_local_model") as mock_create_local:
+            with patch("modules.agents.cyber_autoagent.create_local_model") as mock_create_local:
                 mock_create_local.return_value = Mock()
                 with patch("modules.agents.cyber_autoagent.Agent") as mock_agent_class:
                     mock_agent_class.return_value = Mock()
                     with patch("modules.agents.cyber_autoagent.ReasoningHandler") as mock_handler:
                         mock_handler.return_value = Mock()
                         with patch("modules.agents.cyber_autoagent.get_system_prompt"):
+                            import sys
+                            sys.path.insert(0, "../../src")
+                            from modules.agents.cyber_autoagent import AgentConfig
                             # Call create_agent with local server
-                            create_agent(target="test.com", objective="test", provider="ollama")
+                            config = AgentConfig(target="test.com", objective="test", provider="ollama")
+                            create_agent(target="test.com", objective="test", config=config)
 
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
@@ -169,15 +173,19 @@ class TestMemoryConfig:
     def test_memory_config_remote(self, mock_init_memory):
         """Test remote memory configuration is created correctly"""
         with patch("modules.config.ConfigManager.validate_requirements"):
-            with patch("modules.agents.cyber_autoagent._create_remote_model") as mock_create_remote:
+            with patch("modules.agents.cyber_autoagent.create_bedrock_model") as mock_create_remote:
                 mock_create_remote.return_value = Mock()
                 with patch("modules.agents.cyber_autoagent.Agent") as mock_agent_class:
                     mock_agent_class.return_value = Mock()
                     with patch("modules.agents.cyber_autoagent.ReasoningHandler") as mock_handler:
                         mock_handler.return_value = Mock()
                         with patch("modules.agents.cyber_autoagent.get_system_prompt"):
+                            import sys
+                            sys.path.insert(0, "../../src")
+                            from modules.agents.cyber_autoagent import AgentConfig
                             # Call create_agent with remote server
-                            create_agent(target="test.com", objective="test", provider="bedrock")
+                            config = AgentConfig(target="test.com", objective="test", provider="bedrock")
+                            create_agent(target="test.com", objective="test", config=config)
 
                             # Check that initialize_memory_system was called
                             mock_init_memory.assert_called_once()
@@ -282,7 +290,7 @@ class TestCreateAgent:
     """Test agent creation functionality"""
 
     @patch("modules.config.ConfigManager.validate_requirements")
-    @patch("modules.agents.cyber_autoagent._create_remote_model")
+    @patch("modules.agents.cyber_autoagent.create_bedrock_model")
     @patch("modules.agents.cyber_autoagent.Agent")
     @patch("modules.handlers.react.react_bridge_handler.ReactBridgeHandler")
     @patch("modules.agents.cyber_autoagent.get_system_prompt")
@@ -307,7 +315,9 @@ class TestCreateAgent:
         mock_get_prompt.return_value = "test prompt"
 
         # Call function
-        agent, handler = create_agent(target="test.com", objective="test objective", provider="bedrock")
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(target="test.com", objective="test objective", provider="bedrock")
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify calls
         mock_validate.assert_called_once_with("bedrock")
@@ -318,7 +328,7 @@ class TestCreateAgent:
         assert handler == mock_handler
 
     @patch("modules.config.ConfigManager.validate_requirements")
-    @patch("modules.agents.cyber_autoagent._create_local_model")
+    @patch("modules.agents.cyber_autoagent.create_local_model")
     @patch("modules.agents.cyber_autoagent.Agent")
     @patch("modules.handlers.react.react_bridge_handler.ReactBridgeHandler")
     @patch("modules.agents.cyber_autoagent.get_system_prompt")
@@ -343,7 +353,9 @@ class TestCreateAgent:
         mock_get_prompt.return_value = "test prompt"
 
         # Call function
-        agent, handler = create_agent(target="test.com", objective="test objective", provider="ollama")
+        from modules.agents.cyber_autoagent import AgentConfig
+        config = AgentConfig(target="test.com", objective="test objective", provider="ollama")
+        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
 
         # Verify calls
         mock_validate.assert_called_once_with("ollama")
@@ -359,10 +371,12 @@ class TestCreateAgent:
         mock_validate.side_effect = ConnectionError("Test error")
 
         with pytest.raises(ConnectionError):
-            create_agent(target="test.com", objective="test objective", provider="ollama")
+            from modules.agents.cyber_autoagent import AgentConfig
+            config = AgentConfig(target="test.com", objective="test objective", provider="ollama")
+            create_agent(target="test.com", objective="test objective", config=config)
 
     @patch("modules.config.ConfigManager.validate_requirements")
-    @patch("modules.agents.cyber_autoagent._create_local_model")
+    @patch("modules.agents.cyber_autoagent.create_local_model")
     @patch("modules.agents.cyber_autoagent._handle_model_creation_error")
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     def test_create_agent_model_creation_failure(
@@ -376,7 +390,9 @@ class TestCreateAgent:
         mock_create_local.side_effect = Exception("Model creation failed")
 
         with pytest.raises(Exception):
-            create_agent(target="test.com", objective="test objective", provider="ollama")
+            from modules.agents.cyber_autoagent import AgentConfig
+            config = AgentConfig(target="test.com", objective="test objective", provider="ollama")
+            create_agent(target="test.com", objective="test objective", config=config)
 
         mock_handle_error.assert_called_once()
 

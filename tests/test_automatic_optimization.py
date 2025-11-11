@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for automatic prompt optimization in PromptRebuildHook."""
 
-import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
