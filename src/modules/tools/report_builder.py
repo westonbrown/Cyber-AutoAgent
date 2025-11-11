@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from strands import tool
 
@@ -22,11 +22,40 @@ from modules.prompts.factory import (
     format_tools_summary,
     generate_findings_summary_table,
 )
-from modules.tools.memory import get_memory_client, Mem0ServiceClient
+from modules.tools.memory import Mem0ServiceClient, get_memory_client
 from modules.config.manager import get_config_manager
 from modules.handlers.core.utils import sanitize_target_name
 
 logger = logging.getLogger(__name__)
+
+MAX_REPORT_FINDINGS = int(os.getenv("CYBER_REPORT_MAX_FINDINGS", "50"))
+_SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
+
+
+def _trim_evidence_for_report(items: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """Keep at most `limit` evidence items, favoring higher severity."""
+    if limit <= 0 or len(items) <= limit:
+        return items
+
+    sorted_items = sorted(
+        items,
+        key=lambda entry: _SEVERITY_ORDER.get(str(entry.get("severity", "")).upper(), 4),
+    )
+    trimmed = sorted_items[:limit]
+    overflow = len(sorted_items) - limit
+    if overflow > 0:
+        trimmed.append(
+            {
+                "severity": "INFO",
+                "parsed": {
+                    "title": f"{overflow} additional finding(s) omitted",
+                    "details": "Reduce CYBER_REPORT_MAX_FINDINGS or review artifacts directly.",
+                },
+                "confidence": "",
+                "validation_status": "info",
+            }
+        )
+    return trimmed
 
 
 def sanitize_target_for_path(target: str) -> str:
@@ -296,7 +325,8 @@ def build_report_sections(
         if not evidence:
             evidence = []
 
-        # Format evidence for report
+        # Format evidence for report (cap to avoid context explosions)
+        evidence = _trim_evidence_for_report(evidence, MAX_REPORT_FINDINGS)
         evidence_text = format_evidence_for_report(evidence)
 
         # Count severities from actual evidence, not just text
