@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Agent creation and management for Cyber-AutoAgent."""
 
+import json
 import logging
 import os
 import warnings
@@ -8,10 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
-import json
 
 from strands import Agent
-from strands.agent.conversation_manager import SummarizingConversationManager
 from strands.models import BedrockModel
 from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
@@ -24,9 +23,15 @@ from strands_tools.stop import stop
 from strands_tools.swarm import swarm
 
 from modules import prompts
-from modules.prompts import get_system_prompt  # Backward-compat import for tests
-from modules.config.manager import get_config_manager
+from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
 from modules.handlers import ReasoningHandler
+from modules.handlers.conversation_budget import (
+    MappingConversationManager,
+    PromptBudgetHook,
+    LargeToolResultMapper,
+    _ensure_prompt_within_budget,
+)
+from modules.handlers.tool_router import ToolRouterHook
 from modules.handlers.utils import print_status, sanitize_target_name
 from modules.tools.browser import (
     initialize_browser,
@@ -43,93 +48,121 @@ from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# Hook import for routing unknown tools to shell
-from strands.hooks.events import BeforeToolCallEvent  # type: ignore
-
 logger = logging.getLogger(__name__)
 
+# Backward compatibility: expose get_system_prompt from modules.prompts for legacy imports/tests
+get_system_prompt = prompts.get_system_prompt
 
-# Minimal tool router hook to map unknown tool names to the shell tool
-class _ToolRouterHook:
-    """BeforeToolCall hook that maps unknown tool names to the shell tool."""
-
-    def __init__(self, shell_tool: Any) -> None:
-        self._shell_tool = shell_tool
-
-    def register_hooks(self, registry) -> None:  # type: ignore[no-untyped-def]
-        registry.add_callback(BeforeToolCallEvent, self._on_before_tool)
-
-    def _on_before_tool(self, event) -> None:  # type: ignore[no-untyped-def]
-        if getattr(event, "selected_tool", None) is not None:
-            return
-
-        tool_use = getattr(event, "tool_use", {}) or {}
-        tool_name = str(tool_use.get("name", "")).strip()
-        if not tool_name:
-            return
-
-        raw_input = tool_use.get("input", {})
-        if isinstance(raw_input, dict):
-            params: dict[str, Any] = raw_input
-        else:
-            params = {"options": str(raw_input)}
-            if isinstance(raw_input, str) and raw_input.strip().startswith("{"):
-                try:
-                    import json as _json
-
-                    maybe = _json.loads(raw_input)
-                    if isinstance(maybe, dict):
-                        params = maybe
-                except Exception:
-                    pass
-
-        options = _s(params.get("options"))
-        target = _first(params.get("target"), params.get("host"), params.get("url"), params.get("ip"))
-
-        KNOWN = {"options", "target", "host", "url", "ip"}
-        extras: list[str] = []
-        for k, v in params.items():
-            if k in KNOWN:
-                continue
-            if isinstance(v, (str, int, float)):
-                vk = _s(v)
-                if not vk:
-                    continue
-                flag = ("-" if len(k) == 1 else "--") + k.replace("_", "-")
-                extras.append(f"{flag} {vk}")
-
-        parts = [tool_name]
-        if options:
-            parts.append(options)
-        if target:
-            parts.append(target)
-        if extras:
-            parts.extend(extras)
-        command = " ".join(p for p in parts if p)
-
-        event.selected_tool = self._shell_tool  # type: ignore[attr-defined]
-        tool_use["input"] = {"command": command}
+def _split_model_prefix(model_id: str) -> tuple[str, str]:
+    if not isinstance(model_id, str):
+        return "", ""
+    if "/" in model_id:
+        prefix, remainder = model_id.split("/", 1)
+        return prefix.lower(), remainder
+    return "", model_id
 
 
-def _s(v: Any) -> str:
+def _get_prompt_limit_from_model(model_id: Optional[str]) -> Optional[int]:
+    if not model_id:
+        return None
     try:
-        return str(v).strip()
+        import litellm
+
+        prefix, base_model = _split_model_prefix(model_id)
+        target_model = base_model or model_id
+        limit = litellm.get_max_tokens(target_model)
+        if limit and limit > 0:
+            return limit
     except Exception:
-        return ""
+        logger.debug("Unable to resolve prompt token limit for %s", model_id, exc_info=True)
+    return None
 
 
-def _first(*vals: Any) -> str:
-    for v in vals:
-        s = _s(v)
-        if s:
-            return s
-    return ""
+def _parse_context_window_fallbacks() -> Optional[list[dict[str, list[str]]]]:
+    def _parse_spec(spec: str) -> Optional[list[dict[str, list[str]]]]:
+        fallbacks: list[dict[str, list[str]]] = []
+        for clause in spec.split(";"):
+            clause = clause.strip()
+            if not clause or ":" not in clause:
+                continue
+            model, targets = clause.split(":", 1)
+            target_list = [target.strip() for target in targets.split(",") if target.strip()]
+            model_name = model.strip()
+            if not model_name or not target_list:
+                continue
+            fallbacks.append({model_name: target_list})
+        return fallbacks or None
+
+    env_spec = os.getenv("CYBER_CONTEXT_WINDOW_FALLBACKS", "").strip()
+    if env_spec:
+        parsed = _parse_spec(env_spec)
+        if parsed:
+            return parsed
+    try:
+        config_manager = get_config_manager()
+        config_fallbacks = config_manager.get_context_window_fallbacks("litellm") or []
+        if config_fallbacks:
+            copied: list[dict[str, list[str]]] = []
+            for mapping in config_fallbacks:
+                for model_name, targets in mapping.items():
+                    copied.append({model_name: list(targets)})
+            return copied or None
+    except Exception:
+        logger.debug("No configured context_window_fallbacks available", exc_info=True)
+    return None
+
+
+def _align_mem0_config(model_id: Optional[str], memory_config: dict[str, Any]) -> None:
+    # Respect explicit MEM0 overrides; do not realign when user configured provider/model
+    if os.getenv("MEM0_LLM_MODEL"):
+        return
+    if not model_id or not isinstance(memory_config, dict):
+        return
+    prefix, remainder = _split_model_prefix(model_id)
+    if not prefix:
+        return
+    expected = MEM0_PROVIDER_MAP.get(prefix)
+    if not expected:
+        return
+    llm_section = memory_config.get("llm")
+    if not isinstance(llm_section, dict):
+        return
+    current_provider = (llm_section.get("provider") or "").lower()
+    if current_provider != expected.lower():
+        llm_section["provider"] = expected
+        logger.info("Aligned Mem0 LLM provider to %s for model %s", expected, model_id)
+    config_section = llm_section.setdefault("config", {})
+    if expected == "azure_openai" and remainder:
+        config_section["model"] = remainder
+
+
+def _supports_reasoning_model(model_id: Optional[str]) -> bool:
+    mid = (model_id or "").lower()
+    return any(
+        token in mid
+        for token in (
+            "gpt-5",
+            "/o4",
+            "/o3",
+            "o4-mini",
+            "o3-mini",
+        )
+    )
 
 
 # Configure SDK logging for debugging swarm operations
 def configure_sdk_logging(enable_debug: bool = False):
     """Configure logging for Strands SDK components."""
-    if enable_debug:
+    # Suppress unrecognized tool specification warnings from Strands toolkit registry
+    # These are benign warnings from the Strands SDK when built-in tools (stop, http_request, python_repl)
+    # are processed during tool registration. The tools work correctly despite the warnings.
+    class ToolRegistryWarningFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            # Suppress only the specific "unrecognized tool specification" warning
+            if "unrecognized tool specification" in record.getMessage():
+                return False
+            return True
+
         # Only enable verbose logging when explicitly requested
         log_level = logging.INFO
         logging.getLogger("strands").setLevel(log_level)
@@ -228,7 +261,7 @@ def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
         return False
 
 
-def _create_remote_model(
+def create_bedrock_model(
     model_id: str,
     region_name: str,
     provider: str = "bedrock",
@@ -283,7 +316,7 @@ def _create_remote_model(
     return BedrockModel(**model_kwargs)
 
 
-def _create_local_model(
+def create_local_model(
     model_id: str,
     provider: str = "ollama",
 ) -> Any:
@@ -301,7 +334,7 @@ def _create_local_model(
     )
 
 
-def _create_litellm_model(
+def create_litellm_model(
     model_id: str,
     region_name: str,
     provider: str = "litellm",
@@ -351,9 +384,15 @@ def _create_litellm_model(
     if "top_p" in config:
         params["top_p"] = config["top_p"]
 
-    # Add reasoning parameters if set (O1/GPT-5 support)
+    # Add request timeout and retries for robustness (env-overridable)
+    timeout_secs = config_manager.getenv_int("LITELLM_TIMEOUT", 120)
+    num_retries = config_manager.getenv_int("LITELLM_NUM_RETRIES", 3)
+    if timeout_secs > 0:
+        client_args["timeout"] = timeout_secs
+    if num_retries >= 0:
+        client_args["num_retries"] = num_retries
     reasoning_effort = config_manager.getenv("REASONING_EFFORT")
-    if reasoning_effort:
+    if reasoning_effort and _supports_reasoning_model(config["model_id"]):
         params["reasoning_effort"] = reasoning_effort
     max_completion_tokens = config_manager.getenv_int("MAX_COMPLETION_TOKENS", 0)
     if max_completion_tokens > 0:
@@ -399,7 +438,6 @@ def create_agent(
     target: str,
     objective: str,
     config: Optional[AgentConfig] = None,
-    **kwargs,
 ) -> Tuple[Agent, ReasoningHandler]:
     """Create autonomous agent"""
 
@@ -412,30 +450,6 @@ def create_agent(
     else:
         config.target = target
         config.objective = objective
-
-    # Backward-compatibility: accept keyword args used by older tests
-    if kwargs:
-        if "provider" in kwargs and kwargs["provider"]:
-            config.provider = kwargs["provider"]
-        if "max_steps" in kwargs and kwargs["max_steps"]:
-            config.max_steps = int(kwargs["max_steps"])
-        if "op_id" in kwargs and kwargs["op_id"]:
-            config.op_id = kwargs["op_id"]
-        # Some tests may use 'model' instead of 'model_id'
-        if "model" in kwargs and kwargs["model"]:
-            config.model_id = kwargs["model"]
-        if "model_id" in kwargs and kwargs["model_id"]:
-            config.model_id = kwargs["model_id"]
-        if "region" in kwargs and kwargs["region"]:
-            config.region_name = kwargs["region"]
-        if "region_name" in kwargs and kwargs["region_name"]:
-            config.region_name = kwargs["region_name"]
-        if "memory_path" in kwargs and kwargs["memory_path"]:
-            config.memory_path = kwargs["memory_path"]
-        if "memory_mode" in kwargs and kwargs["memory_mode"]:
-            config.memory_mode = kwargs["memory_mode"]
-        if "module" in kwargs and kwargs["module"]:
-            config.module = kwargs["module"]
 
     agent_logger = logging.getLogger("CyberAutoAgent")
     agent_logger.debug(
@@ -473,6 +487,7 @@ def create_agent(
 
     # Configure memory system using centralized configuration
     memory_config = config_manager.get_mem0_service_config(config.provider)
+    _align_mem0_config(config.model_id, memory_config)
 
     # Configure vector store with memory path if provided
     if config.memory_path:
@@ -503,6 +518,7 @@ def create_agent(
     target_name = sanitize_target_name(config.target)
 
     # Ensure unified output directories (root + artifacts + tools) exist before any tools run
+    paths: dict[str, str] = {}
     try:
         paths = config_manager.ensure_operation_output_dirs(
             config.provider, target_name, operation_id, module=config.module
@@ -510,7 +526,7 @@ def create_agent(
         print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
     except Exception:
         # Non-fatal: proceed even if directory creation logs an error
-        pass
+        logger.debug("Failed to pre-create operation directories", exc_info=True)
 
     try:
         if paths:
@@ -878,39 +894,60 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     # Use the same emitter as the callback handler for consistency
     react_hooks = ReactHooks(emitter=callback_handler.emitter, operation_id=operation_id)
 
+    # Tool router to prevent unknown-tool failures by routing to shell before execution
+    # Allow configurable truncation of large tool outputs via env var
+    try:
+        max_result_chars = int(os.getenv("CYBER_TOOL_MAX_RESULT_CHARS", "10000"))
+    except Exception:
+        max_result_chars = 10000
+    try:
+        artifact_threshold = int(
+            os.getenv("CYBER_TOOL_RESULT_ARTIFACT_THRESHOLD", str(max_result_chars))
+        )
+    except Exception:
+        artifact_threshold = max_result_chars
+    tool_router_hook = ToolRouterHook(
+        shell,
+        max_result_chars=max_result_chars,
+        artifacts_dir=paths.get("artifacts"),
+        artifact_threshold=artifact_threshold,
+    )
+
     # Create prompt rebuild hook for intelligent prompt updates
     from modules.handlers.prompt_rebuild_hook import PromptRebuildHook
 
-    prompt_rebuild_hook = PromptRebuildHook(
-        callback_handler=callback_handler,
-        memory_instance=memory_client,
-        config=config,
-        target=config.target,
-        objective=config.objective,
-        operation_id=operation_id,
-        max_steps=config.max_steps,
-        module=config.module,
-        rebuild_interval=20,  # Rebuild every 20 steps
-    )
+    prompt_budget_hook = PromptBudgetHook(_ensure_prompt_within_budget)
+    hooks = [tool_router_hook, react_hooks, prompt_budget_hook]
 
-    # Tool router to prevent unknown-tool failures by routing to shell before execution
-    tool_router_hook = _ToolRouterHook(shell)
+    enable_prompt_optimization = os.getenv("CYBER_ENABLE_PROMPT_OPTIMIZATION", "false").lower() == "true"
 
-    hooks = [tool_router_hook, react_hooks, prompt_rebuild_hook]
+    if enable_prompt_optimization:
+        prompt_rebuild_hook = PromptRebuildHook(
+            callback_handler=callback_handler,
+            memory_instance=memory_client,
+            config=config,
+            target=config.target,
+            objective=config.objective,
+            operation_id=operation_id,
+            max_steps=config.max_steps,
+            module=config.module,
+            rebuild_interval=20,
+        )
+        hooks.append(prompt_rebuild_hook)
 
     # Create model based on provider type
     try:
         if config.provider == "ollama":
             agent_logger.debug("Configuring OllamaModel")
-            model = _create_local_model(config.model_id, config.provider)
+            model = create_local_model(config.model_id, config.provider)
             print_status(f"Ollama model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = _create_remote_model(config.model_id, config.region_name, config.provider)
+            model = create_bedrock_model(config.model_id, config.region_name, config.provider)
             print_status(f"Bedrock model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
-            model = _create_litellm_model(config.model_id, config.region_name, config.provider)
+            model = create_litellm_model(config.model_id, config.region_name, config.provider)
             print_status(f"LiteLLM model initialized: {config.model_id}", "SUCCESS")
         else:
             raise ValueError(f"Unsupported provider: {config.provider}")
@@ -927,7 +964,6 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         editor,
         load_tool,
         mem0_memory,
-        prompt_optimizer,
         stop,
         http_request,
         python_repl,
@@ -940,6 +976,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         browser_get_cookies,
     ]
 
+    if enable_prompt_optimization:
+        tools_list.append(prompt_optimizer)
+
     # Inject module-specific tools if available
     if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
@@ -948,9 +987,16 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     agent_logger.debug("Creating autonomous agent")
 
     # Update conversation window size from SDK config (kept for reference)
-    conversation_window = server_config.sdk.conversation_window_size
+    conversation_window = getattr(server_config.sdk, "conversation_window_size", None)
+    try:
+        window_size = int(conversation_window) if conversation_window is not None else 30
+    except (TypeError, ValueError):
+        window_size = 30
+    window_size = max(10, window_size)
 
     # Create agent with telemetry for token tracking
+    prompt_token_limit = _get_prompt_limit_from_model(config.model_id)
+
     agent_kwargs = {
         "model": model,
         "name": f"Cyber-AutoAgent {config.op_id or operation_id}",
@@ -958,10 +1004,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         "system_prompt": system_prompt,
         "callback_handler": callback_handler,
         "hooks": hooks if hooks else None,  # Add hooks if available
-        # Use sliding-window conversation manager with fixed window size
-        "conversation_manager": SummarizingConversationManager(
+        # Use proactive sliding + summarization fallback
+        "conversation_manager": MappingConversationManager(
+            window_size=window_size,
             summary_ratio=0.3,
             preserve_recent_messages=20,
+            tool_result_mapper=LargeToolResultMapper(),
         ),
         "load_tools_from_directory": True,
         "trace_attributes": {
@@ -1026,6 +1074,11 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
     # Create agent (telemetry is handled globally by Strands SDK)
     agent = Agent(**agent_kwargs)
+    # Allow reasoning deltas only when the provider/model supports them
+    setattr(agent, "_allow_reasoning_content", _supports_reasoning_model(config.model_id))
+    if prompt_token_limit:
+        setattr(agent, "_prompt_token_limit", prompt_token_limit)
+    setattr(agent, "_allow_reasoning_content", _supports_reasoning_model(config.model_id))
     # Ensure legacy-compatible system prompt is directly accessible for tests
     try:
         setattr(agent, "system_prompt", system_prompt)
