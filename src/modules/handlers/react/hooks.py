@@ -18,8 +18,9 @@ from strands.experimental.hooks.events import (
 from strands.hooks import HookProvider, HookRegistry
 
 from ..events import EventEmitter, get_emitter
+from modules.config.logger_factory import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Handlers.ReactHooks")
 
 
 class ReactHooks(HookProvider):

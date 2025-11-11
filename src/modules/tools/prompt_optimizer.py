@@ -13,8 +13,10 @@ from typing import Any, Dict, List, Optional
 
 from strands import tool
 
+from modules.config.logger_factory import get_logger
+
 OVERLAY_FILENAME = "adaptive_prompt.json"
-logger = logging.getLogger(__name__)
+logger = get_logger("Tools.PromptOptimizer")
 
 
 class PromptOptimizerError(Exception):

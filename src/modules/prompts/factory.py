@@ -24,7 +24,9 @@ try:
 except Exception:  # pragma: no cover
     yaml = None  # Fallback when PyYAML is unavailable
 
-logger = logging.getLogger(__name__)
+from modules.config.logger_factory import get_logger
+
+logger = get_logger("Prompts.Factory")
 
 # In-memory cache with TTL (defaults to 300s, min 60s)
 _LF_CACHE: Dict[str, Dict[str, Any]] = {}

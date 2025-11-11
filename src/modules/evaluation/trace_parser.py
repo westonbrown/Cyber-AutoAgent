@@ -15,7 +15,9 @@ from typing import Any, Dict, List, Optional, Union
 
 from ragas.dataset_schema import MultiTurnSample, SingleTurnSample
 
-logger = logging.getLogger(__name__)
+from modules.config.logger_factory import get_logger
+
+logger = get_logger("Evaluation.TraceParser")
 
 
 @dataclass

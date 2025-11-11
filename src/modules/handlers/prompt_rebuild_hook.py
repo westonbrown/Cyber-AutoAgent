@@ -21,7 +21,9 @@ from typing import Any, Dict, Optional
 from strands.experimental.hooks.events import BeforeModelInvocationEvent
 from strands.hooks import HookProvider, HookRegistry
 
-logger = logging.getLogger(__name__)
+from modules.config.logger_factory import get_logger
+
+logger = get_logger("Handlers.PromptRebuildHook")
 
 
 class PromptRebuildHook(HookProvider):

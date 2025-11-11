@@ -24,6 +24,7 @@ from strands_tools.swarm import swarm
 
 from modules import prompts
 from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
+from modules.config.logger_factory import get_logger
 from modules.handlers import ReasoningHandler
 from modules.handlers.conversation_budget import (
     MappingConversationManager,
@@ -48,7 +49,7 @@ from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Agents.CyberAutoAgent")
 
 # Backward compatibility: expose get_system_prompt from modules.prompts for legacy imports/tests
 get_system_prompt = prompts.get_system_prompt

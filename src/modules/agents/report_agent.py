@@ -17,15 +17,10 @@ from strands.models.litellm import LiteLLMModel
 from strands.models.ollama import OllamaModel
 
 from modules.config.manager import get_config_manager
-from modules.handlers.conversation_budget import (
-    MappingConversationManager,
-    PromptBudgetHook,
-    LargeToolResultMapper,
-    _ensure_prompt_within_budget,
-)
+from modules.config.logger_factory import get_logger
 from modules.prompts.factory import get_report_agent_system_prompt
 
-logger = logging.getLogger(__name__)
+logger = get_logger("Agents.ReportAgent")
 
 
 class NoOpCallbackHandler(PrintingCallbackHandler):
@@ -111,8 +106,8 @@ class ReportGenerator:
             # Pass both token params - LiteLLM drop_params removes unsupported one
             params = {
                 "temperature": 0.3,
-                "max_tokens": 8000,
-                "max_completion_tokens": 8000,
+                "max_tokens": 4000,
+                "max_completion_tokens": 4000,
             }
             client_args = {
                 "num_retries": 5,
@@ -143,14 +138,6 @@ class ReportGenerator:
 
         # Create a silent callback handler to prevent duplicate output
         # The report will be returned and handled by the caller
-        conversation_manager = MappingConversationManager(
-            window_size=30,
-            summary_ratio=0.3,
-            preserve_recent_messages=10,
-            tool_result_mapper=LargeToolResultMapper(),
-        )
-        prompt_budget_hook = PromptBudgetHook(_ensure_prompt_within_budget)
-
         return Agent(
             model=model,
             name="Cyber-ReportGenerator",
@@ -158,8 +145,6 @@ class ReportGenerator:
             tools=[build_report_sections],
             trace_attributes=trace_attrs if operation_id else None,
             callback_handler=NoOpCallbackHandler(),
-            conversation_manager=conversation_manager,
-            hooks=[prompt_budget_hook],
         )
 
 
