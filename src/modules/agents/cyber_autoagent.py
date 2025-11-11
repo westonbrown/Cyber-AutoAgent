@@ -113,9 +113,6 @@ def _parse_context_window_fallbacks() -> Optional[list[dict[str, list[str]]]]:
 
 
 def _align_mem0_config(model_id: Optional[str], memory_config: dict[str, Any]) -> None:
-    # Respect explicit MEM0 overrides; do not realign when user configured provider/model
-    if os.getenv("MEM0_LLM_MODEL"):
-        return
     if not model_id or not isinstance(memory_config, dict):
         return
     prefix, remainder = _split_model_prefix(model_id)
