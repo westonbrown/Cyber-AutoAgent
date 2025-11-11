@@ -837,8 +837,7 @@ def _discover_mcp_tools(config: AgentConfig) -> List[AgentTool]:
     mcp_tools = []
     for mcp_conn in (config.mcp_connections or []):
         if '*' in mcp_conn.plugins or config.module in mcp_conn.plugins:
-            print("Discover MCP tools from: ", mcp_conn)
-            logger.error("Discover MCP tools from: %s", mcp_conn)
+            logger.debug("Discover MCP tools from: %s", mcp_conn)
             match mcp_conn.transport:
                 case "stdio":
                     if not mcp_conn.command:
@@ -861,18 +860,17 @@ def _discover_mcp_tools(config: AgentConfig) -> List[AgentTool]:
                     )
                 case _:
                     raise ValueError(f"Unsupported MCP transport {mcp_conn.transport}")
-            client = MCPClient(transport)
+            client = MCPClient(transport, prefix=mcp_conn.id)
+            prefix_idx = len(mcp_conn.id) + 1
             client.start()
             client_used = False
             page_token = None
             while len(tools := client.list_tools_sync(page_token)) > 0:
                 page_token = tools.pagination_token
                 for tool in tools:
-                    logger.error(f"Considering tool: {tool.tool_name}")
-                    print(f"Considering tool: {tool.tool_name}")
-                    if '*' in mcp_conn.allowed_tools or tool.tool_name in mcp_conn.allowed_tools:
-                        logger.error(f"Allowed tool: {tool.tool_name}")
-                        print(f"Allowed tool: {tool.tool_name}")
+                    logger.debug(f"Considering tool: {tool.tool_name}")
+                    if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
+                        logger.debug(f"Allowed tool: {tool.tool_name}")
                         mcp_tools.append(tool)
                         client_used = True
                 if not page_token:
@@ -1557,9 +1555,6 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     except Exception:
         pass
 
-    if mcp_tools:
-        tools_list.append(list_mcp_tools_wrapper(mcp_tools))
-
     # Inject module-specific tools if available
     if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
@@ -1569,6 +1564,7 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
     # Inject MCP tools if available
     if "mcp_tools" in locals() and mcp_tools:
+        tools_list.append(list_mcp_tools_wrapper(mcp_tools))
         tools_list.extend(mcp_tools)
         agent_logger.info("Injected %d MCP tools into agent", len(mcp_tools))
 

@@ -9,7 +9,6 @@ from strands.types.tools import AgentTool
 from strands import tool
 
 def list_mcp_tools_wrapper(mcp_tools: List[AgentTool]):
-
     mcp_full_catalog = f"""
 ## MCP FULL TOOL CATALOG
 
