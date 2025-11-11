@@ -39,12 +39,17 @@ def get_logger(component_name: str) -> logging.Logger:
     return _logger_registry[component_name]
 
 
-def initialize_logger_factory() -> None:
+def initialize_logger_factory(log_file: str | None = None, verbose: bool = False) -> None:
     """Initialize logger factory.
     
     Called by environment.setup_logging() during startup.
+    Currently a no-op placeholder that accepts keyword
+    arguments for backward compatibility with setup_logging.
     """
-    pass
+    # Reserved for future configuration (e.g., attach handlers).
+    # Accept log_file/verbose to avoid TypeError when older call
+    # sites pass them through.
+    _ = (log_file, verbose)
 
 
 def reset_logger_factory() -> None:
