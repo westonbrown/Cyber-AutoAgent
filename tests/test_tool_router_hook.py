@@ -7,7 +7,7 @@ from modules.handlers.tool_router import ToolRouterHook
 def test_tool_router_maps_unknown_tool_to_shell():
     # Prepare hook with a sentinel shell tool
     sentinel_shell = object()
-    hook = ToolRouterHook(shell_tool=sentinel_shell)
+    hook = ToolRouterHook(shell_tool=sentinel_shell)  # type: ignore[attr-defined]
 
     # Minimal event carrying an unknown tool name
     event = types.SimpleNamespace()
@@ -29,7 +29,7 @@ def test_tool_router_maps_unknown_tool_to_shell():
 
 def test_tool_router_keeps_registered_tools_unchanged():
     sentinel_shell = object()
-    hook = ToolRouterHook(shell_tool=sentinel_shell)
+    hook = ToolRouterHook(shell_tool=sentinel_shell)  # type: ignore[attr-defined]
 
     event = types.SimpleNamespace()
     event.selected_tool = object()  # Simulate already-resolved tool
