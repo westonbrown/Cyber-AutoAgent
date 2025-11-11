@@ -97,26 +97,42 @@ The React terminal will automatically spawn the Python agent as a subprocess and
 
 #### Single Container
 
+**Interactive Mode (React Terminal UI):**
 ```bash
-# Interactive mode with React terminal
 docker run -it --rm \
-  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-  -e AWS_REGION=${AWS_REGION:-us-east-1} \
+  -e AZURE_API_KEY=your_azure_key \
+  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
+  -e AZURE_API_VERSION=2024-12-01-preview \
+  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
+  -e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large \
   -v $(pwd)/outputs:/app/outputs \
-  cyber-autoagent
+  cyberautoagent:latest
+```
 
-# Or start directly with parameters
-docker run -it --rm \
-  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
-  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
-  -e AWS_REGION=${AWS_REGION:-us-east-1} \
+**Direct Python Execution (Non-Interactive):**
+```bash
+# Override entrypoint for direct Python execution
+docker run --rm --entrypoint python \
+  -e AZURE_API_KEY=your_azure_key \
+  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
+  -e AZURE_API_VERSION=2024-12-01-preview \
+  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
+  -e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large \
+  -e REASONING_EFFORT=medium \
   -v $(pwd)/outputs:/app/outputs \
-  cyber-autoagent \
+  cyberautoagent:latest \
+  src/cyberautoagent.py \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify SQL injection vulnerabilities" \
-  --auto-run
+  --iterations 50 \
+  --provider litellm
 ```
+
+**Works with any LiteLLM provider (300+ supported):**
+- Azure OpenAI: `azure/model-name`
+- AWS Bedrock: Use AWS credentials instead
+- OpenRouter: Set `OPENROUTER_API_KEY`, use `openrouter/model-name`
+- Moonshot AI: Set `MOONSHOT_API_KEY`, use `moonshot/model-name`
 
 #### Docker Compose (Full Stack with Observability)
 

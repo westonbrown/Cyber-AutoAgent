@@ -63,9 +63,8 @@ src/modules/operation_plugins/
 │   ├── execution_prompt.md    # Domain-specific system prompt
 │   ├── report_prompt.md       # Report generation guidance
 │   ├── module.yaml            # Module configuration
-│   └── tools/                 # Module-specific tools
-│       ├── __init__.py
-│       └── quick_recon.py
+│   └── tools/                 # Module-specific tools / specialist agents
+│       └── validation_specialist.py
 └── ctf/
     ├── execution_prompt.md
     ├── report_prompt.md
@@ -83,6 +82,7 @@ configuration:
 
 **Available Modules**:
 - **general**: Comprehensive web application and network security testing
+  - Includes the `validation_specialist` tool (invoked via `load_tool("validation_specialist")`) and can be extended with additional specialist agents following the same pattern.
 - **ctf**: CTF challenge solving with flag recognition and success detection
 
 ## Prompt Loading System

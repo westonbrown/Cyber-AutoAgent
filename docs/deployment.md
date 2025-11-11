@@ -2,6 +2,144 @@
 
 This guide covers deployment options for Cyber-AutoAgent in various environments.
 
+## Invocation Methods
+
+Cyber-AutoAgent supports **4 invocation methods**, each with different use cases:
+
+### 1. Python CLI (Direct Execution)
+
+Best for: Automation, scripting, CI/CD pipelines
+
+```bash
+# Configure via environment variables
+export AZURE_API_KEY="your_key"
+export AZURE_API_BASE="https://your-endpoint.openai.azure.com/"
+export AZURE_API_VERSION="2024-12-01-preview"
+export CYBER_AGENT_LLM_MODEL="azure/gpt-5"
+export CYBER_AGENT_EMBEDDING_MODEL="azure/text-embedding-3-large"
+export REASONING_EFFORT="medium"
+
+# Run with uv (recommended)
+uv run python src/cyberautoagent.py \
+  --target "https://example.com" \
+  --objective "Bug bounty assessment" \
+  --iterations 150 \
+  --provider litellm
+```
+
+### 2. NPM Auto-Run (Config File)
+
+Best for: Repeated testing with saved config, development
+
+```bash
+# Uses ~/.cyber-autoagent/config.json for settings
+cd src/modules/interfaces/react
+npm start -- --auto-run \
+  --target "https://example.com" \
+  --objective "Security assessment" \
+  --iterations 50
+```
+
+**Configure via** `~/.cyber-autoagent/config.json`:
+```json
+{
+  "modelProvider": "litellm",
+  "modelId": "azure/gpt-5",
+  "embeddingModel": "azure/text-embedding-3-large",
+  "azureApiKey": "your_key",
+  "azureApiBase": "https://your-endpoint.openai.azure.com/",
+  "azureApiVersion": "2024-12-01-preview",
+  "reasoningEffort": "medium"
+}
+```
+
+### 3. Docker (Standalone Container)
+
+Best for: Isolated environments, clean tooling, reproducibility
+
+**With Interactive React Terminal:**
+```bash
+docker run -it --rm \
+  -e AZURE_API_KEY=your_key \
+  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
+  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
+  -v $(pwd)/outputs:/app/outputs \
+  cyberautoagent:latest
+```
+
+**Direct Python Execution (Override Entrypoint):**
+```bash
+docker run --rm --entrypoint python \
+  -e AZURE_API_KEY=your_key \
+  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
+  -e AZURE_API_VERSION=2024-12-01-preview \
+  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
+  -e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large \
+  -e REASONING_EFFORT=medium \
+  -v $(pwd)/outputs:/app/outputs \
+  cyberautoagent:latest \
+  src/cyberautoagent.py \
+  --target https://example.com \
+  --objective "Security assessment" \
+  --iterations 50 \
+  --provider litellm
+```
+
+### 4. Docker Compose (Full Stack)
+
+Best for: Observability, team deployments, production monitoring
+
+```bash
+# Uses docker/.env for configuration
+docker compose -f docker/docker-compose.yml up -d
+```
+
+## Universal Provider Support
+
+Cyber-AutoAgent supports **300+ LLM providers** via LiteLLM. Examples:
+
+**Azure OpenAI:**
+```bash
+-e AZURE_API_KEY=your_key
+-e AZURE_API_BASE=https://your-endpoint.openai.azure.com/
+-e AZURE_API_VERSION=2024-12-01-preview
+-e CYBER_AGENT_LLM_MODEL=azure/gpt-5
+-e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+```
+
+**AWS Bedrock:**
+```bash
+-e AWS_ACCESS_KEY_ID=your_key
+-e AWS_SECRET_ACCESS_KEY=your_secret
+-e CYBER_AGENT_LLM_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+-e CYBER_AGENT_EMBEDDING_MODEL=amazon.titan-embed-text-v2:0
+```
+
+**OpenRouter:**
+```bash
+-e OPENROUTER_API_KEY=your_key
+-e CYBER_AGENT_LLM_MODEL=openrouter/openrouter/polaris-alpha
+-e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+```
+
+**Moonshot AI:**
+```bash
+-e MOONSHOT_API_KEY=your_key
+-e OPENAI_API_KEY=your_key  # Required for Mem0 OpenAI-compatible providers
+-e CYBER_AGENT_LLM_MODEL=moonshot/kimi-k2-thinking
+-e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+-e MEM0_LLM_MODEL=azure/gpt-4o  # Memory system LLM (use Azure/Anthropic/Bedrock for Mem0)
+-e AZURE_API_KEY=azure_key  # Required for embeddings and Mem0
+-e AZURE_API_BASE=https://your-endpoint.openai.azure.com/
+-e AZURE_API_VERSION=2024-12-01-preview
+```
+
+**Note:** When using OpenAI-compatible providers (Moonshot, OpenRouter, etc.) with Mem0, you must:
+1. Set `OPENAI_API_KEY` to the provider's API key for Mem0 compatibility
+2. Use a supported Mem0 provider (Azure, OpenAI, Anthropic, Bedrock) for `MEM0_LLM_MODEL`
+
+**Mixed Providers:** You can combine any LLM with any embedding model!
+
 ## Quick Start
 
 ### Using Docker (Recommended)
