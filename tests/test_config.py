@@ -758,7 +758,7 @@ class TestConfigManager:
         assert mcp.command == ["python3","-m","mymcp.server"]
         assert mcp.plugins == ["general"]
         assert mcp.timeoutSeconds == 900
-        assert mcp.allowed_tools == []
+        assert mcp.allowed_tools == ['*']
 
         mcp = config.connections[1]
         assert mcp.id == "mcp2"
@@ -775,7 +775,7 @@ class TestConfigManager:
         assert mcp.command is None
         assert mcp.headers is None
         assert mcp.plugins == ["*"]
-        assert mcp.allowed_tools == []
+        assert mcp.allowed_tools == ['*']
 
 
     @patch.dict(os.environ, {
