@@ -31,8 +31,7 @@ from mcp.client.sse import sse_client
 
 from modules import prompts
 from modules.prompts import get_system_prompt  # Backward-compat import for tests
-from modules.config.manager import get_config_manager, MCPConnection
-from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
+from modules.config.manager import MCPConnection, ServerConfig, MEM0_PROVIDER_MAP, get_config_manager
 from modules.config.logger_factory import get_logger
 from modules.handlers import ReasoningHandler
 from modules.config.model_capabilities import (
@@ -51,7 +50,7 @@ from modules.handlers.conversation_budget import (
 )
 from modules.handlers.tool_router import ToolRouterHook
 from modules.config.model_capabilities import get_capabilities
-from modules.handlers.utils import print_status, sanitize_target_name
+from modules.handlers.utils import print_status, sanitize_target_name, get_output_path
 from modules.tools.browser import (
     initialize_browser,
     browser_goto_url,
@@ -62,7 +61,7 @@ from modules.tools.browser import (
     browser_evaluate_js,
     browser_get_cookies,
 )
-from modules.tools.list_mcp_tools import list_mcp_tools_wrapper, mcp_tools_input_schema_to_function_call
+from modules.tools.mcp import list_mcp_tools_wrapper, mcp_tools_input_schema_to_function_call, with_result_file
 from modules.tools.memory import (
     get_memory_client,
     initialize_memory_system,
@@ -833,7 +832,7 @@ def _handle_model_creation_error(provider: str, error: Exception) -> None:
             print_status(f"    {i}. {step}", "INFO")
 
 
-def _discover_mcp_tools(config: AgentConfig) -> List[AgentTool]:
+def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> List[AgentTool]:
     mcp_tools = []
     for mcp_conn in (config.mcp_connections or []):
         if '*' in mcp_conn.plugins or config.module in mcp_conn.plugins:
@@ -871,6 +870,14 @@ def _discover_mcp_tools(config: AgentConfig) -> List[AgentTool]:
                     logger.debug(f"Considering tool: {tool.tool_name}")
                     if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
                         logger.debug(f"Allowed tool: {tool.tool_name}")
+                        # Wrap output and save into output path
+                        output_base_path = get_output_path(
+                            sanitize_target_name(config.target),
+                            config.op_id,
+                            sanitize_target_name(tool.tool_name),
+                            server_config.output.base_dir,
+                        )
+                        tool = with_result_file(tool, Path(output_base_path))
                         mcp_tools.append(tool)
                         client_used = True
                 if not page_token:
@@ -1143,7 +1150,7 @@ Available {config.module} module tools:
         logger.warning("Error discovering module tools for '%s': %s", config.module, e)
 
     # Load MCP tools and prepare for injection
-    mcp_tools = _discover_mcp_tools(config)
+    mcp_tools = _discover_mcp_tools(config, server_config)
     if mcp_tools:
         mcp_tools_context = f"""
 ## MCP TOOLS
