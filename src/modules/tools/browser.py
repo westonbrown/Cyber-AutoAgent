@@ -441,14 +441,18 @@ class BrowserService(EventEmitter):
                             for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
                                 har_entry_response["cookies"].append({"name": cookie[0], "value": cookie[1].value})
 
-                    with suppress(asyncio.TimeoutError):
-                        async with asyncio.timeout(
-                            60
-                        ):  # Wait for up to 60 seconds for the response body to be available
-                            content = await response.body()
-                            har_entry_response["bodySize"] = len(content)
-                            content_type = all_response_headers.get("content-type", "")
-                            har_entry_response["content"] = form_har_body(content_type, content)
+                    # Response body size is not available for redirects
+                    if 300 > response.status > 399:
+                        try:
+                            async with asyncio.timeout(
+                                60
+                            ):  # Wait for up to 60 seconds for the response body to be available
+                                content = await response.body()
+                                har_entry_response["bodySize"] = len(content)
+                                content_type = all_response_headers.get("content-type", "")
+                                har_entry_response["content"] = form_har_body(content_type, content)
+                        except Exception:
+                            logger.exception(f"Error processing response body for {request.method} {request.url}")
 
                     simplified_response = [
                         f"Status Code: `{response.status}`",
