@@ -7,11 +7,15 @@ import functools
 import json
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager, suppress
 from http.cookies import SimpleCookie, Morsel
 from typing import Optional, Any, Union
 from urllib.parse import urlparse, parse_qs
+
+from tenacity import retry, wait_random, retry_if_exception_message, stop_after_attempt
+
 from modules import __version__
 
 from playwright.async_api import (
@@ -26,7 +30,7 @@ from playwright.async_api import (
 )
 from pymitter import EventEmitter
 from six import StringIO
-from stagehand import StagehandConfig, Stagehand, StagehandPage
+from stagehand import StagehandConfig, Stagehand, StagehandPage, ObserveResult
 from stagehand.context import StagehandContext
 from strands import tool
 from tldextract import tldextract
@@ -86,6 +90,9 @@ class BrowserService(EventEmitter):
                 api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
         elif provider == "ollama":
             model = f"ollama/{model}"
+
+        # Supress LiteLLM verbose_logger
+        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
 
         self.provider = provider
         self.model = model
@@ -168,6 +175,27 @@ class BrowserService(EventEmitter):
             The context managed by stagehand.
         """
         return self.stagehand.context
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random(min=1, max=2),
+        # Certain stagehand actions when tried in b/w a page navigation might result in a protocol error.
+        # These should be retried.
+        retry=retry_if_exception_message(match=re.compile(r"protocol error", re.IGNORECASE)),
+    )
+    async def act(self, action_or_result: Union[str, ObserveResult, dict], **kwargs):
+        return await self.page.act(action_or_result, **kwargs)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random(min=1, max=2),
+        # Certain stagehand actions when tried in b/w a page navigation might result in a protocol error.
+        # These should be retried.
+        retry=retry_if_exception_message(match=re.compile(r"protocol error", re.IGNORECASE)),
+    )
+    async def observe(self, action_or_result: Union[str, ObserveResult, dict], **kwargs):
+        observations = await self.page.observe(action_or_result, **kwargs)
+        return [observation.description for observation in observations]
 
     async def ensure_init(self):
         """Lazy init stagehand when needed"""
@@ -550,7 +578,11 @@ class BrowserService(EventEmitter):
         self.on("download", capture_download)
         self.on("dialog", capture_dialog)
         try:
-            yield await self.simplify_metadata_for_llm(requests, downloads, dialogs, logs)
+
+            def get_interaction_context():
+                return self.simplify_metadata_for_llm(requests, downloads, dialogs, logs)
+
+            yield get_interaction_context
         finally:
             self.off("request", capture_request)
             self.off("requestfinished", capture_request)
@@ -571,7 +603,6 @@ def initialize_browser(
     artifacts_dir: Optional[str] = None,
     extra_http_headers: Optional[dict[str, str]] = None,
 ):
-    logger.info("[BROWSER] initialized")
     global _BROWSER
     _BROWSER = BrowserService(provider, model, artifacts_dir, extra_http_headers)
     return _BROWSER
@@ -693,25 +724,21 @@ async def browser_goto_url(url: str):
         - Any Network requests, dialogs, console logs and downloads captured during the navigation.
         - Observations of the current page state after the navigation.
     """
-    logger.info("[BROWSER] entered goto url")
     async with get_browser() as browser:
         async with browser.interaction_context_capture(
             only_domains=[browser.page_domain, extract_domain(url)]
-        ) as interaction_context:
+        ) as get_interaction_context:
             async with browser.timeout():
                 await browser.page.goto(url)
-            interaction_context = interaction_context
+            interaction_context = await get_interaction_context()
 
         # Eagerly returning relevant observations to reduce agent tool calls
         async with browser.timeout():
             observations = "\n".join(
-                map(
-                    lambda obs: obs.description,
-                    await browser.page.observe(
-                        f"{url} was just opened. "
-                        "give all important elements on the page that might be relevant to the next action. "
-                        "observe the overall state of the page to understand the purpose of the page."
-                    ),
+                await browser.observe(
+                    f"{url} was just opened. "
+                    "give all important elements on the page that might be relevant to the next action. "
+                    "observe the overall state of the page to understand the purpose of the page."
                 )
             )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
@@ -814,23 +841,20 @@ async def browser_perform_action(action: str):
         - Observations of the current page state after the interaction.
     """
     async with get_browser() as browser:
-        async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as interaction_context:
+        async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as get_interaction_context:
             async with browser.timeout():
-                await browser.page.act(action)
+                await browser.act(action)
             with contextlib.suppress(TimeoutError):
                 await browser.page.wait_for_load_state("networkidle", timeout=60000)
-            interaction_context = interaction_context
+            interaction_context = await get_interaction_context()
 
         # Eagerly returning relevant observations to reduce agent tool calls
         async with browser.timeout():
             observations = "\n".join(
-                map(
-                    lambda obs: obs.description,
-                    await browser.page.observe(
-                        f"`{action}` action was just performed. "
-                        "give all important elements on the page that might be relevant to the next action."
-                        "observe the overall state of the page to understand the purpose of the page."
-                    ),
+                await browser.observe(
+                    f"`{action}` action was just performed. "
+                    "give all important elements on the page that might be relevant to the next action."
+                    "observe the overall state of the page to understand the purpose of the page."
                 )
             )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
@@ -860,5 +884,4 @@ async def browser_observe_page(instruction: Optional[str] = None) -> list[str]:
     """
     async with get_browser() as browser:
         async with browser.timeout():
-            observations = await browser.page.observe(instruction)
-        return [observation.description for observation in observations]
+            return await browser.observe(instruction)
