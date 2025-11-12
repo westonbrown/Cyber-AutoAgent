@@ -11,7 +11,7 @@ import re
 import time
 from contextlib import asynccontextmanager, suppress
 from http.cookies import SimpleCookie, Morsel
-from typing import Optional, Any, Union
+from typing import Optional, Any, Union, TypedDict, Callable
 from urllib.parse import urlparse, parse_qs
 
 from tenacity import retry, wait_random, retry_if_exception_message, stop_after_attempt
@@ -36,6 +36,17 @@ from strands import tool
 from tldextract import tldextract
 
 logger = logging.getLogger(__name__)
+
+
+class LogInfo(TypedDict):
+    type: str
+    args: list[Any]
+
+
+class DialogInfo(TypedDict):
+    type: str
+    message: str
+    default_value: str
 
 
 @functools.cache
@@ -234,10 +245,11 @@ class BrowserService(EventEmitter):
 
     async def simplify_metadata_for_llm(
         self,
+        *,
         requests: list[Request],
         downloads: list[str],
-        logs: list[dict[str, Any]],
-        dialogs: list[dict[str, Any]],
+        dialogs: list[DialogInfo],
+        logs: list[LogInfo],
     ) -> str:
         """
         Processes logs, dialogs, downloads, and requests to generate summarized metadata formatted
@@ -262,10 +274,7 @@ class BrowserService(EventEmitter):
 
         if len(logs) > 0:
             logs_summary = "\n".join(
-                map(
-                    lambda log: f"[{log['type']}] {' '.join(map(lambda arg: json.dumps(arg), log['args']))}".strip(),
-                    logs,
-                )
+                f"[{log['type']}] {' '.join(json.dumps(arg) for arg in log['args'])}".strip() for log in logs
             )
             log_file = os.path.join(self.artifacts_dir, f"logs_{time.time_ns()}.log")
             with open(log_file, "w") as f:
@@ -273,21 +282,11 @@ class BrowserService(EventEmitter):
             metadata.append(f"<console-logs file='{log_file}'/>")
 
         if len(dialogs) > 0:
-            dialogs_summary = "\n".join(
-                map(
-                    lambda dialog: f"- [{dialog['type']}]: {dialog['message']}".strip(),
-                    dialogs,
-                )
-            )
+            dialogs_summary = "\n".join(f"- [{dialog['type']}]: {dialog['message']}".strip() for dialog in dialogs)
             metadata.append(f"<dialogs>\n{dialogs_summary}\n</dialogs>")
 
         if len(downloads) > 0:
-            downloads_summary = "\n".join(
-                map(
-                    lambda download_path: f"- `{download_path}`",
-                    downloads,
-                )
-            )
+            downloads_summary = "\n".join(f"- `{download_path}`" for download_path in downloads)
             metadata.append(f"<downloaded_files>\n{downloads_summary}\n</downloaded_files>")
 
         if len(requests) > 0:
@@ -312,9 +311,7 @@ class BrowserService(EventEmitter):
         list[str]
             A list of simplified string representations for the provided responses.
         """
-        network_calls: list[str] = []
         har_entries: list[dict] = []
-
         har_file_path = os.path.join(self.artifacts_dir, f"network_calls_{time.time_ns()}.har")
 
         har_data = {
@@ -395,22 +392,11 @@ class BrowserService(EventEmitter):
                     for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
                         har_entry["request"]["cookies"].append({"name": cookie[0], "value": cookie[1].value})
 
-                simplified_request = [
-                    f"`{request.method}` `{request.url}`",
-                ]
-
-                if formatted_request_headers := format_headers(all_request_headers):
-                    simplified_request.extend(["Request Headers:", formatted_request_headers])
-
                 if request_body := request.post_data_buffer:
                     har_entry["request"]["bodySize"] = len(request_body)
                     post_data = har_entry["request"]["postData"] = form_har_body(
                         request.headers.get("content-type", ""), request_body
                     )
-                    if post_data["encoding"] == "utf-8":
-                        simplified_request.append(f"Request Body: ```{post_data['text']}```")
-                    else:
-                        simplified_request.append("Request Body: Non-UTF8 Binary")
 
                 response: Response | None = None
 
@@ -454,22 +440,6 @@ class BrowserService(EventEmitter):
                         except Exception:
                             logger.exception(f"Error processing response body for {request.method} {request.url}")
 
-                    simplified_response = [
-                        f"Status Code: `{response.status}`",
-                    ]
-                    if formatted_response_headers := format_headers(all_response_headers):
-                        simplified_response.extend(
-                            ["Response Headers:", formatted_response_headers],
-                        )
-                else:
-                    simplified_response = [
-                        "No Response was received",
-                    ]
-
-                network_call_stringified = "\n".join(simplified_request + simplified_response)
-                network_calls.append(
-                    f'<network_call har-entry-index="{len(har_entries) - 1}">\n{network_call_stringified}\n</network_call>'
-                )
             except Exception:
                 logger.exception(f"Error processing network call {index} {request.method} {request.url}")
 
@@ -479,8 +449,7 @@ class BrowserService(EventEmitter):
         with open(har_file_path, "w") as f:
             json.dump(har_data, f, indent=2, ensure_ascii=False)
 
-        network_calls_stringified = "\n".join(network_calls)
-        return f'<network_calls har-file="{har_file_path}">\n{network_calls_stringified}\n</network_calls>'
+        return f'<network_calls har-file="{har_file_path}" count="{len(har_entries)}"/>'
 
     @asynccontextmanager
     async def interaction_context_capture(self, only_domains: Optional[list[str]] = None):
@@ -502,8 +471,8 @@ class BrowserService(EventEmitter):
         """
         requests: list[Request] = []
         downloads: list[str] = []
-        logs: list[dict[str, Any]] = []
-        dialogs: list[dict[str, Any]] = []
+        logs: list[LogInfo] = []
+        dialogs: list[DialogInfo] = []
 
         def capture_request(request_or_response: Request | Response):
             """
@@ -584,7 +553,9 @@ class BrowserService(EventEmitter):
         try:
 
             def get_interaction_context():
-                return self.simplify_metadata_for_llm(requests, downloads, dialogs, logs)
+                return self.simplify_metadata_for_llm(
+                    requests=requests, downloads=downloads, dialogs=dialogs, logs=logs
+                )
 
             yield get_interaction_context
         finally:
