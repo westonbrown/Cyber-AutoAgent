@@ -1157,7 +1157,7 @@ Available {config.module} module tools:
 
 Available {config.module} MCP tools:
 - list_mcp_tools()  # full MCP tool catalog including input schema, output schema, description
-{chr(10).join(f"- {mcp_tools_input_schema_to_function_call(mcp_tool.tool_spec.get("inputSchema"), mcp_tool.tool_name)}" for mcp_tool in mcp_tools)}
+{chr(10).join(f"- {mcp_tools_input_schema_to_function_call(mcp_tool.tool_spec.get('inputSchema'), mcp_tool.tool_name)}" for mcp_tool in mcp_tools)}
 """
     else:
         mcp_tools_context = ""
