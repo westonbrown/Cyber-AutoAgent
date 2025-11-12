@@ -649,20 +649,30 @@ def format_headers(headers: dict[str, str]) -> str:
         str
             A formatted string containing the filtered and formatted HTTP headers.
     """
+    # Potentially useful headers for the agent in the primary context
     important_headers = [
         "content-type",
-        "content-length",
-        "date",
-        "server",
         "location",
         "authorization",
         "cookie",
         "set-cookie",
     ]
 
-    filtered_headers = [
-        f"\t`{k}`: `{v}`" for k, v in headers.items() if k.lower() in important_headers or k.lower().startswith("x-")
+    # Not very useful for the agent in the primary context
+    skip_headers = [
+        "x-frame-options",
+        "x-content-type-options",
+        "x-xss-protection",
     ]
+
+    filtered_headers = []
+    for name, value in headers.items():
+        lower_name = name.lower()
+        if lower_name in skip_headers:
+            continue
+
+        if lower_name in important_headers or (lower_name.startswith("x-") and not lower_name.startswith("x-amz-")):
+            filtered_headers.append(f"\t`{name}`: `{value}`")
 
     if len(filtered_headers) == 0:
         return ""
