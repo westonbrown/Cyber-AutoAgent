@@ -40,8 +40,9 @@
 - When NOT: Static pages, API endpoints, simple HTTP requests (use http_request instead)
 - Constraints: Single browser instance, sequential execution only (NO concurrent tool calls), state persists across calls
 - Actions: Each action must be atomic (one click OR one input, never combined). "Click login then enter password" is WRONG - split into separate calls
-- Auto-captured artifacts: Network traffic (HAR), console logs, dialogs, downloads → `<artifacts_path>/*.{har,log,html}`
-- Large outputs: HTML snapshots saved to artifacts, use shell grep/sed to extract relevant data, store only paths in findings
+- Auto-captured artifacts: Network logs (HAR), console logs, dialogs, downloads → `<artifacts_path>/*.{har,log,html}`
+- Network logs: If a tool returns HAR file, use `jq` to extract ONLY relevant data. HAR files maybe large.
+- Large outputs: Logs & HTML snapshots saved to artifacts, use shell grep/sed to extract relevant data, store only paths in findings
 - Integration: Extract cookies/tokens → use with http_request for API testing, or evaluate JS for localStorage/session data
 - Anti-pattern: Using browser when http_request suffices (wastes resources, slower, more complex)
 

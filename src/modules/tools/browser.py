@@ -7,11 +7,15 @@ import functools
 import json
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager, suppress
 from http.cookies import SimpleCookie, Morsel
-from typing import Optional, Any, Union
+from typing import Optional, Any, Union, TypedDict, Callable
 from urllib.parse import urlparse, parse_qs
+
+from tenacity import retry, wait_random, retry_if_exception_message, stop_after_attempt
+
 from modules import __version__
 
 from playwright.async_api import (
@@ -26,12 +30,23 @@ from playwright.async_api import (
 )
 from pymitter import EventEmitter
 from six import StringIO
-from stagehand import StagehandConfig, Stagehand, StagehandPage
+from stagehand import StagehandConfig, Stagehand, StagehandPage, ObserveResult
 from stagehand.context import StagehandContext
 from strands import tool
 from tldextract import tldextract
 
 logger = logging.getLogger(__name__)
+
+
+class LogInfo(TypedDict):
+    type: str
+    args: list[Any]
+
+
+class DialogInfo(TypedDict):
+    type: str
+    message: str
+    default_value: str
 
 
 @functools.cache
@@ -86,6 +101,9 @@ class BrowserService(EventEmitter):
                 api_key = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
         elif provider == "ollama":
             model = f"ollama/{model}"
+
+        # Supress LiteLLM verbose_logger
+        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
 
         self.provider = provider
         self.model = model
@@ -169,6 +187,27 @@ class BrowserService(EventEmitter):
         """
         return self.stagehand.context
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random(min=1, max=2),
+        # Certain stagehand actions when tried in b/w a page navigation might result in a protocol error.
+        # These should be retried.
+        retry=retry_if_exception_message(match=re.compile(r"protocol error", re.IGNORECASE)),
+    )
+    async def act(self, action_or_result: Union[str, ObserveResult, dict], **kwargs):
+        return await self.page.act(action_or_result, **kwargs)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_random(min=1, max=2),
+        # Certain stagehand actions when tried in b/w a page navigation might result in a protocol error.
+        # These should be retried.
+        retry=retry_if_exception_message(match=re.compile(r"protocol error", re.IGNORECASE)),
+    )
+    async def observe(self, action_or_result: Union[str, ObserveResult, dict], **kwargs):
+        observations = await self.page.observe(action_or_result, **kwargs)
+        return [observation.description for observation in observations]
+
     async def ensure_init(self):
         """Lazy init stagehand when needed"""
         if self._initialized:
@@ -206,10 +245,11 @@ class BrowserService(EventEmitter):
 
     async def simplify_metadata_for_llm(
         self,
+        *,
         requests: list[Request],
         downloads: list[str],
-        logs: list[dict[str, Any]],
-        dialogs: list[dict[str, Any]],
+        dialogs: list[DialogInfo],
+        logs: list[LogInfo],
     ) -> str:
         """
         Processes logs, dialogs, downloads, and requests to generate summarized metadata formatted
@@ -234,10 +274,7 @@ class BrowserService(EventEmitter):
 
         if len(logs) > 0:
             logs_summary = "\n".join(
-                map(
-                    lambda log: f"[{log['type']}] {' '.join(map(lambda arg: json.dumps(arg), log['args']))}".strip(),
-                    logs,
-                )
+                f"[{log['type']}] {' '.join(json.dumps(arg) for arg in log['args'])}".strip() for log in logs
             )
             log_file = os.path.join(self.artifacts_dir, f"logs_{time.time_ns()}.log")
             with open(log_file, "w") as f:
@@ -245,21 +282,11 @@ class BrowserService(EventEmitter):
             metadata.append(f"<console-logs file='{log_file}'/>")
 
         if len(dialogs) > 0:
-            dialogs_summary = "\n".join(
-                map(
-                    lambda dialog: f"- [{dialog['type']}]: {dialog['message']}".strip(),
-                    dialogs,
-                )
-            )
+            dialogs_summary = "\n".join(f"- [{dialog['type']}]: {dialog['message']}".strip() for dialog in dialogs)
             metadata.append(f"<dialogs>\n{dialogs_summary}\n</dialogs>")
 
         if len(downloads) > 0:
-            downloads_summary = "\n".join(
-                map(
-                    lambda download_path: f"- `{download_path}`",
-                    downloads,
-                )
-            )
+            downloads_summary = "\n".join(f"- `{download_path}`" for download_path in downloads)
             metadata.append(f"<downloaded_files>\n{downloads_summary}\n</downloaded_files>")
 
         if len(requests) > 0:
@@ -284,9 +311,7 @@ class BrowserService(EventEmitter):
         list[str]
             A list of simplified string representations for the provided responses.
         """
-        network_calls: list[str] = []
         har_entries: list[dict] = []
-
         har_file_path = os.path.join(self.artifacts_dir, f"network_calls_{time.time_ns()}.har")
 
         har_data = {
@@ -367,22 +392,11 @@ class BrowserService(EventEmitter):
                     for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
                         har_entry["request"]["cookies"].append({"name": cookie[0], "value": cookie[1].value})
 
-                simplified_request = [
-                    f"`{request.method}` `{request.url}`",
-                ]
-
-                if formatted_request_headers := format_headers(all_request_headers):
-                    simplified_request.extend(["Request Headers:", formatted_request_headers])
-
                 if request_body := request.post_data_buffer:
                     har_entry["request"]["bodySize"] = len(request_body)
                     post_data = har_entry["request"]["postData"] = form_har_body(
                         request.headers.get("content-type", ""), request_body
                     )
-                    if post_data["encoding"] == "utf-8":
-                        simplified_request.append(f"Request Body: ```{post_data['text']}```")
-                    else:
-                        simplified_request.append("Request Body: Non-UTF8 Binary")
 
                 response: Response | None = None
 
@@ -413,31 +427,19 @@ class BrowserService(EventEmitter):
                             for cookie in parsed_cookie.items():  # type: tuple[str, Morsel]
                                 har_entry_response["cookies"].append({"name": cookie[0], "value": cookie[1].value})
 
-                    with suppress(asyncio.TimeoutError):
-                        async with asyncio.timeout(
-                            60
-                        ):  # Wait for up to 60 seconds for the response body to be available
-                            content = await response.body()
-                            har_entry_response["bodySize"] = len(content)
-                            content_type = all_response_headers.get("content-type", "")
-                            har_entry_response["content"] = form_har_body(content_type, content)
+                    # Response body size is not available for redirects
+                    if 300 > response.status > 399:
+                        try:
+                            async with asyncio.timeout(
+                                60
+                            ):  # Wait for up to 60 seconds for the response body to be available
+                                content = await response.body()
+                                har_entry_response["bodySize"] = len(content)
+                                content_type = all_response_headers.get("content-type", "")
+                                har_entry_response["content"] = form_har_body(content_type, content)
+                        except Exception:
+                            logger.exception(f"Error processing response body for {request.method} {request.url}")
 
-                    simplified_response = [
-                        f"Status Code: `{response.status}`",
-                    ]
-                    if formatted_response_headers := format_headers(all_response_headers):
-                        simplified_response.extend(
-                            ["Response Headers:", formatted_response_headers],
-                        )
-                else:
-                    simplified_response = [
-                        "No Response was received",
-                    ]
-
-                network_call_stringified = "\n".join(simplified_request + simplified_response)
-                network_calls.append(
-                    f'<network_call har-entry-index="{len(har_entries) - 1}">\n{network_call_stringified}\n</network_call>'
-                )
             except Exception:
                 logger.exception(f"Error processing network call {index} {request.method} {request.url}")
 
@@ -447,8 +449,7 @@ class BrowserService(EventEmitter):
         with open(har_file_path, "w") as f:
             json.dump(har_data, f, indent=2, ensure_ascii=False)
 
-        network_calls_stringified = "\n".join(network_calls)
-        return f'<network_calls har-file="{har_file_path}">\n{network_calls_stringified}\n</network_calls>'
+        return f'<network_calls har-file="{har_file_path}" count="{len(har_entries)}"/>'
 
     @asynccontextmanager
     async def interaction_context_capture(self, only_domains: Optional[list[str]] = None):
@@ -470,8 +471,8 @@ class BrowserService(EventEmitter):
         """
         requests: list[Request] = []
         downloads: list[str] = []
-        logs: list[dict[str, Any]] = []
-        dialogs: list[dict[str, Any]] = []
+        logs: list[LogInfo] = []
+        dialogs: list[DialogInfo] = []
 
         def capture_request(request_or_response: Request | Response):
             """
@@ -550,7 +551,13 @@ class BrowserService(EventEmitter):
         self.on("download", capture_download)
         self.on("dialog", capture_dialog)
         try:
-            yield await self.simplify_metadata_for_llm(requests, downloads, dialogs, logs)
+
+            def get_interaction_context():
+                return self.simplify_metadata_for_llm(
+                    requests=requests, downloads=downloads, dialogs=dialogs, logs=logs
+                )
+
+            yield get_interaction_context
         finally:
             self.off("request", capture_request)
             self.off("requestfinished", capture_request)
@@ -571,7 +578,6 @@ def initialize_browser(
     artifacts_dir: Optional[str] = None,
     extra_http_headers: Optional[dict[str, str]] = None,
 ):
-    logger.info("[BROWSER] initialized")
     global _BROWSER
     _BROWSER = BrowserService(provider, model, artifacts_dir, extra_http_headers)
     return _BROWSER
@@ -614,20 +620,30 @@ def format_headers(headers: dict[str, str]) -> str:
         str
             A formatted string containing the filtered and formatted HTTP headers.
     """
+    # Potentially useful headers for the agent in the primary context
     important_headers = [
         "content-type",
-        "content-length",
-        "date",
-        "server",
         "location",
         "authorization",
         "cookie",
         "set-cookie",
     ]
 
-    filtered_headers = [
-        f"\t`{k}`: `{v}`" for k, v in headers.items() if k.lower() in important_headers or k.lower().startswith("x-")
+    # Not very useful for the agent in the primary context
+    skip_headers = [
+        "x-frame-options",
+        "x-content-type-options",
+        "x-xss-protection",
     ]
+
+    filtered_headers = []
+    for name, value in headers.items():
+        lower_name = name.lower()
+        if lower_name in skip_headers:
+            continue
+
+        if lower_name in important_headers or (lower_name.startswith("x-") and not lower_name.startswith("x-amz-")):
+            filtered_headers.append(f"\t`{name}`: `{value}`")
 
     if len(filtered_headers) == 0:
         return ""
@@ -693,25 +709,21 @@ async def browser_goto_url(url: str):
         - Any Network requests, dialogs, console logs and downloads captured during the navigation.
         - Observations of the current page state after the navigation.
     """
-    logger.info("[BROWSER] entered goto url")
     async with get_browser() as browser:
         async with browser.interaction_context_capture(
             only_domains=[browser.page_domain, extract_domain(url)]
-        ) as interaction_context:
+        ) as get_interaction_context:
             async with browser.timeout():
                 await browser.page.goto(url)
-            interaction_context = interaction_context
+            interaction_context = await get_interaction_context()
 
         # Eagerly returning relevant observations to reduce agent tool calls
         async with browser.timeout():
             observations = "\n".join(
-                map(
-                    lambda obs: obs.description,
-                    await browser.page.observe(
-                        f"{url} was just opened. "
-                        "give all important elements on the page that might be relevant to the next action. "
-                        "observe the overall state of the page to understand the purpose of the page."
-                    ),
+                await browser.observe(
+                    f"{url} was just opened. "
+                    "give all important elements on the page that might be relevant to the next action. "
+                    "observe the overall state of the page to understand the purpose of the page."
                 )
             )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
@@ -814,23 +826,20 @@ async def browser_perform_action(action: str):
         - Observations of the current page state after the interaction.
     """
     async with get_browser() as browser:
-        async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as interaction_context:
+        async with browser.interaction_context_capture(only_domains=[browser.page_domain]) as get_interaction_context:
             async with browser.timeout():
-                await browser.page.act(action)
+                await browser.act(action)
             with contextlib.suppress(TimeoutError):
                 await browser.page.wait_for_load_state("networkidle", timeout=60000)
-            interaction_context = interaction_context
+            interaction_context = await get_interaction_context()
 
         # Eagerly returning relevant observations to reduce agent tool calls
         async with browser.timeout():
             observations = "\n".join(
-                map(
-                    lambda obs: obs.description,
-                    await browser.page.observe(
-                        f"`{action}` action was just performed. "
-                        "give all important elements on the page that might be relevant to the next action."
-                        "observe the overall state of the page to understand the purpose of the page."
-                    ),
+                await browser.observe(
+                    f"`{action}` action was just performed. "
+                    "give all important elements on the page that might be relevant to the next action."
+                    "observe the overall state of the page to understand the purpose of the page."
                 )
             )
         return f"<observations>\n{observations}\n</observations>\n{interaction_context}"
@@ -860,5 +869,4 @@ async def browser_observe_page(instruction: Optional[str] = None) -> list[str]:
     """
     async with get_browser() as browser:
         async with browser.timeout():
-            observations = await browser.page.observe(instruction)
-        return [observation.description for observation in observations]
+            return await browser.observe(instruction)
