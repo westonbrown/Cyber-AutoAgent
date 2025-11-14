@@ -13,7 +13,6 @@ This module provides:
 """
 
 import asyncio
-import logging
 import threading
 from dataclasses import dataclass, field
 from enum import Enum
@@ -113,7 +112,11 @@ class EvaluationManager:
             List of trace IDs matching the specified type
         """
         with self._lock:
-            return [trace_id for trace_id, info in self.traces.items() if info.trace_type == trace_type]
+            return [
+                trace_id
+                for trace_id, info in self.traces.items()
+                if info.trace_type == trace_type
+            ]
 
     def get_unevaluated_traces(self) -> List[TraceInfo]:
         """
@@ -140,7 +143,9 @@ class EvaluationManager:
         unevaluated = self.get_unevaluated_traces()
 
         if not unevaluated:
-            logger.info("No unevaluated traces found for operation %s", self.operation_id)
+            logger.info(
+                "No unevaluated traces found for operation %s", self.operation_id
+            )
             return results
 
         logger.info(
@@ -174,11 +179,18 @@ class EvaluationManager:
                             if isinstance(v, (int, float)):
                                 numeric_scores[k] = float(v)
                     except Exception:
-                        numeric_scores = {k: (float(v[0]) if isinstance(v, tuple) else float(v)) for k, v in scores.items() if isinstance(v, (int, float)) or (isinstance(v, tuple) and len(v) >= 1)}
+                        numeric_scores = {
+                            k: (float(v[0]) if isinstance(v, tuple) else float(v))
+                            for k, v in scores.items()
+                            if isinstance(v, (int, float))
+                            or (isinstance(v, tuple) and len(v) >= 1)
+                        }
 
                     with self._lock:
                         self.traces[trace_info.trace_id].evaluated = True
-                        self.traces[trace_info.trace_id].evaluation_scores = numeric_scores
+                        self.traces[
+                            trace_info.trace_id
+                        ].evaluation_scores = numeric_scores
 
                     results[trace_info.trace_id] = numeric_scores
                     logger.info(
@@ -217,13 +229,17 @@ class EvaluationManager:
         immediately.
         """
         if self._evaluation_thread and self._evaluation_thread.is_alive():
-            logger.warning("Evaluation already in progress for operation %s", self.operation_id)
+            logger.warning(
+                "Evaluation already in progress for operation %s", self.operation_id
+            )
             return
 
         def run_evaluation():
             """Run the evaluation in a separate thread."""
             try:
-                logger.info("Starting async evaluation for operation %s", self.operation_id)
+                logger.info(
+                    "Starting async evaluation for operation %s", self.operation_id
+                )
                 asyncio.run(self.evaluate_all_traces())
                 self._evaluation_complete.set()
             except Exception as e:
@@ -290,7 +306,9 @@ class EvaluationManager:
                         "type": info.trace_type.value,
                         "name": info.name,
                         "evaluated": info.evaluated,
-                        "score_count": len(info.evaluation_scores) if info.evaluation_scores else 0,
+                        "score_count": len(info.evaluation_scores)
+                        if info.evaluation_scores
+                        else 0,
                     }
                     for info in self.traces.values()
                 ],

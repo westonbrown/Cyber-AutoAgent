@@ -34,7 +34,9 @@ def clean_operation_memory(operation_id: str, target_name: str = None):
         return
 
     # Unified output structure - per-target memory
-    memory_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
+    memory_path = os.path.join(
+        "outputs", target_name, "memory", f"mem0_faiss_{target_name}"
+    )
     logger.debug("Checking memory path: %s", memory_path)
 
     if os.path.exists(memory_path):
@@ -74,14 +76,19 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
         if tools_path.exists():
             if not tools_path.is_dir():
                 # If 'tools' exists but is not a directory, remove it and create directory
-                print_status("Removing existing 'tools' file to create directory", "WARNING")
+                print_status(
+                    "Removing existing 'tools' file to create directory", "WARNING"
+                )
                 tools_path.unlink()
                 tools_path.mkdir(exist_ok=True)
         else:
             tools_path.mkdir(exist_ok=True)  # Local tools directory for custom tools
     except PermissionError:
         # If we can't access or create the tools directory, continue without it
-        print_status("Cannot create/access 'tools' directory - continuing without custom tools", "WARNING")
+        print_status(
+            "Cannot create/access 'tools' directory - continuing without custom tools",
+            "WARNING",
+        )
     except Exception as e:
         # Log any other issues but continue
         print_status(f"Issue with tools directory: {e} - continuing", "WARNING")
@@ -221,7 +228,9 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
             }
             print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
         else:
-            print_status(f"○ {tool_name:<12} - {description} (not available)", "WARNING")
+            print_status(
+                f"○ {tool_name:<12} - {description} (not available)", "WARNING"
+            )
 
             # Emit structured event for React UI
             tool_event = {
@@ -235,7 +244,9 @@ def auto_setup(skip_mem0_cleanup: bool = False) -> List[str]:
             }
             print(f"__CYBER_EVENT__{json.dumps(tool_event)}__CYBER_EVENT_END__")
 
-    print_status(f"Environment ready. {len(available_tools)} cyber tools available.", "SUCCESS")
+    print_status(
+        f"Environment ready. {len(available_tools)} cyber tools available.", "SUCCESS"
+    )
 
     # Emit environment ready event
     env_ready_event = {
@@ -337,7 +348,9 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Create header in log file
     with open(log_file, "a", encoding="utf-8") as f:
         f.write("\n" + "=" * 80 + "\n")
-        f.write(f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(
+            f"CYBER-AUTOAGENT SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        )
         f.write("=" * 80 + "\n\n")
 
     # Set up stdout and stderr redirection to capture ALL terminal output
@@ -361,7 +374,7 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     # Traditional logger setup for structured logging
     formatter = logging.Formatter(
         fmt="%(asctime)s - [%(name)s] - %(levelname)s - [%(threadName)s] - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     # File handler - log INFO and above to file
@@ -384,7 +397,9 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
 
     # Suppress Strands framework error logging for expected step limit termination
     strands_event_loop_logger = logging.getLogger("strands.event_loop.event_loop")
-    strands_event_loop_logger.setLevel(logging.CRITICAL)  # Only show critical errors, not our expected StopIteration
+    strands_event_loop_logger.setLevel(
+        logging.CRITICAL
+    )  # Only show critical errors, not our expected StopIteration
 
     # Capture all other loggers at INFO level to file
     root_logger = logging.getLogger()
