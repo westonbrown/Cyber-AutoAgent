@@ -140,6 +140,16 @@ RUN set -eux; \
     build-essential \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
+# Provide symlinks from Ruby vendor_ruby so WhatWeb runs without error
+RUN set -eux; \
+    if command -v whatweb >/dev/null 2>&1; then \
+      mkdir -p /usr/bin/lib; \
+      # Link all vendor_ruby top-level files
+      if ls /usr/lib/ruby/vendor_ruby/*.rb >/dev/null 2>&1; then \
+        ln -sf /usr/lib/ruby/vendor_ruby/*.rb /usr/bin/lib/; \
+      fi; \
+    fi
+
 # Install uv for fast dependency management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
