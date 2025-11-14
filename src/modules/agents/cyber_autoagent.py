@@ -26,13 +26,22 @@ from modules import prompts
 from modules.config.manager import MEM0_PROVIDER_MAP, get_config_manager
 from modules.config.logger_factory import get_logger
 from modules.handlers import ReasoningHandler
+from modules.config.model_capabilities import (
+    get_model_input_limit,
+    get_provider_default_limit,
+)
 from modules.handlers.conversation_budget import (
     MappingConversationManager,
     PromptBudgetHook,
     LargeToolResultMapper,
+    register_conversation_manager,
     _ensure_prompt_within_budget,
+    PROMPT_TOKEN_FALLBACK_LIMIT,
+    PRESERVE_LAST_DEFAULT,
+    PRESERVE_FIRST_DEFAULT,
 )
 from modules.handlers.tool_router import ToolRouterHook
+from modules.config.model_capabilities import get_capabilities
 from modules.handlers.utils import print_status, sanitize_target_name
 from modules.tools.browser import (
     initialize_browser,
@@ -44,7 +53,11 @@ from modules.tools.browser import (
     browser_evaluate_js,
     browser_get_cookies,
 )
-from modules.tools.memory import get_memory_client, initialize_memory_system, mem0_memory
+from modules.tools.memory import (
+    get_memory_client,
+    initialize_memory_system,
+    mem0_memory,
+)
 from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -53,6 +66,7 @@ logger = get_logger("Agents.CyberAutoAgent")
 
 # Backward compatibility: expose get_system_prompt from modules.prompts for legacy imports/tests
 get_system_prompt = prompts.get_system_prompt
+
 
 def _split_model_prefix(model_id: str) -> tuple[str, str]:
     if not isinstance(model_id, str):
@@ -69,13 +83,154 @@ def _get_prompt_limit_from_model(model_id: Optional[str]) -> Optional[int]:
     try:
         import litellm
 
-        prefix, base_model = _split_model_prefix(model_id)
-        target_model = base_model or model_id
-        limit = litellm.get_max_tokens(target_model)
-        if limit and limit > 0:
-            return limit
+        prefix, remainder = _split_model_prefix(model_id)
+        candidates: list[str] = []
+        # Common forms to try with LiteLLM's registry
+        if remainder:
+            candidates.append(remainder)  # e.g. openrouter/polaris-alpha
+            # Also try last segment, e.g. polaris-alpha
+            if "/" in remainder:
+                candidates.append(remainder.split("/", 1)[-1])
+        # Always include the full id as a last resort (e.g. openrouter/openrouter/polaris-alpha)
+        candidates.append(model_id)
+
+        for cand in candidates:
+            limit: Optional[int] = None
+            try:
+                # Try get_context_window first (most accurate if available)
+                get_cw = getattr(litellm, "get_context_window", None)
+                if callable(get_cw):
+                    cw = get_cw(cand)
+                    if isinstance(cw, (int, float)) and int(cw) > 0:
+                        limit = int(cw)
+                # Check model_cost registry for max_input_tokens (INPUT limit, not output)
+                # This must come BEFORE get_max_tokens because get_max_tokens returns OUTPUT limits
+                if not limit:
+                    model_cost = getattr(litellm, "model_cost", None)
+                    if isinstance(model_cost, dict) and cand in model_cost:
+                        info = model_cost.get(cand) or {}
+                        # Prioritize max_input_tokens (correct input limit)
+                        input_limit = info.get("max_input_tokens")
+                        if (
+                            isinstance(input_limit, (int, float))
+                            and int(input_limit) > 0
+                        ):
+                            limit = int(input_limit)
+                            logger.debug(
+                                "Using max_input_tokens=%d for '%s' (not max_tokens which is output limit)",
+                                limit,
+                                cand,
+                            )
+                        # Fallback to context_window or max_tokens if max_input_tokens unavailable
+                        elif not limit:
+                            for key in ("context_window", "max_tokens"):
+                                v = info.get(key)
+                                if isinstance(v, (int, float)) and int(v) > 0:
+                                    limit = int(v)
+                                    break
+                # Last resort: get_max_tokens (often returns OUTPUT limit, less reliable)
+                if not limit:
+                    get_mt = getattr(litellm, "get_max_tokens", None)
+                    if callable(get_mt):
+                        mt = get_mt(cand)
+                        if isinstance(mt, (int, float)) and int(mt) > 0:
+                            limit = int(mt)
+                            logger.debug(
+                                "Using get_max_tokens=%d for '%s' (may be output limit, verify with CYBER_PROMPT_FALLBACK_TOKENS)",
+                                limit,
+                                cand,
+                            )
+                if isinstance(limit, int) and limit > 0:
+                    logger.info(
+                        "Resolved prompt limit %d via LiteLLM for model '%s' (candidate '%s')",
+                        limit,
+                        model_id,
+                        cand,
+                    )
+                    return limit
+            except Exception:
+                # Try next candidate
+                continue
     except Exception:
-        logger.debug("Unable to resolve prompt token limit for %s", model_id, exc_info=True)
+        logger.debug(
+            "Unable to resolve prompt token limit for %s", model_id, exc_info=True
+        )
+    return None
+
+
+def _resolve_prompt_token_limit(
+    provider: str, server_config: Any, model_id: Optional[str]
+) -> Optional[int]:
+    """
+    Resolve INPUT token limit (context window capacity) for the model.
+
+    Priority order:
+    1. CYBER_PROMPT_LIMIT_FORCE - Explicit override
+    2. Static model registry - Known models with verified limits
+    3. LiteLLM max_input_tokens - Auto-detection from registry
+    4. CYBER_PROMPT_FALLBACK_TOKENS - Explicit fallback
+    5. Provider defaults - Conservative last resort
+
+    Returns INPUT limit (for conversation history), NOT output limit (for generation).
+    """
+    # Priority 1: Explicit override
+    try:
+        forced = os.getenv("CYBER_PROMPT_LIMIT_FORCE")
+        if forced is not None:
+            fv = int(forced)
+            if fv > 0:
+                logger.info(
+                    "Using CYBER_PROMPT_LIMIT_FORCE=%d for model %s", fv, model_id
+                )
+                return fv
+    except Exception:
+        pass
+
+    # Priority 2: Static model registry (known models with verified limits)
+    limit = get_model_input_limit(model_id) if model_id else None
+    if limit:
+        logger.info(
+            "Using static registry input limit=%d for model %s", limit, model_id
+        )
+        return limit
+
+    # Priority 3: LiteLLM automatic detection (check max_input_tokens)
+    if provider == "litellm" and model_id:
+        limit = _get_prompt_limit_from_model(model_id)
+        if limit:
+            logger.info(
+                "Using LiteLLM detected input limit=%d for model %s", limit, model_id
+            )
+            return limit
+
+    # Priority 4: CYBER_PROMPT_FALLBACK_TOKENS (explicit fallback config)
+    if PROMPT_TOKEN_FALLBACK_LIMIT > 0:
+        logger.info(
+            "Using CYBER_PROMPT_FALLBACK_TOKENS=%d as fallback for model %s",
+            PROMPT_TOKEN_FALLBACK_LIMIT,
+            model_id,
+        )
+        return PROMPT_TOKEN_FALLBACK_LIMIT
+
+    # Priority 5: Provider-specific conservative defaults
+    provider_default = get_provider_default_limit(provider)
+    if provider_default:
+        logger.warning(
+            "Using conservative provider default limit=%d for %s (model %s). "
+            "Consider setting CYBER_PROMPT_FALLBACK_TOKENS for accurate limit.",
+            provider_default,
+            provider,
+            model_id,
+        )
+        return provider_default
+
+    # No limit could be determined - warn and return None
+    logger.warning(
+        "Could not resolve input token limit for provider=%s model=%s. "
+        "Set CYBER_PROMPT_FALLBACK_TOKENS or CYBER_PROMPT_LIMIT_FORCE to specify limit.",
+        provider,
+        model_id,
+    )
     return None
 
 
@@ -87,7 +242,9 @@ def _parse_context_window_fallbacks() -> Optional[list[dict[str, list[str]]]]:
             if not clause or ":" not in clause:
                 continue
             model, targets = clause.split(":", 1)
-            target_list = [target.strip() for target in targets.split(",") if target.strip()]
+            target_list = [
+                target.strip() for target in targets.split(",") if target.strip()
+            ]
             model_name = model.strip()
             if not model_name or not target_list:
                 continue
@@ -116,6 +273,22 @@ def _parse_context_window_fallbacks() -> Optional[list[dict[str, list[str]]]]:
 def _align_mem0_config(model_id: Optional[str], memory_config: dict[str, Any]) -> None:
     if not model_id or not isinstance(memory_config, dict):
         return
+    # Respect MEM0_LLM_MODEL override for non-Bedrock providers only. Bedrock configs
+    # still need alignment when switching to Azure/OpenAI-style models for memory LLM.
+    try:
+        if os.getenv("MEM0_LLM_MODEL"):
+            llm_section = memory_config.get("llm")
+            if isinstance(llm_section, dict):
+                current_provider = (llm_section.get("provider") or "").lower()
+                if current_provider and current_provider not in ("aws_bedrock",):
+                    logger.debug(
+                        "Skipping Mem0 alignment because MEM0_LLM_MODEL override is set and provider=%s",
+                        current_provider,
+                    )
+                    return
+    except Exception:
+        # If any issue occurs, continue with alignment logic
+        pass
     prefix, remainder = _split_model_prefix(model_id)
     if not prefix:
         return
@@ -128,29 +301,62 @@ def _align_mem0_config(model_id: Optional[str], memory_config: dict[str, Any]) -
     current_provider = (llm_section.get("provider") or "").lower()
     if current_provider != expected.lower():
         llm_section["provider"] = expected
-        logger.info("Aligned Mem0 LLM provider to %s for model %s", expected, model_id)
     config_section = llm_section.setdefault("config", {})
     if expected == "azure_openai" and remainder:
         config_section["model"] = remainder
 
 
 def _supports_reasoning_model(model_id: Optional[str]) -> bool:
+    """Return True if the model is known to support extended reasoning blocks.
+
+    Scope (explicit):
+    - OpenAI/Azure: GPT-5 family and O-series (o3/o4 and mini variants)
+    - Anthropic/Bedrock: Claude Sonnet 4 / 4.5 and Opus
+    - Moonshot (LiteLLM): Kimi 'thinking' preview variants only
+
+    NOTE: Do not include older Claude 3.7 and below.
+    """
     mid = (model_id or "").lower()
-    return any(
-        token in mid
-        for token in (
-            "gpt-5",
-            "/o4",
-            "/o3",
-            "o4-mini",
-            "o3-mini",
-        )
+
+    # Fast path: OpenAI/Azure families already supported
+    openai_reasoning_markers = (
+        "gpt-5",
+        "/o4",
+        "/o3",
+        "o4-mini",
+        "o3-mini",
     )
+    if any(marker in mid for marker in openai_reasoning_markers):
+        return True
+
+    # Moonshot Kimi 'thinking' variants via LiteLLM (tools unsupported on these models)
+    moonshot_thinking_markers = (
+        "moonshot/kimi-thinking",
+        "kimi-thinking",
+        "kimi_k2_thinking",
+        "k2-thinking",
+    )
+    if any(marker in mid for marker in moonshot_thinking_markers):
+        return True
+
+    # Anthropic/Bedrock explicit allow-list (Sonnet 4/4.5 and Opus only)
+    anthropic_allow_markers = (
+        # Common Anthropic naming forms across providers
+        "claude-sonnet-4-5",
+        "sonnet-4-5",
+        "claude-sonnet-4",
+        "sonnet-4",
+        "claude-opus",
+        "/opus",  # e.g., claude-4-opus or claude-3-opus style ids
+        "-opus",  # covers bedrock/other provider dash-separated ids
+    )
+    return any(marker in mid for marker in anthropic_allow_markers)
 
 
 # Configure SDK logging for debugging swarm operations
 def configure_sdk_logging(enable_debug: bool = False):
     """Configure logging for Strands SDK components."""
+
     # Suppress unrecognized tool specification warnings from Strands toolkit registry
     # These are benign warnings from the Strands SDK when built-in tools (stop, http_request, python_repl)
     # are processed during tool registration. The tools work correctly despite the warnings.
@@ -237,18 +443,20 @@ def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
                 pkl_file = os.path.join(memory_base_path, "mem0.pkl")
 
                 # In some environments, test fixture paths use underscore in sanitized name
-                alt_memory_base_path = os.path.join(output_dir, target_name.replace(".", "_"), "memory")
+                alt_memory_base_path = os.path.join(
+                    output_dir, target_name.replace(".", "_"), "memory"
+                )
                 alt_faiss = os.path.join(alt_memory_base_path, "mem0.faiss")
                 alt_pkl = os.path.join(alt_memory_base_path, "mem0.pkl")
 
                 # Verify both FAISS index files exist with non-zero size
                 # In unit tests, getsize is mocked to 100; treat >0 as meaningful
-                has_faiss = (os.path.exists(faiss_file) and os.path.getsize(faiss_file) > 0) or (
-                    os.path.exists(alt_faiss) and os.path.getsize(alt_faiss) > 0
-                )
-                has_pkl = (os.path.exists(pkl_file) and os.path.getsize(pkl_file) > 0) or (
-                    os.path.exists(alt_pkl) and os.path.getsize(alt_pkl) > 0
-                )
+                has_faiss = (
+                    os.path.exists(faiss_file) and os.path.getsize(faiss_file) > 0
+                ) or (os.path.exists(alt_faiss) and os.path.getsize(alt_faiss) > 0)
+                has_pkl = (
+                    os.path.exists(pkl_file) and os.path.getsize(pkl_file) > 0
+                ) or (os.path.exists(alt_pkl) and os.path.getsize(alt_pkl) > 0)
                 if has_faiss and has_pkl:
                     return True
 
@@ -294,12 +502,53 @@ def create_bedrock_model(
     # Standard model configuration
     config = config_manager.get_standard_model_config(model_id, region_name, provider)
 
+    # Select parameter source by model role (primary vs swarm)
+    try:
+        server_config = config_manager.get_server_config(provider)
+        llm_temp = server_config.llm.temperature
+        llm_max = server_config.llm.max_tokens
+        role = "primary"
+        swarm_env = config_manager.getenv("CYBER_AGENT_SWARM_MODEL")
+        is_swarm = False
+        if swarm_env and model_id and swarm_env == model_id:
+            is_swarm = True
+        elif (
+            server_config.swarm
+            and server_config.swarm.llm
+            and server_config.swarm.llm.model_id == model_id
+            and server_config.swarm.llm.model_id != server_config.llm.model_id
+        ):
+            is_swarm = True
+        if is_swarm:
+            llm_temp = server_config.swarm.llm.temperature
+            # Prefer the larger cap to avoid premature max_tokens stops
+            llm_max = max(
+                server_config.swarm.llm.max_tokens, server_config.llm.max_tokens
+            )
+            role = "swarm"
+    except Exception:
+        # Fallback to standard config if any issue arises
+        llm_temp = config.get("temperature", 0.95)
+        llm_max = config.get("max_tokens", 4096)
+        role = "unknown"
+
+    # Observability: one-liner
+    try:
+        logger.info(
+            "Model build: role=%s provider=bedrock model=%s max_tokens=%s",
+            role,
+            config.get("model_id"),
+            llm_max,
+        )
+    except Exception:
+        pass
+
     # Build BedrockModel kwargs
     model_kwargs = {
         "model_id": config["model_id"],
         "region_name": config["region_name"],
-        "temperature": config["temperature"],
-        "max_tokens": config["max_tokens"],
+        "temperature": llm_temp,
+        "max_tokens": llm_max,
         "boto_client_config": boto_config,
     }
 
@@ -324,12 +573,67 @@ def create_local_model(
     config_manager = get_config_manager()
     config = config_manager.get_local_model_config(model_id, provider)
 
+    # Select parameter source by model role (primary vs swarm)
+    try:
+        server_config = config_manager.get_server_config(provider)
+        llm_temp = server_config.llm.temperature
+        llm_max = server_config.llm.max_tokens
+        role = "primary"
+        swarm_env = config_manager.getenv("CYBER_AGENT_SWARM_MODEL")
+        is_swarm = False
+        if swarm_env and model_id and swarm_env == model_id:
+            is_swarm = True
+        elif (
+            server_config.swarm
+            and server_config.swarm.llm
+            and server_config.swarm.llm.model_id == model_id
+            and server_config.swarm.llm.model_id != server_config.llm.model_id
+        ):
+            is_swarm = True
+        if is_swarm:
+            llm_temp = server_config.swarm.llm.temperature
+            llm_max = max(
+                server_config.swarm.llm.max_tokens, server_config.llm.max_tokens
+            )
+            role = "swarm"
+    except Exception:
+        llm_temp = config.get("temperature", 0.95)
+        llm_max = config.get("max_tokens", 4096)
+        role = "unknown"
+
+    # Observability: one-liner
+    try:
+        logger.info(
+            "Model build: role=%s provider=ollama model=%s max_tokens=%s",
+            role,
+            config.get("model_id"),
+            llm_max,
+        )
+    except Exception:
+        pass
+
     return OllamaModel(
         host=config["host"],
         model_id=config["model_id"],
-        temperature=config["temperature"],
-        max_tokens=config["max_tokens"],
+        temperature=llm_temp,
+        max_tokens=llm_max,
     )
+
+
+def _apply_context_window_fallbacks(client_args: dict[str, Any]) -> None:
+    """Attach context window fallbacks to LiteLLM if configured."""
+    fallbacks = _parse_context_window_fallbacks()
+    if not fallbacks:
+        return
+    client_args.setdefault("context_window_fallbacks", fallbacks)
+    try:
+        import litellm
+
+        litellm.context_window_fallbacks = fallbacks
+    except Exception:
+        logger.debug(
+            "Unable to apply context_window_fallbacks to LiteLLM", exc_info=True
+        )
 
 
 def create_litellm_model(
@@ -351,10 +655,14 @@ def create_litellm_model(
     # Configure AWS Bedrock models via LiteLLM
     if model_id.startswith(("bedrock/", "sagemaker/")):
         client_args["aws_region_name"] = region_name
-        aws_profile = config_manager.getenv("AWS_PROFILE") or config_manager.getenv("AWS_DEFAULT_PROFILE")
+        aws_profile = config_manager.getenv("AWS_PROFILE") or config_manager.getenv(
+            "AWS_DEFAULT_PROFILE"
+        )
         if aws_profile:
             client_args["aws_profile_name"] = aws_profile
-        role_arn = config_manager.getenv("AWS_ROLE_ARN") or config_manager.getenv("AWS_ROLE_NAME")
+        role_arn = config_manager.getenv("AWS_ROLE_ARN") or config_manager.getenv(
+            "AWS_ROLE_NAME"
+        )
         if role_arn:
             client_args["aws_role_name"] = role_arn
         session_name = config_manager.getenv("AWS_ROLE_SESSION_NAME")
@@ -373,9 +681,71 @@ def create_litellm_model(
             client_args["sagemaker_base_url"] = sagemaker_base_url
 
     # Build params dict with optional reasoning parameters
+    # Select parameter source by model role (primary vs swarm)
+    try:
+        server_config = config_manager.get_server_config(provider)
+        llm_temp = server_config.llm.temperature
+        llm_max = server_config.llm.max_tokens
+        role = "primary"
+        swarm_env = config_manager.getenv("CYBER_AGENT_SWARM_MODEL")
+        is_swarm = False
+        if swarm_env and model_id and swarm_env == model_id:
+            is_swarm = True
+        elif (
+            server_config.swarm
+            and server_config.swarm.llm
+            and server_config.swarm.llm.model_id == model_id
+            and server_config.swarm.llm.model_id != server_config.llm.model_id
+        ):
+            is_swarm = True
+        if is_swarm:
+            llm_temp = server_config.swarm.llm.temperature
+            llm_max = max(
+                server_config.swarm.llm.max_tokens, server_config.llm.max_tokens
+            )
+            role = "swarm"
+    except Exception:
+        llm_temp = config.get("temperature", 0.95)
+        llm_max = config.get("max_tokens", 4096)
+        role = "unknown"
+
+    # LiteLLM best-effort output clamp (no new envs, best-effort only)
+    try:
+        import litellm  # type: ignore
+
+        base = config.get("model_id") or model_id
+        if isinstance(base, str) and "/" in base:
+            base = base.split("/", 1)[1]
+        model_cap = litellm.get_max_tokens(base)  # may return None for unknown models
+        if (
+            isinstance(model_cap, (int, float))
+            and int(model_cap) > 0
+            and llm_max > int(model_cap)
+        ):
+            logger.info(
+                "LiteLLM cap: reducing max_tokens from %s to %s for model=%s",
+                llm_max,
+                int(model_cap),
+                config.get("model_id"),
+            )
+            llm_max = int(model_cap)
+    except Exception:
+        pass
+
+    # Observability: one-liner
+    try:
+        logger.info(
+            "Model build: role=%s provider=litellm model=%s max_tokens=%s",
+            role,
+            config.get("model_id"),
+            llm_max,
+        )
+    except Exception:
+        pass
+
     params = {
-        "temperature": config["temperature"],
-        "max_tokens": config["max_tokens"],
+        "temperature": llm_temp,
+        "max_tokens": llm_max,
     }
 
     # Only include top_p if present in config (avoid provider conflicts)
@@ -383,18 +753,38 @@ def create_litellm_model(
         params["top_p"] = config["top_p"]
 
     # Add request timeout and retries for robustness (env-overridable)
-    timeout_secs = config_manager.getenv_int("LITELLM_TIMEOUT", 120)
+    timeout_secs = config_manager.getenv_int("LITELLM_TIMEOUT", 180)
     num_retries = config_manager.getenv_int("LITELLM_NUM_RETRIES", 3)
     if timeout_secs > 0:
         client_args["timeout"] = timeout_secs
     if num_retries >= 0:
         client_args["num_retries"] = num_retries
+
+    # Reasoning parameters for reasoning-capable models (o1, o3, o4, gpt-5)
     reasoning_effort = config_manager.getenv("REASONING_EFFORT")
-    if reasoning_effort and _supports_reasoning_model(config["model_id"]):
-        params["reasoning_effort"] = reasoning_effort
+    try:
+        caps = get_capabilities(provider, config.get("model_id", ""))
+        if reasoning_effort and caps.pass_reasoning_effort:
+            params["reasoning_effort"] = reasoning_effort
+    except Exception:
+        # If capability resolution fails, do not attach the param
+        pass
+
+    # Reasoning text verbosity for Azure Responses API models (default: medium)
+    reasoning_verbosity = config_manager.getenv("REASONING_VERBOSITY", "medium")
+    if reasoning_verbosity and "azure/responses/" in config["model_id"]:
+        params["text"] = {"format": {"type": "text"}, "verbosity": reasoning_verbosity}
+        logger.info(
+            "Set reasoning text verbosity=%s for model %s",
+            reasoning_verbosity,
+            config["model_id"],
+        )
+
     max_completion_tokens = config_manager.getenv_int("MAX_COMPLETION_TOKENS", 0)
     if max_completion_tokens > 0:
         params["max_completion_tokens"] = max_completion_tokens
+
+    _apply_context_window_fallbacks(client_args)
 
     return LiteLLMModel(
         client_args=client_args,
@@ -503,14 +893,22 @@ def create_agent(
     # Skip check if user explicitly wants fresh memory
     if config.memory_mode == "fresh":
         has_existing_memories = False
-        print_status("Using fresh memory mode - ignoring any existing memories", "WARNING")
+        print_status(
+            "Using fresh memory mode - ignoring any existing memories", "WARNING"
+        )
     else:
         has_existing_memories = check_existing_memories(config.target, config.provider)
         # Log the result for debugging container vs local issues
         if has_existing_memories:
-            print_status(f"Previous memories detected for {config.target} - will be loaded", "SUCCESS")
+            print_status(
+                f"Previous memories detected for {config.target} - will be loaded",
+                "SUCCESS",
+            )
         else:
-            print_status(f"No previous memories found for {config.target} - will create new", "INFO")
+            print_status(
+                f"No previous memories found for {config.target} - will create new",
+                "INFO",
+            )
 
     # Initialize memory system
     target_name = sanitize_target_name(config.target)
@@ -521,7 +919,9 @@ def create_agent(
         paths = config_manager.ensure_operation_output_dirs(
             config.provider, target_name, operation_id, module=config.module
         )
-        print_status(f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS")
+        print_status(
+            f"Output directories ready: {paths.get('artifacts', '')}", "SUCCESS"
+        )
     except Exception:
         # Non-fatal: proceed even if directory creation logs an error
         logger.debug("Failed to pre-create operation directories", exc_info=True)
@@ -547,8 +947,14 @@ def create_agent(
     except Exception:
         logger.debug("Unable to set overlay environment context", exc_info=True)
 
-    initialize_browser(provider=config.provider, model=config.model_id, artifacts_dir=os.getenv("CYBER_ARTIFACTS_DIR"))
-    initialize_memory_system(memory_config, operation_id, target_name, has_existing_memories)
+    initialize_browser(
+        provider=config.provider,
+        model=config.model_id,
+        artifacts_dir=os.getenv("CYBER_ARTIFACTS_DIR"),
+    )
+    initialize_memory_system(
+        memory_config, operation_id, target_name, has_existing_memories
+    )
     print_status(f"Memory system initialized for operation: {operation_id}", "SUCCESS")
 
     # Get memory overview for system prompt enhancement and UI display
@@ -557,9 +963,13 @@ def create_agent(
         try:
             memory_client = get_memory_client()
             if memory_client:
-                memory_overview = memory_client.get_memory_overview(user_id="cyber_agent")
+                memory_overview = memory_client.get_memory_overview(
+                    user_id="cyber_agent"
+                )
         except Exception as e:
-            agent_logger.debug("Could not get memory overview for system prompt: %s", str(e))
+            agent_logger.debug(
+                "Could not get memory overview for system prompt: %s", str(e)
+            )
 
     # Load module-specific tools and prepare for injection
     module_tools_context = ""
@@ -578,7 +988,9 @@ def create_agent(
                 try:
                     # Load the module
                     module_name = f"operation_plugin_tool_{Path(tool_path).stem}"
-                    spec = importlib.util.spec_from_file_location(module_name, tool_path)
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, tool_path
+                    )
                     if spec and spec.loader:
                         tool_module = importlib.util.module_from_spec(spec)
                         sys.modules[module_name] = tool_module
@@ -593,9 +1005,15 @@ def create_agent(
                                 agent_logger.debug("Found module tool: %s", attr_name)
 
                 except Exception as e:
-                    agent_logger.warning("Failed to load tool from %s: %s", tool_path, e)
+                    agent_logger.warning(
+                        "Failed to load tool from %s: %s", tool_path, e
+                    )
 
-            tool_names = [tool.__name__ for tool in loaded_module_tools] if loaded_module_tools else []
+            tool_names = (
+                [tool.__name__ for tool in loaded_module_tools]
+                if loaded_module_tools
+                else []
+            )
 
             if tool_names:
                 print_status(
@@ -625,7 +1043,9 @@ def create_agent(
             if loaded_module_tools:
                 # Tools are pre-loaded
                 for tool_name in tool_names:
-                    tool_examples.append(f"{tool_name}()  # Pre-loaded and ready to use")
+                    tool_examples.append(
+                        f"{tool_name}()  # Pre-loaded and ready to use"
+                    )
             else:
                 # Fallback to load_tool instructions using discovered absolute paths
                 # This works in both local CLI and Docker since module_tool_paths are resolved in the current runtime
@@ -633,11 +1053,15 @@ def create_agent(
                     try:
                         abs_path = str(Path(tool_path).resolve())
                         tool_name = Path(tool_path).stem
-                        tool_examples.append(f'load_tool(path="{abs_path}", name="{tool_name}")')
+                        tool_examples.append(
+                            f'load_tool(path="{abs_path}", name="{tool_name}")'
+                        )
                     except Exception:
                         # As a last resort, include a name-only hint
                         tool_name = Path(tool_path).stem
-                        tool_examples.append(f"# load_tool path resolution failed for {tool_name}")
+                        tool_examples.append(
+                            f"# load_tool path resolution failed for {tool_name}"
+                        )
 
             module_tools_context = f"""
 ## MODULE-SPECIFIC TOOLS
@@ -649,7 +1073,9 @@ Available {config.module} module tools:
 {chr(10).join(f"- {example}" for example in tool_examples)}
 """
         else:
-            print_status(f"No module-specific tools found for '{config.module}'", "INFO")
+            print_status(
+                f"No module-specific tools found for '{config.module}'", "INFO"
+            )
     except Exception as e:
         logger.warning("Error discovering module tools for '%s': %s", config.module, e)
 
@@ -684,18 +1110,29 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             config.module, operation_root=operation_root_path
         )
         if module_execution_prompt:
-            print_status(f"Loaded module-specific execution prompt for '{config.module}'", "SUCCESS")
+            print_status(
+                f"Loaded module-specific execution prompt for '{config.module}'",
+                "SUCCESS",
+            )
         else:
-            print_status(f"No module-specific execution prompt found for '{config.module}' - using default", "INFO")
+            print_status(
+                f"No module-specific execution prompt found for '{config.module}' - using default",
+                "INFO",
+            )
         # Emit explicit config log for module and execution prompt source
-        exec_src = getattr(module_loader, "last_loaded_execution_prompt_source", None) or "default (none found)"
+        exec_src = (
+            getattr(module_loader, "last_loaded_execution_prompt_source", None)
+            or "default (none found)"
+        )
         agent_logger.info(
             "CYBERAUTOAGENT: module='%s', execution_prompt_source='%s'",
             config.module,
             exec_src,
         )
     except Exception as e:
-        logger.warning("Error loading module execution prompt for '%s': %s", config.module, e)
+        logger.warning(
+            "Error loading module execution prompt for '%s': %s", config.module, e
+        )
 
     # Optionally build a concise plan snapshot from memory (best-effort, no hard dependency)
     plan_snapshot = None
@@ -718,7 +1155,10 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                         # Find current phase details
                         current_phase_info = None
                         for phase in phases:
-                            if phase.get("id") == plan_current_phase or phase.get("status") == "active":
+                            if (
+                                phase.get("id") == plan_current_phase
+                                or phase.get("status") == "active"
+                            ):
                                 current_phase_info = phase
                                 break
 
@@ -729,7 +1169,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                             snap_lines.append(
                                 f"CurrentPhase: {current_phase_info.get('title', 'Unknown')} (Phase {plan_current_phase}/{len(phases)})"
                             )
-                            snap_lines.append(f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}")
+                            snap_lines.append(
+                                f"Criteria: {current_phase_info.get('criteria', 'No criteria defined')}"
+                            )
 
                         plan_snapshot = "\n".join(snap_lines)
                     except Exception as e:
@@ -771,7 +1213,10 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                                 phases = plan_json.get("phases") or []
                                 if isinstance(phases, list):
                                     for ph in phases:
-                                        if isinstance(ph, dict) and ph.get("status") == "active":
+                                        if (
+                                            isinstance(ph, dict)
+                                            and ph.get("status") == "active"
+                                        ):
                                             pid = ph.get("id")
                                             if isinstance(pid, int):
                                                 plan_current_phase = pid
@@ -832,7 +1277,28 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
     # If a module-specific execution prompt exists, append it to the system prompt
     if module_execution_prompt:
-        system_prompt = system_prompt + "\n\n## MODULE EXECUTION GUIDANCE\n" + module_execution_prompt.strip()
+        system_prompt = (
+            system_prompt
+            + "\n\n## MODULE EXECUTION GUIDANCE\n"
+            + module_execution_prompt.strip()
+        )
+
+    # Build SystemContentBlock[] to enable provider-side prompt caching where supported
+    # Keep legacy string fallback for providers that may not support block lists
+    system_prompt_payload: Any
+    try:
+        if config.provider in ("bedrock", "litellm"):
+            # Minimal segmentation: treat the composed system prompt as a single block and
+            # add a cache point so supported backends can cache the stable portion.
+            # Providers that do not support caching simply ignore the hint.
+            system_prompt_payload = [
+                {"text": system_prompt},
+                {"cachePoint": {"type": "default"}},
+            ]
+        else:
+            system_prompt_payload = system_prompt
+    except Exception:
+        system_prompt_payload = system_prompt
 
     # It works in both CLI and React modes
     from modules.handlers.react.react_bridge_handler import ReactBridgeHandler
@@ -863,11 +1329,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             "provider": config.provider,
             "model": config.model_id,
             "region": config.region_name,
-            "tools_available": len(config.available_tools) if config.available_tools else 0,
+            "tools_available": len(config.available_tools)
+            if config.available_tools
+            else 0,
             "memory": {
                 "mode": config.memory_mode,
                 "path": config.memory_path or None,
-                "has_existing": has_existing_memories if "has_existing_memories" in locals() else False,
+                "has_existing": has_existing_memories
+                if "has_existing_memories" in locals()
+                else False,
                 "reused": (
                     (has_existing_memories and config.memory_mode != "fresh")
                     if "has_existing_memories" in locals()
@@ -876,9 +1346,17 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                 "backend": (
                     "mem0_cloud"
                     if config_manager.getenv("MEM0_API_KEY")
-                    else ("opensearch" if config_manager.getenv("OPENSEARCH_HOST") else "faiss")
+                    else (
+                        "opensearch"
+                        if config_manager.getenv("OPENSEARCH_HOST")
+                        else "faiss"
+                    )
                 ),
-                **(memory_overview if memory_overview and isinstance(memory_overview, dict) else {}),
+                **(
+                    memory_overview
+                    if memory_overview and isinstance(memory_overview, dict)
+                    else {}
+                ),
             },
             "observability": config_manager.getenv_bool("ENABLE_OBSERVABILITY", False),
             "ui_mode": config_manager.getenv("CYBER_UI_MODE", "cli").lower(),
@@ -890,7 +1368,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     from modules.handlers.react.hooks import ReactHooks
 
     # Use the same emitter as the callback handler for consistency
-    react_hooks = ReactHooks(emitter=callback_handler.emitter, operation_id=operation_id)
+    react_hooks = ReactHooks(
+        emitter=callback_handler.emitter, operation_id=operation_id
+    )
 
     # Tool router to prevent unknown-tool failures by routing to shell before execution
     # Allow configurable truncation of large tool outputs via env var
@@ -916,8 +1396,14 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
 
     prompt_budget_hook = PromptBudgetHook(_ensure_prompt_within_budget)
     hooks = [tool_router_hook, react_hooks, prompt_budget_hook]
+    agent_logger.info(
+        "HOOK REGISTRATION: Created PromptBudgetHook, will register %d hooks total",
+        len(hooks),
+    )
 
-    enable_prompt_optimization = os.getenv("CYBER_ENABLE_PROMPT_OPTIMIZATION", "false").lower() == "true"
+    enable_prompt_optimization = (
+        os.getenv("CYBER_ENABLE_PROMPT_OPTIMIZATION", "false").lower() == "true"
+    )
 
     if enable_prompt_optimization:
         prompt_rebuild_hook = PromptRebuildHook(
@@ -941,11 +1427,15 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             print_status(f"Ollama model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "bedrock":
             agent_logger.debug("Configuring BedrockModel")
-            model = create_bedrock_model(config.model_id, config.region_name, config.provider)
+            model = create_bedrock_model(
+                config.model_id, config.region_name, config.provider
+            )
             print_status(f"Bedrock model initialized: {config.model_id}", "SUCCESS")
         elif config.provider == "litellm":
             agent_logger.debug("Configuring LiteLLMModel")
-            model = create_litellm_model(config.model_id, config.region_name, config.provider)
+            model = create_litellm_model(
+                config.model_id, config.region_name, config.provider
+            )
             print_status(f"LiteLLM model initialized: {config.model_id}", "SUCCESS")
         else:
             raise ValueError(f"Unsupported provider: {config.provider}")
@@ -977,38 +1467,68 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     if enable_prompt_optimization:
         tools_list.append(prompt_optimizer)
 
+    # Capability-based warning if tool calls are unsupported for this model
+    try:
+        caps = get_capabilities(config.provider, config.model_id or "")
+        if not caps.supports_tools and tools_list:
+            agent_logger.warning(
+                "Model %s does not support tool calls; tools will be ignored.",
+                config.model_id,
+            )
+    except Exception:
+        pass
+
     # Inject module-specific tools if available
     if "loaded_module_tools" in locals() and loaded_module_tools:
         tools_list.extend(loaded_module_tools)
-        agent_logger.info("Injected %d module tools into agent", len(loaded_module_tools))
+        agent_logger.info(
+            "Injected %d module tools into agent", len(loaded_module_tools)
+        )
 
     agent_logger.debug("Creating autonomous agent")
 
     # Update conversation window size from SDK config (kept for reference)
     conversation_window = getattr(server_config.sdk, "conversation_window_size", None)
     try:
-        window_size = int(conversation_window) if conversation_window is not None else 30
+        window_size = (
+            int(conversation_window) if conversation_window is not None else 30
+        )
     except (TypeError, ValueError):
         window_size = 30
     window_size = max(10, window_size)
 
+    # Create and register conversation manager for all agents (including swarm children)
+    # Use environment variable for preserve_last (default 12) to enable effective pruning
+    # If preserve_first (1) + preserve_last (20) >= total_messages, no pruning occurs
+    conversation_manager = MappingConversationManager(
+        window_size=window_size,
+        summary_ratio=0.3,
+        preserve_recent_messages=PRESERVE_LAST_DEFAULT,  # Use env default (12) instead of hardcoded 20
+        preserve_first_messages=PRESERVE_FIRST_DEFAULT,  # Explicit (default 1)
+        tool_result_mapper=LargeToolResultMapper(),
+    )
+    register_conversation_manager(conversation_manager)
+    agent_logger.info(
+        "Conversation manager created: window=%d, preserve_first=%d, preserve_last=%d",
+        window_size,
+        PRESERVE_FIRST_DEFAULT,
+        PRESERVE_LAST_DEFAULT,
+    )
+
     # Create agent with telemetry for token tracking
-    prompt_token_limit = _get_prompt_limit_from_model(config.model_id)
+    prompt_token_limit = _resolve_prompt_token_limit(
+        config.provider, server_config, config.model_id
+    )
 
     agent_kwargs = {
         "model": model,
         "name": f"Cyber-AutoAgent {config.op_id or operation_id}",
         "tools": tools_list,
-        "system_prompt": system_prompt,
+        "system_prompt": system_prompt_payload,
         "callback_handler": callback_handler,
         "hooks": hooks if hooks else None,  # Add hooks if available
         # Use proactive sliding + summarization fallback
-        "conversation_manager": MappingConversationManager(
-            window_size=window_size,
-            summary_ratio=0.3,
-            preserve_recent_messages=20,
-            tool_result_mapper=LargeToolResultMapper(),
-        ),
+        "conversation_manager": conversation_manager,
         "load_tools_from_directory": True,
         "trace_attributes": {
             # Core identification - session_id is the key for Langfuse trace naming
@@ -1022,7 +1542,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
                 config.provider.upper(),
                 operation_id,
             ],
-            "langfuse.environment": config_manager.getenv("DEPLOYMENT_ENV", "production"),
+            "langfuse.environment": config_manager.getenv(
+                "DEPLOYMENT_ENV", "production"
+            ),
             "langfuse.agent.type": "main_orchestrator",
             "langfuse.capabilities.swarm": True,
             # Standard OTEL attributes
@@ -1044,7 +1566,9 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             # Model configuration
             "model.provider": config.provider,
             "model.id": config.model_id,
-            "model.region": config.region_name if config.provider in ["bedrock", "litellm"] else "local",
+            "model.region": config.region_name
+            if config.provider in ["bedrock", "litellm"]
+            else "local",
             "gen_ai.request.model": config.model_id,
             # Tool configuration
             "tools.available": len(tools_list),
@@ -1073,10 +1597,13 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
     # Create agent (telemetry is handled globally by Strands SDK)
     agent = Agent(**agent_kwargs)
     # Allow reasoning deltas only when the provider/model supports them
-    setattr(agent, "_allow_reasoning_content", _supports_reasoning_model(config.model_id))
+    try:
+        caps = get_capabilities(config.provider, config.model_id or "")
+        setattr(agent, "_allow_reasoning_content", bool(caps.supports_reasoning))
+    except Exception:
+        setattr(agent, "_allow_reasoning_content", False)
     if prompt_token_limit:
         setattr(agent, "_prompt_token_limit", prompt_token_limit)
-    setattr(agent, "_allow_reasoning_content", _supports_reasoning_model(config.model_id))
     # Ensure legacy-compatible system prompt is directly accessible for tests
     try:
         setattr(agent, "system_prompt", system_prompt)

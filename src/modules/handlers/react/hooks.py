@@ -7,15 +7,15 @@ the React UI and logging infrastructure.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Optional
 
-from strands.experimental.hooks.events import (
-    AfterToolInvocationEvent,
-    BeforeToolInvocationEvent,
+from strands.hooks import (
+    AfterToolCallEvent,
+    BeforeToolCallEvent,
+    HookProvider,
+    HookRegistry,
 )
-from strands.hooks import HookProvider, HookRegistry
 
 from ..events import EventEmitter, get_emitter
 from modules.config.logger_factory import get_logger
@@ -32,7 +32,9 @@ class ReactHooks(HookProvider):
     React terminal UI and logged to files.
     """
 
-    def __init__(self, emitter: Optional[EventEmitter] = None, operation_id: Optional[str] = None):
+    def __init__(
+        self, emitter: Optional[EventEmitter] = None, operation_id: Optional[str] = None
+    ):
         """
         Initialize the React hooks provider.
 
@@ -52,11 +54,11 @@ class ReactHooks(HookProvider):
             registry: The SDK's hook registry for event subscriptions.
         """
         logger.debug("ReactHooks.register_hooks called - registering tool callbacks")
-        registry.add_callback(BeforeToolInvocationEvent, self._on_before_tool)
-        registry.add_callback(AfterToolInvocationEvent, self._on_after_tool)
+        registry.add_callback(BeforeToolCallEvent, self._on_before_tool)
+        registry.add_callback(AfterToolCallEvent, self._on_after_tool)
         logger.debug("ReactHooks callbacks registered successfully")
 
-    def _on_before_tool(self, event: BeforeToolInvocationEvent) -> None:
+    def _on_before_tool(self, event: BeforeToolCallEvent) -> None:
         """
         Handle tool invocation start events.
 
@@ -103,7 +105,12 @@ class ReactHooks(HookProvider):
                         pass  # Keep original if parsing fails
 
             # Emit structured events with already-parsed input
-            event_dict = {"type": "tool_start", "tool_name": tool_name, "tool_id": tool_id, "tool_input": tool_input}
+            event_dict = {
+                "type": "tool_start",
+                "tool_name": tool_name,
+                "tool_id": tool_id,
+                "tool_input": tool_input,
+            }
 
             # Log the tool invocation at INFO level for visibility
             logger.info("Tool invocation: %s (id=%s)", tool_name, tool_id)
@@ -131,7 +138,7 @@ class ReactHooks(HookProvider):
         except Exception as e:
             logger.error("Error processing before tool event: %s", e, exc_info=True)
 
-    def _on_after_tool(self, event: AfterToolInvocationEvent) -> None:
+    def _on_after_tool(self, event: AfterToolCallEvent) -> None:
         """
         Handle tool invocation completion events.
 
@@ -168,21 +175,31 @@ class ReactHooks(HookProvider):
             success, output = self._process_tool_result(result)
 
             # Log completion at INFO level
-            logger.info("Tool completed: %s (id=%s) in %.2fs", tool_name, tool_id, duration)
+            logger.info(
+                "Tool completed: %s (id=%s) in %.2fs", tool_name, tool_id, duration
+            )
 
             # Extra debug for swarm tool
             if tool_name == "swarm":
                 logger.debug(f"Swarm execution took {duration:.2f}s")
                 logger.debug(f"Success: {success}, Output length: {len(output)}")
                 if output:
-                    logger.debug(f"Swarm output preview: {output[:200]}..." if len(output) > 200 else output)
+                    logger.debug(
+                        f"Swarm output preview: {output[:200]}..."
+                        if len(output) > 200
+                        else output
+                    )
 
             # Emit thinking_end to stop animations
-            self.emitter.emit({"type": "thinking_end", "tool_name": tool_name, "tool_id": tool_id})
+            self.emitter.emit(
+                {"type": "thinking_end", "tool_name": tool_name, "tool_id": tool_id}
+            )
 
             # ReactBridgeHandler handles tool_end emission with full context
             if tool_id and duration > 0:
-                logger.debug(f"Tool {tool_name} (id={tool_id}) completed in {duration:.2f}s")
+                logger.debug(
+                    f"Tool {tool_name} (id={tool_id}) completed in {duration:.2f}s"
+                )
 
         except Exception as e:
             logger.error("Error processing after tool event: %s", e, exc_info=True)
