@@ -156,6 +156,49 @@ def mcp_tools_input_schema_to_function_call(schema: Dict[str, Any], func_name: s
     # return signature + "\n\n# Example call:\n" + call_example
 
 
+_VAR_PATTERN = re.compile(r"\$\{([^}]+)}")
+
+
+def resolve_env_vars_in_dict(input_dict: Dict[str, str], env: Dict[str, str]) -> Dict[str, str]:
+    """
+    Replace ${VAR} references in values with env['VAR'] where available.
+    Unrecognized variables are left as-is.
+    """
+    if input_dict is None:
+        return {}
+
+    resolved: Dict[str, str] = {}
+
+    for key, value in input_dict.items():
+        def _sub(match: re.Match) -> str:
+            var_name = match.group(1)
+            return env.get(var_name, match.group(0))  # leave ${VAR} if not found
+
+        resolved[key] = _VAR_PATTERN.sub(_sub, value)
+
+    return resolved
+
+
+def resolve_env_vars_in_list(input_array: List[str], env: Dict[str, str]) -> List[str]:
+    """
+    Replace ${VAR} references in values with env['VAR'] where available.
+    Unrecognized variables are left as-is.
+    """
+    if input_array is None:
+        return []
+
+    resolved: List[str] = []
+
+    for value in input_array:
+        def _sub(match: re.Match) -> str:
+            var_name = match.group(1)
+            return env.get(var_name, match.group(0))  # leave ${VAR} if not found
+
+        resolved.append(_VAR_PATTERN.sub(_sub, value))
+
+    return resolved
+
+
 class FileWritingAgentToolAdapter(AgentTool):
     """
     Adapter that wraps an AgentTool and sends its streamed events through

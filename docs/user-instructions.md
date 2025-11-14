@@ -276,19 +276,18 @@ can be used to configure, command line options or environment variables.
     "enabled": true,
     "connections": [
       {
-        "id": "shyhurricane",
-        "transport": "stdio",  // or "sse", "streamable-http"
-        "command": ["python", "-m", "shyhurricane.server"],
-        "plugins": ["general"],  // or ["*"]
-        "timeoutSeconds": 900,
-        "allowedTools": ["port_scan", "directory_buster"]  // or ["*"]
+         "id": "htb-mcp-server",
+         "transport": "stdio",  // or "sse", "streamable-http"
+         "command": ["./htb-mcp-server"],
+         "plugins": ["general"]  // or ["*"]
       },
       {
-        "id": "htb-mcp",
-        "transport": "streamable-http",
-        "server_url": "https://htb-mcp.example.com/mcp",
-        "headers": {"Authorization": "Bearer ${HTB_TOKEN}"},
-        "plugins": ["ctf"]
+         "id": "shyhurricane",
+         "transport": "streamable-http",
+         "server_url": "https://127.0.0.1:8000/mcp",
+         "plugins": ["*"], 
+         "timeoutSeconds": 900,
+         "allowedTools": ["port_scan", "directory_buster"]  // or ["*"]
       }
     ]
   }
@@ -304,6 +303,50 @@ Examples:
 - `CYBER_MCP_ENABLED=true`
 - `CYBER_MCP_CONNECTIONS='[{"id":"...","transport":"..."}]'`
 - `--mcp-enabled --mcp-conns '[{"id":"...","transport":"..."}]'`
+
+### HackTheBox CTF MCP Configuration
+
+This is an example configuration for the HackTheBox CTF MCP server. Export your API key before running.
+
+```shell
+export HTB_TOKEN=xxx.yyy.zzz
+```
+
+```json
+{
+   "mcp": {
+      "enabled": true,
+      "connections": [
+         {
+            "id": "htbctf",
+            "transport": "sse",
+            "server_url": "https://mcp.ai.hackthebox.com/v1/ctf/sse",
+            "plugins": ["ctf"],
+            "headers": {"Authorization": "Bearer ${HTB_TOKEN}"}
+         }
+      ]
+   }
+}
+```
+
+### HexStrike AI
+
+```json
+{
+   "mcp": {
+      "enabled": true,
+      "connections": [
+         {
+            "id": "hex",
+            "transport": "stdio",
+            "command": ["python3", "/path/to/hexstrike-ai/hexstrike_mcp.py", "--server", "http://localhost:8888"],
+            "plugins": ["general"],
+            "timeoutSeconds": 300
+         }
+      ]
+   }
+}
+```
 
 
 ## Docker Management

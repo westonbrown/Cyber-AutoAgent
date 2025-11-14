@@ -61,7 +61,8 @@ from modules.tools.browser import (
     browser_evaluate_js,
     browser_get_cookies,
 )
-from modules.tools.mcp import list_mcp_tools_wrapper, mcp_tools_input_schema_to_function_call, with_result_file
+from modules.tools.mcp import list_mcp_tools_wrapper, mcp_tools_input_schema_to_function_call, with_result_file, \
+    resolve_env_vars_in_dict, resolve_env_vars_in_list
 from modules.tools.memory import (
     get_memory_client,
     initialize_memory_system,
@@ -834,60 +835,67 @@ def _handle_model_creation_error(provider: str, error: Exception) -> None:
 
 def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> List[AgentTool]:
     mcp_tools = []
+    environ = os.environ.copy()
     for mcp_conn in (config.mcp_connections or []):
         if '*' in mcp_conn.plugins or config.module in mcp_conn.plugins:
             logger.debug("Discover MCP tools from: %s", mcp_conn)
-            match mcp_conn.transport:
-                case "stdio":
-                    if not mcp_conn.command:
-                        raise ValueError(f"{mcp_conn.transport} requires command")
-                    command_list: list[str] = mcp_conn.command
-                    transport = lambda: stdio_client(StdioServerParameters(
-                        command = command_list[0], args=command_list[1:],
-                    ))
-                case "streamable-http":
-                    transport = lambda: streamablehttp_client(
-                        url=mcp_conn.server_url,
-                        headers=mcp_conn.headers,
-                        timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
-                    )
-                case "sse":
-                    transport = lambda: sse_client(
-                        url=mcp_conn.server_url,
-                        headers=mcp_conn.headers,
-                        timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
-                    )
-                case _:
-                    raise ValueError(f"Unsupported MCP transport {mcp_conn.transport}")
-            client = MCPClient(transport, prefix=mcp_conn.id)
-            prefix_idx = len(mcp_conn.id) + 1
-            client.start()
-            client_used = False
-            page_token = None
-            while len(tools := client.list_tools_sync(page_token)) > 0:
-                page_token = tools.pagination_token
-                for tool in tools:
-                    logger.debug(f"Considering tool: {tool.tool_name}")
-                    if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
-                        logger.debug(f"Allowed tool: {tool.tool_name}")
-                        # Wrap output and save into output path
-                        output_base_path = get_output_path(
-                            sanitize_target_name(config.target),
-                            config.op_id,
-                            sanitize_target_name(tool.tool_name),
-                            server_config.output.base_dir,
+            try:
+                headers = resolve_env_vars_in_dict(mcp_conn.headers, environ)
+                match mcp_conn.transport:
+                    case "stdio":
+                        if not mcp_conn.command:
+                            raise ValueError(f"{mcp_conn.transport} requires command")
+                        command_list: List[str] = resolve_env_vars_in_list(mcp_conn.command, environ)
+                        transport = lambda: stdio_client(StdioServerParameters(
+                            command = command_list[0], args=command_list[1:],
+                            env=environ,
+                        ))
+                    case "streamable-http":
+                        transport = lambda: streamablehttp_client(
+                            url=mcp_conn.server_url,
+                            headers=headers,
+                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
                         )
-                        tool = with_result_file(tool, Path(output_base_path))
-                        mcp_tools.append(tool)
-                        client_used = True
-                if not page_token:
-                    break
-            client_stop = lambda *_: client.stop(exc_type=None, exc_val=None, exc_tb=None)
-            if client_used:
-                atexit.register(client_stop)
-                signal.signal(signal.SIGTERM, client_stop)
-            else:
-                client_stop()
+                    case "sse":
+                        transport = lambda: sse_client(
+                            url=mcp_conn.server_url,
+                            headers=headers,
+                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
+                        )
+                    case _:
+                        raise ValueError(f"Unsupported MCP transport {mcp_conn.transport}")
+                client = MCPClient(transport, prefix=mcp_conn.id)
+                prefix_idx = len(mcp_conn.id) + 1
+                client.start()
+                client_used = False
+                page_token = None
+                while len(tools := client.list_tools_sync(page_token)) > 0:
+                    page_token = tools.pagination_token
+                    for tool in tools:
+                        logger.debug(f"Considering tool: {tool.tool_name}")
+                        if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
+                            logger.debug(f"Allowed tool: {tool.tool_name}")
+                            # Wrap output and save into output path
+                            output_base_path = get_output_path(
+                                sanitize_target_name(config.target),
+                                config.op_id,
+                                sanitize_target_name(tool.tool_name),
+                                server_config.output.base_dir,
+                            )
+                            tool = with_result_file(tool, Path(output_base_path))
+                            mcp_tools.append(tool)
+                            client_used = True
+                    if not page_token:
+                        break
+                client_stop = lambda *_: client.stop(exc_type=None, exc_val=None, exc_tb=None)
+                if client_used:
+                    atexit.register(client_stop)
+                    signal.signal(signal.SIGTERM, client_stop)
+                else:
+                    client_stop()
+            except Exception as e:
+                logger.error(f"Communicating with MCP: {repr(mcp_conn)}", exc_info=e)
+                raise e
 
     return mcp_tools
 
@@ -1183,6 +1191,8 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
             if full_tools_context:
                 full_tools_context += "\n\n"
             full_tools_context += str(tools_context)
+
+    print(f"full_tools_context: {full_tools_context}")
 
     # Load module-specific execution prompt
     module_execution_prompt = None

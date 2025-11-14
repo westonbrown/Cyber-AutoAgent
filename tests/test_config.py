@@ -29,6 +29,7 @@ from modules.config.manager import (
     get_model_config,
     get_ollama_host,
 )
+from modules.tools.mcp import resolve_env_vars_in_dict, resolve_env_vars_in_list
 
 
 class TestModelProvider:
@@ -850,6 +851,104 @@ class TestConfigManager:
 
         with pytest.raises(ValueError, match="does not have a valid transport"):
             self.config_manager.get_mcp_config("bedrock")
+
+    def test_resolve_env_vars_in_dict_none_input(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_dict(None, env) == {}
+
+    def test_resolve_env_vars_in_dict_empty(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_dict({}, env) == {}
+
+    def test_resolve_env_vars_in_dict_single_var(self):
+        env = {"TOKEN": "secret-token"}
+        input_dict = {"Authorization": "Bearer ${TOKEN}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"Authorization": "Bearer secret-token"}
+
+    def test_resolve_env_vars_in_dict_multiple_vars_in_one_value(self):
+        env = {"USER": "alice", "ID": "42"}
+        input_dict = {"info": "user=${USER}, id=${ID}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"info": "user=alice, id=42"}
+
+    def test_resolve_env_vars_in_dict_repeated_var(self):
+        env = {"VAR": "x"}
+        input_dict = {"pattern": "${VAR}-${VAR}-${VAR}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"pattern": "x-x-x"}
+
+    def test_resolve_env_vars_in_dict_unknown_var_left_intact(self):
+        env = {}
+        input_dict = {"Authorization": "Bearer ${MISSING}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"Authorization": "Bearer ${MISSING}"}
+
+    def test_resolve_env_vars_in_dict_mixed_known_and_unknown(self):
+        env = {"KNOWN": "yes"}
+        input_dict = {"value": "${KNOWN}/${UNKNOWN}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"value": "yes/${UNKNOWN}"}
+
+    def test_resolve_env_vars_in_dict_value_without_placeholders_unchanged(self):
+        env = {"VAR": "x"}
+        input_dict = {"plain": "no placeholders here"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"plain": "no placeholders here"}
+
+    def test_resolve_env_vars_in_dict_keys_unchanged(self):
+        env = {"VAR": "x"}
+        input_dict = {"${VAR}": "value ${VAR}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        # keys are not touched, only values
+        assert "${VAR}" in result
+        assert result["${VAR}"] == "value x"
+
+    def test_resolve_env_vars_in_list_none_input(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_list(None, env) == []
+
+    def test_resolve_env_vars_in_list_empty(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_list([], env) == []
+
+    def test_resolve_env_vars_in_list_single_element(self):
+        env = {"HOST": "localhost", "PORT": "8080"}
+        input_list = ["http://${HOST}:${PORT}/api"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["http://localhost:8080/api"]
+
+    def test_resolve_env_vars_in_list_multiple_elements(self):
+        env = {"USER": "alice", "HOME": "/home/alice"}
+        input_list = [
+            "user=${USER}",
+            "home=${HOME}",
+            "no-vars-here",
+        ]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == [
+            "user=alice",
+            "home=/home/alice",
+            "no-vars-here",
+        ]
+
+    def test_resolve_env_vars_in_list_unknown_var_left_intact(self):
+        env = {}
+        input_list = ["${UNKNOWN} and more"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["${UNKNOWN} and more"]
+
+    def test_resolve_env_vars_in_list_repeated_var(self):
+        env = {"X": "1"}
+        input_list = ["${X}${X}${X}"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["111"]
+
+    def test_resolve_env_vars_in_list_adjacent_placeholders(self):
+        env = {"A": "foo", "B": "bar"}
+        input_list = ["${A}${B}"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["foobar"]
 
 
 class TestGlobalFunctions:
