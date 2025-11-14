@@ -29,11 +29,11 @@ classifiers = [
 ]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "strands-agents[ollama,otel,litellm]>=1.11.0",
-    "strands-agents-tools>=0.2.9",
+    "strands-agents[ollama,otel,litellm]>=1.16.0",
+    "strands-agents-tools>=0.2.14",
     "mem0ai>=0.1.116",
     "google-genai>=0.3.0",
-    "litellm>=1.79.1",
+    "litellm>=1.79.3",
     "azure-identity>=1.15.0",
     "boto3>=1.39.10",
     "botocore>=1.39.10",
