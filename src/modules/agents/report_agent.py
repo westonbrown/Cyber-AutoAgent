@@ -7,7 +7,6 @@ with the report generation tool to maintain clean architecture and
 avoid code duplication.
 """
 
-import logging
 from typing import Optional
 
 from strands import Agent
@@ -71,6 +70,7 @@ class ReportGenerator:
 
             # Harden Bedrock client similar to main agent to avoid timeouts
             from botocore.config import Config as BotocoreConfig
+
             boto_config = BotocoreConfig(
                 region_name=cfg.get_server_config("bedrock").region,
                 retries={"max_attempts": 10, "mode": "adaptive"},
