@@ -13,7 +13,6 @@ This is NOT a Strands tool - it's a handler utility function.
 """
 
 import json
-import logging
 from typing import Any, Dict, List, Optional
 
 from modules.agents.report_agent import ReportGenerator
@@ -82,12 +81,17 @@ def generate_security_report(
 
         # Validate evidence collection - skip report if no memories
         if not evidence or len(evidence) == 0:
-            logger.info("No evidence/memories collected for operation %s - skipping report generation", operation_id)
+            logger.info(
+                "No evidence/memories collected for operation %s - skipping report generation",
+                operation_id,
+            )
             return ""
 
         finding_count = len([e for e in evidence if e.get("category") == "finding"])
         logger.info(
-            "Retrieved %d pieces of evidence (%d findings) for report generation", len(evidence), finding_count
+            "Retrieved %d pieces of evidence (%d findings) for report generation",
+            len(evidence),
+            finding_count,
         )
 
         # Get module report prompt if available for domain guidance
@@ -106,7 +110,10 @@ def generate_security_report(
 
         # Create report agent with the builder tool
         report_agent = ReportGenerator.create_report_agent(
-            provider=provider, model_id=model_id, operation_id=operation_id, target=target
+            provider=provider,
+            model_id=model_id,
+            operation_id=operation_id,
+            target=target,
         )
 
         # Create comprehensive prompt with template structure and module guidance
@@ -251,7 +258,9 @@ Remember: You MUST use your build_report_sections tool first to get the evidence
                     if isinstance(block, dict) and "text" in block:
                         report_text += block["text"]
 
-                logger.info("Report generated successfully (%d characters)", len(report_text))
+                logger.info(
+                    "Report generated successfully (%d characters)", len(report_text)
+                )
                 return report_text
 
         logger.error("Failed to generate report - no content in response")
@@ -279,9 +288,7 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
         # Use pre-imported memory client with silent mode to prevent output during report generation
         memory_client = get_memory_client(silent=True)
         if not memory_client:
-            error_msg = (
-                "Critical: Memory service unavailable - cannot generate comprehensive report with stored evidence"
-            )
+            error_msg = "Critical: Memory service unavailable - cannot generate comprehensive report with stored evidence"
             logger.error(error_msg)
             # Still proceed but with clear indication of missing data
             evidence.append(
@@ -296,11 +303,15 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
 
         # Retrieve memories for this operation
         # Pass both user_id and agent_id since memories are stored with both
-        memories_response = memory_client.list_memories(user_id="cyber_agent", agent_id="cyber_agent")
+        memories_response = memory_client.list_memories(
+            user_id="cyber_agent", agent_id="cyber_agent"
+        )
 
         # Parse memory response
         if isinstance(memories_response, dict):
-            raw_memories = memories_response.get("memories", memories_response.get("results", []))
+            raw_memories = memories_response.get(
+                "memories", memories_response.get("results", [])
+            )
         elif isinstance(memories_response, list):
             raw_memories = memories_response
         else:
@@ -337,7 +348,15 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
                 continue
 
             # Heuristic: include structured evidence entries with markers as findings
-            if any(marker in str(memory_content) for marker in ["[VULNERABILITY]", "[FINDING]", "[DISCOVERY]", "[SIGNAL]"]):
+            if any(
+                marker in str(memory_content)
+                for marker in [
+                    "[VULNERABILITY]",
+                    "[FINDING]",
+                    "[DISCOVERY]",
+                    "[SIGNAL]",
+                ]
+            ):
                 evidence.append(
                     {
                         "category": "finding",
@@ -350,7 +369,11 @@ def _retrieve_evidence_from_memory(_operation_id: str) -> List[Dict[str, Any]]:
                 continue
 
             # Lightweight: include very short general notes (backward compat)
-            if "category" not in metadata and memory_content and len(memory_content.split()) < 100:
+            if (
+                "category" not in metadata
+                and memory_content
+                and len(memory_content.split()) < 100
+            ):
                 evidence.append(
                     {
                         "category": "general",
@@ -388,14 +411,22 @@ def _get_module_report_prompt(module_name: Optional[str]) -> Optional[str]:
         module_report_prompt = module_loader.load_module_report_prompt(module_name)
 
         if module_report_prompt:
-            logger.info("Loaded report prompt for module '%s' (%d chars)", module_name, len(module_report_prompt))
+            logger.info(
+                "Loaded report prompt for module '%s' (%d chars)",
+                module_name,
+                len(module_report_prompt),
+            )
         else:
             logger.debug("No report prompt found for module '%s'", module_name)
 
         return module_report_prompt
 
     except Exception as e:
-        logger.warning("Error loading report prompt for module '%s': %s. Using default guidance.", module_name, e)
+        logger.warning(
+            "Error loading report prompt for module '%s': %s. Using default guidance.",
+            module_name,
+            e,
+        )
         # Return default security assessment guidance as fallback
         return (
             "DOMAIN_LENS:\n"

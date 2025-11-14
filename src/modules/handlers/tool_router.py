@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from strands.hooks.events import BeforeToolCallEvent  # type: ignore
+from strands.hooks import BeforeToolCallEvent  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,10 @@ class ToolRouterHook:
         else:
             self._artifact_dir = None
         self._artifact_threshold = artifact_threshold or max_result_chars
+        # Feature flag: inline the artifact head explicitly to improve rehydration without requiring a follow-up tool call
+        self._inline_artifact_head = (
+            str(os.getenv("CYBER_TOOL_INLINE_ARTIFACT_HEAD", "true")).lower() == "true"
+        )
 
     def register_hooks(self, registry) -> None:  # type: ignore[no-untyped-def]
         from strands.hooks import AfterToolCallEvent
@@ -65,7 +69,12 @@ class ToolRouterHook:
                     pass
 
         options = _s(params.get("options"))
-        target = _first(params.get("target"), params.get("host"), params.get("url"), params.get("ip"))
+        target = _first(
+            params.get("target"),
+            params.get("host"),
+            params.get("url"),
+            params.get("ip"),
+        )
 
         known = {"options", "target", "host", "url", "ip"}
         extras: list[str] = []
@@ -103,7 +112,9 @@ class ToolRouterHook:
             if not isinstance(text, str):
                 continue
             needs_externalization = len(text) > self._artifact_threshold
-            needs_truncation = len(text) > self._max_result_chars or needs_externalization
+            needs_truncation = (
+                len(text) > self._max_result_chars or needs_externalization
+            )
             if not needs_truncation:
                 continue
 
@@ -121,14 +132,39 @@ class ToolRouterHook:
             if artifact_path is not None:
                 preview_limit = min(self._max_result_chars, self._artifact_threshold)
             snippet = text[:preview_limit]
-            suffix_lines = [f"[Truncated: {len(text)} chars total]"]
             if artifact_path is not None:
                 try:
                     relative_path = os.path.relpath(artifact_path, os.getcwd())
                 except Exception:
                     relative_path = str(artifact_path)
-                suffix_lines.append(f"[Full output saved to {relative_path}]")
-            block["text"] = f"{snippet}\n\n" + "\n".join(suffix_lines)
+                artifact_preview = ""
+                try:
+                    with open(
+                        artifact_path, "r", encoding="utf-8", errors="ignore"
+                    ) as fh:
+                        artifact_preview = fh.read(4000)
+                except Exception:
+                    artifact_preview = ""
+                summary_lines = [
+                    "[Tool output truncated]",
+                    f"Full output saved to {relative_path}",
+                    f"Next step: run `cat {relative_path} | head -n 200` (or download the artifact) to review the complete response.",
+                    f"Preview ({len(snippet)} chars):",
+                    snippet,
+                ]
+                if artifact_preview:
+                    # Make the head explicit to aid LLM consumption even if it doesn't issue the follow-up tool call
+                    if self._inline_artifact_head:
+                        summary_lines.append(
+                            "[Auto-rehydrated] Inline artifact head (first ~4000 chars):"
+                        )
+                    else:
+                        summary_lines.append("Artifact head (first ~4000 chars):")
+                    summary_lines.append(artifact_preview)
+                block["text"] = "\n".join(summary_lines)
+            else:
+                suffix_lines = [f"[Truncated: {len(text)} chars total]"]
+                block["text"] = f"{snippet}\n\n" + "\n".join(suffix_lines)
 
     def _persist_artifact(self, tool_name: str, payload: str) -> Optional[Path]:
         if not self._artifact_dir:
@@ -137,7 +173,9 @@ class ToolRouterHook:
             self._artifact_dir.mkdir(parents=True, exist_ok=True)
             safe_tool = re.sub(r"[^a-zA-Z0-9_.-]", "_", tool_name or "tool")
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            filename = f"{safe_tool[:40] or 'tool'}_{timestamp}_{uuid.uuid4().hex[:6]}.log"
+            filename = (
+                f"{safe_tool[:40] or 'tool'}_{timestamp}_{uuid.uuid4().hex[:6]}.log"
+            )
             artifact_path = self._artifact_dir / filename
             artifact_path.write_text(payload, encoding="utf-8", errors="ignore")
             return artifact_path

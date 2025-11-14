@@ -6,7 +6,6 @@ events for the React terminal UI, providing real-time operation visibility.
 """
 
 import json
-import logging
 import os
 import re
 import threading
@@ -17,7 +16,11 @@ from typing import Any, Dict, List, Optional
 from strands.handlers import PrintingCallbackHandler
 
 from ..events import EventEmitter, get_emitter
-from ..output_interceptor import get_buffered_output, get_buffered_error_output, set_tool_execution_state
+from ..output_interceptor import (
+    get_buffered_output,
+    get_buffered_error_output,
+    set_tool_execution_state,
+)
 from .tool_emitters import ToolEventEmitter
 from modules.config.logger_factory import get_logger
 
@@ -58,13 +61,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Operation configuration
         self.current_step = 0
         self.max_steps = max_steps
-        self.operation_id = operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.operation_id = (
+            operation_id or f"OP_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
 
         # Initialize emitter with operation context
         self.emitter = emitter or get_emitter(operation_id=self.operation_id)
         self.start_time = time.time()
         self.model_id = model_id
-        self.swarm_model_id = swarm_model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+        self.swarm_model_id = (
+            swarm_model_id or "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+        )
         self.init_context = init_context or {}
 
         # Metrics tracking
@@ -101,12 +108,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Recent reasoning dedupe per agent (TTL-based to prevent repeated summaries)
         self._recent_reasoning_by_agent = {}
         try:
-            self._recent_reasoning_ttl = float(os.getenv("REASONING_DEDUPE_TTL_S", "20"))
+            self._recent_reasoning_ttl = float(
+                os.getenv("REASONING_DEDUPE_TTL_S", "20")
+            )
         except Exception:
             self._recent_reasoning_ttl = 20.0
 
         # Ensure each numeric step has exactly one reasoning block (after initial pre-step reasoning)
-        self._reasoning_required_for_current_step = False  # Set True at each step header; cleared on reasoning emit
+        self._reasoning_required_for_current_step = (
+            False  # Set True at each step header; cleared on reasoning emit
+        )
 
         # Step header tracking
         self.pending_step_header = False
@@ -134,8 +145,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         self.swarm_agent_steps = {}  # {agent_name: current_step}
         # Track python_repl preview emission per tool id to suppress generic completion
         self._python_preview_emitted = set()
-        self.swarm_max_iterations = None  # Max iterations for entire swarm (provided by tool input)
-        self.swarm_max_handoffs = None  # Max handoffs across the swarm (provided by tool input)
+        self.swarm_max_iterations = (
+            None  # Max iterations for entire swarm (provided by tool input)
+        )
+        self.swarm_max_handoffs = (
+            None  # Max handoffs across the swarm (provided by tool input)
+        )
         self.swarm_iteration_count = 0  # Track total iterations across all agents
         self.swarm_tool_id = None  # Track the swarm tool's specific ID
 
@@ -194,11 +209,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Emit startup spinner immediately after initialization
             # This provides visual feedback during model loading and first reasoning
-            self._emit_ui_event({
-                "type": "thinking",
-                "context": "startup",
-                "urgent": True
-            })
+            self._emit_ui_event(
+                {"type": "thinking", "context": "startup", "urgent": True}
+            )
         except Exception as e:
             logger.warning("Failed to emit operation_init event: %s", e)
 
@@ -232,7 +245,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Frontend terminal closed (user interrupted) - suppress noisy traceback
             logger.debug(f"Frontend disconnected, skipping event {event.get('type')}")
         except Exception as e:
-            logger.error(f"Failed to emit event {event.get('type')}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to emit event {event.get('type')}: {e}", exc_info=True
+            )
 
     def _emit_termination(self, reason: str, message: str) -> None:
         """Emit a single termination_reason event (idempotent) with a clear final step.
@@ -267,7 +282,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         "type": "step_header",
                         "step": "TERMINATED",
                         "operation": self.operation_id,
-                        "duration": self._format_duration(time.time() - self.start_time),
+                        "duration": self._format_duration(
+                            time.time() - self.start_time
+                        ),
                         "maxSteps": self.max_steps,
                     }
                 )
@@ -324,7 +341,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # 2) Message (tool blocks, result blocks, and optional swarm reasoning extraction)
         if message and isinstance(message, dict):
-            self._process_message(message, skip_reasoning_extraction=skip_message_reasoning)
+            self._process_message(
+                message, skip_reasoning_extraction=skip_message_reasoning
+            )
 
         # 3) Tool lifecycle
         if current_tool_use:
@@ -446,8 +465,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # In swarm mode, do not flush reasoning here; defer until after tool_end
         self._process_tool_result_from_message(tool_result)
 
-    def _handle_alternate_results(self, kwargs: Dict[str, Any], tool_result_already: bool) -> None:
-        for alt_key in ["result", "tool_result", "execution_result", "response", "output"]:
+    def _handle_alternate_results(
+        self, kwargs: Dict[str, Any], tool_result_already: bool
+    ) -> None:
+        for alt_key in [
+            "result",
+            "tool_result",
+            "execution_result",
+            "response",
+            "output",
+        ]:
             result_data = kwargs.get(alt_key)
             if result_data is None:
                 continue
@@ -459,7 +486,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 result_data = {"content": [{"text": result_data}], "status": "success"}
             self._process_tool_result_from_message(result_data)
 
-    def _process_message(self, message: Dict[str, Any], skip_reasoning_extraction: bool = False) -> None:
+    def _process_message(
+        self, message: Dict[str, Any], skip_reasoning_extraction: bool = False
+    ) -> None:
         """Process message objects to track steps and extract content.
 
         Args:
@@ -471,22 +500,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Check if message contains tool usage
         has_tool_use = any(
-            isinstance(block, dict) and (block.get("type") == "tool_use" or "toolUse" in block) for block in content
+            isinstance(block, dict)
+            and (block.get("type") == "tool_use" or "toolUse" in block)
+            for block in content
         )
 
         # Handle step progression
         if message.get("role") == "assistant":
             # Identify the very first assistant turn (before any steps are counted)
-            initial_assistant = (
-                not self.in_swarm_operation and self.current_step == 0
-            )
+            initial_assistant = not self.in_swarm_operation and self.current_step == 0
 
             if has_tool_use:
                 # Reset batch tracking for new assistant response with tools
                 # This allows multiple tools in the same response to share one step header
-                if hasattr(self, '_step_header_emitted_for_batch'):
-                    delattr(self, '_step_header_emitted_for_batch')
-                if hasattr(self, '_tools_in_current_step'):
+                if hasattr(self, "_step_header_emitted_for_batch"):
+                    delattr(self, "_step_header_emitted_for_batch")
+                if hasattr(self, "_tools_in_current_step"):
                     # Clear the list but keep the attribute to signal we're in a step
                     self._tools_in_current_step = []
 
@@ -533,7 +562,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             try:
                 for block in content:
                     # Stop at first tool_use/toolUse block to avoid pulling post-tool text
-                    if isinstance(block, dict) and (block.get("type") == "tool_use" or "toolUse" in block):
+                    if isinstance(block, dict) and (
+                        block.get("type") == "tool_use" or "toolUse" in block
+                    ):
                         break
                     if isinstance(block, dict) and isinstance(block.get("text"), str):
                         text_val = block.get("text", "").strip()
@@ -558,10 +589,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             try:
                 seen_tool = False
                 for block in content:
-                    if isinstance(block, dict) and (block.get("type") == "tool_use" or "toolUse" in block):
+                    if isinstance(block, dict) and (
+                        block.get("type") == "tool_use" or "toolUse" in block
+                    ):
                         seen_tool = True
                         continue
-                    if seen_tool and isinstance(block, dict) and isinstance(block.get("text"), str):
+                    if (
+                        seen_tool
+                        and isinstance(block, dict)
+                        and isinstance(block.get("text"), str)
+                    ):
                         txt = block.get("text", "").strip()
                         # Skip JSON-like blocks and empty
                         if txt and not txt.startswith("{") and not txt.startswith("["):
@@ -595,7 +632,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
     def _handoff_input_complete(self, tool_input: Any) -> bool:
         try:
-            return isinstance(tool_input, dict) and bool(tool_input.get("handoff_to")) and bool(tool_input.get("message"))
+            return (
+                isinstance(tool_input, dict)
+                and bool(tool_input.get("handoff_to"))
+                and bool(tool_input.get("message"))
+            )
         except Exception:
             return False
 
@@ -627,7 +668,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             and tool_name not in ["swarm", "complete_swarm_task", "handoff_to_agent"]
         )
 
-
         # Only process new tools
         if tool_id and tool_id not in self.announced_tools:
             # Ensure a step header will be emitted for each new tool (non-swarm)
@@ -635,7 +675,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Claude 4.5 can invoke multiple tools in parallel within the same response
             if not self.in_swarm_operation:
                 # Check if this is the first tool announcement since the last step header
-                if self.current_step == 0 or not hasattr(self, '_tools_in_current_step'):
+                if self.current_step == 0 or not hasattr(
+                    self, "_tools_in_current_step"
+                ):
                     self._tools_in_current_step = []
                     self.pending_step_header = True
                     # Emit accumulated reasoning first (for non-swarm or if not already emitted)
@@ -645,12 +687,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 self._tools_in_current_step.append(tool_id)
 
             # Emit step header ONLY if pending (i.e., this is the first tool in the response)
-            if self.pending_step_header and (self.current_step == 0 or self.pending_step_header):
+            if self.pending_step_header and (
+                self.current_step == 0 or self.pending_step_header
+            ):
                 if self.current_step == 0:
                     # First tool ever - increment step
                     if not self.in_swarm_operation:
                         self.current_step += 1
-                elif self.pending_step_header and not hasattr(self, '_step_header_emitted_for_batch'):
+                elif self.pending_step_header and not hasattr(
+                    self, "_step_header_emitted_for_batch"
+                ):
                     # First tool in this batch - increment step
                     if not self.in_swarm_operation:
                         self.current_step += 1
@@ -666,7 +712,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     )
                     from modules.handlers.base import StepLimitReached
 
-                    raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
+                    raise StepLimitReached(
+                        f"Step limit reached: {self.current_step}/{self.max_steps}"
+                    )
 
                 # Only emit header if within step limits
                 self._emit_step_header()
@@ -684,7 +732,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Defensive: never allow metrics to break streaming
                 pass
             self.tool_input_buffer[tool_id] = tool_input
-            self.tool_name_buffer[tool_id] = tool_name  # Track tool name for correct attribution
+            self.tool_name_buffer[tool_id] = (
+                tool_name  # Track tool name for correct attribution
+            )
 
             # Intelligently detect which swarm agent is active based on tool usage
             if self.in_swarm_operation and tool_name != "swarm":
@@ -697,10 +747,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         self.swarm_agent_steps[inferred_agent] = 0
 
             # Emit tool_start for meaningful input OR swarm agents (which need immediate emission)
-            has_meaningful_input = bool(tool_input) and tool_input != {} and self._is_valid_input(tool_input)
+            has_meaningful_input = (
+                bool(tool_input)
+                and tool_input != {}
+                and self._is_valid_input(tool_input)
+            )
 
             # For handoff_to_agent, require complete input (handoff_to and message) to avoid duplicate args
-            if tool_name == "handoff_to_agent" and not self._handoff_input_complete(tool_input):
+            if tool_name == "handoff_to_agent" and not self._handoff_input_complete(
+                tool_input
+            ):
                 has_meaningful_input = False
 
             # For swarm agents, delay emission until we have input
@@ -710,7 +766,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 return
 
             # Only the swarm path emits tool headers from the bridge; main agent headers come from ReactHooks
-            should_emit = self.in_swarm_operation and (has_meaningful_input or is_swarm_agent_tool)
+            should_emit = self.in_swarm_operation and (
+                has_meaningful_input or is_swarm_agent_tool
+            )
 
             if should_emit:
                 # Suppress OutputInterceptor during tool execution
@@ -741,12 +799,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 # Add swarm context if applicable
                 if self.in_swarm_operation and self.current_swarm_agent:
                     tool_event["swarm_agent"] = self.current_swarm_agent
-                    tool_event["swarm_step"] = self.swarm_agent_steps.get(self.current_swarm_agent, 1)
+                    tool_event["swarm_step"] = self.swarm_agent_steps.get(
+                        self.current_swarm_agent, 1
+                    )
 
                 self._emit_ui_event(tool_event)
 
                 # Also emit tool_invocation_start for compatibility
-                invocation_event = {"type": "tool_invocation_start", "tool_name": tool_name}
+                invocation_event = {
+                    "type": "tool_invocation_start",
+                    "tool_name": tool_name,
+                }
                 if self.in_swarm_operation and self.current_swarm_agent:
                     invocation_event["swarm_agent"] = self.current_swarm_agent
                 self._emit_ui_event(invocation_event)
@@ -759,7 +822,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # This prevents the UI from showing an 'Executing' spinner without a corresponding tool header
             if should_emit:
                 current_time_ms = int(time.time() * 1000)
-                self._emit_ui_event({"type": "thinking", "context": "tool_execution", "startTime": current_time_ms})
+                self._emit_ui_event(
+                    {
+                        "type": "thinking",
+                        "context": "tool_execution",
+                        "startTime": current_time_ms,
+                    }
+                )
 
             # Handle swarm tracking (only here; ToolEventEmitter is skipped for 'swarm')
             if tool_name == "swarm":
@@ -774,15 +843,23 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         }
                     )
                 except Exception as e:
-                    logger.warning("SWARM_START parsing failed: %s; input=%s", e, raw_input)
+                    logger.warning(
+                        "SWARM_START parsing failed: %s; input=%s", e, raw_input
+                    )
             elif tool_name == "handoff_to_agent":
                 try:
                     # Track handoff and ensure we have valid agent tracking
                     if tool_input:
                         # Normalize agent field: prefer explicit agent_name, fall back to handoff_to alias
-                        agent_name = tool_input.get("agent_name") or tool_input.get("handoff_to") or ""
+                        agent_name = (
+                            tool_input.get("agent_name")
+                            or tool_input.get("handoff_to")
+                            or ""
+                        )
                         if agent_name:
-                            tool_input["agent_name"] = agent_name  # ensure consistent key for downstream
+                            tool_input["agent_name"] = (
+                                agent_name  # ensure consistent key for downstream
+                            )
                             # Emit accumulated reasoning before handoff
                             if self.reasoning_buffer:
                                 self._emit_accumulated_reasoning()
@@ -800,7 +877,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             else:
                                 pass  # No known agent found in input
                 except Exception as e:
-                    logger.warning("AGENT_HANDOFF parsing failed: %s; input=%s", e, raw_input)
+                    logger.warning(
+                        "AGENT_HANDOFF parsing failed: %s; input=%s", e, raw_input
+                    )
             elif tool_name == "complete_swarm_task":
                 self._track_swarm_complete()
             elif tool_name == "stop":
@@ -831,7 +910,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             was_empty_or_partial = (
                 not old_input
                 or old_input == {}
-                or (isinstance(old_input, dict) and len(old_input) == 1 and "value" in old_input)
+                or (
+                    isinstance(old_input, dict)
+                    and len(old_input) == 1
+                    and "value" in old_input
+                )
             )
 
             has_complete_content = new_input and new_input != {} and not is_partial_json
@@ -856,7 +939,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             "tool_id": tool_id,
                             "tool_input": new_input,
                             "swarm_agent": self.current_swarm_agent,
-                            "swarm_step": self.swarm_agent_steps.get(self.current_swarm_agent, 1),
+                            "swarm_step": self.swarm_agent_steps.get(
+                                self.current_swarm_agent, 1
+                            ),
                         }
                     )
                     # Also emit tool_invocation_start for compatibility
@@ -887,7 +972,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         }
                     )
                     self._emit_ui_event(
-                        {"type": "tool_invocation_start", "tool_name": self.last_tool_name}
+                        {
+                            "type": "tool_invocation_start",
+                            "tool_name": self.last_tool_name,
+                        }
                     )
                     self.tools_with_complete_input.add(tool_id)
                     # Skip tool_input_update for handoff_to_agent to avoid duplicate args listing
@@ -898,35 +986,53 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     if tool_id:
                         # Skip tool_input_update for handoff_to_agent to avoid duplicated fields when UI merges events
                         if self.last_tool_name != "handoff_to_agent":
-                            self._emit_ui_event({
-                                "type": "tool_input_update",
-                                "tool_id": tool_id,
-                                "tool_input": new_input,
-                            })
+                            self._emit_ui_event(
+                                {
+                                    "type": "tool_input_update",
+                                    "tool_id": tool_id,
+                                    "tool_input": new_input,
+                                }
+                            )
                 except Exception:
                     pass
 
                 # Emit tool-specific events now that we have the real input (skip 'swarm')
                 if self._is_valid_input(new_input) and self.last_tool_name != "swarm":
-                    self.tool_emitter.emit_tool_specific_events(self.last_tool_name, new_input)
+                    self.tool_emitter.emit_tool_specific_events(
+                        self.last_tool_name, new_input
+                    )
 
                 # Handle swarm tracking with real input (single source of truth)
                 if self.last_tool_name == "swarm":
                     try:
                         self._track_swarm_start(new_input, self.last_tool_id)
                     except Exception as e:
-                        logger.warning("SWARM_START streaming update parsing failed: %s; input=%s", e, raw_input)
+                        logger.warning(
+                            "SWARM_START streaming update parsing failed: %s; input=%s",
+                            e,
+                            raw_input,
+                        )
                         self._track_swarm_start(new_input, self.last_tool_id)
                     except Exception as e:
-                        logger.warning("SWARM_START streaming update parsing failed: %s; input=%s", e, raw_input)
+                        logger.warning(
+                            "SWARM_START streaming update parsing failed: %s; input=%s",
+                            e,
+                            raw_input,
+                        )
 
-    def _synthesize_swarm_tool_start(self, tool_name: str, buffered_output: str = None) -> None:
+    def _synthesize_swarm_tool_start(
+        self, tool_name: str, buffered_output: str = None
+    ) -> None:
         """Synthesize a tool_start event for swarm agents when missing.
 
         This elegant workaround addresses SDK limitations where swarm agent
         tool invocations don't emit proper start events.
         """
-        if not self.in_swarm_operation or tool_name in ["swarm", "handoff_to_agent", "complete_swarm_task"]:
+        if not self.in_swarm_operation or tool_name in [
+            "swarm",
+            "handoff_to_agent",
+            "complete_swarm_task",
+        ]:
             return
 
         # Infer which agent is using this tool
@@ -983,7 +1089,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         elif isinstance(tool_result, dict):
             tool_result_dict = tool_result
         else:
-            tool_result_dict = {"content": [{"text": str(tool_result)}], "status": "success"}
+            tool_result_dict = {
+                "content": [{"text": str(tool_result)}],
+                "status": "success",
+            }
 
         # Extract tool_use_id and get correct tool name early for proper attribution
         tool_use_id = tool_result_dict.get("toolUseId") or self.last_tool_id
@@ -992,10 +1101,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Do not flush reasoning here; for swarm we want reasoning to follow tool output
 
         # Ensure we have proper tracking for swarm agents
-        if self.in_swarm_operation and not self.current_swarm_agent and self.swarm_agents:
+        if (
+            self.in_swarm_operation
+            and not self.current_swarm_agent
+            and self.swarm_agents
+        ):
             # If no current agent set but we're in swarm, use first agent
             self.current_swarm_agent = self.swarm_agents[0]
-            logger.info(f"Swarm operation started with agent: {self.current_swarm_agent}")
+            logger.info(
+                f"Swarm operation started with agent: {self.current_swarm_agent}"
+            )
 
         # Parse swarm output for agent events if this is the swarm tool completing
         if tool_name == "swarm" and buffered_output:
@@ -1013,7 +1128,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     }
                 )
 
-
         # Stop thinking animation
         self._emit_ui_event({"type": "thinking_end"})
 
@@ -1021,12 +1135,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if tool_name == "shell":
             logger.debug(
                 "Shell tool result structure: %s",
-                tool_result_dict.keys() if isinstance(tool_result_dict, dict) else type(tool_result_dict),
+                tool_result_dict.keys()
+                if isinstance(tool_result_dict, dict)
+                else type(tool_result_dict),
             )
             if "content" in tool_result_dict:
-                logger.debug("Shell content items: %d", len(tool_result_dict.get("content", [])))
-                for i, item in enumerate(tool_result_dict.get("content", [])[:3]):  # Log first 3 items
-                    logger.debug("Content item %d: %s", i, item if isinstance(item, dict) else str(item)[:100])
+                logger.debug(
+                    "Shell content items: %d", len(tool_result_dict.get("content", []))
+                )
+                for i, item in enumerate(
+                    tool_result_dict.get("content", [])[:3]
+                ):  # Log first 3 items
+                    logger.debug(
+                        "Content item %d: %s",
+                        i,
+                        item if isinstance(item, dict) else str(item)[:100],
+                    )
 
         # Extract result details
         content_items = tool_result_dict.get("content", [])
@@ -1052,7 +1176,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             {
                                 "type": "output",
                                 "content": preview,
-                                "metadata": {"fromToolBuffer": True, "tool": "python_repl", "preview": True, "stderr": False},
+                                "metadata": {
+                                    "fromToolBuffer": True,
+                                    "tool": "python_repl",
+                                    "preview": True,
+                                    "stderr": False,
+                                },
                             }
                         )
                         if tool_use_id:
@@ -1077,7 +1206,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             {
                                 "type": "output",
                                 "content": err_preview,
-                                "metadata": {"fromToolBuffer": True, "tool": "python_repl", "preview": True, "stderr": True},
+                                "metadata": {
+                                    "fromToolBuffer": True,
+                                    "tool": "python_repl",
+                                    "preview": True,
+                                    "stderr": True,
+                                },
                             }
                         )
                         if tool_use_id:
@@ -1102,7 +1236,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 reason_msg = "Stop tool used - terminating"
                 try:
                     if isinstance(tool_input, dict):
-                        reason_msg = tool_input.get("reason") or tool_input.get("message") or reason_msg
+                        reason_msg = (
+                            tool_input.get("reason")
+                            or tool_input.get("message")
+                            or reason_msg
+                        )
                 except Exception:
                     pass
                 self._emit_termination("stop_tool", reason_msg)
@@ -1118,7 +1256,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     if action == "store":
                         self.memory_ops += 1
                         metadata = (
-                            tool_input.get("metadata", {}) if isinstance(tool_input.get("metadata"), dict) else {}
+                            tool_input.get("metadata", {})
+                            if isinstance(tool_input.get("metadata"), dict)
+                            else {}
                         )
                         category = str(metadata.get("category", "")).lower()
                         if category in ("finding", "evidence"):
@@ -1148,7 +1288,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Check if we're exiting THE swarm tool specifically (not just any tool during swarm operation)
         # Compare tool IDs to ensure we're detecting the swarm tool itself ending
         is_swarm_tool_ending = (
-            (tool_use_id == self.swarm_tool_id) if self.swarm_tool_id else (tool_name == "swarm")
+            (tool_use_id == self.swarm_tool_id)
+            if self.swarm_tool_id
+            else (tool_name == "swarm")
         )
 
         if is_swarm_tool_ending and self.in_swarm_operation:
@@ -1176,7 +1318,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
                 # Process errors through tool-specific handlers for cleaner display
                 if tool_name == "shell":
-                    clean_error = self._parse_shell_tool_output_detailed(error_text.strip())
+                    clean_error = self._parse_shell_tool_output_detailed(
+                        error_text.strip()
+                    )
                 elif tool_name == "http_request":
                     clean_error = self._parse_http_tool_output(error_text.strip())
                 else:
@@ -1189,14 +1333,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     # Common patterns: "timed out after 30 seconds", TimeoutExpired, etc.
                     import re
 
-                    m = re.search(r"timed out after\s+(\d+)\s*seconds?", clean_error, re.IGNORECASE)
+                    m = re.search(
+                        r"timed out after\s+(\d+)\s*seconds?",
+                        clean_error,
+                        re.IGNORECASE,
+                    )
                     if m:
                         timeout_seconds = int(m.group(1))
                 except Exception:
                     pass
                 requested_timeout = None
                 try:
-                    requested_timeout = tool_input.get("timeout") if isinstance(tool_input, dict) else None
+                    requested_timeout = (
+                        tool_input.get("timeout")
+                        if isinstance(tool_input, dict)
+                        else None
+                    )
                 except Exception:
                     requested_timeout = None
 
@@ -1212,7 +1364,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         + (
                             f" after {timeout_seconds}s"
                             if timeout_seconds
-                            else (f" after {requested_timeout}s" if requested_timeout else "")
+                            else (
+                                f" after {requested_timeout}s"
+                                if requested_timeout
+                                else ""
+                            )
                         )
                         + ".",
                         "Tip: Re-run with a higher timeout (e.g., add 'timeout': 300 to the shell tool input) or set SHELL_DEFAULT_TIMEOUT in your environment.",
@@ -1240,7 +1396,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
                 # Now emit tool completion after consolidated output is sent
                 self._emit_ui_event(
-                    {"type": "tool_invocation_end", "success": success, "tool_name": tool_name}
+                    {
+                        "type": "tool_invocation_end",
+                        "success": success,
+                        "tool_name": tool_name,
+                    }
                 )
                 # Emit tool_end after output and invocation_end
                 self._emit_ui_event({"type": "tool_end", **_deferred_tool_end})
@@ -1282,10 +1442,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if hasattr(self, "last_swarm_metrics"):
                 metrics = self.last_swarm_metrics
                 output_text = f"""🎯 **Swarm Execution Timed Out**
-📊 **Status:** Partial Success (Timeout after {metrics['duration']})
-🤖 **Agents Run:** {len(metrics['completed_agents'])}/{metrics['total_agents']} agents
-🔄 **Iterations Completed:** {metrics['total_iterations']}
-📈 **Tokens Used:** {metrics['total_tokens']:,}
+📊 **Status:** Partial Success (Timeout after {metrics["duration"]})
+🤖 **Agents Run:** {len(metrics["completed_agents"])}/{metrics["total_agents"]} agents
+🔄 **Iterations Completed:** {metrics["total_iterations"]}
+📈 **Tokens Used:** {metrics["total_tokens"]:,}
 
 **Agent Activity:**"""
                 for agent, activity in metrics.get("agent_activity", {}).items():
@@ -1298,8 +1458,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # For python_repl with no textual output, emit executed code and suppress generic message if a preview was shown
             try:
                 if tool_name == "python_repl":
-                    preview_emitted = bool(tool_use_id and tool_use_id in getattr(self, "_python_preview_emitted", set()))
-                    code_input = self.tool_input_buffer.get(tool_use_id or self.last_tool_id, {})
+                    preview_emitted = bool(
+                        tool_use_id
+                        and tool_use_id
+                        in getattr(self, "_python_preview_emitted", set())
+                    )
+                    code_input = self.tool_input_buffer.get(
+                        tool_use_id or self.last_tool_id, {}
+                    )
                     code_text = self._extract_code_from_input(code_input)
                     if code_text and code_text.strip():
                         code_event = {
@@ -1315,7 +1481,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                         if tool_use_id:
                             self.tool_use_output_emitted[tool_use_id] = True
                         # Emit tool completion without generic placeholder
-                        self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": tool_name})
+                        self._emit_ui_event(
+                            {
+                                "type": "tool_invocation_end",
+                                "success": success,
+                                "tool_name": tool_name,
+                            }
+                        )
                         return
             except Exception:
                 pass
@@ -1331,7 +1503,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if tool_use_id:
                 self.tool_use_output_emitted[tool_use_id] = True
             # Emit tool completion
-            self._emit_ui_event({"type": "tool_invocation_end", "success": success, "tool_name": tool_name})
+            self._emit_ui_event(
+                {
+                    "type": "tool_invocation_end",
+                    "success": success,
+                    "tool_name": tool_name,
+                }
+            )
             # Emit tool_end after output and invocation_end
             self._emit_ui_event({"type": "tool_end", **_deferred_tool_end})
             if self.in_swarm_operation and self.reasoning_buffer:
@@ -1340,7 +1518,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Check if we already processed this exact output
         output_key = f"{tool_use_id or self.last_tool_id}:{hash(output_text.strip())}"
-        if hasattr(self, "_processed_outputs") and output_key in self._processed_outputs:
+        if (
+            hasattr(self, "_processed_outputs")
+            and output_key in self._processed_outputs
+        ):
             return  # Skip duplicate output
 
         # Initialize tracking if not exists
@@ -1365,7 +1546,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         )
 
         # Emit tool completion with swarm context
-        tool_inv_end_event = {"type": "tool_invocation_end", "success": success, "tool_name": tool_name}
+        tool_inv_end_event = {
+            "type": "tool_invocation_end",
+            "success": success,
+            "tool_name": tool_name,
+        }
         if self.in_swarm_operation and self.current_swarm_agent:
             tool_inv_end_event["swarm_agent"] = self.current_swarm_agent
         self._emit_ui_event(tool_inv_end_event)
@@ -1383,7 +1568,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Ensure exactly one reasoning per step: if none occurred in this step, emit a brief rationale now
         try:
-            if (not self.in_swarm_operation) and bool(getattr(self, "_reasoning_required_for_current_step", False)):
+            if (not self.in_swarm_operation) and bool(
+                getattr(self, "_reasoning_required_for_current_step", False)
+            ):
                 fallback = f"Reviewed {self.last_tool_name or 'tool'} results and determined next action."
                 self._emit_ui_event({"type": "reasoning", "content": fallback})
                 self._emitted_any_reasoning = True
@@ -1457,7 +1644,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 if error_msg:
                     actual_output.append(f"Error: {error_msg}")
                 continue
-            elif line.startswith("Execution Summary:") or line.startswith("Total commands:"):
+            elif line.startswith("Execution Summary:") or line.startswith(
+                "Total commands:"
+            ):
                 continue  # Skip wrapper headers
             elif in_output_section:
                 actual_output.append(line)
@@ -1510,7 +1699,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         return output_text.strip()
 
     def _process_shell_output(
-        self, output_text: str, _content_items: List, _status: str, tool_use_id: str = None
+        self,
+        output_text: str,
+        _content_items: List,
+        _status: str,
+        tool_use_id: str = None,
     ) -> None:
         """Process shell command output with intelligent parsing and clean display."""
         # Skip if output was already emitted
@@ -1532,7 +1725,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Check if we already processed this exact output
         output_key = f"{tool_use_id or self.last_tool_id}:{hash(output_text.strip())}"
-        if hasattr(self, "_processed_outputs") and output_key in self._processed_outputs:
+        if (
+            hasattr(self, "_processed_outputs")
+            and output_key in self._processed_outputs
+        ):
             return  # Skip duplicate output
 
         # Initialize tracking if not exists
@@ -1550,11 +1746,19 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.tool_use_output_emitted[tool_use_id] = True
         # Always mark shell output with metadata to prevent truncation
         self._emit_ui_event(
-            {"type": "output", "content": clean_output, "metadata": {"fromToolBuffer": True, "tool": "shell"}}
+            {
+                "type": "output",
+                "content": clean_output,
+                "metadata": {"fromToolBuffer": True, "tool": "shell"},
+            }
         )
 
     def _process_http_output(
-        self, output_text: str, _content_items: List, _status: str, tool_use_id: str = None
+        self,
+        output_text: str,
+        _content_items: List,
+        _status: str,
+        tool_use_id: str = None,
     ) -> None:
         """Process HTTP request output with intelligent parsing and clean display."""
         # Skip if output was already emitted
@@ -1576,7 +1780,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Check if we already processed this exact output
         output_key = f"{tool_use_id or self.last_tool_id}:{hash(output_text.strip())}"
-        if hasattr(self, "_processed_outputs") and output_key in self._processed_outputs:
+        if (
+            hasattr(self, "_processed_outputs")
+            and output_key in self._processed_outputs
+        ):
             return  # Skip duplicate output
 
         # Initialize tracking if not exists
@@ -1594,7 +1801,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             self.tool_use_output_emitted[tool_use_id] = True
         # Always mark HTTP output with metadata to prevent truncation
         self._emit_ui_event(
-            {"type": "output", "content": clean_output, "metadata": {"fromToolBuffer": True, "tool": "http_request"}}
+            {
+                "type": "output",
+                "content": clean_output,
+                "metadata": {"fromToolBuffer": True, "tool": "http_request"},
+            }
         )
 
     def _collapse_repeated_sentences(self, text: str) -> str:
@@ -1605,7 +1816,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         (compared with a normalized form).
         """
         try:
-            s = str(text)  # DO NOT strip; leading/trailing spaces are meaningful for streaming joins
+            s = str(
+                text
+            )  # DO NOT strip; leading/trailing spaces are meaningful for streaming joins
             if not s:
                 return s
             # Grab segments ending with . ! ? : (plus following whitespace) or the tail
@@ -1647,10 +1860,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 last_norm = str(last_chunk).strip()
                 cur_norm = str(text).strip()
                 if last_norm and cur_norm:
-                    if cur_norm.startswith(last_norm) and len(cur_norm) > len(last_norm):
+                    if cur_norm.startswith(last_norm) and len(cur_norm) > len(
+                        last_norm
+                    ):
                         # Replace last short fragment with the longer current one
                         self.reasoning_buffer[-1] = text
-                    elif last_norm.startswith(cur_norm) and len(last_norm) > len(cur_norm):
+                    elif last_norm.startswith(cur_norm) and len(last_norm) > len(
+                        cur_norm
+                    ):
                         # Current is a shorter prefix of last; drop it
                         pass
                     else:
@@ -1669,7 +1886,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # In swarm mode, never flush based on timers/size; defer until tool_end or explicit completion
         if self.in_swarm_operation and self.current_swarm_agent:
             try:
-                self._last_reasoning_flush = self._last_reasoning_flush  # no-op keep attribute stable
+                self._last_reasoning_flush = (
+                    self._last_reasoning_flush
+                )  # no-op keep attribute stable
             except Exception:
                 self._last_reasoning_flush = 0
             return
@@ -1693,7 +1912,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         for line in lines:
             # Check for common error patterns
             if "requires root privileges" in line:
-                error_messages.append("⚠️ Some tools require root privileges - agents may use alternative approaches")
+                error_messages.append(
+                    "⚠️ Some tools require root privileges - agents may use alternative approaches"
+                )
             elif "QUITTING!" in line:
                 continue  # Skip redundant quit messages
 
@@ -1710,7 +1931,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             {
                                 "type": "output",
                                 "content": f"[{current_agent.upper().replace('_', ' ')}]\n{agent_output}",
-                                "metadata": {"swarm_agent": current_agent, "fromSwarmAgent": True},
+                                "metadata": {
+                                    "swarm_agent": current_agent,
+                                    "fromSwarmAgent": True,
+                                },
                             }
                         )
                     agent_content_buffer = []
@@ -1755,14 +1979,23 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     {
                         "type": "output",
                         "content": f"[{current_agent.upper().replace('_', ' ')}]\n{agent_output}",
-                        "metadata": {"swarm_agent": current_agent, "fromSwarmAgent": True},
+                        "metadata": {
+                            "swarm_agent": current_agent,
+                            "fromSwarmAgent": True,
+                        },
                     }
                 )
 
         # Emit unique error messages if any
         if error_messages:
             for msg in set(error_messages):  # Use set to deduplicate
-                self._emit_ui_event({"type": "info", "content": msg, "metadata": {"swarm_error_context": True}})
+                self._emit_ui_event(
+                    {
+                        "type": "info",
+                        "content": msg,
+                        "metadata": {"swarm_error_context": True},
+                    }
+                )
 
     def _extract_swarm_reasoning_from_output(self, output_text: str) -> Optional[str]:
         """Extract reasoning patterns from swarm agent output.
@@ -1824,7 +2057,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 )
                 from modules.handlers.base import StepLimitReached
 
-                raise StepLimitReached(f"Step limit reached: {self.current_step}/{self.max_steps}")
+                raise StepLimitReached(
+                    f"Step limit reached: {self.current_step}/{self.max_steps}"
+                )
             # Emit the step header now so reasoning falls under the right step
             self._emit_step_header()
             self._reasoning_step_header_emitted = True
@@ -1861,7 +2096,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             return
 
         # Per-step gating: at most one reasoning emission between step headers
-        if (not force) and self._any_step_header_emitted and self._reasoning_emitted_since_last_step_header:
+        if (
+            (not force)
+            and self._any_step_header_emitted
+            and self._reasoning_emitted_since_last_step_header
+        ):
             # Keep buffer for next step header flush
             return
 
@@ -1891,11 +2130,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit tool_preparation spinner after reasoning
         # This indicates the agent is selecting tools based on the reasoning
-        self._emit_ui_event({
-            "type": "thinking",
-            "context": "tool_preparation",
-            "urgent": True
-        })
+        self._emit_ui_event(
+            {"type": "thinking", "context": "tool_preparation", "urgent": True}
+        )
 
     def _emit_step_header(self) -> None:
         """Emit step header with current progress."""
@@ -1929,7 +2166,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             event["step"] = self.current_step
             event["maxSteps"] = self.max_steps
             # Include total tool invocations for budget transparency (Sonnet 4.5 does parallel tools)
-            event["totalTools"] = sum(self.tool_counts.values()) if self.tool_counts else 0
+            event["totalTools"] = (
+                sum(self.tool_counts.values()) if self.tool_counts else 0
+            )
 
         # Add swarm agent information if in swarm operation
         if self.in_swarm_operation:
@@ -1938,7 +2177,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 event["swarm_agent"] = self.current_swarm_agent
 
                 # Determine current total iterations across all agents BEFORE incrementing this agent's sub-step
-                total_prev = sum(self.swarm_agent_steps.values()) if self.swarm_agent_steps else 0
+                total_prev = (
+                    sum(self.swarm_agent_steps.values())
+                    if self.swarm_agent_steps
+                    else 0
+                )
 
                 # Do not enforce iteration limits at the UI layer; the SDK controls completion.
                 # Always emit the step header to reflect actual execution progress.
@@ -1951,10 +2194,14 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
                 # Compose event fields using SDK-aligned totals: total is computed as sum of agent sub-steps
                 total_now = total_prev + 1
-                current_agent_steps = self.swarm_agent_steps.get(self.current_swarm_agent, 1)
+                current_agent_steps = self.swarm_agent_steps.get(
+                    self.current_swarm_agent, 1
+                )
                 event["swarm_sub_step"] = current_agent_steps
                 event["swarm_total_iterations"] = total_now
-                event["agent_count"] = len(self.swarm_agents) if self.swarm_agents else 1
+                event["agent_count"] = (
+                    len(self.swarm_agents) if self.swarm_agents else 1
+                )
             else:
                 event["swarm_context"] = "Multi-Agent Operation"
 
@@ -1973,18 +2220,22 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Emit tool_preparation spinner after step header
         # Provides visual feedback while agent selects tools for this step
-        self._emit_ui_event({
-            "type": "thinking",
-            "context": "tool_preparation",
-            "urgent": True
-        })
+        self._emit_ui_event(
+            {"type": "thinking", "context": "tool_preparation", "urgent": True}
+        )
 
     def _emit_initial_metrics(self) -> None:
         """Emit initial metrics on startup."""
         self._emit_ui_event(
             {
                 "type": "metrics_update",
-                "metrics": {"tokens": 0, "cost": 0.0, "duration": "0s", "memoryOps": 0, "evidence": 0},
+                "metrics": {
+                    "tokens": 0,
+                    "cost": 0.0,
+                    "duration": "0s",
+                    "memoryOps": 0,
+                    "evidence": 0,
+                },
             }
         )
 
@@ -2032,7 +2283,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if isinstance(tool_input, str):
                 return tool_input
             if isinstance(tool_input, dict):
-                val = tool_input.get("code") or tool_input.get("source") or tool_input.get("input")
+                val = (
+                    tool_input.get("code")
+                    or tool_input.get("source")
+                    or tool_input.get("input")
+                )
                 if isinstance(val, str):
                     return val
                 if val is not None:
@@ -2060,8 +2315,12 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 if hasattr(self._last_agent, "event_loop_metrics"):
                     usage = self._last_agent.event_loop_metrics.accumulated_usage
                     if usage:
-                        self.sdk_input_tokens = usage.get("inputTokens", self.sdk_input_tokens)
-                        self.sdk_output_tokens = usage.get("outputTokens", self.sdk_output_tokens)
+                        self.sdk_input_tokens = usage.get(
+                            "inputTokens", self.sdk_input_tokens
+                        )
+                        self.sdk_output_tokens = usage.get(
+                            "outputTokens", self.sdk_output_tokens
+                        )
             except Exception as e:
                 logger.debug(f"Could not get metrics from agent: {e}")
 
@@ -2086,7 +2345,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         }
 
         # Only emit if meaningful metrics have changed, it's the first emission, or forced
-        if force or not hasattr(self, "_last_meaningful_metrics") or self._last_meaningful_metrics != meaningful_fields:
+        if (
+            force
+            or not hasattr(self, "_last_meaningful_metrics")
+            or self._last_meaningful_metrics != meaningful_fields
+        ):
             logger.debug(
                 f"Emitting metrics: input={self.sdk_input_tokens}, output={self.sdk_output_tokens}, total={total_tokens}"
             )
@@ -2144,7 +2407,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Stop metrics thread on completion
         self._stop_metrics_thread()
 
-    def _track_swarm_start(self, tool_input: Dict[str, Any], tool_id: str = None) -> None:
+    def _track_swarm_start(
+        self, tool_input: Dict[str, Any], tool_id: str = None
+    ) -> None:
         """Track swarm operation start. Emit a single, well-formed swarm_start.
 
         Agent Tracking Flow:
@@ -2163,7 +2428,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         logger.debug(f"Tool input keys: {list(tool_input.keys())}")
         logger.debug(f"Task: {task or 'No task'}")
-        logger.debug(f"Number of agents: {len(agents) if isinstance(agents, list) else 0}")
+        logger.debug(
+            f"Number of agents: {len(agents) if isinstance(agents, list) else 0}"
+        )
         logger.debug(f"Max handoffs: {tool_input.get('max_handoffs')}")
         logger.debug(f"Max iterations: {tool_input.get('max_iterations')}")
         logger.debug(f"Execution timeout: {tool_input.get('execution_timeout')}")
@@ -2175,7 +2442,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         # Mark swarm start time and token baseline for accurate metrics
         try:
             self._swarm_start_time = time.time()
-            self._swarm_tokens_start = int(self.sdk_input_tokens) + int(self.sdk_output_tokens)
+            self._swarm_tokens_start = int(self.sdk_input_tokens) + int(
+                self.sdk_output_tokens
+            )
         except Exception:
             # Fallbacks if metrics not yet available
             self._swarm_start_time = time.time()
@@ -2188,7 +2457,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if isinstance(agents, list):
             for i, agent in enumerate(agents):
                 if isinstance(agent, dict):
-                    name = agent.get("name") or agent.get("role") or f"agent_{i+1}"
+                    name = agent.get("name") or agent.get("role") or f"agent_{i + 1}"
                     system_prompt = agent.get("system_prompt", "")
                     tools = agent.get("tools", [])
 
@@ -2201,10 +2470,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     agent_model_id = None
                     try:
                         # Common locations for per-agent model identifiers
-                        agent_model_id = (
-                            model_settings.get("model_id")
-                            or model_settings.get("model")
-                        )
+                        agent_model_id = model_settings.get(
+                            "model_id"
+                        ) or model_settings.get("model")
                     except Exception:
                         agent_model_id = None
                     model_id = agent_model_id or self.swarm_model_id
@@ -2217,7 +2485,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             "tools": tools if isinstance(tools, list) else [],
                             "model_provider": model_provider,
                             "model_id": model_id,
-                            "temperature": model_settings.get("params", {}).get("temperature", 0.7),
+                            "temperature": model_settings.get("params", {}).get(
+                                "temperature", 0.7
+                            ),
                         }
                     )
                 elif isinstance(agent, str):
@@ -2239,12 +2509,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Skip emitting if agents list is empty but task exists (partial/empty agent data)
         if task and not agent_names:
-            logger.debug("Skipping swarm_start emission - task exists but no agents yet")
+            logger.debug(
+                "Skipping swarm_start emission - task exists but no agents yet"
+            )
             return
 
         logger.debug(f"Found {len(agent_names)} agents: {agent_names}")
         for i, detail in enumerate(agent_details):
-            logger.debug(f"Agent {i+1} '{detail['name']}': tools={detail.get('tools', [])}")
+            logger.debug(
+                f"Agent {i + 1} '{detail['name']}': tools={detail.get('tools', [])}"
+            )
 
         # Compute signature to dedupe repeated emissions
         signature = json.dumps({"agents": agent_names, "task": task}, sort_keys=True)
@@ -2253,7 +2527,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         # Check if this is a NEW swarm operation or an update to existing
         is_new_swarm = not self.in_swarm_operation
-        logger.debug(f"Is new swarm: {is_new_swarm}, Currently in swarm: {self.in_swarm_operation}")
+        logger.debug(
+            f"Is new swarm: {is_new_swarm}, Currently in swarm: {self.in_swarm_operation}"
+        )
 
         # Update state
         self.in_swarm_operation = True
@@ -2283,22 +2559,32 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             agent_tools = agent_detail.get("tools", [])
             if agent_name and agent_tools:
                 self.swarm_agent_tools[agent_name] = agent_tools
-                logger.debug(f"  Agent '{agent_name}': {len(agent_tools)} tools - {agent_tools}")
+                logger.debug(
+                    f"  Agent '{agent_name}': {len(agent_tools)} tools - {agent_tools}"
+                )
 
         # Initialize step counter for first agent if new
-        if self.current_swarm_agent and self.current_swarm_agent not in self.swarm_agent_steps:
+        if (
+            self.current_swarm_agent
+            and self.current_swarm_agent not in self.swarm_agent_steps
+        ):
             self.swarm_agent_steps[self.current_swarm_agent] = 0
 
         # Set max iterations and handoffs from tool input (no hardcoded defaults)
         self.swarm_max_iterations = None
         try:
-            if "max_iterations" in tool_input and tool_input.get("max_iterations") is not None:
+            if (
+                "max_iterations" in tool_input
+                and tool_input.get("max_iterations") is not None
+            ):
                 self.swarm_max_iterations = int(tool_input.get("max_iterations"))
         except Exception:
             self.swarm_max_iterations = None
         try:
             self.swarm_max_handoffs = (
-                int(tool_input.get("max_handoffs")) if tool_input.get("max_handoffs") is not None else None
+                int(tool_input.get("max_handoffs"))
+                if tool_input.get("max_handoffs") is not None
+                else None
             )
         except Exception:
             self.swarm_max_handoffs = None
@@ -2332,7 +2618,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             logger.warning("Failed to emit swarm_start: %s", e)
             logger.debug(f"Exception details: {str(e)}", exc_info=True)
 
-    def _detect_swarm_agent_from_callback(self, kwargs: Dict[str, Any]) -> Optional[str]:
+    def _detect_swarm_agent_from_callback(
+        self, kwargs: Dict[str, Any]
+    ) -> Optional[str]:
         """Detect active swarm agent from callback context.
 
         The SDK passes agent information in callbacks - we can use this
@@ -2351,9 +2639,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 for known_agent in self.swarm_agents:
                     # Compare normalized names (lowercase, underscores)
                     normalized_known = known_agent.lower().replace("-", "_")
-                    normalized_name = agent_name.lower().replace("-", "_").replace(" ", "_")
+                    normalized_name = (
+                        agent_name.lower().replace("-", "_").replace(" ", "_")
+                    )
                     if normalized_known in normalized_name:
-                        logger.debug(f"Detected swarm agent from callback agent.name: {known_agent}")
+                        logger.debug(
+                            f"Detected swarm agent from callback agent.name: {known_agent}"
+                        )
                         return known_agent
 
             # Try to get from agent ID or other attributes
@@ -2361,7 +2653,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 agent_id = str(agent.id)
                 for known_agent in self.swarm_agents:
                     if known_agent.lower() in agent_id.lower():
-                        logger.debug(f"Detected swarm agent from callback agent.id: {known_agent}")
+                        logger.debug(
+                            f"Detected swarm agent from callback agent.id: {known_agent}"
+                        )
                         return known_agent
 
         # Check for agent context in message metadata
@@ -2370,12 +2664,18 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             # Check metadata for agent information
             metadata = message.get("metadata", {})
             if isinstance(metadata, dict):
-                agent_info = metadata.get("agent") or metadata.get("agent_name") or metadata.get("source")
+                agent_info = (
+                    metadata.get("agent")
+                    or metadata.get("agent_name")
+                    or metadata.get("source")
+                )
                 if agent_info:
                     agent_str = str(agent_info).lower()
                     for known_agent in self.swarm_agents:
                         if known_agent.lower() in agent_str:
-                            logger.debug(f"Detected swarm agent from message metadata: {known_agent}")
+                            logger.debug(
+                                f"Detected swarm agent from message metadata: {known_agent}"
+                            )
                             return known_agent
 
         return None
@@ -2397,7 +2697,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
         if len(possible_agents) == 1:
             # Only one agent has this tool - we found our agent!
-            logger.debug(f"Swarm agent detected via tool {tool_name}: {possible_agents[0]}")
+            logger.debug(
+                f"Swarm agent detected via tool {tool_name}: {possible_agents[0]}"
+            )
             return possible_agents[0]
         elif len(possible_agents) > 1:
             # Multiple agents have this tool - use heuristics
@@ -2405,11 +2707,15 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if self.current_swarm_agent in possible_agents:
                 return self.current_swarm_agent
             # Otherwise return the first possibility
-            logger.debug(f"Multiple agents have tool {tool_name}: {possible_agents}, using {possible_agents[0]}")
+            logger.debug(
+                f"Multiple agents have tool {tool_name}: {possible_agents}, using {possible_agents[0]}"
+            )
             return possible_agents[0]
 
         # Tool not found in any agent's toolkit - might be a general tool
-        logger.debug(f"Tool {tool_name} not found in agent toolkits, keeping current agent")
+        logger.debug(
+            f"Tool {tool_name} not found in agent toolkits, keeping current agent"
+        )
         return self.current_swarm_agent
 
     def _track_agent_handoff(self, tool_input: Dict[str, Any]) -> None:
@@ -2436,7 +2742,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 normalized_new = agent_name.lower().replace("-", "_").replace(" ", "_")
                 for known_agent in self.swarm_agents:
                     normalized_known = known_agent.lower().replace("-", "_")
-                    if normalized_known == normalized_new or normalized_known in normalized_new:
+                    if (
+                        normalized_known == normalized_new
+                        or normalized_known in normalized_new
+                    ):
                         agent_name = known_agent
                         break
 
@@ -2472,8 +2781,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     from modules.handlers.base import StepLimitReached
 
                     # Emit termination reason before raising
-                    self._emit_termination("step_limit", f"Step limit reached: {self.current_step}/{self.max_steps}")
-                    raise StepLimitReached(f"Step limit exceeded: {self.current_step}/{self.max_steps}")
+                    self._emit_termination(
+                        "step_limit",
+                        f"Step limit reached: {self.current_step}/{self.max_steps}",
+                    )
+                    raise StepLimitReached(
+                        f"Step limit exceeded: {self.current_step}/{self.max_steps}"
+                    )
                 elif self.current_step <= self.max_steps or self.in_swarm_operation:
                     self._emit_step_header()
             except Exception as _:
@@ -2492,7 +2806,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             duration = time.time() - start_ref
 
             # Calculate agent completion stats
-            completed_agents = [agent for agent in self.swarm_agents if agent in self.swarm_agent_steps]
+            completed_agents = [
+                agent for agent in self.swarm_agents if agent in self.swarm_agent_steps
+            ]
 
             # Build detailed agent activity summary
             agent_activity = {}
@@ -2505,7 +2821,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Compute token delta for this swarm (best-effort)
             try:
-                current_tokens = int(self.sdk_input_tokens) + int(self.sdk_output_tokens)
+                current_tokens = int(self.sdk_input_tokens) + int(
+                    self.sdk_output_tokens
+                )
                 baseline = getattr(self, "_swarm_tokens_start", 0)
                 token_delta = max(0, current_tokens - baseline)
             except Exception:
@@ -2513,7 +2831,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Cache swarm metrics for potential timeout override
             # Use SDK-aligned iterations: sum of emitted agent sub-steps during swarm
-            total_iterations = sum(self.swarm_agent_steps.values()) if self.swarm_agent_steps else 0
+            total_iterations = (
+                sum(self.swarm_agent_steps.values()) if self.swarm_agent_steps else 0
+            )
 
             self.last_swarm_metrics = {
                 "final_agent": final_agent,
@@ -2534,7 +2854,9 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     "type": "swarm_complete",
                     **self.last_swarm_metrics,
                     "total_steps": (
-                        sum(self.swarm_agent_steps.values()) if self.swarm_agent_steps else 0
+                        sum(self.swarm_agent_steps.values())
+                        if self.swarm_agent_steps
+                        else 0
                     ),  # Sum of all agent steps
                 }
             )
@@ -2594,7 +2916,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                             # Attempt to parse complete JSON
                             parsed = json.loads(stripped)
                             # Return parsed dict directly, or wrap non-dict values
-                            return parsed if isinstance(parsed, dict) else {"value": parsed}
+                            return (
+                                parsed
+                                if isinstance(parsed, dict)
+                                else {"value": parsed}
+                            )
                         except json.JSONDecodeError:
                             # Partial JSON - keep wrapped for buffering
                             return tool_input
@@ -2656,7 +2982,7 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if seconds < 60:
             return f"{int(seconds)}s"
         elif seconds < 3600:
-            return f"{int(seconds/60)}m {int(seconds%60)}s"
+            return f"{int(seconds / 60)}m {int(seconds % 60)}s"
         elif seconds < 86400:
             hours = int(seconds / 3600)
             mins = int((seconds % 3600) / 60)
@@ -2667,12 +2993,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             return f"{days}d {hours}h"
 
     # Report generation methods
-    def ensure_report_generated(self, agent, target: str, objective: str, module: str = None) -> None:
+    def ensure_report_generated(
+        self, agent, target: str, objective: str, module: str = None
+    ) -> None:
         """Ensure report is generated only once."""
         if not self._report_generated:
             self.generate_final_report(agent, target, objective, module)
 
-    def generate_final_report(self, agent, target: str, objective: str, module: str = None) -> None:
+    def generate_final_report(
+        self, agent, target: str, objective: str, module: str = None
+    ) -> None:
         """Generate final security assessment report.
 
         If no memories/evidence were collected, skip report generation to avoid
@@ -2702,7 +3032,11 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     )
                     # Emit completion marker for a clean UI transition
                     self._emit_ui_event(
-                        {"type": "assessment_complete", "operation_id": self.operation_id, "report_path": None}
+                        {
+                            "type": "assessment_complete",
+                            "operation_id": self.operation_id,
+                            "report_path": None,
+                        }
                     )
                 except Exception:
                     pass
@@ -2710,7 +3044,6 @@ class ReactBridgeHandler(PrintingCallbackHandler):
 
             # Import report generator function (not a tool, called directly by handler)
             from modules.handlers.report_generator import generate_security_report
-
 
             # Emit completion header before generating report
             self._emit_ui_event(
@@ -2735,7 +3068,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     provider = "litellm"
 
             self._emit_ui_event(
-                {"type": "output", "content": "\n◆ Generating comprehensive security assessment report..."}
+                {
+                    "type": "output",
+                    "content": "\n◆ Generating comprehensive security assessment report...",
+                }
             )
 
             # Prepare config data for report generation
@@ -2757,12 +3093,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             model_id = None
             try:
                 from modules.config.manager import get_config_manager
+
                 cfg = get_config_manager()
                 llm_cfg = cfg.get_llm_config(provider)
                 model_id = llm_cfg.model_id
             except Exception:
                 pass
-            
+
             config_data = json.dumps(
                 {
                     "steps_executed": self.current_step,
@@ -2774,7 +3111,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             )
 
             report_content = generate_security_report(
-                target=target, objective=objective, operation_id=self.operation_id, config_data=config_data
+                target=target,
+                objective=objective,
+                operation_id=self.operation_id,
+                config_data=config_data,
             )
 
             # Accept any non-empty report content
@@ -2782,16 +3122,23 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 try:
                     from pathlib import Path
 
-                    from modules.handlers.utils import get_output_path, sanitize_target_name
+                    from modules.handlers.utils import (
+                        get_output_path,
+                        sanitize_target_name,
+                    )
 
                     target_name = sanitize_target_name(target)
-                    output_dir = get_output_path(target_name, self.operation_id, "", "./outputs")
+                    output_dir = get_output_path(
+                        target_name, self.operation_id, "", "./outputs"
+                    )
 
                     # Create output directory if it doesn't exist
                     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
                     # Save report as markdown file
-                    report_path = os.path.join(output_dir, "security_assessment_report.md")
+                    report_path = os.path.join(
+                        output_dir, "security_assessment_report.md"
+                    )
                     with open(report_path, "w", encoding="utf-8") as f:
                         f.write(report_content)
 
@@ -2801,30 +3148,45 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                     try:
                         if len(report_content) > 15000:  # 15KB threshold for IPC safety
                             # Truncate to first 200 lines to ensure event reaches React
-                            lines = report_content.split('\n')
-                            truncated_content = '\n'.join(lines[:200])
-                            logger.info(f"Report truncated from {len(lines)} to 200 lines for IPC transmission ({len(report_content)} -> {len(truncated_content)} chars)")
-                            self._emit_ui_event({"type": "report_content", "content": truncated_content})
+                            lines = report_content.split("\n")
+                            truncated_content = "\n".join(lines[:200])
+                            logger.info(
+                                f"Report truncated from {len(lines)} to 200 lines for IPC transmission ({len(report_content)} -> {len(truncated_content)} chars)"
+                            )
+                            self._emit_ui_event(
+                                {"type": "report_content", "content": truncated_content}
+                            )
                         else:
-                            self._emit_ui_event({"type": "report_content", "content": report_content})
+                            self._emit_ui_event(
+                                {"type": "report_content", "content": report_content}
+                            )
                     except Exception as e:
                         logger.warning(f"Failed to emit report content: {e}")
-                        self._emit_ui_event({"type": "output", "content": f"Report generated: {report_path}"})
+                        self._emit_ui_event(
+                            {
+                                "type": "output",
+                                "content": f"Report generated: {report_path}",
+                            }
+                        )
 
                     # Also emit file path information for reference
                     self._emit_ui_event(
                         {
                             "type": "output",
-                            "content": f"\n{'━'*80}\n\nASSESSMENT COMPLETE\n\nREPORT ALSO SAVED TO:\n  • {report_path}\n\nMEMORY STORED IN:\n  • {output_dir}/memory/\n\nOPERATION LOGS:\n  • {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━'*80}\n",
+                            "content": f"\n{'━' * 80}\n\nASSESSMENT COMPLETE\n\nREPORT ALSO SAVED TO:\n  • {report_path}\n\nMEMORY STORED IN:\n  • {output_dir}/memory/\n\nOPERATION LOGS:\n  • {os.path.join(output_dir, 'cyber_operations.log')}\n\n{'━' * 80}\n",
                         }
                     )
 
                     # Emit a completion event for clean UI transition
                     self._emit_ui_event(
-                        {"type": "assessment_complete", "operation_id": self.operation_id, "report_path": report_path}
+                        {
+                            "type": "assessment_complete",
+                            "operation_id": self.operation_id,
+                            "report_path": report_path,
+                        }
                     )
 
-                    if hasattr(self.emitter, 'flush_immediate'):
+                    if hasattr(self.emitter, "flush_immediate"):
                         self.emitter.flush_immediate()
 
                     logger.info("Report saved to %s", report_path)
@@ -2832,14 +3194,21 @@ class ReactBridgeHandler(PrintingCallbackHandler):
                 except Exception as save_error:
                     logger.warning("Could not save report to file: %s", save_error)
                     self._emit_ui_event(
-                        {"type": "output", "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}"}
+                        {
+                            "type": "output",
+                            "content": f"\n⚠️ Note: Report could not be saved to file: {save_error}",
+                        }
                     )
             else:
-                logger.info("Report generation skipped - no evidence collected during operation")
+                logger.info(
+                    "Report generation skipped - no evidence collected during operation"
+                )
 
         except Exception as e:
             logger.error("Error generating final report: %s", e)
-            self._emit_ui_event({"type": "error", "content": f"Error generating report: {str(e)}"})
+            self._emit_ui_event(
+                {"type": "error", "content": f"Error generating report: {str(e)}"}
+            )
 
     # Evaluation methods
     def trigger_evaluation_on_completion(self) -> None:
@@ -2849,11 +3218,16 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         verbose_eval = os.getenv("VERBOSE", "false").lower() == "true"
 
         if verbose_eval:
-            logger.debug("EVAL_DEBUG: trigger_evaluation_on_completion called for operation %s", self.operation_id)
+            logger.debug(
+                "EVAL_DEBUG: trigger_evaluation_on_completion called for operation %s",
+                self.operation_id,
+            )
 
         # Check if observability is enabled first - evaluation requires Langfuse infrastructure
         if os.getenv("ENABLE_OBSERVABILITY", "false").lower() != "true":
-            logger.debug("Observability is disabled - skipping evaluation (requires Langfuse)")
+            logger.debug(
+                "Observability is disabled - skipping evaluation (requires Langfuse)"
+            )
             if verbose_eval:
                 logger.debug("EVAL_DEBUG: Skipping evaluation - observability disabled")
             return
@@ -2863,12 +3237,17 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         if os.getenv("ENABLE_AUTO_EVALUATION", default_evaluation).lower() != "true":
             logger.debug("Auto-evaluation is disabled, skipping")
             if verbose_eval:
-                logger.debug("EVAL_DEBUG: Auto-evaluation disabled via ENABLE_AUTO_EVALUATION=false")
+                logger.debug(
+                    "EVAL_DEBUG: Auto-evaluation disabled via ENABLE_AUTO_EVALUATION=false"
+                )
             return
 
         try:
             if verbose_eval:
-                logger.debug("EVAL_DEBUG: Starting evaluation process for operation %s", self.operation_id)
+                logger.debug(
+                    "EVAL_DEBUG: Starting evaluation process for operation %s",
+                    self.operation_id,
+                )
 
             eval_manager = EvaluationManager(operation_id=self.operation_id)
 
@@ -2894,21 +3273,32 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             results = loop.run_until_complete(eval_manager.evaluate_all_traces())
 
             if results:
-                logger.info("Evaluation completed successfully: %d traces evaluated", len(results))
+                logger.info(
+                    "Evaluation completed successfully: %d traces evaluated",
+                    len(results),
+                )
                 if verbose_eval:
                     logger.debug("EVAL_DEBUG: Evaluation results: %s", results)
                 self._emit_ui_event(
-                    {"type": "evaluation_complete", "operation_id": self.operation_id, "traces_evaluated": len(results)}
+                    {
+                        "type": "evaluation_complete",
+                        "operation_id": self.operation_id,
+                        "traces_evaluated": len(results),
+                    }
                 )
             else:
                 logger.warning("No evaluation results returned")
                 if verbose_eval:
-                    logger.debug("EVAL_DEBUG: No evaluation results - check trace finding and metric evaluation")
+                    logger.debug(
+                        "EVAL_DEBUG: No evaluation results - check trace finding and metric evaluation"
+                    )
 
         except Exception as e:
             logger.warning("Evaluation failed but continuing operation: %s", str(e))
             if verbose_eval:
-                logger.debug("EVAL_DEBUG: Full evaluation exception details", exc_info=True)
+                logger.debug(
+                    "EVAL_DEBUG: Full evaluation exception details", exc_info=True
+                )
             # Don't re-raise the exception - just log and continue
 
     def wait_for_evaluation_completion(self, timeout: int = 300) -> None:
@@ -2946,7 +3336,10 @@ class ReactBridgeHandler(PrintingCallbackHandler):
             if not self._termination_emitted:
                 # Emit step limit termination immediately when exceeded
                 if self.current_step > self.max_steps:
-                    self._emit_termination("step_limit", f"Step limit reached: {self.current_step}/{self.max_steps}")
+                    self._emit_termination(
+                        "step_limit",
+                        f"Step limit reached: {self.current_step}/{self.max_steps}",
+                    )
                 # For stop tool, do not emit here; termination is emitted after tool result
         except Exception:
             pass

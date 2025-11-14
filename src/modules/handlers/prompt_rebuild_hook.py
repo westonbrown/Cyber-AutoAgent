@@ -13,7 +13,6 @@ Key Features:
 - Format-agnostic memory processing (handles [SQLI CONFIRMED] and other formats)
 """
 
-import logging
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -82,7 +81,7 @@ class PromptRebuildHook(HookProvider):
         if operation_root:
             self.operation_folder = Path(operation_root)
         else:
-            output_dir = Path(getattr(config, 'output_dir', 'outputs'))
+            output_dir = Path(getattr(config, "output_dir", "outputs"))
             from modules.handlers.utils import sanitize_target_name
 
             target_name = sanitize_target_name(target)
@@ -90,7 +89,9 @@ class PromptRebuildHook(HookProvider):
             if operation_id_str.startswith("OP_"):
                 self.operation_folder = output_dir / target_name / operation_id_str
             else:
-                self.operation_folder = output_dir / target_name / f"OP_{operation_id_str}"
+                self.operation_folder = (
+                    output_dir / target_name / f"OP_{operation_id_str}"
+                )
 
         self.exec_prompt_path = self.operation_folder / "execution_prompt_optimized.txt"
         if self.exec_prompt_path.exists():
@@ -102,7 +103,7 @@ class PromptRebuildHook(HookProvider):
         logger.info(
             "PromptRebuildHook initialized: interval=%d, operation=%s",
             rebuild_interval,
-            operation_id
+            operation_id,
         )
 
     def register_hooks(self, registry: HookRegistry):
@@ -132,7 +133,7 @@ class PromptRebuildHook(HookProvider):
         logger.info(
             "Prompt rebuild triggered at step %d (last rebuild: step %d)",
             current_step,
-            self.last_rebuild_step
+            self.last_rebuild_step,
         )
 
         # Rebuild prompt with fresh context
@@ -154,10 +155,10 @@ class PromptRebuildHook(HookProvider):
                 memory_overview=memory_overview,
                 plan_snapshot=plan_snapshot,
                 plan_current_phase=plan_current_phase,
-                provider=getattr(self.config, 'provider', None),
+                provider=getattr(self.config, "provider", None),
                 output_config={
                     "base_dir": str(self.operation_folder.parent.parent),
-                    "target_name": getattr(self.config, 'target', self.target),
+                    "target_name": getattr(self.config, "target", self.target),
                 },
             )
 
@@ -173,10 +174,18 @@ class PromptRebuildHook(HookProvider):
                         + "\n\n## MODULE EXECUTION GUIDANCE\n"
                         + execution_prompt.strip()
                     )
-                    logger.debug("Included execution prompt in rebuild (source: %s)",
-                                getattr(module_loader, 'last_loaded_execution_prompt_source', 'unknown'))
+                    logger.debug(
+                        "Included execution prompt in rebuild (source: %s)",
+                        getattr(
+                            module_loader,
+                            "last_loaded_execution_prompt_source",
+                            "unknown",
+                        ),
+                    )
             except Exception as e:
-                logger.warning("Failed to reload execution prompt during rebuild: %s", e)
+                logger.warning(
+                    "Failed to reload execution prompt during rebuild: %s", e
+                )
 
             # Update agent's system prompt
             event.agent.system_prompt = new_prompt
@@ -188,7 +197,7 @@ class PromptRebuildHook(HookProvider):
             logger.info(
                 "Prompt rebuilt: %d chars (~%d tokens)",
                 len(new_prompt),
-                len(new_prompt) // 4
+                len(new_prompt) // 4,
             )
 
             # AUTO-OPTIMIZE EXECUTION PROMPT (if step 20+)
@@ -215,11 +224,15 @@ class PromptRebuildHook(HookProvider):
                 return False
 
             # Extract current phase from snapshot
-            match = re.search(r'Phase (\d+)', plan_snapshot)
+            match = re.search(r"Phase (\d+)", plan_snapshot)
             if match:
                 current_phase = int(match.group(1))
                 if self.last_phase is not None and current_phase != self.last_phase:
-                    logger.info("Phase transition detected: %d -> %d", self.last_phase, current_phase)
+                    logger.info(
+                        "Phase transition detected: %d -> %d",
+                        self.last_phase,
+                        current_phase,
+                    )
                     self.last_phase = current_phase
                     return True
                 self.last_phase = current_phase
@@ -239,7 +252,10 @@ class PromptRebuildHook(HookProvider):
 
         try:
             current_mtime = self.exec_prompt_path.stat().st_mtime
-            if self.last_exec_prompt_mtime is not None and current_mtime > self.last_exec_prompt_mtime:
+            if (
+                self.last_exec_prompt_mtime is not None
+                and current_mtime > self.last_exec_prompt_mtime
+            ):
                 logger.info("Execution prompt modification detected")
                 self.last_exec_prompt_mtime = current_mtime
                 return True
@@ -260,27 +276,26 @@ class PromptRebuildHook(HookProvider):
         try:
             # Retrieve recent memories for contextual analysis
             results = []
-            if hasattr(self.memory, 'list_memories'):
-                memories = self.memory.list_memories(
-                    user_id="cyber_agent"
-                )
+            if hasattr(self.memory, "list_memories"):
+                memories = self.memory.list_memories(user_id="cyber_agent")
                 # Handle both dict and list return types
                 if isinstance(memories, dict):
-                    results = memories.get("results", []) or memories.get("memories", []) or []
+                    results = (
+                        memories.get("results", [])
+                        or memories.get("memories", [])
+                        or []
+                    )
                 elif isinstance(memories, list):
                     results = memories
                 # Limit to 30 most recent
                 results = results[:30] if results else []
-            elif hasattr(self.memory, 'get_all'):
-                results = self.memory.get_all(
-                    user_id="cyber_agent"
-                )[:30]
+            elif hasattr(self.memory, "get_all"):
+                results = self.memory.get_all(user_id="cyber_agent")[:30]
             else:
                 # Fallback to search_memories with empty query
-                results = self.memory.search_memories(
-                    query="",
-                    user_id="cyber_agent"
-                )[:30]
+                results = self.memory.search_memories(query="", user_id="cyber_agent")[
+                    :30
+                ]
 
             if not results:
                 return None
@@ -296,7 +311,7 @@ class PromptRebuildHook(HookProvider):
             return {
                 "total_count": total,
                 "sample": results[:3],  # First 3 for context
-                "recent_summary": "\n".join(recent_summary) if recent_summary else None
+                "recent_summary": "\n".join(recent_summary) if recent_summary else None,
             }
         except Exception as e:
             logger.debug("Memory query failed: %s", e)
@@ -312,7 +327,7 @@ class PromptRebuildHook(HookProvider):
 
         try:
             # Use get_active_plan if available (more direct)
-            if hasattr(self.memory, 'get_active_plan'):
+            if hasattr(self.memory, "get_active_plan"):
                 active_plan = self.memory.get_active_plan(user_id="cyber_agent")
                 if active_plan:
                     # Return raw memory content for LLM interpretation
@@ -320,8 +335,7 @@ class PromptRebuildHook(HookProvider):
 
             # Otherwise, search for any plan-like memory
             results = self.memory.search_memories(
-                query="plan objective phase",
-                user_id="cyber_agent"
+                query="plan objective phase", user_id="cyber_agent"
             )[:1]
 
             if results:
@@ -346,7 +360,7 @@ class PromptRebuildHook(HookProvider):
             return None
 
         try:
-            match = re.search(r'Phase (\d+)', plan_snapshot)
+            match = re.search(r"Phase (\d+)", plan_snapshot)
             if match:
                 return int(match.group(1))
         except Exception:
@@ -370,7 +384,9 @@ class PromptRebuildHook(HookProvider):
 
         # Check if memory is available
         if not self.memory:
-            logger.warning("Memory instance not available - cannot perform auto-optimization")
+            logger.warning(
+                "Memory instance not available - cannot perform auto-optimization"
+            )
             return
 
         try:
@@ -380,26 +396,26 @@ class PromptRebuildHook(HookProvider):
             recent_memories = []
             try:
                 # Try to get all recent memories
-                if hasattr(self.memory, 'list_memories'):
-                    memories = self.memory.list_memories(
-                        user_id="cyber_agent"
-                    )
+                if hasattr(self.memory, "list_memories"):
+                    memories = self.memory.list_memories(user_id="cyber_agent")
                     # Handle both dict and list return types
                     if isinstance(memories, dict):
-                        recent_memories = memories.get("results", []) or memories.get("memories", []) or []
+                        recent_memories = (
+                            memories.get("results", [])
+                            or memories.get("memories", [])
+                            or []
+                        )
                     elif isinstance(memories, list):
                         recent_memories = memories
                     # Limit to 30 most recent
                     recent_memories = recent_memories[:30] if recent_memories else []
-                elif hasattr(self.memory, 'get_all'):
-                    recent_memories = self.memory.get_all(
-                        user_id="cyber_agent"
-                    )[:30]
+                elif hasattr(self.memory, "get_all"):
+                    recent_memories = self.memory.get_all(user_id="cyber_agent")[:30]
                 else:
                     # Fallback to search_memories
                     recent_memories = self.memory.search_memories(
                         query="",  # Empty query to get all
-                        user_id="cyber_agent"
+                        user_id="cyber_agent",
                     )[:30]
             except Exception as e:
                 logger.warning("Could not retrieve memories: %s", e)
@@ -413,19 +429,27 @@ class PromptRebuildHook(HookProvider):
 
             # Phase 2: Load current execution prompt
             if not self.exec_prompt_path.exists():
-                logger.warning("Execution prompt not found at %s", self.exec_prompt_path)
+                logger.warning(
+                    "Execution prompt not found at %s", self.exec_prompt_path
+                )
                 return
 
             current_prompt = self.exec_prompt_path.read_text()
 
             # Validate prompt is not empty or placeholder
             if not current_prompt.strip() or len(current_prompt) < 100:
-                logger.warning("Execution prompt is empty or too short (%d chars) - skipping optimization", len(current_prompt))
+                logger.warning(
+                    "Execution prompt is empty or too short (%d chars) - skipping optimization",
+                    len(current_prompt),
+                )
                 return
 
             # Phase 3: Prepare raw memory context for LLM
             import json
-            memory_context = json.dumps(recent_memories, indent=2, default=str)[:5000]  # Context size limit
+
+            memory_context = json.dumps(recent_memories, indent=2, default=str)[
+                :5000
+            ]  # Context size limit
 
             # Phase 4: Execute LLM-based optimization
             logger.info("Initiating LLM-based prompt optimization...")
@@ -439,14 +463,17 @@ class PromptRebuildHook(HookProvider):
                     current_prompt=current_prompt,
                     learned_patterns=memory_context,  # Raw memories as context
                     remove_tactics=[],  # LLM-driven decision
-                    focus_tactics=[]  # LLM-driven decision
+                    focus_tactics=[],  # LLM-driven decision
                 )
 
                 logger.info("LLM optimization completed")
 
                 # Validate optimized prompt
                 if not optimized or len(optimized) < 100:
-                    logger.warning("Optimized prompt is empty or too short (%d chars) - keeping original", len(optimized) if optimized else 0)
+                    logger.warning(
+                        "Optimized prompt is empty or too short (%d chars) - keeping original",
+                        len(optimized) if optimized else 0,
+                    )
                     return
 
             except Exception as llm_error:
@@ -464,14 +491,14 @@ class PromptRebuildHook(HookProvider):
                 "  Prompt size: %d → %d chars",
                 len(recent_memories),
                 len(current_prompt),
-                len(optimized)
+                len(optimized),
             )
 
             # Phase 7: Update modification timestamp
             self.last_exec_prompt_mtime = self.exec_prompt_path.stat().st_mtime
 
         except Exception as e:
-            logger.error("Failed to auto-optimize execution prompt: %s", e, exc_info=True)
+            logger.error(
+                "Failed to auto-optimize execution prompt: %s", e, exc_info=True
+            )
             # Continue operation with current prompt on optimization failure
-
-
