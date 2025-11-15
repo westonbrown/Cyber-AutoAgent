@@ -8,7 +8,8 @@ Test validates the event emission flow when report generation completes.
 import io
 import sys
 from unittest.mock import patch
-sys.path.insert(0, 'src')
+
+sys.path.insert(0, "src")
 
 
 def test_report_emission_flow():
@@ -20,7 +21,7 @@ def test_report_emission_flow():
     # Capture stdout
     captured_output = io.StringIO()
 
-    with patch('sys.stdout', captured_output):
+    with patch("sys.stdout", captured_output):
         # Create emitter (bypass batching to avoid threading deadlock)
         stdout_emitter = StdoutEventEmitter(operation_id="TEST_OP")
 
@@ -29,13 +30,20 @@ def test_report_emission_flow():
             {"type": "step_header", "step": "FINAL REPORT", "operation": "TEST_OP"},
             {"type": "output", "content": "Generating report..."},
             {"type": "report_content", "content": "# SECURITY REPORT\n\n..."},
-            {"type": "output", "content": "ASSESSMENT COMPLETE\n\nREPORT SAVED TO: /path"},
-            {"type": "assessment_complete", "operation_id": "TEST_OP", "report_path": "/path/report.md"},
+            {
+                "type": "output",
+                "content": "ASSESSMENT COMPLETE\n\nREPORT SAVED TO: /path",
+            },
+            {
+                "type": "assessment_complete",
+                "operation_id": "TEST_OP",
+                "report_path": "/path/report.md",
+            },
         ]
 
         print("Emitting events directly (bypass batching to avoid deadlock)...")
         for i, event in enumerate(events):
-            print(f"  [{i+1}] Emitting: {event['type']}")
+            print(f"  [{i + 1}] Emitting: {event['type']}")
             stdout_emitter.emit(event)
 
         print("\nAll events emitted successfully...")
@@ -47,7 +55,8 @@ def test_report_emission_flow():
 
     # Check which events made it to stdout
     results = {
-        "step_header": "__CYBER_EVENT__" in output and '"type": "step_header"' in output,
+        "step_header": "__CYBER_EVENT__" in output
+        and '"type": "step_header"' in output,
         "report_content": '"type": "report_content"' in output,
         "assessment_complete": '"type": "assessment_complete"' in output,
     }
@@ -104,9 +113,9 @@ def test_critical_types_configuration():
 
         print(f"{event['type']:20} {str(is_critical):10} {str(expected):10} {status}")
 
-        if event['type'] == 'step_header' and not is_critical:
+        if event["type"] == "step_header" and not is_critical:
             issues.append("step_header should be critical for FINAL REPORT visibility")
-        if event['type'] == 'report_content' and not is_critical:
+        if event["type"] == "report_content" and not is_critical:
             issues.append("report_content should be critical to avoid loss")
 
     if issues:
@@ -120,21 +129,23 @@ def test_critical_types_configuration():
 
 
 if __name__ == "__main__":
-    print("="*70)
+    print("=" * 70)
     print("REPLICATING REPORT DISPLAY BUG")
-    print("="*70)
+    print("=" * 70)
 
     test1_pass = test_critical_types_configuration()
     test2_pass = test_report_emission_flow()
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("SUMMARY")
-    print("="*70)
+    print("=" * 70)
 
     if not test1_pass:
         print("\n❌ BUG CONFIRMED: step_header not marked as critical")
         print("\nFIX: Add 'step_header' to critical_types in batch_emitter.py:63")
-        print("     critical_types = {'error', 'user_handoff', 'assessment_complete', 'step_header'}")
+        print(
+            "     critical_types = {'error', 'user_handoff', 'assessment_complete', 'step_header'}"
+        )
 
     if not test2_pass:
         print("\n❌ BUG CONFIRMED: Events lost during batch flush")

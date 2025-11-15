@@ -37,7 +37,9 @@ def test_check_existing_memories_alt_path(monkeypatch):
 
     with (
         patch("modules.agents.cyber_autoagent.os.path.exists", side_effect=fake_exists),
-        patch("modules.agents.cyber_autoagent.os.path.getsize", side_effect=fake_getsize),
+        patch(
+            "modules.agents.cyber_autoagent.os.path.getsize", side_effect=fake_getsize
+        ),
     ):
         from modules.agents.cyber_autoagent import check_existing_memories
 

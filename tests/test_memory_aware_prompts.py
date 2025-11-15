@@ -24,17 +24,24 @@ class TestMemoryContextGuidance:
 
     def test_fresh_start_guidance(self):
         """Test memory context guidance for fresh start"""
-        result = get_memory_context_guidance(has_memory_path=False, has_existing_memories=False, memory_overview=None)
+        result = get_memory_context_guidance(
+            has_memory_path=False, has_existing_memories=False, memory_overview=None
+        )
 
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
         assert "Do NOT check memory on fresh operations" in result
-        assert "Then begin reconnaissance and target information gathering guided by the plan" in result
+        assert (
+            "Then begin reconnaissance and target information gathering guided by the plan"
+            in result
+        )
         assert 'Store all findings immediately with category="finding"' in result
 
     def test_memory_path_guidance(self):
         """Test memory context guidance with explicit memory path"""
-        result = get_memory_context_guidance(has_memory_path=True, has_existing_memories=False, memory_overview=None)
+        result = get_memory_context_guidance(
+            has_memory_path=True, has_existing_memories=False, memory_overview=None
+        )
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
@@ -47,7 +54,9 @@ class TestMemoryContextGuidance:
 
     def test_existing_memories_guidance(self):
         """Test memory context guidance with existing memories"""
-        result = get_memory_context_guidance(has_memory_path=False, has_existing_memories=True, memory_overview=None)
+        result = get_memory_context_guidance(
+            has_memory_path=False, has_existing_memories=True, memory_overview=None
+        )
 
         assert "## MEMORY CONTEXT" in result
         assert "Continuing assessment with 0 existing memories" in result
@@ -134,7 +143,10 @@ class TestMemoryAwareSystemPrompts:
 
         assert "## MEMORY CONTEXT" in result
         assert "Starting fresh assessment with no previous context" in result
-        assert "Then begin reconnaissance and target information gathering guided by the plan" in result
+        assert (
+            "Then begin reconnaissance and target information gathering guided by the plan"
+            in result
+        )
         assert "Target: test.com" in result
         assert "Operation: OP_20240101_120000" in result
         assert "Budget: 50 steps" in result

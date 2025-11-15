@@ -22,7 +22,10 @@ def test_prompt_optimizer_apply_and_reset(tmp_path, monkeypatch):
 
     result = prompt_optimizer(
         action="apply",
-        overlay={"directives": ["Focus on consolidation"], "trajectory": {"mode": "consolidate"}},
+        overlay={
+            "directives": ["Focus on consolidation"],
+            "trajectory": {"mode": "consolidate"},
+        },
         trigger="agent_reflection",
         current_step=12,
         expires_after_steps=10,
@@ -47,14 +50,20 @@ def test_prompt_optimizer_apply_and_reset(tmp_path, monkeypatch):
 def test_prompt_optimizer_cooldown_enforced(tmp_path, monkeypatch):
     _setup_env(tmp_path, monkeypatch)
 
-    prompt_optimizer(action="apply", overlay={"directives": ["initial"]}, current_step=5)
+    prompt_optimizer(
+        action="apply", overlay={"directives": ["initial"]}, current_step=5
+    )
 
     with pytest.raises(PromptOptimizerError):
-        prompt_optimizer(action="apply", overlay={"directives": ["too_soon"]}, current_step=10)
+        prompt_optimizer(
+            action="apply", overlay={"directives": ["too_soon"]}, current_step=10
+        )
 
     # After reset, cooldown clears
     prompt_optimizer(action="reset")
-    prompt_optimizer(action="apply", overlay={"directives": ["after_reset"]}, current_step=25)
+    prompt_optimizer(
+        action="apply", overlay={"directives": ["after_reset"]}, current_step=25
+    )
 
 
 def test_prompt_optimizer_view_and_update(tmp_path, monkeypatch):
@@ -103,7 +112,9 @@ def test_prompt_optimizer_update_requires_prompt(tmp_path, monkeypatch):
         prompt_optimizer(action="update", current_step=3)
 
 
-def test_prompt_optimizer_optimize_execution_handles_missing_file(tmp_path, monkeypatch):
+def test_prompt_optimizer_optimize_execution_handles_missing_file(
+    tmp_path, monkeypatch
+):
     """Test optimize_execution handles missing execution_prompt_optimized.txt"""
     _setup_env(tmp_path, monkeypatch)
 
@@ -113,7 +124,7 @@ def test_prompt_optimizer_optimize_execution_handles_missing_file(tmp_path, monk
         action="optimize_execution",
         learned_patterns="Some patterns",
         remove_dead_ends=["tactic_a"],
-        focus_areas=["tactic_b"]
+        focus_areas=["tactic_b"],
     )
 
     assert result["status"] == "error"
@@ -133,16 +144,18 @@ def test_prompt_optimizer_optimize_execution_with_empty_lists(tmp_path, monkeypa
     optimized_path.write_text("Current prompt")
 
     # Get the actual module object from sys.modules
-    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+    prompt_opt_module = sys.modules["modules.tools.prompt_optimizer"]
 
-    with patch.object(prompt_opt_module, "_llm_rewrite_execution_prompt") as mock_rewrite:
+    with patch.object(
+        prompt_opt_module, "_llm_rewrite_execution_prompt"
+    ) as mock_rewrite:
         mock_rewrite.return_value = "Optimized prompt"
 
         result = prompt_optimizer(
             action="optimize_execution",
             learned_patterns="General learning without specific tactics",
             remove_dead_ends=[],
-            focus_areas=[]
+            focus_areas=[],
         )
 
     assert result["status"] == "success"

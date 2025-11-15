@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from modules.config.environment import clean_operation_memory
+from modules.config.system.environment import clean_operation_memory
 from modules.handlers.utils import get_output_path, sanitize_target_name
 
 
@@ -157,7 +157,7 @@ class TestEnvironmentLoggingIntegration:
 
             try:
                 # Capture log messages
-                with patch("modules.config.environment.get_logger") as mock_logger:
+                with patch("modules.config.system.environment.get_logger") as mock_logger:
                     mock_log = MagicMock()
                     mock_logger.return_value = mock_log
 
@@ -184,7 +184,7 @@ class TestEnvironmentLoggingIntegration:
         """Test that cleanup logs warning when no target_name provided."""
         operation_id = "OP_20250718_123456"
 
-        with patch("modules.config.environment.get_logger") as mock_logger:
+        with patch("modules.config.system.environment.get_logger") as mock_logger:
             mock_log = MagicMock()
             mock_logger.return_value = mock_log
 
@@ -201,16 +201,18 @@ class TestEnvironmentLoggingIntegration:
         target_name = "example.com"
         operation_id = "OP_20250718_123456"
 
-        with patch("modules.config.environment.get_logger") as mock_logger:
+        with patch("modules.config.system.environment.get_logger") as mock_logger:
             mock_log = MagicMock()
             mock_logger.return_value = mock_log
 
             # Mock shutil.rmtree to raise an exception
             with patch(
-                "modules.config.environment.shutil.rmtree",
+                "modules.config.system.environment.shutil.rmtree",
                 side_effect=OSError("Permission denied"),
             ):
-                with patch("modules.config.environment.os.path.exists", return_value=True):
+                with patch(
+                    "modules.config.system.environment.os.path.exists", return_value=True
+                ):
                     # Call cleanup
                     clean_operation_memory(operation_id, target_name)
 
@@ -233,7 +235,9 @@ class TestPathConsistency:
         memory_tools_path = os.path.join("outputs", target_name, "memory")
 
         # Path from cleanup logic
-        cleanup_path = os.path.join("outputs", target_name, "memory", f"mem0_faiss_{target_name}")
+        cleanup_path = os.path.join(
+            "outputs", target_name, "memory", f"mem0_faiss_{target_name}"
+        )
 
         # Path from display logic
         display_path = f"./outputs/{target_name}/memory"
@@ -317,5 +321,7 @@ class TestErrorHandling:
             get_output_path(None, None, None, None)
 
         # Test with special characters in base_dir
-        result = get_output_path("example.com", "OP_20250718_123456", "logs", "/app/outputs with spaces")
+        result = get_output_path(
+            "example.com", "OP_20250718_123456", "logs", "/app/outputs with spaces"
+        )
         assert result == "/app/outputs with spaces/example.com/OP_20250718_123456/logs"

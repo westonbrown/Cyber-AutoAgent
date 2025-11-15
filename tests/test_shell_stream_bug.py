@@ -14,9 +14,11 @@ def test_incorrect_import_causes_attributeerror():
     from strands_tools import shell as shell_wrong
 
     # shell_wrong is a MODULE, not a tool function
-    assert str(type(shell_wrong)) == "<class 'module'>", "shell should be a module with wrong import"
+    assert str(type(shell_wrong)) == "<class 'module'>", (
+        "shell should be a module with wrong import"
+    )
     assert not callable(shell_wrong), "Module is not callable"
-    assert not hasattr(shell_wrong, 'stream'), "Module doesn't have .stream attribute"
+    assert not hasattr(shell_wrong, "stream"), "Module doesn't have .stream attribute"
 
     # This would cause: AttributeError: module 'strands_tools.shell' has no attribute 'stream'
     with pytest.raises(AttributeError, match="has no attribute 'stream'"):
@@ -29,9 +31,11 @@ def test_correct_import_provides_stream():
     from strands_tools.shell import shell as shell_correct
 
     # shell_correct is a DecoratedFunctionTool, not a module
-    assert "DecoratedFunctionTool" in str(type(shell_correct)), "shell should be a DecoratedFunctionTool"
+    assert "DecoratedFunctionTool" in str(type(shell_correct)), (
+        "shell should be a DecoratedFunctionTool"
+    )
     assert callable(shell_correct), "Tool should be callable"
-    assert hasattr(shell_correct, 'stream'), "Tool should have .stream attribute"
+    assert hasattr(shell_correct, "stream"), "Tool should have .stream attribute"
 
     # This works correctly
     assert callable(shell_correct.stream), ".stream should be callable"
@@ -40,7 +44,15 @@ def test_correct_import_provides_stream():
 def test_all_tools_affected_by_wrong_import():
     """Show that ALL tools in line 18 are affected by this bug"""
     # Current WRONG imports (line 18 of cyber_autoagent.py)
-    from strands_tools import editor, http_request, load_tool, python_repl, shell, stop, swarm
+    from strands_tools import (
+        editor,
+        http_request,
+        load_tool,
+        python_repl,
+        shell,
+        stop,
+        swarm,
+    )
 
     wrong_tools = {
         "editor": editor,
@@ -54,7 +66,9 @@ def test_all_tools_affected_by_wrong_import():
 
     # ALL are modules (WRONG)
     for name, tool in wrong_tools.items():
-        assert str(type(tool)) == "<class 'module'>", f"{name} should be module with wrong import"
+        assert str(type(tool)) == "<class 'module'>", (
+            f"{name} should be module with wrong import"
+        )
         assert not callable(tool), f"{name} module should not be callable"
 
 
@@ -85,7 +99,9 @@ def test_all_tools_work_with_correct_import():
             # These are plain functions in current strands_tools release
             assert callable(tool), f"{name} should be callable"
         else:
-            assert "DecoratedFunctionTool" in str(type(tool)), f"{name} should be DecoratedFunctionTool"
+            assert "DecoratedFunctionTool" in str(type(tool)), (
+                f"{name} should be DecoratedFunctionTool"
+            )
             assert callable(tool), f"{name} tool should be callable"
 
 
@@ -105,7 +121,7 @@ def test_tools_with_stream_attribute():
     }
 
     for name, tool in tools_with_stream.items():
-        assert hasattr(tool, 'stream'), f"{name} should have .stream attribute"
+        assert hasattr(tool, "stream"), f"{name} should have .stream attribute"
         assert callable(tool.stream), f"{name}.stream should be callable"
 
 

@@ -56,7 +56,9 @@ def setup_operation_folder(tmp_path, mock_config):
     return operation_folder
 
 
-def test_prompt_rebuild_hook_initialization(mock_callback_handler, mock_memory, mock_config):
+def test_prompt_rebuild_hook_initialization(
+    mock_callback_handler, mock_memory, mock_config
+):
     """Test PromptRebuildHook initialization."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -81,7 +83,9 @@ def test_prompt_rebuild_hook_initialization(mock_callback_handler, mock_memory, 
     assert hook.last_phase is None
 
 
-def test_prompt_rebuild_hook_register_hooks(mock_callback_handler, mock_memory, mock_config):
+def test_prompt_rebuild_hook_register_hooks(
+    mock_callback_handler, mock_memory, mock_config
+):
     """Test hook registration."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -211,7 +215,9 @@ def test_prompt_rebuild_triggered_by_force_flag(
     assert hook.force_rebuild is False
 
 
-def test_phase_change_detection(mock_callback_handler, mock_memory, mock_config, setup_operation_folder):
+def test_phase_change_detection(
+    mock_callback_handler, mock_memory, mock_config, setup_operation_folder
+):
     """Test phase change detection."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -225,25 +231,19 @@ def test_phase_change_detection(mock_callback_handler, mock_memory, mock_config,
 
     # First call - set initial phase to 1
     mock_memory.get_active_plan.return_value = None  # No active plan
-    plan_data = {
-        "memory": "Phase 1: Recon (active, 50% complete)"
-    }
+    plan_data = {"memory": "Phase 1: Recon (active, 50% complete)"}
     mock_memory.search_memories.return_value = [plan_data]
     # This sets last_phase to 1 internally
     assert hook._phase_changed() is False
 
     # Second call - same phase (1)
-    plan_data = {
-        "memory": "Phase 1: Recon (active, 80% complete)"
-    }
+    plan_data = {"memory": "Phase 1: Recon (active, 80% complete)"}
     mock_memory.search_memories.return_value = [plan_data]
     # Should not detect change since still phase 1
     assert hook._phase_changed() is False
 
     # Third call - phase changed to 2
-    plan_data = {
-        "memory": "Phase 2: Exploitation (active, 0% complete)"
-    }
+    plan_data = {"memory": "Phase 2: Exploitation (active, 0% complete)"}
     mock_memory.search_memories.return_value = [plan_data]
     # Should detect change from 1 to 2
     assert hook._phase_changed() is True
@@ -298,7 +298,9 @@ def test_execution_prompt_modification_detection(
     assert hook.last_rebuild_step == 3
 
 
-def test_query_memory_overview(mock_callback_handler, mock_memory, mock_config, setup_operation_folder):
+def test_query_memory_overview(
+    mock_callback_handler, mock_memory, mock_config, setup_operation_folder
+):
     """Test memory overview query."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -328,7 +330,9 @@ def test_query_memory_overview(mock_callback_handler, mock_memory, mock_config, 
     # Simplified version no longer counts severity levels
 
 
-def test_query_plan_snapshot(mock_callback_handler, mock_memory, mock_config, setup_operation_folder):
+def test_query_plan_snapshot(
+    mock_callback_handler, mock_memory, mock_config, setup_operation_folder
+):
     """Test plan snapshot query."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -355,7 +359,9 @@ def test_query_plan_snapshot(mock_callback_handler, mock_memory, mock_config, se
     assert "45%" in snapshot
 
 
-def test_extract_current_phase(mock_callback_handler, mock_memory, mock_config, setup_operation_folder):
+def test_extract_current_phase(
+    mock_callback_handler, mock_memory, mock_config, setup_operation_folder
+):
     """Test phase extraction from snapshot."""
     hook = PromptRebuildHook(
         callback_handler=mock_callback_handler,
@@ -404,9 +410,9 @@ def test_rebuild_with_memory_and_plan_context(
         {"memory": "High finding", "metadata": {"severity": "high"}},
     ]
     # Mock search_memories for plan snapshot
-    mock_memory.search_memories.return_value = [{
-        "memory": "Phase 2: Exploitation (active, 30% complete)"
-    }]
+    mock_memory.search_memories.return_value = [
+        {"memory": "Phase 2: Exploitation (active, 30% complete)"}
+    ]
 
     # Set current step to trigger rebuild
     mock_callback_handler.current_step = 20

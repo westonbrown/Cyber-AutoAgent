@@ -72,7 +72,9 @@ def test_emitter_always_json_format():
 
     # All events should be JSON formatted with markers
     event_count = out.count("__CYBER_EVENT__")
-    assert event_count == len(events), f"Expected {len(events)} events, got {event_count}"
+    assert event_count == len(events), (
+        f"Expected {len(events)} events, got {event_count}"
+    )
 
     # No human-readable formatting (CLI mode removed)
     assert "Operation initialization complete" not in out

@@ -27,24 +27,15 @@ def mock_memory():
     memory.search.return_value = [
         {
             "memory": "[VULNERABILITY] SQL Injection [WHERE] /login endpoint [IMPACT] Authentication bypass",
-            "metadata": {"severity": "critical", "validation_status": "confirmed"}
+            "metadata": {"severity": "critical", "validation_status": "confirmed"},
         },
         {
             "memory": "[VULNERABILITY] SSTI [WHERE] Template rendering [IMPACT] Remote code execution",
-            "metadata": {"severity": "high", "validation_status": "confirmed"}
+            "metadata": {"severity": "high", "validation_status": "confirmed"},
         },
-        {
-            "memory": "[BLOCKED] xss at /search",
-            "metadata": {"category": "adaptation"}
-        },
-        {
-            "memory": "[BLOCKED] xss at /comment",
-            "metadata": {"category": "adaptation"}
-        },
-        {
-            "memory": "[BLOCKED] xss at /profile",
-            "metadata": {"category": "adaptation"}
-        }
+        {"memory": "[BLOCKED] xss at /search", "metadata": {"category": "adaptation"}},
+        {"memory": "[BLOCKED] xss at /comment", "metadata": {"category": "adaptation"}},
+        {"memory": "[BLOCKED] xss at /profile", "metadata": {"category": "adaptation"}},
     ]
 
     return memory
@@ -112,8 +103,8 @@ def test_auto_optimization_triggers_at_step_20(
     mock_event.agent = mock_agent
 
     # Mock the optimization methods
-    with patch.object(hook, '_auto_optimize_execution_prompt') as mock_optimize:
-        with patch('modules.prompts.get_system_prompt') as mock_get_prompt:
+    with patch.object(hook, "_auto_optimize_execution_prompt") as mock_optimize:
+        with patch("modules.prompts.get_system_prompt") as mock_get_prompt:
             mock_get_prompt.return_value = "rebuilt prompt"
 
             # Call check_if_rebuild_needed
@@ -139,9 +130,18 @@ def test_auto_optimization_retrieves_memories(
 
     # Mock memory responses
     mock_memory.list_memories.return_value = [
-        {"memory": "[SQLI CONFIRMED] SQL injection successful", "metadata": {"severity": "high"}},
-        {"memory": "[BLOCKED] xss attempt blocked by WAF", "metadata": {"category": "adaptation"}},
-        {"memory": "Found SSTI vulnerability allowing code execution", "metadata": {"severity": "critical"}},
+        {
+            "memory": "[SQLI CONFIRMED] SQL injection successful",
+            "metadata": {"severity": "high"},
+        },
+        {
+            "memory": "[BLOCKED] xss attempt blocked by WAF",
+            "metadata": {"category": "adaptation"},
+        },
+        {
+            "memory": "Found SSTI vulnerability allowing code execution",
+            "metadata": {"severity": "critical"},
+        },
     ]
 
     # Test memory retrieval for overview
@@ -169,9 +169,11 @@ def test_auto_optimization_rewrites_prompt(
     import sys
 
     # Get the actual module object from sys.modules
-    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+    prompt_opt_module = sys.modules["modules.tools.prompt_optimizer"]
 
-    with patch.object(prompt_opt_module, '_llm_rewrite_execution_prompt') as mock_rewrite:
+    with patch.object(
+        prompt_opt_module, "_llm_rewrite_execution_prompt"
+    ) as mock_rewrite:
         mock_rewrite.return_value = """
 # Optimized Execution Prompt
 
@@ -185,11 +187,14 @@ def test_auto_optimization_rewrites_prompt(
 
         # Set up memory responses using list_memories
         mock_memory.list_memories.return_value = [
-            {"memory": "[VULNERABILITY] SSTI confirmed", "metadata": {"severity": "critical"}},
+            {
+                "memory": "[VULNERABILITY] SSTI confirmed",
+                "metadata": {"severity": "critical"},
+            },
             {"memory": "[BLOCKED] xss test 1"},
             {"memory": "[BLOCKED] xss test 2"},
             {"memory": "[BLOCKED] xss test 3"},
-            {"memory": "ssti works", "metadata": {"validation_status": "confirmed"}}
+            {"memory": "ssti works", "metadata": {"validation_status": "confirmed"}},
         ]
 
         # Call auto-optimization
@@ -249,8 +254,8 @@ def test_auto_optimization_at_multiple_intervals(
     mock_agent.system_prompt = "original prompt"
     mock_event.agent = mock_agent
 
-    with patch.object(hook, '_auto_optimize_execution_prompt') as mock_optimize:
-        with patch('modules.prompts.get_system_prompt') as mock_get_prompt:
+    with patch.object(hook, "_auto_optimize_execution_prompt") as mock_optimize:
+        with patch("modules.prompts.get_system_prompt") as mock_get_prompt:
             mock_get_prompt.return_value = "rebuilt prompt"
 
             # Test at step 20
@@ -288,10 +293,12 @@ def test_auto_optimization_error_handling(
     )
 
     # Get the actual module object from sys.modules
-    prompt_opt_module = sys.modules['modules.tools.prompt_optimizer']
+    prompt_opt_module = sys.modules["modules.tools.prompt_optimizer"]
 
     # Mock LLM rewrite to raise an error
-    with patch.object(prompt_opt_module, '_llm_rewrite_execution_prompt') as mock_rewrite:
+    with patch.object(
+        prompt_opt_module, "_llm_rewrite_execution_prompt"
+    ) as mock_rewrite:
         mock_rewrite.side_effect = Exception("LLM service unavailable")
 
         # Should not crash the operation

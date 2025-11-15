@@ -87,7 +87,9 @@ def test_agent_creation_unsupported_provider_raises(
     from modules.agents.cyber_autoagent import create_agent, AgentConfig
 
     with pytest.raises(ValueError):
-        config = AgentConfig(target="t", objective="o", provider="unsupported", op_id="OP_TEST")
+        config = AgentConfig(
+            target="t", objective="o", provider="unsupported", op_id="OP_TEST"
+        )
         create_agent(target="t", objective="o", config=config)
 
     assert mock_handle_error.called

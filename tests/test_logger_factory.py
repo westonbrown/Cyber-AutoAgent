@@ -3,7 +3,7 @@
 
 import logging
 
-from modules.config.logger_factory import get_logger, reset_logger_factory
+from modules.config.system.logger import get_logger, reset_logger_factory
 
 
 def test_get_logger_creates_logger():
@@ -38,7 +38,8 @@ def test_reset_clears_registry():
     reset_logger_factory()
     get_logger("Test.Component1")
     get_logger("Test.Component2")
-    from modules.config.logger_factory import _logger_registry
+    from modules.config.system.logger import _logger_registry
+
     assert len(_logger_registry) == 2
     reset_logger_factory()
     assert len(_logger_registry) == 0

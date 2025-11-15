@@ -11,6 +11,12 @@ import pytest
 # Import the modules we're testing
 from modules.config.manager import (
     ConfigManager,
+    get_config_manager,
+    get_default_model_configs,
+    get_model_config,
+    get_ollama_host,
+)
+from modules.config.types import (
     EmbeddingConfig,
     EvaluationConfig,
     LLMConfig,
@@ -23,11 +29,7 @@ from modules.config.manager import (
     OutputConfig,
     ServerConfig,
     SwarmConfig,
-    get_config_manager,
     get_default_base_dir,
-    get_default_model_configs,
-    get_model_config,
-    get_ollama_host,
 )
 
 
@@ -297,7 +299,8 @@ class TestConfigManager:
         assert local_config.llm.provider == ModelProvider.OLLAMA
         assert local_config.llm.model_id == "llama3.2:3b"
         assert local_config.llm.temperature == 0.7
-        assert local_config.llm.max_tokens == 500
+        # Swarm max_tokens now uses models.dev safe defaults (50% of limit, fallback 4096)
+        assert local_config.llm.max_tokens == 4096
 
         # Test remote swarm config
         remote_config = self.config_manager.get_swarm_config("bedrock")
@@ -305,7 +308,8 @@ class TestConfigManager:
         assert remote_config.llm.provider == ModelProvider.AWS_BEDROCK
         assert "claude" in remote_config.llm.model_id
         assert remote_config.llm.temperature == 0.7
-        assert remote_config.llm.max_tokens == 500
+        # Swarm max_tokens now uses models.dev safe defaults (50% of limit, fallback 4096)
+        assert remote_config.llm.max_tokens == 4096
 
     def test_get_mem0_service_config(self):
         """Test getting Mem0 service configuration."""
@@ -434,7 +438,7 @@ class TestConfigManager:
         assert config.server_type == "ollama"
 
     @patch("modules.config.manager.os.path.exists")
-    @patch("modules.config.manager.requests.get")
+    @patch("modules.config.system.validation.requests.get")
     def test_get_ollama_host_docker(self, mock_get, mock_exists):
         """Test Ollama host detection in Docker environment."""
         mock_exists.return_value = True  # Simulate Docker environment
@@ -459,7 +463,7 @@ class TestConfigManager:
         host = self.config_manager.get_ollama_host()
         assert host == "http://custom:11434"
 
-    @patch("modules.config.manager.requests.get")
+    @patch("modules.config.system.validation.requests.get")
     def test_validate_ollama_requirements_success(self, mock_get):
         """Test successful Ollama requirements validation."""
         mock_response = MagicMock()
@@ -476,7 +480,7 @@ class TestConfigManager:
                 # Should not raise an exception
                 self.config_manager.validate_requirements("ollama")
 
-    @patch("modules.config.manager.requests.get")
+    @patch("modules.config.system.validation.requests.get")
     def test_validate_ollama_requirements_server_down(self, mock_get):
         """Test Ollama requirements validation when server is down."""
         mock_get.side_effect = ConnectionError("Connection refused")

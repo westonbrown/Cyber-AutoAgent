@@ -55,6 +55,8 @@ def test_output_interception_react_only(
 
     # React mode: should setup interception
     monkeypatch.setenv("CYBER_UI_MODE", "react")
-    config = AgentConfig(target="t2", objective="o2", provider="bedrock", op_id="OP_TEST2")
+    config = AgentConfig(
+        target="t2", objective="o2", provider="bedrock", op_id="OP_TEST2"
+    )
     create_agent(target="t2", objective="o2", config=config)
     assert mock_setup_intercept.call_count == 1

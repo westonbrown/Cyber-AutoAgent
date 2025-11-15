@@ -9,7 +9,7 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from modules.config.environment import clean_operation_memory
+from modules.config.system.environment import clean_operation_memory
 from modules.handlers.utils import get_output_path, sanitize_target_name
 from modules.tools.memory import Mem0ServiceClient
 
@@ -36,7 +36,9 @@ class TestMemoryPathIntegration:
                 "llm": {"provider": "aws_bedrock", "config": {"model": "test-llm"}},
             }
 
-            with patch("modules.tools.memory.Mem0Memory.from_config") as mock_from_config:
+            with patch(
+                "modules.tools.memory.Mem0Memory.from_config"
+            ) as mock_from_config:
                 mock_from_config.return_value = MagicMock()
                 client = Mem0ServiceClient(config)
 
@@ -47,7 +49,10 @@ class TestMemoryPathIntegration:
     def test_memory_path_with_sanitized_target_names(self):
         """Test memory paths with various target name formats."""
         test_cases = [
-            ("https://example.com:8080/path", "example.com_8080"),  # Port preserved with underscore
+            (
+                "https://example.com:8080/path",
+                "example.com_8080",
+            ),  # Port preserved with underscore
             ("192.168.1.1", "192.168.1.1"),
             ("sub.domain.com", "sub.domain.com"),
             ("http://test-site.org", "test-site.org"),
@@ -188,7 +193,9 @@ class TestMemoryPathIntegration:
 
         # Test evidence location construction
         sanitized_target = sanitize_target_name(target)
-        evidence_location = get_output_path(sanitized_target, operation_id, "", base_dir)
+        evidence_location = get_output_path(
+            sanitized_target, operation_id, "", base_dir
+        )
 
         # Port is preserved with underscore
         expected = "/app/outputs/example.com_8080/OP_20250718_123456"
@@ -241,8 +248,12 @@ class TestMemoryCleanupIntegration:
                 clean_operation_memory(operation_id, target1)
 
                 # Verify target1 memory was removed but target2 preserved
-                target1_faiss = os.path.join("outputs", target1, "memory", f"mem0_faiss_{target1}")
-                target2_faiss = os.path.join("outputs", target2, "memory", f"mem0_faiss_{target2}")
+                target1_faiss = os.path.join(
+                    "outputs", target1, "memory", f"mem0_faiss_{target1}"
+                )
+                target2_faiss = os.path.join(
+                    "outputs", target2, "memory", f"mem0_faiss_{target2}"
+                )
 
                 assert not os.path.exists(target1_faiss)  # target1 removed
                 assert os.path.exists(target2_faiss)  # target2 preserved
@@ -257,7 +268,9 @@ class TestMemoryToolsPathConstruction:
     @patch("modules.tools.memory.get_config_manager")
     @patch("modules.tools.memory.os.makedirs")
     @patch("modules.tools.memory.Mem0Memory.from_config")
-    def test_faiss_path_construction(self, mock_from_config, mock_makedirs, mock_config_manager):
+    def test_faiss_path_construction(
+        self, mock_from_config, mock_makedirs, mock_config_manager
+    ):
         """Test FAISS path construction in memory tools."""
         # Mock config manager
         mock_config_manager.return_value.get_mem0_service_config.return_value = {

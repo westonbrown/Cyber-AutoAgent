@@ -139,7 +139,9 @@ class TestGetSystemPrompt:
             "current_step": 12,
             "payload": {"directives": ["Focus on consolidation"]},
         }
-        (overlay_dir / "adaptive_prompt.json").write_text(json.dumps(overlay_payload), encoding="utf-8")
+        (overlay_dir / "adaptive_prompt.json").write_text(
+            json.dumps(overlay_payload), encoding="utf-8"
+        )
 
         prompt = get_system_prompt(
             target="test.com",

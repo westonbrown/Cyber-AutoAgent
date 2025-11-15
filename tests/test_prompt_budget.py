@@ -14,7 +14,9 @@ class AgentStub:
         self._prompt_token_limit = limit
         self.conversation_manager = types.SimpleNamespace(
             calls=[],
-            reduce_context=lambda agent: self.conversation_manager.calls.append(len(agent.messages)),
+            reduce_context=lambda agent: self.conversation_manager.calls.append(
+                len(agent.messages)
+            ),
         )
         if telemetry is not None:
             self.callback_handler = types.SimpleNamespace(sdk_input_tokens=telemetry)
@@ -34,7 +36,8 @@ def _make_reasoning_message(text="thinking"):
 def test_estimate_prompt_tokens_counts_text_blocks():
     agent = AgentStub([_make_message("a" * 40), _make_message("b" * 80)])
     estimated = _estimate_prompt_tokens(agent)
-    assert estimated == (120 // 4)
+    # Dynamic ratio: 120 chars / 3.7 (default ratio when model not specified) = ~32 tokens
+    assert estimated == int(120 / 3.7)
 
 
 def test_ensure_prompt_reduces_context_when_near_limit():
@@ -51,10 +54,15 @@ def test_ensure_prompt_skips_when_under_budget():
 
 
 def test_ensure_prompt_telemetry_trigger():
-    messages = [_make_message("short text")] * 2
+    # Create messages with enough content to exceed threshold with 3.7 ratio
+    # Need ~800 tokens estimated (80% of 1000 limit)
+    # 800 tokens * 3.7 chars/token = ~2960 chars
+    messages = [_make_message("x" * 1500)] * 2  # 3000 chars total
     agent = AgentStub(messages, limit=1000, telemetry=900)
     _ensure_prompt_within_budget(agent)
-    assert agent.conversation_manager.calls, "Telemetry tokens above threshold should trigger reduction"
+    assert agent.conversation_manager.calls, (
+        "Telemetry tokens above threshold should trigger reduction"
+    )
 
 
 def test_strip_reasoning_content_removes_when_disallowed():
