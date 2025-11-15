@@ -101,7 +101,7 @@ Return JSON only:
 def _create_specialist_model():
     """Create model for specialist - reuse main LLM/provider when swarm override is unavailable."""
     import os
-    from modules.agents.cyber_autoagent import create_bedrock_model, create_local_model, create_litellm_model
+    from modules.config.models.factory import create_bedrock_model, create_ollama_model, create_litellm_model
     from modules.config.manager import ConfigManager
 
     provider = os.getenv("CYBER_AGENT_PROVIDER", "bedrock")
@@ -113,7 +113,7 @@ def _create_specialist_model():
         if provider == "bedrock":
             return create_bedrock_model(model_id, region, provider)
         if provider == "ollama":
-            return create_local_model(model_id, provider)
+            return create_ollama_model(model_id, provider)
         if provider == "litellm":
             return create_litellm_model(model_id, region, provider)
         raise ValueError(f"Unknown provider: {provider}")
