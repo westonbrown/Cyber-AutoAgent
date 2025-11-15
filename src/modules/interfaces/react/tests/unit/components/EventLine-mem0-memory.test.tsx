@@ -42,4 +42,23 @@ describe('EventLine mem0_memory formatting', () => {
     expect(out).toMatch(/action:\s+retrieving/i);
     expect(out).toMatch(/find: injection/i);
   });
+
+  it('shows compact preview for TOON plans', async () => {
+    const EventLine = await importEventLine();
+    const plan = `plan_overview[1]{objective,current_phase,total_phases}:
+  Harden portal,2,3
+plan_phases[3]{id,title,status,criteria}:
+  1,Recon,done,map services
+  2,Testing,active,validate IDOR paths
+  3,Exploit,pending,extract flag`;
+    const event = {
+      type: 'tool_start',
+      tool_name: 'mem0_memory',
+      tool_input: { action: 'store_plan', content: plan }
+    };
+    const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+    const out = lastFrame();
+    expect(out).toMatch(/plan:\s+Harden portal/i);
+    expect(out).toMatch(/Phase 2\/3/i);
+  });
 });

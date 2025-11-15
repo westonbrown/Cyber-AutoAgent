@@ -1,0 +1,287 @@
+/**
+ * Specialist sub-agent event rendering tests
+ *
+ * Tests the display of specialist_start, specialist_progress, and specialist_end events
+ * for validation_specialist and other specialist tools.
+ */
+import { describe, it, expect, jest, afterEach } from '@jest/globals';
+import React from 'react';
+import { render } from 'ink-testing-library';
+
+async function importEventLine() {
+  jest.resetModules();
+  const mod: any = await import('../../../src/components/StreamDisplay.tsx');
+  return mod.EventLine as React.FC<any>;
+}
+
+describe('EventLine specialist event formatting', () => {
+  afterEach(() => jest.resetModules());
+
+  describe('specialist_start event', () => {
+    it('renders validation specialist start with task and finding', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_start',
+        specialist: 'validation',
+        task: '7-gate validation checklist',
+        finding: 'SQLi in /api/export?id=1',
+        artifactPaths: ['baseline.html', 'exploit.html']
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/\[SUB-AGENT\]/);
+      expect(out).toMatch(/validation_specialist/);
+      expect(out).toMatch(/7-gate validation/);
+      expect(out).toMatch(/SQLi in \/api\/export/);
+      expect(out).toMatch(/2 files/);
+    });
+
+    it('renders specialist start with minimal data', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_start',
+        specialist: 'sqli',
+        task: 'Oracle establishment'
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/sqli_specialist/);
+      expect(out).toMatch(/Oracle establishment/);
+    });
+
+    it('truncates long findings to prevent overflow', async () => {
+      const EventLine = await importEventLine();
+      const longFinding = 'A'.repeat(300);
+      const event = {
+        type: 'specialist_start',
+        specialist: 'validation',
+        task: 'Test',
+        finding: longFinding,
+        artifactPaths: []
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      // Finding should appear but not be 300 chars (truncated in Python before emission)
+      expect(out).toMatch(/validation_specialist/);
+    });
+  });
+
+  describe('specialist_progress event', () => {
+    it('renders progress with status only', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_progress',
+        specialist: 'validation',
+        status: 'Analyzing artifacts and applying validation gates'
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/⏳/);
+      expect(out).toMatch(/Analyzing artifacts/);
+    });
+
+    it('renders progress with gate information', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_progress',
+        specialist: 'validation',
+        gate: 3,
+        totalGates: 7,
+        status: 'Checking content differential'
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/Gate 3\/7/);
+      expect(out).toMatch(/content differential/);
+    });
+
+    it('renders progress with tool information', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_progress',
+        specialist: 'validation',
+        tool: 'editor',
+        status: 'Reading baseline artifact'
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/editor/);
+      expect(out).toMatch(/baseline/);
+    });
+  });
+
+  describe('specialist_end event', () => {
+    it('renders verified status with green checkmark', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_end',
+        specialist: 'validation',
+        result: {
+          validation_status: 'verified',
+          confidence: 90,
+          severity_max: 'HIGH',
+          failed_gates: []
+        }
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/✓/);
+      expect(out).toMatch(/verified/);
+      expect(out).toMatch(/90%/);
+      expect(out).toMatch(/HIGH/);
+    });
+
+    it('renders hypothesis status with yellow warning', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_end',
+        specialist: 'validation',
+        result: {
+          validation_status: 'hypothesis',
+          confidence: 40,
+          severity_max: 'MEDIUM',
+          failed_gates: [3, 4, 5]
+        }
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/⚠/);
+      expect(out).toMatch(/hypothesis/);
+      expect(out).toMatch(/40%/);
+      expect(out).toMatch(/failed gates/);
+      expect(out).toMatch(/3, 4, 5/);
+    });
+
+    it('renders error status with red X', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_end',
+        specialist: 'validation',
+        result: {
+          validation_status: 'error',
+          confidence: 0,
+          evidence_summary: 'Validation failed due to missing artifacts'
+        }
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/✗/);
+      expect(out).toMatch(/error/);
+    });
+
+    it('handles snake_case and camelCase result fields', async () => {
+      const EventLine = await importEventLine();
+      const eventSnakeCase = {
+        type: 'specialist_end',
+        specialist: 'validation',
+        result: {
+          validation_status: 'verified',
+          severity_max: 'HIGH',
+          failed_gates: []
+        }
+      };
+
+      const { lastFrame: frame1 } = render(React.createElement(EventLine, { event: eventSnakeCase, animationsEnabled: false }));
+      expect(frame1()).toMatch(/verified/);
+      expect(frame1()).toMatch(/HIGH/);
+
+      // Test camelCase variant
+      const eventCamelCase = {
+        type: 'specialist_end',
+        specialist: 'validation',
+        result: {
+          validationStatus: 'verified',
+          severityMax: 'HIGH',
+          failedGates: []
+        }
+      };
+
+      const { lastFrame: frame2 } = render(React.createElement(EventLine, { event: eventCamelCase, animationsEnabled: false }));
+      expect(frame2()).toMatch(/verified/);
+      expect(frame2()).toMatch(/HIGH/);
+    });
+
+    it('handles result with no confidence or severity', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_end',
+        specialist: 'xss',
+        result: {
+          validation_status: 'verified'
+        }
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      expect(out).toMatch(/verified/);
+      // Should not crash or show undefined
+      expect(out).not.toMatch(/undefined/);
+    });
+  });
+
+  describe('edge cases and error handling', () => {
+    it('handles missing specialist field with default', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_start',
+        task: 'Some task'
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      // Should default to 'validation'
+      expect(out).toMatch(/validation_specialist/);
+    });
+
+    it('handles empty artifactPaths array', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_start',
+        specialist: 'validation',
+        task: 'Test',
+        artifactPaths: []
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      // Should not show "0 files" line
+      expect(out).toMatch(/validation_specialist/);
+    });
+
+    it('handles missing result object gracefully', async () => {
+      const EventLine = await importEventLine();
+      const event = {
+        type: 'specialist_end',
+        specialist: 'validation'
+        // Missing result field
+      };
+
+      const { lastFrame } = render(React.createElement(EventLine, { event, animationsEnabled: false }));
+      const out = lastFrame();
+
+      // Should show 'unknown' status
+      expect(out).toMatch(/unknown/);
+    });
+  });
+});
