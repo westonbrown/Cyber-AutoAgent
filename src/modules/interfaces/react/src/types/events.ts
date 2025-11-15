@@ -113,6 +113,16 @@ export enum EventType {
   SWARM_HANDOFF = 'swarm_handoff',
   /** Multi-agent swarm session completed */
   SWARM_END = 'swarm_end',
+
+  // =============================================================================
+  // SPECIALIST SUB-AGENT EVENTS - Validation and specialized analysis
+  // =============================================================================
+  /** Specialist sub-agent initialized */
+  SPECIALIST_START = 'specialist_start',
+  /** Specialist progress update */
+  SPECIALIST_PROGRESS = 'specialist_progress',
+  /** Specialist sub-agent completed */
+  SPECIALIST_END = 'specialist_end',
   
   // =============================================================================
   // NETWORK COMMUNICATION EVENTS - HTTP/API assessment tools
@@ -332,6 +342,36 @@ export interface SwarmEvent extends BaseEvent {
   result?: any;
 }
 
+// Specialist sub-agent events
+export interface SpecialistEvent extends BaseEvent {
+  type: EventType.SPECIALIST_START | EventType.SPECIALIST_PROGRESS | EventType.SPECIALIST_END;
+  /** Type of specialist (validation, sqli, xss, etc.) */
+  specialist: string;
+  /** Task description */
+  task?: string;
+  /** Finding being analyzed */
+  finding?: string;
+  /** Artifact paths being examined */
+  artifactPaths?: string[];
+  /** Current gate/step number */
+  gate?: number;
+  /** Total gates/steps */
+  totalGates?: number;
+  /** Tool currently being used */
+  tool?: string;
+  /** Current status message */
+  status?: string;
+  /** Final result (for END event) */
+  result?: {
+    validationStatus?: string;
+    confidence?: number;
+    severityMax?: string;
+    failedGates?: number[];
+    evidenceSummary?: string;
+    [key: string]: any;
+  };
+}
+
 // HTTP events
 export interface HttpEvent extends BaseEvent {
   type: EventType.HTTP_REQUEST | EventType.HTTP_RESPONSE;
@@ -452,16 +492,17 @@ export interface TerminationReasonEvent {
  * events and legacy events for backward compatibility. Enables exhaustive 
  * pattern matching and compile-time validation of event handling logic.
  */
-export type StreamEvent = 
+export type StreamEvent =
   // SDK Native Events
   | SDKContentEvent
   | SDKTelemetryEvent
   | SDKAgentEvent
-  
+
   // Legacy Events (backward compatibility)
   | ToolEvent
   | ShellEvent
   | SwarmEvent
+  | SpecialistEvent
   | HttpEvent
   | MemoryEvent
   | ThinkEvent

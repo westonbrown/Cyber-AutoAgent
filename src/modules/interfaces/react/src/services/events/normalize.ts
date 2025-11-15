@@ -216,6 +216,49 @@ export function normalizeEvent(event: AnyEvent): AnyEvent {
   }
 
   switch (e.type) {
+    case 'specialist_start': {
+      // Normalize specialist start payload fields (snake_case -> camelCase)
+      const specialist = (e.specialist || e.name || '').toString() || 'validation';
+      // Normalize artifact paths
+      const artifactPaths = Array.isArray((e as any).artifactPaths)
+        ? (e as any).artifactPaths
+        : (Array.isArray((e as any).artifact_paths) ? (e as any).artifact_paths : undefined);
+      return {
+        ...e,
+        specialist,
+        ...(artifactPaths ? { artifactPaths } : {}),
+      };
+    }
+
+    case 'specialist_progress': {
+      // Normalize progress fields
+      const gate = (e as any).gate;
+      const totalGates = (e as any).totalGates ?? (e as any).total_gates;
+      const tool = (e as any).tool;
+      return {
+        ...e,
+        ...(gate != null ? { gate: Number(gate) } : {}),
+        ...(totalGates != null ? { totalGates: Number(totalGates) } : {}),
+        ...(tool ? { tool: String(tool) } : {}),
+      };
+    }
+
+    case 'specialist_end': {
+      // Normalize result object keys for UI renderer
+      const result = (e as any).result || {};
+      const normalizedResult: any = { ...result };
+      if ('validation_status' in normalizedResult && !('validationStatus' in normalizedResult)) {
+        normalizedResult.validationStatus = normalizedResult.validation_status;
+      }
+      if ('severity_max' in normalizedResult && !('severityMax' in normalizedResult)) {
+        normalizedResult.severityMax = normalizedResult.severity_max;
+      }
+      if ('failed_gates' in normalizedResult && !('failedGates' in normalizedResult)) {
+        normalizedResult.failedGates = normalizedResult.failed_gates;
+      }
+      return { ...e, result: normalizedResult };
+    }
+
     case 'tool_start': {
       const toolName = e.toolName || e.tool_name || 'tool';
       const rawInput = e.args !== undefined ? e.args : (e.tool_input !== undefined ? e.tool_input : {});
