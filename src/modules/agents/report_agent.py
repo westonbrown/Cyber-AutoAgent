@@ -79,11 +79,14 @@ class ReportGenerator:
                 max_pool_connections=100,
             )
 
-            # Set appropriate token limits based on the model
-            if "claude-3-5-sonnet" in mid or "claude-3-5-haiku" in mid:
-                max_tokens = 4000
-            else:
-                max_tokens = 8000
+            # Use the same max_tokens budget as the primary Bedrock model
+            try:
+                max_tokens = int(getattr(llm_cfg, "max_tokens", 0) or 0)
+                if max_tokens <= 0:
+                    raise ValueError
+            except Exception:
+                max_tokens = 32000
+
             # Ensure explicit region to avoid environment inconsistencies
             region = cfg.get_server_config("bedrock").region
             model = BedrockModel(
@@ -104,10 +107,16 @@ class ReportGenerator:
             # Only override if explicitly provided, otherwise use config
             mid = model_id if model_id else llm_cfg.model_id
             # Pass both token params - LiteLLM drop_params removes unsupported one
+            try:
+                llm_max = int(getattr(llm_cfg, "max_tokens", 0) or 0)
+                if llm_max <= 0:
+                    raise ValueError
+            except Exception:
+                llm_max = 4000
             params = {
                 "temperature": 0.3,
-                "max_tokens": 4000,
-                "max_completion_tokens": 4000,
+                "max_tokens": llm_max,
+                "max_completion_tokens": llm_max,
             }
             client_args = {
                 "num_retries": 5,
