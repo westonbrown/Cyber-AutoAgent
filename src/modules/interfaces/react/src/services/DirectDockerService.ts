@@ -255,6 +255,15 @@ export class DirectDockerService extends EventEmitter {
         `DEV=${config.verbose ? 'true' : 'false'}`,
       );
 
+      // Provider and model configuration
+      // ConfigManager reads from these env vars, not just command-line args
+      if (config.modelProvider) {
+        env.push(`CYBER_AGENT_PROVIDER=${config.modelProvider}`);
+      }
+      if (config.modelId) {
+        env.push(`CYBER_AGENT_LLM_MODEL=${config.modelId}`);
+      }
+
       // AWS credentials
       if (config.awsAccessKeyId && config.awsSecretAccessKey) {
         env.push(`AWS_ACCESS_KEY_ID=${config.awsAccessKeyId}`);
@@ -356,6 +365,9 @@ export class DirectDockerService extends EventEmitter {
       }
       if (config.reasoningEffort) {
         env.push(`REASONING_EFFORT=${config.reasoningEffort}`);
+      }
+      if (config.reasoningVerbosity) {
+        env.push(`REASONING_VERBOSITY=${config.reasoningVerbosity}`);
       }
       if (config.maxCompletionTokens) {
         env.push(`MAX_COMPLETION_TOKENS=${config.maxCompletionTokens}`);

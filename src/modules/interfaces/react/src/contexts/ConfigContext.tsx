@@ -111,6 +111,8 @@ export interface Config {
   azureApiVersion?: string;
   /** Reasoning effort for O-series/GPT-5 models (low/medium/high) */
   reasoningEffort?: 'low' | 'medium' | 'high';
+  /** Reasoning text verbosity for Azure Responses API models (low/medium/high, default: medium) */
+  reasoningVerbosity?: 'low' | 'medium' | 'high';
   /** Max completion tokens for reasoning models (overrides max_tokens) */
   maxCompletionTokens?: number;
   /** Sampling temperature for the primary model */

@@ -714,6 +714,7 @@ export class PythonExecutionService extends EventEmitter {
         ...(config.topP !== undefined ? { CYBER_AGENT_TOP_P: String(config.topP) } : {}),
         ...(config.thinkingBudget ? { THINKING_BUDGET: String(config.thinkingBudget) } : {}),
         ...(config.reasoningEffort ? { REASONING_EFFORT: config.reasoningEffort } : {}),
+        ...(config.reasoningVerbosity ? { REASONING_VERBOSITY: config.reasoningVerbosity } : {}),
         ...(config.maxCompletionTokens ? { MAX_COMPLETION_TOKENS: String(config.maxCompletionTokens) } : {}),
         // Model Configuration - pass separate models from config
         ...(config.swarmModel ? { CYBER_AGENT_SWARM_MODEL: config.swarmModel } : {}),
