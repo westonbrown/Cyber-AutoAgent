@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 """Agent creation and management for Cyber-AutoAgent."""
 
+import atexit
 import json
 import logging
 import os
+import signal
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from strands import Agent
+from strands.types.tools import AgentTool
+from strands.tools.mcp.mcp_client import MCPClient
 from strands_tools.editor import editor
 from strands_tools.http_request import http_request
 from strands_tools.load_tool import load_tool
@@ -17,6 +21,9 @@ from strands_tools.python_repl import python_repl
 from strands_tools.shell import shell
 from strands_tools.stop import stop
 from strands_tools.swarm import swarm
+from mcp import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.sse import sse_client
 
 from modules import prompts
 from modules.config import (
@@ -26,6 +33,7 @@ from modules.config import (
     configure_sdk_logging,
     get_config_manager,
 )
+from modules.config.types import MCPConnection, ServerConfig
 from modules.config.system.logger import get_logger
 from modules.config.models.factory import (
     create_bedrock_model,
@@ -46,7 +54,7 @@ from modules.handlers.conversation_budget import (
 )
 from modules.handlers.tool_router import ToolRouterHook
 from modules.config.models.capabilities import get_capabilities
-from modules.handlers.utils import print_status, sanitize_target_name
+from modules.handlers.utils import print_status, sanitize_target_name, get_output_path
 from modules.tools.browser import (
     initialize_browser,
     browser_goto_url,
@@ -56,6 +64,13 @@ from modules.tools.browser import (
     browser_perform_action,
     browser_evaluate_js,
     browser_get_cookies,
+)
+from modules.tools.mcp import (
+    list_mcp_tools_wrapper,
+    mcp_tools_input_schema_to_function_call,
+    with_result_file,
+    resolve_env_vars_in_dict,
+    resolve_env_vars_in_list,
 )
 from modules.tools.memory import (
     get_memory_client,
@@ -73,6 +88,74 @@ get_system_prompt = prompts.get_system_prompt
 
 # Model creation logic has been extracted to modules.config.models.factory
 # for better separation of concerns. See imports above for available functions.
+
+
+def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> List[AgentTool]:
+    """Discover and register MCP tools from configured connections."""
+    mcp_tools = []
+    environ = os.environ.copy()
+    for mcp_conn in (config.mcp_connections or []):
+        if '*' in mcp_conn.plugins or config.module in mcp_conn.plugins:
+            logger.debug("Discover MCP tools from: %s", mcp_conn)
+            try:
+                headers = resolve_env_vars_in_dict(mcp_conn.headers, environ)
+                match mcp_conn.transport:
+                    case "stdio":
+                        if not mcp_conn.command:
+                            raise ValueError(f"{mcp_conn.transport} requires command")
+                        command_list: List[str] = resolve_env_vars_in_list(mcp_conn.command, environ)
+                        transport = lambda: stdio_client(StdioServerParameters(
+                            command = command_list[0], args=command_list[1:],
+                            env=environ,
+                        ))
+                    case "streamable-http":
+                        transport = lambda: streamablehttp_client(
+                            url=mcp_conn.server_url,
+                            headers=headers,
+                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
+                        )
+                    case "sse":
+                        transport = lambda: sse_client(
+                            url=mcp_conn.server_url,
+                            headers=headers,
+                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
+                        )
+                    case _:
+                        raise ValueError(f"Unsupported MCP transport {mcp_conn.transport}")
+                client = MCPClient(transport, prefix=mcp_conn.id)
+                prefix_idx = len(mcp_conn.id) + 1
+                client.start()
+                client_used = False
+                page_token = None
+                while len(tools := client.list_tools_sync(page_token)) > 0:
+                    page_token = tools.pagination_token
+                    for tool in tools:
+                        logger.debug(f"Considering tool: {tool.tool_name}")
+                        if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
+                            logger.debug(f"Allowed tool: {tool.tool_name}")
+                            # Wrap output and save into output path
+                            output_base_path = get_output_path(
+                                sanitize_target_name(config.target),
+                                config.op_id,
+                                sanitize_target_name(tool.tool_name),
+                                server_config.output.base_dir,
+                            )
+                            tool = with_result_file(tool, Path(output_base_path))
+                            mcp_tools.append(tool)
+                            client_used = True
+                    if not page_token:
+                        break
+                client_stop = lambda *_: client.stop(exc_type=None, exc_val=None, exc_tb=None)
+                if client_used:
+                    atexit.register(client_stop)
+                    signal.signal(signal.SIGTERM, client_stop)
+                else:
+                    client_stop()
+            except Exception as e:
+                logger.error(f"Communicating with MCP: {repr(mcp_conn)}", exc_info=e)
+                raise e
+
+    return mcp_tools
 
 
 def create_agent(
@@ -343,15 +426,29 @@ Cyber Tools available in this environment:
 Guidance and tool names in prompts are illustrative, not prescriptive. Always check availability and prefer tools present in this list. If a capability is missing, follow Ask-Enable-Retry for minimal, non-interactive enablement, or choose an equivalent available tool.
 """
 
+    # Load MCP tools and prepare for injection
+    mcp_tools = _discover_mcp_tools(config, server_config)
+    if mcp_tools:
+        mcp_tools_context = f"""
+## MCP TOOLS
+
+Available {config.module} MCP tools:
+- list_mcp_tools()  # full MCP tool catalog including input schema, output schema, description
+{chr(10).join(f"- {mcp_tools_input_schema_to_function_call(mcp_tool.tool_spec.get('inputSchema'), mcp_tool.tool_name)}" for mcp_tool in mcp_tools)}
+"""
+    else:
+        mcp_tools_context = ""
+
     # Combine environmental and module tools context
     # Prefer to include both environment-detected tools and module-specific tools
     full_tools_context = ""
     if tools_context:
         full_tools_context += str(tools_context)
-    if module_tools_context:
-        if full_tools_context:
-            full_tools_context += "\n\n"
-        full_tools_context += str(module_tools_context)
+    for tools_ctx in [module_tools_context, mcp_tools_context]:
+        if tools_ctx:
+            if full_tools_context:
+                full_tools_context += "\n\n"
+            full_tools_context += str(tools_ctx)
 
     # Load module-specific execution prompt
     module_execution_prompt = None
@@ -737,6 +834,12 @@ Guidance and tool names in prompts are illustrative, not prescriptive. Always ch
         agent_logger.info(
             "Injected %d module tools into agent", len(loaded_module_tools)
         )
+
+    # Inject MCP tools if available
+    if "mcp_tools" in locals() and mcp_tools:
+        tools_list.append(list_mcp_tools_wrapper(mcp_tools))
+        tools_list.extend(mcp_tools)
+        agent_logger.info("Injected %d MCP tools into agent", len(mcp_tools))
 
     agent_logger.debug("Creating autonomous agent")
 

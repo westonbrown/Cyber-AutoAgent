@@ -176,17 +176,19 @@ cyber-react \
 
 ### Command Line Flags
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--target, -t` | Required | Target system URL or IP |
-| `--objective, -o` | Required | Assessment objective |
-| `--module, -m` | `general` | Security module: general, ctf |
-| `--iterations, -i` | `100` | Maximum tool executions |
-| `--provider` | `bedrock` | Model provider |
-| `--auto-run` | `false` | Skip interactive prompts |
-| `--auto-approve` | `false` | Auto-approve tool executions |
-| `--memory-mode` | `auto` | Memory: auto or fresh |
-| `--deployment-mode` | Auto | local-cli, single-container, full-stack |
+| Flag                   | Default   | Description                             |
+|------------------------|-----------|-----------------------------------------|
+| `--target, -t`         | Required  | Target system URL or IP                 |
+| `--objective, -o`      | Required  | Assessment objective                    |
+| `--module, -m`         | `general` | Security module: general, ctf           |
+| `--iterations, -i`     | `100`     | Maximum tool executions                 |
+| `--provider`           | `bedrock` | Model provider                          |
+| `--auto-run`           | `false`   | Skip interactive prompts                |
+| `--auto-approve`       | `false`   | Auto-approve tool executions            |
+| `--memory-mode`        | `auto`    | Memory: auto or fresh                   |
+| `--deployment-mode`    | Auto      | local-cli, single-container, full-stack |
+| `--mcp-enabled`        | `false`   | Enable MCP Tools                        |
+| `--mcp-conns` '[...]'  | None      | Configure MCP Tools                     |
 
 ### Configuration Loading Priority
 
@@ -262,6 +264,90 @@ outputs/
 | **fresh** | Empty memory, no historical context | Baseline assessments |
 
 Control via `/config edit` or `--memory-mode` flag.
+
+## MCP Configuration
+
+The configuration block in `~/.cyber-autoagent/config.json` for MCP servers looks like the following. The terminal UI
+can be used to configure, command line options or environment variables.
+
+```json
+{
+  "mcp": {
+    "enabled": true,
+    "connections": [
+      {
+         "id": "htb-mcp-server",
+         "transport": "stdio",  // or "sse", "streamable-http"
+         "command": ["./htb-mcp-server"],
+         "plugins": ["general"]  // or ["*"]
+      },
+      {
+         "id": "shyhurricane",
+         "transport": "streamable-http",
+         "server_url": "https://127.0.0.1:8000/mcp",
+         "plugins": ["*"], 
+         "timeoutSeconds": 900,
+         "allowedTools": ["port_scan", "directory_buster"]  // or ["*"]
+      }
+    ]
+  }
+}
+```
+
+Environment variable substitution is performed in the `headers` and `command` values, so that sensitive information is not stored in the configuration.
+
+The command line option `--mcp-conns` or environment variable `CYBER_MCP_CONNECTIONS` provides the `connections` block as a string.
+
+Examples:
+
+- `CYBER_MCP_ENABLED=true`
+- `CYBER_MCP_CONNECTIONS='[{"id":"...","transport":"..."}]'`
+- `--mcp-enabled --mcp-conns '[{"id":"...","transport":"..."}]'`
+
+### HackTheBox CTF MCP Configuration
+
+This is an example configuration for the HackTheBox CTF MCP server. Export your API key before running.
+
+```shell
+export HTB_TOKEN=xxx.yyy.zzz
+```
+
+```json
+{
+   "mcp": {
+      "enabled": true,
+      "connections": [
+         {
+            "id": "htbctf",
+            "transport": "sse",
+            "server_url": "https://mcp.ai.hackthebox.com/v1/ctf/sse",
+            "plugins": ["ctf"],
+            "headers": {"Authorization": "Bearer ${HTB_TOKEN}"}
+         }
+      ]
+   }
+}
+```
+
+### HexStrike AI
+
+```json
+{
+   "mcp": {
+      "enabled": true,
+      "connections": [
+         {
+            "id": "hex",
+            "transport": "stdio",
+            "command": ["python3", "/path/to/hexstrike-ai/hexstrike_mcp.py", "--server", "http://localhost:8888"],
+            "plugins": ["general"],
+            "timeoutSeconds": 300
+         }
+      ]
+   }
+}
+```
+
 
 ## Docker Management
 

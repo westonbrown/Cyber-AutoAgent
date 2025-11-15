@@ -31,6 +31,7 @@ from modules.config.types import (
     SwarmConfig,
     get_default_base_dir,
 )
+from modules.tools.mcp import resolve_env_vars_in_dict, resolve_env_vars_in_list
 
 
 class TestModelProvider:
@@ -684,6 +685,265 @@ class TestConfigManager:
 
             assert "claude-3-5-sonnet" in os.environ["MEM0_LLM_MODEL"]
             assert "titan-embed" in os.environ["MEM0_EMBEDDING_MODEL"]
+
+    @patch.dict(os.environ, {"CYBER_MCP_ENABLED": "false"})
+    def test_get_mcp_config_disabled(self):
+        """Test MCP empty configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert not config.enabled
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": "[]",
+    })
+    def test_get_mcp_config_empty(self):
+        """Test MCP empty configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert config.enabled
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """
+[
+    {
+        "id": "mcp1",
+        "transport": "stdio",
+        "command": ["python3","-m","mymcp.server"],
+        "plugins": ["general"],
+        "timeoutSeconds": 900
+    },
+    {
+        "id": "mcp2",
+        "transport": "streamable-http",
+        "server_url": "http://127.0.0.1:8000/mcp",
+        "headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
+        "plugins": ["general","ctf"],
+        "allowedTools": ["tool1", "tool2"]
+    },
+    {
+        "id": "mcp3",
+        "transport": "sse",
+        "server_url": "http://127.0.0.1:8000/sse",
+        "command": [],
+        "plugins": ["*"]
+    }
+]
+""",
+    })
+    def test_get_mcp_config_three(self):
+        """Test two MCP servers configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        config = self.config_manager.get_mcp_config("bedrock")
+
+        assert config.enabled
+        assert len(config.connections) == 3
+
+        mcp = config.connections[0]
+        assert mcp.id == "mcp1"
+        assert mcp.transport == "stdio"
+        assert mcp.command == ["python3","-m","mymcp.server"]
+        assert mcp.plugins == ["general"]
+        assert mcp.timeoutSeconds == 900
+        assert mcp.allowed_tools == ['*']
+
+        mcp = config.connections[1]
+        assert mcp.id == "mcp2"
+        assert mcp.transport == "streamable-http"
+        assert mcp.server_url == "http://127.0.0.1:8000/mcp"
+        assert mcp.headers == {"Authorization": "Bearer ${MCP_TOKEN}"}
+        assert mcp.plugins == ["general","ctf"]
+        assert mcp.allowed_tools == [ "tool1", "tool2" ]
+
+        mcp = config.connections[2]
+        assert mcp.id == "mcp3"
+        assert mcp.transport == "sse"
+        assert mcp.server_url == "http://127.0.0.1:8000/sse"
+        assert mcp.command is None
+        assert mcp.headers is None
+        assert mcp.plugins == ["*"]
+        assert mcp.allowed_tools == ['*']
+
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """
+[
+    {
+        "id": "mcp1",
+        "transport": "stdio",
+        "command": ["python3","-m","mymcp.server"]
+    },
+    {
+        "id": "mcp1",
+        "transport": "streamable-http",
+        "server_url": "http://127.0.0.1:8000/mcp"
+    }
+]
+""",
+    })
+    def test_get_mcp_config_duplicate_id_validation(self):
+        """Test MCP duplicate ID configuration."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="id property must be unique"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "stdio","server_url": "http://127.0.0.1:8000/mcp"}]""",
+    })
+    def test_get_mcp_config_stdio_command_validation(self):
+        """Test MCP stdio requires command property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="stdio transport requires the command property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "sse","command": ["python3","-m","mymcp.server"]}]""",
+    })
+    def test_get_mcp_config_sse_command_validation(self):
+        """Test MCP see does not use the command property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="network transports do not use the command property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "streamable-http"}]""",
+    })
+    def test_get_mcp_config_streamable_http_server_url_validation(self):
+        """Test MCP streamable-http requires server_url property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="network transports require the server_url property"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    @patch.dict(os.environ, {
+        "CYBER_MCP_ENABLED": "true",
+        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "telnet"}]""",
+    })
+    def test_get_mcp_config_transport_validation(self):
+        """Test MCP validate transport property."""
+        # Clear cache to ensure fresh config
+        self.config_manager._config_cache = {}
+
+        with pytest.raises(ValueError, match="does not have a valid transport"):
+            self.config_manager.get_mcp_config("bedrock")
+
+    def test_resolve_env_vars_in_dict_none_input(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_dict(None, env) == {}
+
+    def test_resolve_env_vars_in_dict_empty(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_dict({}, env) == {}
+
+    def test_resolve_env_vars_in_dict_single_var(self):
+        env = {"TOKEN": "secret-token"}
+        input_dict = {"Authorization": "Bearer ${TOKEN}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"Authorization": "Bearer secret-token"}
+
+    def test_resolve_env_vars_in_dict_multiple_vars_in_one_value(self):
+        env = {"USER": "alice", "ID": "42"}
+        input_dict = {"info": "user=${USER}, id=${ID}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"info": "user=alice, id=42"}
+
+    def test_resolve_env_vars_in_dict_repeated_var(self):
+        env = {"VAR": "x"}
+        input_dict = {"pattern": "${VAR}-${VAR}-${VAR}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"pattern": "x-x-x"}
+
+    def test_resolve_env_vars_in_dict_unknown_var_left_intact(self):
+        env = {}
+        input_dict = {"Authorization": "Bearer ${MISSING}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"Authorization": "Bearer ${MISSING}"}
+
+    def test_resolve_env_vars_in_dict_mixed_known_and_unknown(self):
+        env = {"KNOWN": "yes"}
+        input_dict = {"value": "${KNOWN}/${UNKNOWN}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"value": "yes/${UNKNOWN}"}
+
+    def test_resolve_env_vars_in_dict_value_without_placeholders_unchanged(self):
+        env = {"VAR": "x"}
+        input_dict = {"plain": "no placeholders here"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        assert result == {"plain": "no placeholders here"}
+
+    def test_resolve_env_vars_in_dict_keys_unchanged(self):
+        env = {"VAR": "x"}
+        input_dict = {"${VAR}": "value ${VAR}"}
+        result = resolve_env_vars_in_dict(input_dict, env)
+        # keys are not touched, only values
+        assert "${VAR}" in result
+        assert result["${VAR}"] == "value x"
+
+    def test_resolve_env_vars_in_list_none_input(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_list(None, env) == []
+
+    def test_resolve_env_vars_in_list_empty(self):
+        env = {"VAR": "value"}
+        assert resolve_env_vars_in_list([], env) == []
+
+    def test_resolve_env_vars_in_list_single_element(self):
+        env = {"HOST": "localhost", "PORT": "8080"}
+        input_list = ["http://${HOST}:${PORT}/api"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["http://localhost:8080/api"]
+
+    def test_resolve_env_vars_in_list_multiple_elements(self):
+        env = {"USER": "alice", "HOME": "/home/alice"}
+        input_list = [
+            "user=${USER}",
+            "home=${HOME}",
+            "no-vars-here",
+        ]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == [
+            "user=alice",
+            "home=/home/alice",
+            "no-vars-here",
+        ]
+
+    def test_resolve_env_vars_in_list_unknown_var_left_intact(self):
+        env = {}
+        input_list = ["${UNKNOWN} and more"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["${UNKNOWN} and more"]
+
+    def test_resolve_env_vars_in_list_repeated_var(self):
+        env = {"X": "1"}
+        input_list = ["${X}${X}${X}"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["111"]
+
+    def test_resolve_env_vars_in_list_adjacent_placeholders(self):
+        env = {"A": "foo", "B": "bar"}
+        input_list = ["${A}${B}"]
+        result = resolve_env_vars_in_list(input_list, env)
+        assert result == ["foobar"]
 
 
 class TestGlobalFunctions:

@@ -9,7 +9,7 @@ the configuration modules to avoid circular imports.
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Literal
 
 LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "openai": ("openai/text-embedding-3-small", 1536),
@@ -235,6 +235,28 @@ class SwarmConfig:
 
 
 @dataclass
+class MCPConnection:
+    """Configuration for a single MCP server connection."""
+
+    id: str
+    transport: Literal["stdio", "sse", "streamable-http"]
+    command: Optional[List[str]] = None
+    server_url: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+    plugins: List[str] = field(default_factory=list)
+    timeoutSeconds: Optional[int] = None
+    allowed_tools: List[str] = field(default_factory=list)
+
+
+@dataclass
+class MCPConfig:
+    """Configuration for Model Context Protocol servers."""
+
+    enabled: bool = field(default_factory=lambda: False)
+    connections: List[MCPConnection] = field(default_factory=list)
+
+
+@dataclass
 class AgentConfig:
     """Configuration object for agent creation."""
 
@@ -249,6 +271,7 @@ class AgentConfig:
     memory_path: Optional[str] = None
     memory_mode: str = "auto"
     module: str = "general"
+    mcp_connections: List[MCPConnection] = field(default_factory=list)
 
 
 def get_default_base_dir() -> str:
@@ -320,6 +343,7 @@ class ServerConfig:
     memory: MemoryConfig
     evaluation: EvaluationConfig
     swarm: SwarmConfig
+    mcp: MCPConfig = field(default_factory=MCPConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     sdk: SDKConfig = field(default_factory=SDKConfig)
     host: Optional[str] = None

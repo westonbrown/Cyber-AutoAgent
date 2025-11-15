@@ -71,6 +71,8 @@ const cli = meow(`
     --debug, -d         Enable debug mode
     --headless          Run in headless mode for scripting
     --deployment-mode   Deployment mode: local-cli, single-container, full-stack
+    --mcp-enabled       Enable MCP servers
+    --mcp-conns         Define MCP servers using JSON
 
   Examples
     $ cyber-react
@@ -130,6 +132,12 @@ const cli = meow(`
     },
     deploymentMode: {
       type: 'string',
+    },
+    mcpEnabled: {
+      type: 'boolean',
+    },
+    mcpConns: {
+      type: 'string',
     }
   }
 });
@@ -186,6 +194,10 @@ const runAutoAssessment = async () => {
       if (cli.flags.observability !== undefined) configOverrides.observability = cli.flags.observability;
       if (cli.flags.debug) configOverrides.verbose = cli.flags.debug;
       if (cli.flags.deploymentMode) configOverrides.deploymentMode = cli.flags.deploymentMode as 'local-cli' | 'single-container' | 'full-stack';
+      if (cli.flags.mcpEnabled && cli.flags.mcpConns) {
+        configOverrides.mcp.enabled = true
+        configOverrides.mcp.connections = JSON.parse(cli.flags.mcpConns)
+      }
 
       // Handle provider prefix stripping when provider changes but model doesn't
       // This fixes the bug where changing --provider without --model causes invalid model IDs
@@ -211,7 +223,7 @@ const runAutoAssessment = async () => {
           }
         }
       }
-      
+
       // Use the imported default config
       const defaultConfig = configModule.defaultConfig || {
         // Fallback defaults if import fails

@@ -366,6 +366,16 @@ def main():
         action="store_true",
         help="Enable rubric-based evaluation in addition to Ragas metrics",
     )
+    parser.add_argument(
+        "--mcp-enabled",
+        action="store_true",
+        help="Enable MCP servers",
+    )
+    parser.add_argument(
+        "--mcp-conns",
+        type=str,
+        help="Configure MCP servers, requires --mcp-enabled to be applied",
+    )
 
     args = parser.parse_args()
 
@@ -441,6 +451,11 @@ def main():
     config_overrides["enable_unified_output"] = True
     if args.model:
         config_overrides["model_id"] = args.model
+    # MCP overrides
+    if args.mcp_enabled:
+        config_overrides["mcp_enabled"] = True
+    if args.mcp_conns:
+        config_overrides["mcp_conns"] = args.mcp_conns
 
     # Toggle rubric evaluation via CLI flag
     if args.eval_rubric:
@@ -462,6 +477,12 @@ def main():
 
     # Expose operation ID to tools via environment for consistent evidence tagging
     os.environ["CYBER_OPERATION_ID"] = local_operation_id
+
+    mcp_config = config_manager.get_mcp_config(args.provider, **config_overrides)
+    if mcp_config.enabled:
+        mcp_connections = list(filter(lambda c: '*' in c.plugins or args.module in c.plugins, mcp_config.connections))
+    else:
+        mcp_connections = []
 
     # Initialize logger using unified output system
     log_path = get_output_path(
@@ -587,6 +608,7 @@ def main():
 {Colors.BOLD}Target:{Colors.RESET}       {Colors.RED}{args.target}{Colors.RESET} (sanitized: {target_sanitized})
 {Colors.BOLD}Max Iterations:{Colors.RESET} {args.iterations} steps
 {Colors.BOLD}Environment:{Colors.RESET} {len(available_tools)} existing cyber tools available
+{Colors.BOLD}MCP:{Colors.RESET}          {len(mcp_connections)} server(s) available
 {Colors.BOLD}Output Path:{Colors.RESET}  {output_path_display}
 """,
             Colors.CYAN,
@@ -612,6 +634,7 @@ def main():
             memory_path=args.memory_path,
             memory_mode=args.memory_mode,
             module=args.module,
+            mcp_connections=mcp_connections,
         )
         agent, callback_handler = create_agent(
             target=args.target,
