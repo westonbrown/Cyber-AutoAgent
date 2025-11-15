@@ -49,6 +49,56 @@ def _split_prefix(model_id: str) -> Tuple[str, str]:
     return "", model_id
 
 
+def supports_reasoning_model(model_id: Optional[str]) -> bool:
+    """Return True if the model is known to support extended reasoning blocks.
+
+    This is a fast explicit check for models with native reasoning support.
+    For more comprehensive capability detection, use ModelCapabilitiesResolver.
+
+    Scope (explicit):
+    - OpenAI/Azure: GPT-5 family and O-series (o3/o4 and mini variants)
+    - Anthropic/Bedrock: Claude Sonnet 4 / 4.5 and Opus
+    - Moonshot (LiteLLM): Kimi 'thinking' preview variants only
+
+    NOTE: Do not include older Claude 3.7 and below.
+    """
+    mid = (model_id or "").lower()
+
+    # Fast path: OpenAI/Azure families already supported
+    openai_reasoning_markers = (
+        "gpt-5",
+        "/o4",
+        "/o3",
+        "o4-mini",
+        "o3-mini",
+    )
+    if any(marker in mid for marker in openai_reasoning_markers):
+        return True
+
+    # Moonshot Kimi 'thinking' variants via LiteLLM (tools unsupported on these models)
+    moonshot_thinking_markers = (
+        "moonshot/kimi-thinking",
+        "kimi-thinking",
+        "kimi_k2_thinking",
+        "k2-thinking",
+    )
+    if any(marker in mid for marker in moonshot_thinking_markers):
+        return True
+
+    # Anthropic/Bedrock explicit allow-list (Sonnet 4/4.5 and Opus only)
+    anthropic_allow_markers = (
+        # Common Anthropic naming forms across providers
+        "claude-sonnet-4-5",
+        "sonnet-4-5",
+        "claude-sonnet-4",
+        "sonnet-4",
+        "claude-opus",
+        "/opus",  # e.g., claude-4-opus or claude-3-opus style ids
+        "-opus",  # covers bedrock/other provider dash-separated ids
+    )
+    return any(marker in mid for marker in anthropic_allow_markers)
+
+
 # --- Capabilities ---------------------------------------------------------------
 
 

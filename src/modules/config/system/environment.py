@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List
 
 from modules.handlers.utils import print_status
-from modules.config.logger_factory import get_logger, initialize_logger_factory
+from modules.config.system.logger import get_logger, initialize_logger_factory
 
 
 def clean_operation_memory(operation_id: str, target_name: str = None):
