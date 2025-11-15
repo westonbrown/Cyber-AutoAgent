@@ -211,15 +211,115 @@ docker run --rm \
    openssl rand -base64 32  # For NEXTAUTH_SECRET
    ```
 
+## Configuration System
+
+### Architecture
+
+Cyber-AutoAgent uses a **modular, three-tier configuration system** with automatic model detection and safe token limit allocation.
+
+**Configuration Modules:**
+```
+config/
+├── manager.py           # Core orchestration (ConfigManager)
+├── types.py             # Type definitions and dataclasses
+├── models/              # Model creation and capabilities
+├── system/              # Environment, logging, validation
+└── providers/           # Provider-specific helpers
+```
+
+See `src/modules/config/README.md` for complete module documentation.
+
+### Configuration Precedence
+
+Settings are applied in this priority order:
+
+```
+1. CLI/API Arguments (Highest)
+   └─ Flags: --provider, --model, --iterations
+   └─ Direct parameters to create_agent()
+
+2. Environment Variables (Override)
+   └─ CYBER_AGENT_LLM_MODEL
+   └─ CYBER_AGENT_EMBEDDING_MODEL
+   └─ REASONING_EFFORT
+   └─ Provider-specific: AZURE_API_KEY, AWS_REGION, etc.
+
+3. Provider Defaults (Fallback)
+   └─ Safe defaults for all providers
+   └─ Automatically selected based on provider
+```
+
+**Example:**
+```bash
+# Default: temperature=0.95 (from provider defaults)
+# Override via environment: CYBER_LLM_TEMPERATURE=0.8
+# Override via CLI: create_agent(..., temperature=0.7)
+# Result: Uses 0.7 (CLI has highest priority)
+```
+
+### Models.dev Integration
+
+Token limits are automatically detected using the **models.dev API** with resilient fallback:
+
+**Three-Tier Fallback:**
+1. Disk cache (`~/.cache/cyber-autoagent/models.json`, 24h TTL)
+2. Live API (`https://models.dev/api.json`)
+3. Embedded snapshot (`models_snapshot.json`, 432KB bundled)
+
+**Benefits:**
+- Accurate limits for 1,100+ models across 58 providers
+- Works offline (embedded snapshot)
+- Safe token allocation (50% of actual limit by default)
+- Automatic capability detection (reasoning, tools, attachments)
+
+**Safe Token Limits:**
+```python
+# Specialist tools use 50% of model's output limit for reliability
+safe_max = model_output_limit * 0.5
+
+# Example: Bedrock Claude 3.5 Sonnet v2
+# Actual limit: 8,192 tokens
+# Safe allocation: 4,096 tokens
+```
+
+### Token Limit Resolution
+
+Token limits use **five-tier precedence**:
+
+1. **Explicit override** - `CYBER_CONTEXT_WINDOW` environment variable
+2. **Models.dev API** - Authoritative registry (preferred)
+3. **Fallback mappings** - `CYBER_CONTEXT_WINDOW_FALLBACKS` (JSON)
+4. **Provider defaults** - Safe defaults per provider
+5. **Universal fallback** - 128,000 tokens
+
+**Example fallback configuration:**
+```bash
+export CYBER_CONTEXT_WINDOW_FALLBACKS='[
+  {"azure/gpt-5": ["azure/gpt-4o", "azure/gpt-4"]},
+  {"anthropic/claude-opus": ["anthropic/claude-sonnet-4-5"]}
+]'
+```
+
 ### Environment Variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
+| `CYBER_AGENT_PROVIDER` | Provider choice (bedrock/ollama/litellm) | No (auto-detected) |
+| `CYBER_AGENT_LLM_MODEL` | Main LLM model ID | Yes |
+| `CYBER_AGENT_EMBEDDING_MODEL` | Embedding model ID | No (provider default) |
+| `REASONING_EFFORT` | Reasoning effort (low/medium/high) | No (default: medium) |
+| `CYBER_LLM_MAX_TOKENS` | Override LLM max tokens | No (models.dev default) |
+| `CYBER_SWARM_MAX_TOKENS` | Override specialist max tokens | No (models.dev default) |
+| `CYBER_CONTEXT_WINDOW` | Override prompt token limit | No (auto-detected) |
 | `AWS_ACCESS_KEY_ID` | AWS credentials for Bedrock | For Bedrock provider |
 | `AWS_SECRET_ACCESS_KEY` | AWS credentials for Bedrock | For Bedrock provider |
 | `AWS_REGION` | AWS region (default: us-east-1) | For Bedrock provider |
 | `OLLAMA_HOST` | Ollama API endpoint | For Ollama provider |
+| `AZURE_API_KEY` | Azure OpenAI API key | For Azure/LiteLLM |
+| `AZURE_API_BASE` | Azure endpoint URL | For Azure/LiteLLM |
+| `AZURE_API_VERSION` | Azure API version | For Azure/LiteLLM |
 | `MEM0_API_KEY` | Mem0 Platform API key | For cloud memory backend |
+| `MEM0_LLM_MODEL` | Memory system LLM | No (auto-aligned) |
 | `OPENSEARCH_HOST` | OpenSearch endpoint | For OpenSearch memory backend |
 | `LANGFUSE_HOST` | Langfuse observability endpoint | For observability |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse API public key | For observability |
@@ -309,6 +409,50 @@ Cyber-AutoAgent supports three memory backends with automatic selection:
 
 Memory persists in `outputs/<target>/memory/` for cross-operation learning.
 
+## Configuration Examples
+
+### Azure OpenAI with Reasoning
+```bash
+export AZURE_API_KEY=your_key
+export AZURE_API_BASE=https://your-endpoint.openai.azure.com/
+export AZURE_API_VERSION=2024-12-01-preview
+export CYBER_AGENT_LLM_MODEL=azure/gpt-5
+export CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+export REASONING_EFFORT=high
+export CYBER_LLM_MAX_TOKENS=8000  # Optional: Override default
+```
+
+### AWS Bedrock with Memory
+```bash
+export AWS_REGION=us-east-1
+export CYBER_AGENT_LLM_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+export CYBER_AGENT_EMBEDDING_MODEL=amazon.titan-embed-text-v2:0
+export MEM0_API_KEY=your_mem0_key  # Cloud memory backend
+export REASONING_EFFORT=medium
+```
+
+### Moonshot AI (Mixed Providers)
+```bash
+export MOONSHOT_API_KEY=your_key
+export CYBER_AGENT_LLM_MODEL=moonshot/kimi-k2-thinking
+export CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large
+export AZURE_API_KEY=your_azure_key  # For embeddings
+export AZURE_API_BASE=https://your-endpoint.openai.azure.com/
+export AZURE_API_VERSION=2024-12-01-preview
+export MEM0_LLM_MODEL=azure/gpt-4o  # Memory system uses Azure
+export OPENAI_API_KEY=your_moonshot_key  # Mem0 compatibility
+```
+
+### Ollama with Context Window Fallbacks
+```bash
+export OLLAMA_HOST=http://localhost:11434
+export CYBER_AGENT_LLM_MODEL=qwen3-coder:30b-a3b-q4_K_M
+export CYBER_AGENT_EMBEDDING_MODEL=nomic-embed-text
+export CYBER_CONTEXT_WINDOW_FALLBACKS='[
+  {"qwen3-coder:30b": ["qwen3-coder:14b", "llama3.2:3b"]}
+]'
+```
+
 ## Troubleshooting
 
 Common deployment issues:
@@ -319,3 +463,6 @@ Common deployment issues:
 4. **Out of memory**: Increase Docker memory limits or reduce `--iterations` parameter
 5. **React interface issues**: Run `npm run build` after any code changes
 6. **Memory backend errors**: Verify environment variables and network connectivity
+7. **Model not found**: Check model ID format (use `provider/model` for LiteLLM)
+8. **Token limit errors**: Verify models.dev snapshot exists at `src/modules/config/models/models_snapshot.json`
+9. **Specialist failures**: Check swarm max_tokens configuration (should be >100 tokens)
