@@ -8,7 +8,7 @@ import { Box, Text } from 'ink';
 import { ThinkingIndicator } from './ThinkingIndicator.js';
 import { StreamEvent } from '../types/events.js';
 import { SwarmDisplay, SwarmState, SwarmAgent } from './SwarmDisplay.js';
-import { formatToolInput } from '../utils/toolFormatters.js';
+import { formatToolInput, getToonPlanPreview } from '../utils/toolFormatters.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 // Removed toolCategories import - using clean tool display without emojis
 import * as fs from 'fs/promises';
@@ -77,6 +77,9 @@ export type AdditionalStreamEvent =
   | { type: 'swarm_start'; agent_names?: any[]; agent_details?: any[]; task?: string; [key: string]: any }
   | { type: 'swarm_handoff'; from_agent?: string; to_agent?: string; message?: string; [key: string]: any }
   | { type: 'swarm_complete'; final_agent?: string; execution_count?: number; [key: string]: any }
+  | { type: 'specialist_start'; specialist?: string; task?: string; finding?: string; artifactPaths?: string[]; [key: string]: any }
+  | { type: 'specialist_progress'; specialist?: string; gate?: number; totalGates?: number; tool?: string; status?: string; [key: string]: any }
+  | { type: 'specialist_end'; specialist?: string; result?: any; [key: string]: any }
   | { type: 'batch'; id?: string; events: DisplayStreamEvent[]; [key: string]: any }
   | { type: 'tool_output'; tool: string; status?: string; output?: any; [key: string]: any }
   | { type: 'operation_init'; operation_id?: string; target?: string; objective?: string; memory?: any; [key: string]: any }
@@ -133,10 +136,30 @@ const sanitizeTargetForPath = (target: string): string => {
   }
 };
 
+// Helper: map container-relative report paths (e.g., /app/outputs/...) to host outputDir
+// This is exported for unit tests and to keep behavior consistent anywhere we
+// need to interpret backend report paths.
+export const mapContainerReportPath = (
+  raw: string,
+  outputBaseDir?: string | null
+): string => {
+  try {
+    let normalized = raw;
+    if (normalized.startsWith('/app/outputs') && outputBaseDir) {
+      const suffix = normalized.replace('/app/outputs', '');
+      normalized = path.join(outputBaseDir, suffix.replace(/^\/+/, ''));
+    }
+    return normalized;
+  } catch {
+    return raw;
+  }
+};
+
 export const getReportPathCandidates = (
   ctx: OperationContext,
   reportPath: string | null | undefined,
-  projectRoot: string | null | undefined
+  projectRoot: string | null | undefined,
+  outputBaseDir?: string | null | undefined
 ): string[] => {
   const candidates: string[] = [];
 
@@ -148,30 +171,55 @@ export const getReportPathCandidates = (
     }
   };
 
-  if (reportPath) {
-    if (path.isAbsolute(reportPath)) {
-      addCandidate(reportPath);
-    } else {
-      if (projectRoot) {
-        addCandidate(path.resolve(projectRoot, reportPath));
+  // Determine a sensible base directory for relative paths
+  const baseDir = (() => {
+    try {
+      if (outputBaseDir && typeof outputBaseDir === 'string') {
+        return outputBaseDir;
       }
-      addCandidate(path.resolve(process.cwd(), reportPath));
+      if (projectRoot) {
+        return projectRoot;
+      }
+      return process.cwd();
+    } catch {
+      return process.cwd();
+    }
+  })();
+
+  if (reportPath) {
+    try {
+      if (path.isAbsolute(reportPath)) {
+        addCandidate(reportPath);
+      } else {
+        addCandidate(path.resolve(baseDir, reportPath));
+        if (projectRoot && baseDir !== projectRoot) {
+          addCandidate(path.resolve(projectRoot, reportPath));
+        }
+      }
+    } catch {
+      // Ignore path resolution errors; we'll fall back to inferred paths below
     }
   }
 
+  // Fallback: infer standard unified output path when we know operationId+target
   if (ctx.operationId && ctx.target) {
     const safeTarget = sanitizeTargetForPath(String(ctx.target));
-    const explicitRelative = path.join(
-      'outputs',
+    const relativePath = path.join(
       safeTarget,
       String(ctx.operationId),
       'security_assessment_report.md'
     );
-    if (projectRoot) {
-      addCandidate(path.resolve(projectRoot, explicitRelative));
+
+    try {
+      addCandidate(path.resolve(baseDir, relativePath));
+      if (projectRoot && baseDir !== projectRoot) {
+        addCandidate(path.resolve(projectRoot, path.join('outputs', relativePath)));
+      }
+      // Historical fallback: repo-root/outputs/<target>/<op>/...
+      addCandidate(path.resolve(process.cwd(), path.join('outputs', relativePath)));
+    } catch {
+      // Best-effort only
     }
-    addCandidate(path.resolve(process.cwd(), explicitRelative));
-    addCandidate(path.resolve(process.cwd(), '..', explicitRelative));
   }
 
   return candidates;
@@ -186,16 +234,33 @@ const InlineReportViewer: React.FC<{
 }>= ({ ctx, reportPath, fallbackContent, projectRoot }) => {
   const [content, setContent] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [resolvedPath, setResolvedPath] = React.useState<string | null>(null);
+
+  // Resolve output base directory locally so this component works in isolation
+  const { config } = useConfig();
+  const outputBaseDir = React.useMemo(() => {
+    try {
+      const raw = config.outputDir || './outputs';
+      if (path.isAbsolute(raw)) {
+        return raw;
+      }
+      const base = resolveProjectRoot() ?? process.cwd();
+      return path.resolve(base, raw);
+    } catch {
+      return path.resolve(process.cwd(), 'outputs');
+    }
+  }, [config.outputDir]);
 
   const candidatePaths = React.useMemo(
-    () => getReportPathCandidates(ctx, reportPath ?? null, projectRoot ?? null),
-    [ctx.operationId, ctx.target, reportPath, projectRoot]
+    () => getReportPathCandidates(ctx, reportPath ?? null, projectRoot ?? null, outputBaseDir ?? null),
+    [ctx.operationId, ctx.target, reportPath, projectRoot, outputBaseDir]
   );
 
   React.useEffect(() => {
     const load = async () => {
       try {
         setError(null);
+        setResolvedPath(null);
         const candidates = candidatePaths;
 
         if (candidates.length === 0) {
@@ -208,6 +273,7 @@ const InlineReportViewer: React.FC<{
         }
 
         let loaded: string | null = null;
+        let usedPath: string | null = null;
         for (const candidate of candidates) {
           try {
             if (!fsSync.existsSync(candidate)) {
@@ -215,29 +281,52 @@ const InlineReportViewer: React.FC<{
             }
             const data = await fs.readFile(candidate, 'utf-8');
             loaded = data;
+            usedPath = candidate;
             break;
           } catch {}
         }
         if (!loaded) {
           if (fallbackContent) {
             setContent(fallbackContent);
+            // Fall back to configured reportPath if present
+            if (reportPath && path.isAbsolute(reportPath)) {
+              setResolvedPath(reportPath);
+            }
             return;
           }
           setError('Report file not found');
+          if (reportPath && path.isAbsolute(reportPath)) {
+            setResolvedPath(reportPath);
+          }
           return;
         }
         setContent(loaded);
+        if (usedPath) {
+          setResolvedPath(usedPath);
+        } else if (reportPath && path.isAbsolute(reportPath)) {
+          setResolvedPath(reportPath);
+        }
       } catch (e: any) {
         setError('Failed to load report');
+        if (reportPath && path.isAbsolute(reportPath)) {
+          setResolvedPath(reportPath);
+        }
       }
     };
     load();
-  }, [candidatePaths, fallbackContent]);
+  }, [candidatePaths, fallbackContent, reportPath]);
 
   if (error) {
     return (
       <Box flexDirection="column" marginTop={1}>
         <Text color="yellow">{error}</Text>
+        {(resolvedPath || reportPath) && (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Report saved to: {resolvedPath || reportPath}
+            </Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -245,6 +334,13 @@ const InlineReportViewer: React.FC<{
     return (
       <Box marginTop={1}>
         <Text dimColor>Loading final report…</Text>
+        {(resolvedPath || reportPath) && (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Report saved to: {resolvedPath || reportPath}
+            </Text>
+          </Box>
+        )}
       </Box>
     );
   }
@@ -316,6 +412,13 @@ const InlineReportViewer: React.FC<{
           <Box marginTop={1}>
             <Text dimColor>
               Preview truncated for brevity. Open the saved markdown report for full content.
+            </Text>
+          </Box>
+        )}
+        {(resolvedPath || reportPath) && (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Report saved to: {resolvedPath || reportPath}
             </Text>
           </Box>
         )}
@@ -670,7 +773,14 @@ export const EventLine: React.FC<EventLineProps> = React.memo(({
           } else {
             content = String(rawContent);
           }
-          const preview = content.length > 60 ? content.substring(0, 60) + '...' : content;
+          const planPreview = getToonPlanPreview(content);
+          const preview = planPreview ?? (content.length > 60 ? content.substring(0, 60) + '...' : content);
+          const labelKey =
+            planPreview || action === 'store_plan'
+              ? 'plan'
+              : action === 'store'
+                ? 'content'
+                : 'query';
 
           return (
             <Box flexDirection="column" marginTop={1}>
@@ -680,7 +790,7 @@ export const EventLine: React.FC<EventLineProps> = React.memo(({
               </Box>
               {preview && (
                 <Box marginLeft={2}>
-                  <Text dimColor>└─ {action === 'store_plan' ? 'plan' : action === 'store' ? 'content' : 'query'}: {preview}</Text>
+                  <Text dimColor>└─ {labelKey}: {preview}</Text>
                 </Box>
               )}
               {!preview && (
@@ -878,9 +988,14 @@ const method = latestInput.method || 'GET';
         }
 
         case 'browser_get_page_html': {
+          // This tool operates on the browser's current page and has no input arguments.
+          // Still, show a short description so the user understands what is happening.
           return (
             <Box flexDirection="column" marginTop={1}>
               <Text color="green" bold>tool: browser_get_page_html</Text>
+              <Box marginLeft={2}>
+                <Text dimColor>└─ capture HTML of the current page and save as an artifact</Text>
+              </Box>
             </Box>
           );
         }
@@ -1732,25 +1847,29 @@ const method = latestInput.method || 'GET';
       );
       
     case 'swarm_start': {
-      // Create and display SwarmDisplay component immediately
+      // Create and display SwarmDisplay component immediately.
+      // We treat a swarm_start as the beginning of an active swarm run so that
+      // the UI shows agents as running rather than permanently "initializing".
       const swarmEvent = event as any;
       const agents: SwarmAgent[] = (swarmEvent.agent_details || swarmEvent.agents || []).map((agent: any, index: number) => ({
-        id: `agent_${agent.name}_${index}`,  // Add unique id for each agent
+        id: `agent_${agent.name}_${index}`, // Unique id for each agent
         name: agent.name,
         role: agent.role || (agent.system_prompt ? agent.system_prompt.split('.')[0].trim() : ''),
-        status: 'pending',
+        // Mark the first agent as active to reflect that it will receive the
+        // first swarm step; others remain pending.
+        status: index === 0 ? 'active' : 'pending',
         tools: agent.tools || [],
         model_id: agent.model_id,
         model_provider: agent.model_provider,
         temperature: agent.temperature,
         recentToolCalls: []
       }));
-      
+
       const swarmState: SwarmState = {
         id: `swarm_${Date.now()}`,
         task: swarmEvent.task || 'Multi-agent operation',
-        status: 'initializing',
-        agents: agents,
+        status: 'running',
+        agents,
         startTime: Date.now(),
         totalTokens: 0,
         maxHandoffs: swarmEvent.max_handoffs,
@@ -1758,10 +1877,12 @@ const method = latestInput.method || 'GET';
         nodeTimeout: swarmEvent.node_timeout,
         executionTimeout: swarmEvent.execution_timeout
       };
-      
+
+      // Use the compact summary view; the detailed per-agent view can be very
+      // tall and is redundant with the swarm step headers that follow.
       return (
         <Box marginTop={1} marginBottom={1}>
-          <SwarmDisplay swarmState={swarmState} collapsed={false} />
+          <SwarmDisplay swarmState={swarmState} collapsed={true} />
         </Box>
       );
     }
@@ -1950,7 +2071,109 @@ const method = latestInput.method || 'GET';
           ) : null}
         </Box>
       );
-      
+
+    case 'specialist_start': {
+      const specialist = event.specialist || 'validation';
+      const task = event.task || 'Sub-agent analysis';
+      const finding = event.finding ? `"${event.finding}"` : null;
+      const artifactCount = event.artifactPaths?.length || 0;
+
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color="yellow">[SUB-AGENT] </Text>
+            <Text>{specialist}_specialist</Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text dimColor>└─ task: </Text>
+            <Text>{task}</Text>
+          </Box>
+          {finding && (
+            <Box marginLeft={2}>
+              <Text dimColor>└─ finding: </Text>
+              <Text>{finding}</Text>
+            </Box>
+          )}
+          {artifactCount > 0 && (
+            <Box marginLeft={2}>
+              <Text dimColor>└─ artifacts: </Text>
+              <Text color="cyan">{artifactCount} files</Text>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
+    case 'specialist_progress': {
+      const status = event.status || 'Processing';
+      const gate = event.gate;
+      const totalGates = event.totalGates;
+      const tool = event.tool;
+
+      let progressText = status;
+      if (gate && totalGates) {
+        progressText = `Gate ${gate}/${totalGates}: ${status}`;
+      } else if (tool) {
+        progressText = `${tool} - ${status}`;
+      }
+
+      return (
+        <Box marginLeft={2} marginTop={1}>
+          <Text dimColor>⏳ </Text>
+          <Text dimColor>{progressText}</Text>
+        </Box>
+      );
+    }
+
+    case 'specialist_end': {
+      const specialist = event.specialist || 'validation';
+      const result = event.result || {};
+      const validationStatus = result.validationStatus || result.validation_status || 'unknown';
+      const confidence = result.confidence;
+      const severityMax = result.severityMax || result.severity_max;
+      const failedGates = result.failedGates || result.failed_gates || [];
+
+      // Determine icon and color based on status
+      let statusIcon = '✓';
+      let statusColor = 'green';
+      if (validationStatus === 'hypothesis' || validationStatus === 'unverified') {
+        statusIcon = '⚠';
+        statusColor = 'yellow';
+      } else if (validationStatus === 'error') {
+        statusIcon = '✗';
+        statusColor = 'red';
+      }
+
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          <Box>
+            <Text color={statusColor}>{statusIcon} </Text>
+            <Text>{specialist}_specialist </Text>
+            <Text dimColor>→ </Text>
+            <Text color={statusColor} bold>{validationStatus}</Text>
+            {confidence !== undefined && (
+              <>
+                <Text dimColor> | confidence: </Text>
+                <Text color="cyan">{confidence}%</Text>
+              </>
+            )}
+            {severityMax && (
+              <>
+                <Text dimColor> | severity: </Text>
+                <Text color="yellow">{severityMax}</Text>
+              </>
+            )}
+          </Box>
+          {Array.isArray(failedGates) && failedGates.length > 0 && (
+            <Box marginLeft={2}>
+              <Text color="red">└─ failed gates: </Text>
+              <Text dimColor>[{failedGates.join(', ')}]</Text>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+
     default:
       return null;
   }
@@ -2105,6 +2328,21 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
   // Track tool inputs (for handling tool_input_update events from swarm agents)
   const [toolInputs, setToolInputs] = React.useState<Map<string, any>>(new Map());
   
+  // Resolve output base directory from config so report resolution matches backend outputDir
+  const { config } = useConfig();
+  const outputBaseDir = React.useMemo(() => {
+    try {
+      const raw = config.outputDir || './outputs';
+      if (path.isAbsolute(raw)) {
+        return raw;
+      }
+      const base = resolveProjectRoot() ?? process.cwd();
+      return path.resolve(base, raw);
+    } catch {
+      return path.resolve(process.cwd(), 'outputs');
+    }
+  }, [config.outputDir]);
+  
   React.useEffect(() => {
     const newToolInputs = new Map<string, any>();
     
@@ -2155,6 +2393,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
   const reportDetails = React.useMemo(() => {
     let latestPath: string | null = null;
     let fallback: string | null = null;
+
     events.forEach(event => {
       if (event.type === 'report_paths') {
         const candidate =
@@ -2164,6 +2403,11 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           null;
         if (candidate) {
           latestPath = String(candidate);
+        }
+      } else if ((event as any).type === 'assessment_complete') {
+        const raw = (event as any).report_path;
+        if (typeof raw === 'string' && raw) {
+          latestPath = mapContainerReportPath(raw, outputBaseDir);
         }
       } else if (event.type === 'report_content') {
         if ('content' in event && typeof (event as any).content === 'string') {
@@ -2178,7 +2422,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
       }
     });
     return { path: latestPath, content: fallback };
-  }, [events]);
+  }, [events, outputBaseDir]);
 
   // Capture operation context (operation_id and target) from events for artifact resolution
   const operationContext = React.useMemo<OperationContext>(() => {
@@ -2193,6 +2437,33 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
     return { operationId: opId, target, reportPath: reportDetails.path };
   }, [events, reportDetails.path]);
 
+  // Soft virtualization: render only the most recent N groups to cap Ink/Yoga node count
+  // This dramatically reduces memory pressure after long sessions while preserving recent context.
+  const MAX_GROUPS_RENDERED = (() => {
+    const env = Number(process.env.CYBER_MAX_GROUPS_RENDERED);
+    if (Number.isFinite(env) && env > 50) return Math.floor(env);
+    // Default cap chosen to balance usability and stability
+    return 500;
+  })();
+  const totalGroups = displayGroups.length;
+
+  // Ensure that the FINAL REPORT header (if present) is always kept in view
+  let startIndex = Math.max(0, totalGroups - MAX_GROUPS_RENDERED);
+  let finalReportIndex = -1;
+  for (let i = 0; i < totalGroups; i++) {
+    const group = displayGroups[i];
+    if (group.events.some(e => e.type === 'step_header' && (e as any).step === 'FINAL REPORT')) {
+      finalReportIndex = i;
+      break;
+    }
+  }
+  if (finalReportIndex >= 0 && finalReportIndex < startIndex) {
+    startIndex = finalReportIndex;
+  }
+
+  const groupsToRender = displayGroups.slice(startIndex);
+  const omittedCount = startIndex;
+
   return (
     <Box flexDirection="column">
       {/* Only display swarm if we have actual swarm events in this session */}
@@ -2201,8 +2472,15 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           <SwarmDisplay swarmState={activeSwarm} collapsed={false} />
         </Box>
       )}
+
+      {/* Omitted items banner to indicate truncated history in the viewport */}
+      {omittedCount > 0 && (
+        <Box marginBottom={1}>
+          <Text dimColor>… {omittedCount} earlier items omitted (press up or use logs to review)</Text>
+        </Box>
+      )}
       
-      {displayGroups.map((group, idx) => {
+      {groupsToRender.map((group, idx) => {
         if (group.type === 'reasoning_group') {
           // Display reasoning group with single label - memoize content combination
           const combinedContent = group.events.reduce((acc, e) => {
@@ -2248,7 +2526,7 @@ export const StreamDisplay: React.FC<StreamDisplayProps> = React.memo(({ events,
           // Display single events normally
           return group.events.map((event, i) => (
               <MemoizedEventLine 
-                key={event.id || `ev-${idx}-${i}`}  // Use event ID if available
+                key={event.id || `ev-${startIndex + idx}-${i}`}  // Use event ID if available
                 event={event} 
                 toolInputs={toolInputs} 
                 animationsEnabled={animationsEnabled} 
