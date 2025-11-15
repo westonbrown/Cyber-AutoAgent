@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from .evaluation import CyberAgentEvaluator
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 logger = get_logger("Evaluation.Manager")
 

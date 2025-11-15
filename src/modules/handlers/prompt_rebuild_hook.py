@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from strands.experimental.hooks.events import BeforeModelInvocationEvent
 from strands.hooks import HookProvider, HookRegistry
 
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 logger = get_logger("Handlers.PromptRebuildHook")
 

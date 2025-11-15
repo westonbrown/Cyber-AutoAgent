@@ -7,7 +7,6 @@ security assessment reports from operation evidence.
 """
 
 import json
-import logging
 import os
 import re
 from datetime import datetime
@@ -22,9 +21,9 @@ from modules.prompts.factory import (
     format_tools_summary,
     generate_findings_summary_table,
 )
-from modules.tools.memory import Mem0ServiceClient, get_memory_client
+from modules.tools.memory import Mem0ServiceClient
 from modules.config.manager import get_config_manager
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 from modules.handlers.core.utils import sanitize_target_name
 
 logger = get_logger("Tools.ReportBuilder")
@@ -33,14 +32,18 @@ MAX_REPORT_FINDINGS = int(os.getenv("CYBER_REPORT_MAX_FINDINGS", "50"))
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
 
-def _trim_evidence_for_report(items: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+def _trim_evidence_for_report(
+    items: List[Dict[str, Any]], limit: int
+) -> List[Dict[str, Any]]:
     """Keep at most `limit` evidence items, favoring higher severity."""
     if limit <= 0 or len(items) <= limit:
         return items
 
     sorted_items = sorted(
         items,
-        key=lambda entry: _SEVERITY_ORDER.get(str(entry.get("severity", "")).upper(), 4),
+        key=lambda entry: _SEVERITY_ORDER.get(
+            str(entry.get("severity", "")).upper(), 4
+        ),
     )
     trimmed = sorted_items[:limit]
     overflow = len(sorted_items) - limit
@@ -107,7 +110,7 @@ def _safe_truncate(text: str, n: int) -> str:
     if len(s) <= max(0, n):
         return s
     if n <= 3:
-        return s[:max(0, n)]
+        return s[: max(0, n)]
     return s[: n - 3] + "..."
 
 
@@ -167,14 +170,19 @@ def build_report_sections(
         # Prefer the existing global memory client to ensure identical backend/path
         try:
             from modules.tools.memory import get_memory_client as _get_mem_client
-            memory_client = _get_memory_client(silent=True)  # type: ignore[name-defined]
+
+            memory_client = _get_mem_client(silent=True)
         except Exception:
             memory_client = None
 
         if not memory_client:
             # Configure memory client with target-specific path as a fallback using unified path logic
             config = Mem0ServiceClient.get_default_config()
-            if config and "vector_store" in config and "config" in config["vector_store"]:
+            if (
+                config
+                and "vector_store" in config
+                and "config" in config["vector_store"]
+            ):
                 try:
                     manager = get_config_manager()
                     unified_path = manager.get_unified_memory_path(
@@ -182,87 +190,146 @@ def build_report_sections(
                         target_name=sanitize_target_name(target),
                     )
                     config["vector_store"]["config"]["path"] = unified_path
-                except Exception as e:
+                except Exception:
                     # Fallback to sanitized path logic if manager is unavailable
                     safe_target_name = sanitize_target_for_path(target)
-                    config["vector_store"]["config"]["path"] = f"outputs/{safe_target_name}/memory"
+                    config["vector_store"]["config"]["path"] = (
+                        f"outputs/{safe_target_name}/memory"
+                    )
             # Use silent mode to suppress initialization output during report generation
             memory_client = Mem0ServiceClient(config, silent=True)
             logger.info("Initialized memory client (fallback) for target: %s", target)
         else:
             logger.info("Using existing memory client for report sections")
 
+        raw_memories: List[Dict[str, Any]] = []
         if memory_client:
             try:
                 memories = memory_client.list_memories(user_id="cyber_agent")
+            except Exception as mem_err:
+                logger.warning(
+                    "Failed to load memories from existing client: %s", mem_err
+                )
                 raw_memories = []
+            else:
                 if isinstance(memories, dict):
-                    raw_memories = memories.get("results", []) or memories.get("memories", []) or []
+                    raw_memories = (
+                        memories.get("results", [])
+                        or memories.get("memories", [])
+                        or []
+                    )
                 elif isinstance(memories, list):
                     raw_memories = memories
 
-                # Select the newest active plan for this operation when possible
-                try:
-                    plan_candidates = []
+        # If no memories were returned (e.g., different backend in tests), try fallback Mem0 client (mockable)
+        if not raw_memories:
+            try:
+                config = Mem0ServiceClient.get_default_config()
+                if (
+                    config
+                    and "vector_store" in config
+                    and "config" in config["vector_store"]
+                ):
+                    try:
+                        manager = get_config_manager()
+                        unified_path = manager.get_unified_memory_path(
+                            server="bedrock",
+                            target_name=sanitize_target_name(target),
+                        )
+                        config["vector_store"]["config"]["path"] = unified_path
+                    except Exception:
+                        safe_target_name = sanitize_target_for_path(target)
+                        config["vector_store"]["config"]["path"] = (
+                            f"outputs/{safe_target_name}/memory"
+                        )
+                fallback_client = Mem0ServiceClient(config, silent=True)
+                memories = fallback_client.list_memories(user_id="cyber_agent")
+                if isinstance(memories, dict):
+                    raw_memories = (
+                        memories.get("results", [])
+                        or memories.get("memories", [])
+                        or []
+                    )
+                elif isinstance(memories, list):
+                    raw_memories = memories
+                logger.info("ReportBuilder: loaded memories via fallback Mem0 client")
+            except Exception as mem_err:
+                logger.debug("Fallback Mem0 load failed: %s", mem_err)
+
+        if raw_memories:
+            # Select the newest active plan for this operation when possible
+            try:
+                plan_candidates = []
+                for m in raw_memories:
+                    meta = m.get("metadata", {}) or {}
+                    if str(meta.get("category", "")) == "plan":
+                        if str(meta.get("operation_id", "")) == str(operation_id):
+                            plan_candidates.append(m)
+                # Fallback: include any plan if no op-scoped candidates
+                if not plan_candidates:
                     for m in raw_memories:
                         meta = m.get("metadata", {}) or {}
                         if str(meta.get("category", "")) == "plan":
-                            if str(meta.get("operation_id", "")) == str(operation_id):
-                                plan_candidates.append(m)
-                    # Fallback: include any plan if no op-scoped candidates
-                    if not plan_candidates:
-                        for m in raw_memories:
-                            meta = m.get("metadata", {}) or {}
-                            if str(meta.get("category", "")) == "plan":
-                                plan_candidates.append(m)
-                    # Sort by created_at descending
-                    def _dt(m: Dict[str, Any]) -> str:
-                        return str(m.get("created_at", ""))
-                    plan_candidates.sort(key=_dt, reverse=True)
-                    # Pick the first active one; else first candidate
-                    for m in plan_candidates:
-                        meta = m.get("metadata", {}) or {}
-                        if meta.get("active", False) is True:
-                            operation_plan = m.get("memory", "")
-                            logger.info("Selected newest active operation plan from memory")
-                            break
-                    if not operation_plan and plan_candidates:
-                        operation_plan = plan_candidates[0].get("memory", "")
-                        logger.info("Selected newest available plan from memory")
-                except Exception as _pe:
-                    logger.debug(f"Plan selection fallback due to: {_pe}")
+                            plan_candidates.append(m)
 
-                # Process evidence entries
-                for memory_item in raw_memories:
-                    memory_content = memory_item.get("memory", "")
-                    metadata = memory_item.get("metadata", {})
+                # Sort by created_at descending
+                def _dt(m: Dict[str, Any]) -> str:
+                    return str(m.get("created_at", ""))
 
-                    # Always include original content in evidence for downstream filters/tests
-                    base_evidence = {
-                        "category": "finding",
-                        "content": memory_content,
-                        "id": memory_item.get("id", ""),
-                        "anchor_id": ("finding-" + str(memory_item.get("id", ""))) if memory_item.get("id") else "",
-                        "anchor": ("#finding-" + str(memory_item.get("id", ""))) if memory_item.get("id") else "",
-                    }
+                plan_candidates.sort(key=_dt, reverse=True)
+                # Pick the first active one; else first candidate
+                for m in plan_candidates:
+                    meta = m.get("metadata", {}) or {}
+                    if meta.get("active", False) is True:
+                        operation_plan = m.get("memory", "")
+                        logger.info("Selected newest active operation plan from memory")
+                        break
+                if not operation_plan and plan_candidates:
+                    operation_plan = plan_candidates[0].get("memory", "")
+                    logger.info("Selected newest available plan from memory")
+            except Exception as _pe:
+                logger.debug(f"Plan selection fallback due to: {_pe}")
 
-                    # Findings via metadata
-                    if metadata and metadata.get("category") == "finding":
-                        item = base_evidence.copy()
-                        sev = metadata.get("severity", "MEDIUM")
-                        conf = str(metadata.get("confidence", ""))
-                        # Parse structured markers from the content so downstream sections have clean fields
-                        parsed_evidence = _parse_structured_evidence(memory_content)
-                        item.update(
-                            {
-                                "severity": sev,
-                                "confidence": conf,
-                                "parsed": parsed_evidence if isinstance(parsed_evidence, dict) else {},
-                                "validation_status": str(metadata.get("validation_status", "")).strip() or None,
-                            }
-                        )
-                        evidence.append(item)
-                        continue
+            # Process evidence entries
+            for memory_item in raw_memories:
+                memory_content = memory_item.get("memory", "")
+                metadata = memory_item.get("metadata", {})
+
+                # Always include original content in evidence for downstream filters/tests
+                base_evidence = {
+                    "category": "finding",
+                    "content": memory_content,
+                    "id": memory_item.get("id", ""),
+                    "anchor_id": ("finding-" + str(memory_item.get("id", "")))
+                    if memory_item.get("id")
+                    else "",
+                    "anchor": ("#finding-" + str(memory_item.get("id", "")))
+                    if memory_item.get("id")
+                    else "",
+                }
+
+                # Findings via metadata
+                if metadata and metadata.get("category") == "finding":
+                    item = base_evidence.copy()
+                    sev = metadata.get("severity", "MEDIUM")
+                    conf = str(metadata.get("confidence", ""))
+                    # Parse structured markers from the content so downstream sections have clean fields
+                    parsed_evidence = _parse_structured_evidence(memory_content)
+                    item.update(
+                        {
+                            "severity": sev,
+                            "confidence": conf,
+                            "parsed": parsed_evidence
+                            if isinstance(parsed_evidence, dict)
+                            else {},
+                            "validation_status": str(
+                                metadata.get("validation_status", "")
+                            ).strip()
+                            or None,
+                        }
+                    )
+                    evidence.append(item)
+                    continue
 
                     # JSON-encoded finding
                     if memory_content.startswith("{"):
@@ -279,15 +346,26 @@ def build_report_sections(
                     # Text-based structured evidence (markers)
                     if any(
                         marker in memory_content
-                        for marker in ["[FINDING]", "[SIGNAL]", "[VULNERABILITY]", "[DISCOVERY]"]
+                        for marker in [
+                            "[FINDING]",
+                            "[SIGNAL]",
+                            "[VULNERABILITY]",
+                            "[DISCOVERY]",
+                        ]
                     ):
                         severity = str(metadata.get("severity", "INFO"))
                         if severity == "INFO":
                             if "[CRITICAL]" in memory_content:
                                 severity = "CRITICAL"
-                            elif "[HIGH]" in memory_content or metadata.get("severity") == "high":
+                            elif (
+                                "[HIGH]" in memory_content
+                                or metadata.get("severity") == "high"
+                            ):
                                 severity = "HIGH"
-                            elif "[MEDIUM]" in memory_content or metadata.get("severity") == "medium":
+                            elif (
+                                "[MEDIUM]" in memory_content
+                                or metadata.get("severity") == "medium"
+                            ):
                                 severity = "MEDIUM"
                             elif "[LOW]" in memory_content:
                                 severity = "LOW"
@@ -295,7 +373,11 @@ def build_report_sections(
                         parsed_evidence = _parse_structured_evidence(memory_content)
 
                         # Confidence preference: parsed value if present else metadata (pass-through)
-                        parsed_conf = parsed_evidence.get("confidence") if isinstance(parsed_evidence, dict) else ""
+                        parsed_conf = (
+                            parsed_evidence.get("confidence")
+                            if isinstance(parsed_evidence, dict)
+                            else ""
+                        )
                         conf = parsed_conf or str(metadata.get("confidence", ""))
 
                         item = base_evidence.copy()
@@ -304,7 +386,10 @@ def build_report_sections(
                                 "severity": severity,
                                 "parsed": parsed_evidence,
                                 "confidence": conf,
-                                "validation_status": str(metadata.get("validation_status", "")).strip() or None,
+                                "validation_status": str(
+                                    metadata.get("validation_status", "")
+                                ).strip()
+                                or None,
                             }
                         )
                         evidence.append(item)
@@ -315,12 +400,14 @@ def build_report_sections(
                         meta = memory_item.get("metadata", {})
                         if meta and meta.get("category") == "plan":
                             operation_plan = memory_item.get("memory", "")
-                            logger.info("Selected first available plan from memory (fallback)")
+                            logger.info(
+                                "Selected first available plan from memory (fallback)"
+                            )
                             break
 
-                logger.info("Retrieved %d pieces of evidence from memory", len(evidence))
-            except Exception as e:
-                logger.error("Failed to retrieve evidence: %s", e)
+                logger.info(
+                    "Retrieved %d pieces of evidence from memory", len(evidence)
+                )
 
         # If no evidence, let LLM handle empty evidence
         if not evidence:
@@ -332,10 +419,18 @@ def build_report_sections(
 
         # Count severities from actual evidence, not just text
         severity_counts = {
-            "critical": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "CRITICAL"),
-            "high": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "HIGH"),
-            "medium": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "MEDIUM"),
-            "low": sum(1 for e in evidence if str(e.get("severity", "")).upper() == "LOW"),
+            "critical": sum(
+                1 for e in evidence if str(e.get("severity", "")).upper() == "CRITICAL"
+            ),
+            "high": sum(
+                1 for e in evidence if str(e.get("severity", "")).upper() == "HIGH"
+            ),
+            "medium": sum(
+                1 for e in evidence if str(e.get("severity", "")).upper() == "MEDIUM"
+            ),
+            "low": sum(
+                1 for e in evidence if str(e.get("severity", "")).upper() == "LOW"
+            ),
         }
 
         # Generate findings table (structured, deterministic)
@@ -356,7 +451,10 @@ def build_report_sections(
 
         # Transform evidence to content using domain lens
         report_content = _transform_evidence_to_content(
-            evidence=evidence, domain_lens=domain_lens, target=target, objective=objective
+            evidence=evidence,
+            domain_lens=domain_lens,
+            target=target,
+            objective=objective,
         )
 
         # Format tools summary (accepts dict or list); prefer accurate counts if provided
@@ -369,12 +467,18 @@ def build_report_sections(
             tools_summary = format_tools_summary([])
 
         # Separate findings for detailed vs summary treatment
-        critical_findings, high_findings, summary_findings = _prioritize_findings(evidence)
+        critical_findings, high_findings, summary_findings = _prioritize_findings(
+            evidence
+        )
 
         # Generate structured finding sections - include ALL findings for comprehensive report
         critical_section = _format_detailed_findings(critical_findings, "CRITICAL")
-        high_section = _format_detailed_findings(high_findings, "HIGH")  # Include ALL high findings
-        summary_table = _format_summary_table(summary_findings) if summary_findings else ""
+        high_section = _format_detailed_findings(
+            high_findings, "HIGH"
+        )  # Include ALL high findings
+        summary_table = (
+            _format_summary_table(summary_findings) if summary_findings else ""
+        )
 
         # Format the operation plan
         operation_plan_formatted = _format_operation_plan(operation_plan)
@@ -383,13 +487,18 @@ def build_report_sections(
         raw_evidence = []
         for finding in evidence:
             if finding.get("category") == "finding":
-                parsed = finding.get("parsed", {}) if isinstance(finding.get("parsed"), dict) else {}
+                parsed = (
+                    finding.get("parsed", {})
+                    if isinstance(finding.get("parsed"), dict)
+                    else {}
+                )
                 location = parsed.get("where", "")
                 if not location:
                     # Fallback: try to extract [WHERE] from content text
                     content_text = finding.get("content", "") or ""
                     try:
                         import re as _re
+
                         m = _re.search(r"\[WHERE\]\s*([^\n\r]+)", content_text)
                         if m:
                             location = m.group(1).strip()
@@ -405,7 +514,9 @@ def build_report_sections(
                         "impact": parsed.get("impact", ""),
                         "evidence": parsed.get("evidence", ""),
                         "steps": parsed.get("steps", ""),
-                        "remediation": _clean_remediation_text(parsed.get("remediation", "")),
+                        "remediation": _clean_remediation_text(
+                            parsed.get("remediation", "")
+                        ),
                         "confidence": finding.get("confidence", ""),
                         "validation_status": finding.get("validation_status"),
                         "content": finding.get("content", ""),
@@ -420,22 +531,45 @@ def build_report_sections(
         metrics_cost = None
         try:
             safe_target_name = sanitize_target_for_path(target)
-            log_path = os.path.join("outputs", safe_target_name, operation_id, "cyber_operations.log")
+            log_path = os.path.join(
+                "outputs", safe_target_name, operation_id, "cyber_operations.log"
+            )
             if os.path.exists(log_path):
                 with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
-                        if "__CYBER_EVENT__" in line and '"type": "metrics_update"' in line:
+                        if (
+                            "__CYBER_EVENT__" in line
+                            and '"type": "metrics_update"' in line
+                        ):
                             # Extract JSON between markers
                             try:
-                                start = line.index("__CYBER_EVENT__") + len("__CYBER_EVENT__")
+                                start = line.index("__CYBER_EVENT__") + len(
+                                    "__CYBER_EVENT__"
+                                )
                                 end = line.index("__CYBER_EVENT_END__")
                                 payload = json.loads(line[start:end])
-                                m = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+                                m = (
+                                    payload.get("metrics", {})
+                                    if isinstance(payload, dict)
+                                    else {}
+                                )
                                 # Prefer the most recent values (overwrite as we go)
-                                metrics_input = int(m.get("inputTokens", metrics_input) or 0)
-                                metrics_output = int(m.get("outputTokens", metrics_output) or 0)
-                                metrics_total = int(m.get("totalTokens", m.get("tokens", metrics_total) or 0))
-                                metrics_duration = str(m.get("duration", metrics_duration) or metrics_duration)
+                                metrics_input = int(
+                                    m.get("inputTokens", metrics_input) or 0
+                                )
+                                metrics_output = int(
+                                    m.get("outputTokens", metrics_output) or 0
+                                )
+                                metrics_total = int(
+                                    m.get(
+                                        "totalTokens",
+                                        m.get("tokens", metrics_total) or 0,
+                                    )
+                                )
+                                metrics_duration = str(
+                                    m.get("duration", metrics_duration)
+                                    or metrics_duration
+                                )
                                 if "cost" in m:
                                     try:
                                         metrics_cost = float(m.get("cost"))
@@ -450,7 +584,9 @@ def build_report_sections(
         # Build canonical findings (first per severity) with stable anchors
         canonical_findings: Dict[str, Dict[str, Any]] = {}
         for sev in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-            sev_items = [e for e in evidence if str(e.get("severity", "")).upper() == sev]
+            sev_items = [
+                e for e in evidence if str(e.get("severity", "")).upper() == sev
+            ]
             if not sev_items:
                 continue
             top = sev_items[0]
@@ -460,7 +596,10 @@ def build_report_sections(
                 anchor_link = f"#finding-{top['id']}"
             canonical_findings[sev] = {
                 "id": top.get("id", ""),
-                "title": (p.get("vulnerability") or _safe_truncate(str(top.get("content", "")), 60)).strip(),
+                "title": (
+                    p.get("vulnerability")
+                    or _safe_truncate(str(top.get("content", "")), 60)
+                ).strip(),
                 "where": (p.get("where") or "").strip(),
                 "anchor": anchor_link,
             }
@@ -502,7 +641,9 @@ def build_report_sections(
             "total_tokens": metrics_total or (metrics_input + metrics_output),
             "total_duration": metrics_duration,
             "estimated_cost": (
-                f"${metrics_cost:.4f}" if isinstance(metrics_cost, (int, float)) and metrics_cost > 0 else "N/A"
+                f"${metrics_cost:.4f}"
+                if isinstance(metrics_cost, (int, float)) and metrics_cost > 0
+                else "N/A"
             ),
         }
 
@@ -517,7 +658,12 @@ def build_report_sections(
 
     except Exception as e:
         logger.error("Error building report sections: %s", e, exc_info=True)
-        return {"error": str(e), "operation_id": operation_id, "target": target, "objective": objective}
+        return {
+            "error": str(e),
+            "operation_id": operation_id,
+            "target": target,
+            "objective": objective,
+        }
 
 
 def _parse_structured_evidence(content: str) -> Dict[str, str]:
@@ -638,18 +784,28 @@ def _format_detailed_findings(findings: List[Dict[str, Any]], severity: str) -> 
 
         # If impact missing, attempt to parse from original content
         if not impact:
-            parsed_fallback = _parse_structured_evidence(finding.get("content", "") or "")
-            impact = parsed_fallback.get("impact", "") if isinstance(parsed_fallback, dict) else ""
+            parsed_fallback = _parse_structured_evidence(
+                finding.get("content", "") or ""
+            )
+            impact = (
+                parsed_fallback.get("impact", "")
+                if isinstance(parsed_fallback, dict)
+                else ""
+            )
 
         # Build structured finding
         anchor_id = str(finding.get("anchor_id") or "").strip()
         if anchor_id:
-            output.append(f"<a id=\"{anchor_id}\"></a>")
+            output.append(f'<a id="{anchor_id}"></a>')
         output.append(f"#### {i}. {title}")
 
         # Status badge and confidence
         if status:
-            status_norm = "Verified" if status.lower() == "verified" else ("Unverified" if status else "")
+            status_norm = (
+                "Verified"
+                if status.lower() == "verified"
+                else ("Unverified" if status else "")
+            )
             if status_norm:
                 output.append(f"**Status:** {status_norm}")
         if confidence:
@@ -672,8 +828,12 @@ def _format_detailed_findings(findings: List[Dict[str, Any]], severity: str) -> 
                         "[REMEDIATION]",
                         "[CONFIDENCE]",
                     ]:
-                        formatted_evidence = formatted_evidence.replace(marker, f"\n{marker}")
-                    output.append(f"**Evidence:**\n```\n{formatted_evidence.strip()}\n```")
+                        formatted_evidence = formatted_evidence.replace(
+                            marker, f"\n{marker}"
+                        )
+                    output.append(
+                        f"**Evidence:**\n```\n{formatted_evidence.strip()}\n```"
+                    )
                 else:
                     output.append(f"**Evidence:**\n```\n{evidence}\n```")
             else:
@@ -684,7 +844,9 @@ def _format_detailed_findings(findings: List[Dict[str, Any]], severity: str) -> 
         # Impact and remediation - always show them
         impact_text = impact if impact else "N/A"
         output.append(f"**Impact:** {impact_text}")
-        output.append(f"**Remediation:** {remediation if remediation else 'TBD — requires protocol review'}")
+        output.append(
+            f"**Remediation:** {remediation if remediation else 'TBD — requires protocol review'}"
+        )
 
         output.append("")  # Blank line between findings
 
@@ -700,9 +862,14 @@ def _format_summary_table(findings: List[Dict[str, Any]]) -> str:
     if not findings:
         return ""
 
-    table = ["| # | Severity | Finding | Location | Confidence |", "|---|----------|---------|----------|------------|"]
+    table = [
+        "| # | Severity | Finding | Location | Confidence |",
+        "|---|----------|---------|----------|------------|",
+    ]
 
-    for i, finding in enumerate(findings[:50], 1):  # Include up to 50 findings in summary
+    for i, finding in enumerate(
+        findings[:50], 1
+    ):  # Include up to 50 findings in summary
         severity = finding.get("severity", "MEDIUM")
         confidence = finding.get("confidence", "N/A")
 
@@ -746,7 +913,9 @@ def _format_operation_plan(plan_content: str) -> str:
         return plan_content
 
 
-def _generate_findings_table(evidence_text: str, severity_counts: Dict[str, int]) -> str:
+def _generate_findings_table(
+    evidence_text: str, severity_counts: Dict[str, int]
+) -> str:
     """Generate the Key Findings table with richer context.
 
     Columns:
@@ -789,7 +958,9 @@ def _generate_findings_table(evidence_text: str, severity_counts: Dict[str, int]
         import re
 
         # Find the section starting with the severity heading
-        pattern = rf"###\s*{sev_label}\s*Findings(.*?)(?:\n###\s*[A-Z][a-z]+\s*Findings|\Z)"
+        pattern = (
+            rf"###\s*{sev_label}\s*Findings(.*?)(?:\n###\s*[A-Z][a-z]+\s*Findings|\Z)"
+        )
         m = re.search(pattern, evidence_text, flags=re.DOTALL)
         if not m:
             return "", "", ""
@@ -805,7 +976,12 @@ def _generate_findings_table(evidence_text: str, severity_counts: Dict[str, int]
         return "", "", ""
 
     rows = []
-    for sev_display, key in [("CRITICAL", "critical"), ("HIGH", "high"), ("MEDIUM", "medium"), ("LOW", "low")]:
+    for sev_display, key in [
+        ("CRITICAL", "critical"),
+        ("HIGH", "high"),
+        ("MEDIUM", "medium"),
+        ("LOW", "low"),
+    ]:
         count = int(severity_counts.get(key, 0) or 0)
         if count > 0:
             title, location, confidence = _first_finding_for(sev_display)

@@ -112,7 +112,9 @@ class ReasoningHandler(PrintingCallbackHandler):
                         # Process new tool uses with valid input
                         if tool_id not in self.state.shown_tools:
                             tool_input = tool_use.get("input", {})
-                            if self._is_valid_tool_use(tool_use.get("name", ""), tool_input):
+                            if self._is_valid_tool_use(
+                                tool_use.get("name", ""), tool_input
+                            ):
                                 # Step limit checked in show_tool_execution
                                 self.state.shown_tools.add(tool_id)
                                 self.state.tool_use_map[tool_id] = tool_use
@@ -141,7 +143,9 @@ class ReasoningHandler(PrintingCallbackHandler):
                             # Track memory operations
                             tool_name = self.state.tool_use_map[tool_id].get("name", "")
                             if tool_name == "mem0_memory":
-                                tool_input = self.state.tool_use_map[tool_id].get("input", {})
+                                tool_input = self.state.tool_use_map[tool_id].get(
+                                    "input", {}
+                                )
                                 if tool_input.get("action") == "store":
                                     self.state.memory_operations += 1
 
@@ -253,14 +257,21 @@ class ReasoningHandler(PrintingCallbackHandler):
                 leading_spaces = len(line) - len(stripped)
                 if leading_spaces > 10 and stripped:
                     # Preserve some indentation but not excessive amounts
-                    normalized_lines.append("    " + stripped if leading_spaces > 20 else "  " + stripped)
+                    normalized_lines.append(
+                        "    " + stripped if leading_spaces > 20 else "  " + stripped
+                    )
                 else:
                     normalized_lines.append(line)
 
             normalized_text = "\n".join(normalized_lines)
 
             # Emit reasoning event instead of direct print
-            emit_event("reasoning", normalized_text, operation_id=self.state.operation_id, step=self.state.steps)
+            emit_event(
+                "reasoning",
+                normalized_text,
+                operation_id=self.state.operation_id,
+                step=self.state.steps,
+            )
             self.state.last_was_reasoning = True
 
     def generate_report(self, agent: Any, objective: str) -> None:
@@ -350,7 +361,12 @@ class ReasoningHandler(PrintingCallbackHandler):
             enabled = os.environ["ENABLE_AUTO_EVALUATION"].lower() == "true"
         else:
             # In React UI, default to false unless explicitly enabled by the app
-            enabled = os.getenv("ENABLE_AUTO_EVALUATION", "false" if ui_mode == "react" else "true").lower() == "true"
+            enabled = (
+                os.getenv(
+                    "ENABLE_AUTO_EVALUATION", "false" if ui_mode == "react" else "true"
+                ).lower()
+                == "true"
+            )
         if not enabled:
             logger.info("Evaluation disabled - skipping")
             return
@@ -359,13 +375,17 @@ class ReasoningHandler(PrintingCallbackHandler):
             # Run evaluation in background thread
             def run_evaluation():
                 try:
-                    logger.info("Starting evaluation thread for operation: %s", agent_trace_id)
+                    logger.info(
+                        "Starting evaluation thread for operation: %s", agent_trace_id
+                    )
                     evaluator = CyberAgentEvaluator()
                     import asyncio
 
                     # Evaluate all traces for this operation
                     logger.info("Running evaluation for trace ID: %s", agent_trace_id)
-                    result = asyncio.run(evaluator.evaluate_trace(trace_id=agent_trace_id))
+                    result = asyncio.run(
+                        evaluator.evaluate_trace(trace_id=agent_trace_id)
+                    )
                     logger.info("Evaluation completed. Results: %s", result)
                 except Exception as e:
                     logger.error("Error running evaluation: %s", e, exc_info=True)

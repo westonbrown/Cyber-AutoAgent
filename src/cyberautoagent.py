@@ -48,7 +48,7 @@ from modules.agents.cyber_autoagent import (
     create_agent,
     _ensure_prompt_within_budget,
 )
-from modules.config.environment import auto_setup, clean_operation_memory, setup_logging
+from modules.config.system.environment import auto_setup, clean_operation_memory, setup_logging
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
 from modules.handlers.utils import (

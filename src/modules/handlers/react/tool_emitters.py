@@ -69,7 +69,9 @@ class ToolEventEmitter:
             url = tool_input.get("url", "")
             # Emit structured event for request tracking (not for display)
             if url:
-                self.emit_ui_event({"type": "http_request_start", "method": method, "url": url})
+                self.emit_ui_event(
+                    {"type": "http_request_start", "method": method, "url": url}
+                )
 
     def _emit_file_write(self, tool_input: Any) -> None:
         """Emit file write operation details."""
@@ -150,7 +152,10 @@ class ToolEventEmitter:
             # Only emit swarm start event if we have valid data
             if len(agent_details) > 0 or task:
                 # Extract agent names for backward compatibility
-                agent_names = [agent.get("name", f"agent_{i}") for i, agent in enumerate(agent_details)]
+                agent_names = [
+                    agent.get("name", f"agent_{i}")
+                    for i, agent in enumerate(agent_details)
+                ]
 
                 # Emit rich swarm_start event with both names and full details
                 self.emit_ui_event(
@@ -205,7 +210,9 @@ class ToolEventEmitter:
         if isinstance(tool_input, dict):
             target = tool_input.get("target", "")
             report_type = tool_input.get("report_type", "security_assessment")
-            self.emit_ui_event({"type": "metadata", "content": {"target": target, "type": report_type}})
+            self.emit_ui_event(
+                {"type": "metadata", "content": {"target": target, "type": report_type}}
+            )
 
     def _emit_agent_handoff(self, tool_input: Any) -> None:
         """No-op for agent handoff details.
@@ -234,13 +241,21 @@ class ToolEventEmitter:
                 self.emit_ui_event(
                     {
                         "type": "metadata",
-                        "content": {"thinking": thought[:100] + "..." if len(thought) > 100 else thought},
+                        "content": {
+                            "thinking": thought[:100] + "..."
+                            if len(thought) > 100
+                            else thought
+                        },
                     }
                 )
         elif isinstance(tool_input, str):
             self.emit_ui_event(
                 {
                     "type": "metadata",
-                    "content": {"thinking": tool_input[:100] + "..." if len(tool_input) > 100 else tool_input},
+                    "content": {
+                        "thinking": tool_input[:100] + "..."
+                        if len(tool_input) > 100
+                        else tool_input
+                    },
                 }
             )

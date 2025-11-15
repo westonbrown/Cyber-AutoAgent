@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from strands import tool
 
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 OVERLAY_FILENAME = "adaptive_prompt.json"
 logger = get_logger("Tools.PromptOptimizer")
@@ -36,7 +35,7 @@ def _overlay_path() -> str:
     return os.path.join(_operation_root(), OVERLAY_FILENAME)
 
 
-def _load_overlay(path: str) -> Optional[Dict[str, Any]]:
+def _load_overlay(path: str) -> Optional[dict[str, Any]]:
     if not os.path.exists(path):
         return None
     try:
@@ -46,12 +45,12 @@ def _load_overlay(path: str) -> Optional[Dict[str, Any]]:
         raise PromptOptimizerError(f"Overlay file is not valid JSON: {exc}")
 
 
-def _dump_overlay(path: str, payload: Dict[str, Any]) -> None:
+def _dump_overlay(path: str, payload: dict[str, Any]) -> None:
     with open(path, "w", encoding="utf-8") as file_obj:
         json.dump(payload, file_obj, ensure_ascii=False, indent=2)
 
 
-def _normalise_overlay(overlay: Any) -> Dict[str, Any]:
+def _normalise_overlay(overlay: Any) -> dict[str, Any]:
     if isinstance(overlay, dict):
         return overlay
     if isinstance(overlay, str):
@@ -65,7 +64,7 @@ def _normalise_overlay(overlay: Any) -> Dict[str, Any]:
     raise PromptOptimizerError("Overlay must be provided as a JSON object or string")
 
 
-def _overlay_payload_from_prompt_text(prompt_text: str) -> Dict[str, Any]:
+def _overlay_payload_from_prompt_text(prompt_text: str) -> dict[str, Any]:
     trimmed = (prompt_text or "").strip()
     if not trimmed:
         raise PromptOptimizerError("prompt content cannot be empty")
@@ -74,9 +73,13 @@ def _overlay_payload_from_prompt_text(prompt_text: str) -> Dict[str, Any]:
         try:
             parsed = json.loads(trimmed)
         except json.JSONDecodeError as exc:
-            raise PromptOptimizerError(f"Prompt JSON must describe an object: {exc}") from exc
+            raise PromptOptimizerError(
+                f"Prompt JSON must describe an object: {exc}"
+            ) from exc
         if not isinstance(parsed, dict):
-            raise PromptOptimizerError("Prompt JSON must describe an object with directives")
+            raise PromptOptimizerError(
+                "Prompt JSON must describe an object with directives"
+            )
         return parsed
 
     directives = [line.strip() for line in trimmed.splitlines() if line.strip()]
@@ -95,13 +98,17 @@ def _merge_overlay_payload(
         if key == "directives":
             new_directives: List[str] = []
             if isinstance(value, list):
-                new_directives = [str(item).strip() for item in value if str(item).strip()]
+                new_directives = [
+                    str(item).strip() for item in value if str(item).strip()
+                ]
             elif value is not None:
                 new_directives = [str(value).strip()]
 
             existing = merged.get("directives")
             if isinstance(existing, list):
-                merged_directives = [str(item).strip() for item in existing if str(item).strip()]
+                merged_directives = [
+                    str(item).strip() for item in existing if str(item).strip()
+                ]
             elif existing:
                 merged_directives = [str(existing).strip()]
             else:
@@ -136,7 +143,9 @@ def _format_directives_preview(payload: Dict[str, Any], limit: int = 4) -> str:
     return ", ".join(cleaned)
 
 
-def _clean_optional(value: Optional[str], *, fallback: Optional[str] = None) -> Optional[str]:
+def _clean_optional(
+    value: Optional[str], *, fallback: Optional[str] = None
+) -> Optional[str]:
     if value is None:
         return fallback
     trimmed = value.strip()
@@ -152,13 +161,13 @@ def prompt_optimizer(
     note: Optional[str] = None,
     current_step: Optional[int] = None,
     expires_after_steps: Optional[int] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
     prompt: Optional[str] = None,
     context: Optional[str] = None,
     learned_patterns: Optional[str] = None,
-    remove_dead_ends: Optional[List[str]] = None,
-    focus_areas: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    remove_dead_ends: Optional[list[str]] = None,
+    focus_areas: Optional[list[str]] = None,
+) -> dict[str, Any]:
     """Manage adaptive prompt overlays and execution prompt optimization.
 
     Supported actions:
@@ -190,7 +199,15 @@ def prompt_optimizer(
     """
 
     action_normalised = (action or "").strip().lower()
-    mutating_actions = {"apply", "update", "rewrite", "add_context", "append", "extend", "optimize_execution"}
+    mutating_actions = {
+        "apply",
+        "update",
+        "rewrite",
+        "add_context",
+        "append",
+        "extend",
+        "optimize_execution",
+    }
     non_mutating_actions = {"reset", "refresh", "view"}
     allowed_actions = mutating_actions | non_mutating_actions
 
@@ -204,7 +221,7 @@ def prompt_optimizer(
         return _optimize_execution_prompt(
             learned_patterns=learned_patterns or "",
             remove_dead_ends=remove_dead_ends or [],
-            focus_areas=focus_areas or []
+            focus_areas=focus_areas or [],
         )
 
     overlay_file = _overlay_path()
@@ -214,7 +231,11 @@ def prompt_optimizer(
 
     if action_normalised == "view":
         if existing_overlay:
-            payload = existing_overlay.get("payload") if isinstance(existing_overlay, dict) else {}
+            payload = (
+                existing_overlay.get("payload")
+                if isinstance(existing_overlay, dict)
+                else {}
+            )
             preview = _format_directives_preview(payload or {}, limit=6)
             summary = ["Adaptive overlay is currently active."]
             if preview:
@@ -287,7 +308,9 @@ def prompt_optimizer(
     elif action_normalised in {"update", "rewrite"}:
         source = prompt if prompt is not None else overlay
         if source is None:
-            raise PromptOptimizerError("prompt or overlay must be supplied when action='update'")
+            raise PromptOptimizerError(
+                "prompt or overlay must be supplied when action='update'"
+            )
         if isinstance(source, str):
             overlay_payload = _overlay_payload_from_prompt_text(source)
         else:
@@ -296,12 +319,18 @@ def prompt_optimizer(
     elif action_normalised in {"add_context", "append", "extend"}:
         addition_source = context or prompt or overlay
         if addition_source is None:
-            raise PromptOptimizerError("context, prompt, or overlay must be supplied when action='add_context'")
+            raise PromptOptimizerError(
+                "context, prompt, or overlay must be supplied when action='add_context'"
+            )
         if isinstance(addition_source, str):
             addition_payload = _overlay_payload_from_prompt_text(addition_source)
         else:
             addition_payload = _normalise_overlay(addition_source)
-        base_payload = existing_overlay.get("payload") if isinstance(existing_overlay, dict) else {}
+        base_payload = (
+            existing_overlay.get("payload")
+            if isinstance(existing_overlay, dict)
+            else {}
+        )
         overlay_payload = _merge_overlay_payload(base_payload, addition_payload)
     else:
         raise PromptOptimizerError(f"Unsupported action: {action_normalised}")
@@ -326,8 +355,13 @@ def prompt_optimizer(
             }
         )
 
-    origin_value = _clean_optional(trigger, fallback=(existing_overlay or {}).get("origin")) or "unspecified"
-    reviewer_value = _clean_optional(reviewer, fallback=(existing_overlay or {}).get("reviewer"))
+    origin_value = (
+        _clean_optional(trigger, fallback=(existing_overlay or {}).get("origin"))
+        or "unspecified"
+    )
+    reviewer_value = _clean_optional(
+        reviewer, fallback=(existing_overlay or {}).get("reviewer")
+    )
     note_value = _clean_optional(note, fallback=(existing_overlay or {}).get("note"))
 
     record: Dict[str, Any] = {
@@ -344,7 +378,9 @@ def prompt_optimizer(
 
     if expires_after_steps is not None:
         record["expires_after_steps"] = expires_after_steps
-    elif existing_overlay and isinstance(existing_overlay.get("expires_after_steps"), int):
+    elif existing_overlay and isinstance(
+        existing_overlay.get("expires_after_steps"), int
+    ):
         record["expires_after_steps"] = existing_overlay["expires_after_steps"]
 
     if metadata and isinstance(metadata, dict):
@@ -359,7 +395,9 @@ def prompt_optimizer(
 
     summary_lines = []
     if action_normalised == "add_context" or action_normalised in {"append", "extend"}:
-        summary_lines.append("Adaptive prompt overlay extended with additional directives.")
+        summary_lines.append(
+            "Adaptive prompt overlay extended with additional directives."
+        )
     elif action_normalised in {"update", "rewrite"}:
         summary_lines.append("Adaptive prompt overlay replaced with new directives.")
     else:
@@ -385,9 +423,7 @@ def prompt_optimizer(
 
 
 def _optimize_execution_prompt(
-    learned_patterns: str,
-    remove_dead_ends: List[str],
-    focus_areas: List[str]
+    learned_patterns: str, remove_dead_ends: List[str], focus_areas: List[str]
 ) -> Dict[str, Any]:
     """Rewrite execution_prompt_optimized.txt based on agent learning.
 
@@ -406,16 +442,16 @@ def _optimize_execution_prompt(
     if not optimized_path.exists():
         return {
             "status": "error",
-            "content": [{"text": f"Execution prompt not found at {optimized_path}"}]
+            "content": [{"text": f"Execution prompt not found at {optimized_path}"}],
         }
 
     try:
-        with open(optimized_path, 'r', encoding='utf-8') as f:
+        with open(optimized_path, "r", encoding="utf-8") as f:
             current_prompt = f.read()
     except Exception as e:
         return {
             "status": "error",
-            "content": [{"text": f"Failed to read execution prompt: {e}"}]
+            "content": [{"text": f"Failed to read execution prompt: {e}"}],
         }
 
     # Use LLM to rewrite the prompt
@@ -424,24 +460,24 @@ def _optimize_execution_prompt(
             current_prompt=current_prompt,
             learned_patterns=learned_patterns,
             remove_tactics=remove_dead_ends,
-            focus_tactics=focus_areas
+            focus_tactics=focus_areas,
         )
     except Exception as e:
         logger.error("Failed to rewrite execution prompt: %s", e)
         return {
             "status": "error",
-            "content": [{"text": f"Failed to optimize prompt: {e}"}]
+            "content": [{"text": f"Failed to optimize prompt: {e}"}],
         }
 
     # Save optimized prompt
     try:
-        with open(optimized_path, 'w', encoding='utf-8') as f:
+        with open(optimized_path, "w", encoding="utf-8") as f:
             f.write(optimized_prompt)
         logger.info("Execution prompt optimized and saved to %s", optimized_path)
     except Exception as e:
         return {
             "status": "error",
-            "content": [{"text": f"Failed to save optimized prompt: {e}"}]
+            "content": [{"text": f"Failed to save optimized prompt: {e}"}],
         }
 
     # Create summary
@@ -452,9 +488,9 @@ def _optimize_execution_prompt(
         "✓ Execution prompt optimized successfully",
         f"Removed dead ends: {removed_str}",
         f"Focus areas: {focus_str}",
-        f"New prompt length: {len(optimized_prompt)} chars (~{len(optimized_prompt)//4} tokens)",
+        f"New prompt length: {len(optimized_prompt)} chars (~{len(optimized_prompt) // 4} tokens)",
         "",
-        "The optimized prompt will be loaded on the next operation or prompt rebuild."
+        "The optimized prompt will be loaded on the next operation or prompt rebuild.",
     ]
 
     return {
@@ -464,7 +500,7 @@ def _optimize_execution_prompt(
         "optimized_path": str(optimized_path),
         "learned_patterns": learned_patterns,
         "removed": remove_dead_ends,
-        "focused": focus_areas
+        "focused": focus_areas,
     }
 
 
@@ -472,7 +508,7 @@ def _llm_rewrite_execution_prompt(
     current_prompt: str,
     learned_patterns: str,
     remove_tactics: List[str],
-    focus_tactics: List[str]
+    focus_tactics: List[str],
 ) -> str:
     """Use LLM to rewrite execution prompt coherently.
 
@@ -510,6 +546,7 @@ def _llm_rewrite_execution_prompt(
     # Set max_tokens=8000 for rewriter to handle full prompt output
     if provider == "ollama":
         from strands.models.ollama import OllamaModel
+
         config = config_manager.get_local_model_config(model_id, provider)
         model = OllamaModel(
             host=config["host"],
@@ -519,7 +556,10 @@ def _llm_rewrite_execution_prompt(
         )
     elif provider == "bedrock":
         from strands.models.bedrock import BedrockModel
-        config = config_manager.get_standard_model_config(model_id, region_name, provider)
+
+        config = config_manager.get_standard_model_config(
+            model_id, region_name, provider
+        )
         model = BedrockModel(
             model_id=config["model_id"],
             region_name=config["region_name"],
@@ -528,7 +568,10 @@ def _llm_rewrite_execution_prompt(
         )
     elif provider == "litellm":
         from strands.models.litellm import LiteLLMModel
-        config = config_manager.get_standard_model_config(model_id, region_name, provider)
+
+        config = config_manager.get_standard_model_config(
+            model_id, region_name, provider
+        )
         client_args = {}
         params = {
             "temperature": config["temperature"],
@@ -550,8 +593,16 @@ def _llm_rewrite_execution_prompt(
 
     # Limit evidence input to 5K chars
     max_evidence_chars = 5000
-    truncated_patterns = learned_patterns[:max_evidence_chars] if len(learned_patterns) > max_evidence_chars else learned_patterns
-    evidence_note = "\n... (evidence truncated for brevity)" if len(learned_patterns) > max_evidence_chars else ""
+    truncated_patterns = (
+        learned_patterns[:max_evidence_chars]
+        if len(learned_patterns) > max_evidence_chars
+        else learned_patterns
+    )
+    evidence_note = (
+        "\n... (evidence truncated for brevity)"
+        if len(learned_patterns) > max_evidence_chars
+        else ""
+    )
 
     system_prompt = f"""You are a meta-cognitive prompt optimizer for autonomous agents that exhibit "prompt compliance gap" - they read guidance but don't always execute it.
 
@@ -730,11 +781,14 @@ Return ONLY the optimized prompt text (no explanation, no preamble, no commentar
 Length: ≤ {len(current_prompt)} chars (STRICT enforcement, zero tolerance)
 </output_format>"""
 
-    if not hasattr(_llm_rewrite_execution_prompt, '_failure_count'):
+    if not hasattr(_llm_rewrite_execution_prompt, "_failure_count"):
         _llm_rewrite_execution_prompt._failure_count = 0
 
     if _llm_rewrite_execution_prompt._failure_count >= 3:
-        logger.warning("Too many rewrite failures (%d), using original prompt", _llm_rewrite_execution_prompt._failure_count)
+        logger.warning(
+            "Too many rewrite failures (%d), using original prompt",
+            _llm_rewrite_execution_prompt._failure_count,
+        )
         return current_prompt
 
     try:
@@ -750,8 +804,11 @@ Length: ≤ {len(current_prompt)} chars (STRICT enforcement, zero tolerance)
         if len(rewritten) < min_allowed or len(rewritten) > max_allowed:
             logger.warning(
                 "Prompt optimizer outside ±15%% bounds: %d → %d chars (%+d). Allowed: %d-%d. Rejecting.",
-                len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt),
-                min_allowed, max_allowed
+                len(current_prompt),
+                len(rewritten),
+                len(rewritten) - len(current_prompt),
+                min_allowed,
+                max_allowed,
             )
             _llm_rewrite_execution_prompt._failure_count += 1
             return current_prompt
@@ -761,10 +818,15 @@ Length: ≤ {len(current_prompt)} chars (STRICT enforcement, zero tolerance)
             logger.info("Prompt optimizer: No changes (no violations detected)")
             return current_prompt
 
-        change_pct = ((len(rewritten) - len(current_prompt)) / len(current_prompt)) * 100
+        change_pct = (
+            (len(rewritten) - len(current_prompt)) / len(current_prompt)
+        ) * 100
         logger.info(
             "Prompt optimization: %d → %d chars (%+d, %+.1f%%)",
-            len(current_prompt), len(rewritten), len(rewritten) - len(current_prompt), change_pct
+            len(current_prompt),
+            len(rewritten),
+            len(rewritten) - len(current_prompt),
+            change_pct,
         )
         _llm_rewrite_execution_prompt._failure_count = 0
         return rewritten

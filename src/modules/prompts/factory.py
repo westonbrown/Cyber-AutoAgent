@@ -8,7 +8,6 @@ report generation prompts, and module-specific prompts.
 
 import base64
 import json
-import logging
 import os
 import threading
 import time
@@ -24,7 +23,7 @@ try:
 except Exception:  # pragma: no cover
     yaml = None  # Fallback when PyYAML is unavailable
 
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 logger = get_logger("Prompts.Factory")
 
@@ -57,11 +56,15 @@ def _lf_is_docker() -> bool:
 
 def _lf_enabled() -> bool:
     # Strict alignment with observability as requested
-    return _lf_env_true("ENABLE_OBSERVABILITY") and _lf_env_true("ENABLE_LANGFUSE_PROMPTS")
+    return _lf_env_true("ENABLE_OBSERVABILITY") and _lf_env_true(
+        "ENABLE_LANGFUSE_PROMPTS"
+    )
 
 
 def _lf_host() -> str:
-    default_host = "http://langfuse-web:3000" if _lf_is_docker() else "http://localhost:3000"
+    default_host = (
+        "http://langfuse-web:3000" if _lf_is_docker() else "http://localhost:3000"
+    )
     return os.getenv("LANGFUSE_HOST", default_host).rstrip("/")
 
 
@@ -117,7 +120,14 @@ def _lf_get_prompt(name: str, label: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _lf_create_prompt_version(*, name: str, prompt_text: str, label: str, tags: Optional[List[str]] = None, commit: str = "seed") -> Optional[Dict[str, Any]]:
+def _lf_create_prompt_version(
+    *,
+    name: str,
+    prompt_text: str,
+    label: str,
+    tags: Optional[List[str]] = None,
+    commit: str = "seed",
+) -> Optional[Dict[str, Any]]:
     if not _lf_enabled():
         return None
     payload = {
@@ -176,7 +186,12 @@ def _lf_ensure_seeded() -> None:
                     continue
                 content = _lf_read_local_template(fname)
                 if content.strip():
-                    created = _lf_create_prompt_version(name=rname, prompt_text=content, label=label, commit=f"seed {fname}")
+                    created = _lf_create_prompt_version(
+                        name=rname,
+                        prompt_text=content,
+                        label=label,
+                        commit=f"seed {fname}",
+                    )
                     if created:
                         logger.info("Seeded Langfuse prompt: %s", rname)
         except Exception as e:  # pragma: no cover
@@ -369,7 +384,9 @@ def _extract_domain_lens(module_prompt: str) -> Dict[str, str]:
                 in_lens = True
                 continue
             if in_lens and line.strip():
-                if line.strip().startswith("</") or (line.strip().endswith(":") and ":" not in line[:-1]):
+                if line.strip().startswith("</") or (
+                    line.strip().endswith(":") and ":" not in line[:-1]
+                ):
                     break
                 if ":" in line:
                     parts = line.split(":", 1)
@@ -453,7 +470,9 @@ def _format_overlay_directives(payload: Any) -> List[str]:
     if isinstance(payload, dict):
         raw_directives = payload.get("directives")
         if isinstance(raw_directives, list):
-            directives.extend(str(item).strip() for item in raw_directives if str(item).strip())
+            directives.extend(
+                str(item).strip() for item in raw_directives if str(item).strip()
+            )
         for key, value in payload.items():
             if key == "directives":
                 continue
@@ -582,7 +601,9 @@ def get_system_prompt(
 
     # Output directory structure
     if isinstance(output_config, dict) and output_config:
-        base_dir = output_config.get("base_dir") or output_config.get("base") or "./outputs"
+        base_dir = (
+            output_config.get("base_dir") or output_config.get("base") or "./outputs"
+        )
         target_name = output_config.get("target_name") or target
         artifacts_path = output_config.get("artifacts_path", "")
         tools_path = output_config.get("tools_path", "")
@@ -592,11 +613,19 @@ def get_system_prompt(
         parts.append(f"Target: {target_name}")
         parts.append(f"Operation: {operation_id}")
         if isinstance(artifacts_path, str) and artifacts_path:
-            rel_artifacts = artifacts_path.replace("/app/", "") if "/app/" in artifacts_path else artifacts_path
-            parts.append("\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):")
+            rel_artifacts = (
+                artifacts_path.replace("/app/", "")
+                if "/app/" in artifacts_path
+                else artifacts_path
+            )
+            parts.append(
+                "\n**OPERATION ARTIFACTS DIRECTORY** (save all evidence here):"
+            )
             parts.append(f"  → {rel_artifacts}")
         if isinstance(tools_path, str) and tools_path:
-            rel_tools = tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
+            rel_tools = (
+                tools_path.replace("/app/", "") if "/app/" in tools_path else tools_path
+            )
             parts.append("\n**OPERATION TOOLS DIRECTORY** (for editor/load_tool):")
             parts.append(f"  → {rel_tools}")
 
@@ -607,14 +636,20 @@ def get_system_prompt(
         # Calculate checkpoint intervals for 800+ step operations
         # Primary checkpoints: 20%, 40%, 60%, 80%
         _checkpoints = [int(max_steps * pct) for pct in [0.2, 0.4, 0.6, 0.8]]
-        _next_checkpoint = next((cp for cp in _checkpoints if cp > current_step), max_steps)
+        _next_checkpoint = next(
+            (cp for cp in _checkpoints if cp > current_step), max_steps
+        )
         _steps_until = max(0, _next_checkpoint - current_step)
-        _checkpoint_pct = int((_next_checkpoint / max_steps) * 100) if max_steps > 0 else 0
+        _checkpoint_pct = (
+            int((_next_checkpoint / max_steps) * 100) if max_steps > 0 else 0
+        )
 
         parts.append("## REFLECTION SNAPSHOT")
         parts.append(f"Current step: {current_step}")
         parts.append(f"Budget: {_budget_pct}% ({current_step}/{max_steps})")
-        parts.append(f"Phase: {plan_current_phase if plan_current_phase is not None else '-'}")
+        parts.append(
+            f"Phase: {plan_current_phase if plan_current_phase is not None else '-'}"
+        )
         parts.append(f"Checkpoint: {_next_checkpoint} in {_steps_until} steps")
 
         # Checkpoint guidance (not enforced - agent will self-regulate via learning patterns)
@@ -622,7 +657,9 @@ def get_system_prompt(
         if _overdue_checkpoints and current_step > 0:
             _last_checkpoint = _overdue_checkpoints[-1]
             _checkpoint_pct_hit = int((_last_checkpoint / max_steps) * 100)
-            parts.append(f"\nCHECKPOINT {_checkpoint_pct_hit}%: Review plan, check confidence, pivot if <50%")
+            parts.append(
+                f"\nCHECKPOINT {_checkpoint_pct_hit}%: Review plan, check confidence, pivot if <50%"
+            )
 
         parts.append(
             "\nReflection triggers: High/Critical finding; same method >5 times; phase >40% budget without progress; technique succeeds but criteria unmet."
@@ -645,7 +682,9 @@ def get_system_prompt(
                 # Find next section header or end
                 next_header_idx = system_template.find("\n## ", start + len(marker))
                 planning_block = (
-                    system_template[start:next_header_idx] if next_header_idx != -1 else system_template[start:]
+                    system_template[start:next_header_idx]
+                    if next_header_idx != -1
+                    else system_template[start:]
                 )
                 # Replace minimal placeholders we rely on
                 planning_block = (
@@ -663,7 +702,11 @@ def get_system_prompt(
         tools_guide = load_prompt_template("tools_guide.md")
         if tools_guide:
             # Substitute operation tools directory path from OUTPUT DIRECTORY STRUCTURE section
-            tools_path = output_config.get("tools_path", "") if isinstance(output_config, dict) else ""
+            tools_path = (
+                output_config.get("tools_path", "")
+                if isinstance(output_config, dict)
+                else ""
+            )
             # Only append tools_guide if we have a valid absolute path to inject
             if tools_path:
                 tools_guide = tools_guide.replace("{{operation_tools_dir}}", tools_path)
@@ -720,15 +763,15 @@ class ModulePromptLoader:
     def __init__(self, templates_dir: Optional[Path] = None):
         self.templates_dir = templates_dir or (Path(__file__).parent / "templates")
         # Base dir for operation plugins: modules/operation_plugins
-        self.plugins_dir = (Path(__file__).parent.parent / "operation_plugins").resolve()
+        self.plugins_dir = (
+            Path(__file__).parent.parent / "operation_plugins"
+        ).resolve()
         # Track sources for observability
         self.last_loaded_execution_prompt_source: Optional[str] = None
         self.last_loaded_report_prompt_source: Optional[str] = None
 
     def load_module_execution_prompt(
-        self,
-        module_name: str,
-        operation_root: Optional[str] = None
+        self, module_name: str, operation_root: Optional[str] = None
     ) -> str:
         """Load a module-specific execution prompt if available.
 
@@ -751,8 +794,12 @@ class ModulePromptLoader:
                 if optimized_path.exists() and optimized_path.is_file():
                     content = optimized_path.read_text(encoding="utf-8").strip()
                     if content:
-                        self.last_loaded_execution_prompt_source = f"optimized:{optimized_path}"
-                        logger.debug("Loaded optimized execution prompt from %s", optimized_path)
+                        self.last_loaded_execution_prompt_source = (
+                            f"optimized:{optimized_path}"
+                        )
+                        logger.debug(
+                            "Loaded optimized execution prompt from %s", optimized_path
+                        )
                         return content
             except Exception as e:
                 logger.debug("Failed to load optimized execution prompt: %s", e)
@@ -765,7 +812,9 @@ class ModulePromptLoader:
                 label = os.getenv("LANGFUSE_PROMPT_LABEL", "production")
                 remote_text = _lf_resolve_prompt_by_name(rname, label=label)
                 if isinstance(remote_text, str) and remote_text.strip():
-                    self.last_loaded_execution_prompt_source = f"langfuse:{rname}@{label}"
+                    self.last_loaded_execution_prompt_source = (
+                        f"langfuse:{rname}@{label}"
+                    )
                     return remote_text.strip()
             except Exception:
                 # continue to local resolution
@@ -789,10 +838,16 @@ class ModulePromptLoader:
                     rname = _lf_module_prompt_name(module_name, "execution")
                     tags = _read_module_yaml_for_tags(self.plugins_dir / module_name)
                     created = _lf_create_prompt_version(
-                        name=rname, prompt_text=content, label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"), tags=tags, commit=f"seed module:{module_name} execution"
+                        name=rname,
+                        prompt_text=content,
+                        label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"),
+                        tags=tags,
+                        commit=f"seed module:{module_name} execution",
                     )
                     if created:
-                        self.last_loaded_execution_prompt_source = f"seeded:{local_candidate}"
+                        self.last_loaded_execution_prompt_source = (
+                            f"seeded:{local_candidate}"
+                        )
                         return content
             except Exception:
                 # Seeding failed; fall through to local return
@@ -850,7 +905,9 @@ class ModulePromptLoader:
             if path.exists() and path.is_file():
                 local_candidate = path
         except Exception as e:
-            logger.debug("Failed to enumerate module report prompt for '%s': %s", module_name, e)
+            logger.debug(
+                "Failed to enumerate module report prompt for '%s': %s", module_name, e
+            )
             local_candidate = None
 
         # If Langfuse is enabled but remote missing, seed from local
@@ -861,10 +918,16 @@ class ModulePromptLoader:
                     rname = _lf_module_prompt_name(module_name, "report")
                     tags = _read_module_yaml_for_tags(self.plugins_dir / module_name)
                     created = _lf_create_prompt_version(
-                        name=rname, prompt_text=content, label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"), tags=tags, commit=f"seed module:{module_name} report"
+                        name=rname,
+                        prompt_text=content,
+                        label=os.getenv("LANGFUSE_PROMPT_LABEL", "production"),
+                        tags=tags,
+                        commit=f"seed module:{module_name} report",
                     )
                     if created:
-                        self.last_loaded_report_prompt_source = f"seeded:{local_candidate}"
+                        self.last_loaded_report_prompt_source = (
+                            f"seeded:{local_candidate}"
+                        )
                         return content
             except Exception:
                 pass
@@ -894,14 +957,22 @@ class ModulePromptLoader:
             try:
                 if yaml is not None:
                     for fname in ("module.yaml", "module.yml"):
-                        ypath = (self.plugins_dir / module_name / fname)
+                        ypath = self.plugins_dir / module_name / fname
                         if ypath.exists() and ypath.is_file():
                             data = yaml.safe_load(ypath.read_text(encoding="utf-8"))  # type: ignore[no-untyped-call]
-                            if isinstance(data, dict) and isinstance(data.get("tools"), list):
-                                allowed_tools = [str(t).strip() for t in data.get("tools", []) if t]
+                            if isinstance(data, dict) and isinstance(
+                                data.get("tools"), list
+                            ):
+                                allowed_tools = [
+                                    str(t).strip() for t in data.get("tools", []) if t
+                                ]
                             break
             except Exception as ye:
-                logger.debug("discover_module_tools: unable to parse tools whitelist for '%s': %s", module_name, ye)
+                logger.debug(
+                    "discover_module_tools: unable to parse tools whitelist for '%s': %s",
+                    module_name,
+                    ye,
+                )
                 allowed_tools = None
 
             for py in tools_dir.glob("*.py"):
@@ -961,7 +1032,7 @@ def _generate_findings_table(evidence_text: str) -> str:
         if count > 0:
             key_findings = "; ".join(findings[severity][:2])
             if count > 2:
-                key_findings += f" (+{count-2} more)"
+                key_findings += f" (+{count - 2} more)"
             table += f"| {severity} | {count} | {key_findings} |\n"
     return table
 
@@ -1002,7 +1073,12 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
         return None
 
     # Group evidence by severity using parsed fields when available
-    groups: Dict[str, List[Dict[str, Any]]] = {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": []}
+    groups: Dict[str, List[Dict[str, Any]]] = {
+        "CRITICAL": [],
+        "HIGH": [],
+        "MEDIUM": [],
+        "LOW": [],
+    }
     for item in evidence or []:
         if item.get("category") != "finding":
             continue
@@ -1024,7 +1100,10 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
         # Canonical finding = first item within this severity section
         top = items[0]
         parsed = top.get("parsed", {}) if isinstance(top.get("parsed"), dict) else {}
-        vuln = (parsed.get("vulnerability") or _safe_truncate(str(top.get("content", "")), 60)).strip()
+        vuln = (
+            parsed.get("vulnerability")
+            or _safe_truncate(str(top.get("content", "")), 60)
+        ).strip()
         where = (parsed.get("where") or "").strip()
         if not where:
             # Derive primary location across the group if available
@@ -1034,11 +1113,17 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
                 w = (p.get("where") or "").strip()
                 if w:
                     wheres.append(w)
-            where = wheres[0] if wheres and len(set(wheres)) == 1 else ("Multiple" if wheres else "-")
+            where = (
+                wheres[0]
+                if wheres and len(set(wheres)) == 1
+                else ("Multiple" if wheres else "-")
+            )
 
         # Verified status from canonical finding
         vstat = str(top.get("validation_status") or "").strip().lower()
-        verified = "Verified" if vstat == "verified" else ("Unverified" if vstat else "-")
+        verified = (
+            "Verified" if vstat == "verified" else ("Unverified" if vstat else "-")
+        )
 
         # Confidence range across group
         nums: List[float] = []
@@ -1057,12 +1142,18 @@ def generate_findings_summary_table(evidence: List[Dict[str, Any]]) -> str:
             conf_str = "-"
 
         # Build anchor link to detailed heading: "#### 1. {vuln} - {where}"
-        heading_text = f"1. {vuln} - {where}" if where and where not in {"-", "Multiple"} else f"1. {vuln}"
+        heading_text = (
+            f"1. {vuln} - {where}"
+            if where and where not in {"-", "Multiple"}
+            else f"1. {vuln}"
+        )
         anchor = _slugify(heading_text)
         link_text = vuln if vuln else "-"
         canonical_link = f"[{link_text}](#{anchor})"
 
-        rows.append(f"| {sev} | {count} | {canonical_link} | {where or '-'} | {verified} | {conf_str} |")
+        rows.append(
+            f"| {sev} | {count} | {canonical_link} | {where or '-'} | {verified} | {conf_str} |"
+        )
 
     return (
         header + "\n".join(rows)
@@ -1092,7 +1183,9 @@ def _indent_text(text: str, spaces: int) -> str:
     return "\n".join(indent + line for line in text.split("\n"))
 
 
-def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 400) -> str:
+def format_evidence_for_report(
+    evidence: List[Dict[str, Any]], max_items: int = 400
+) -> str:
     """
     Format evidence list into structured text for the report.
 
@@ -1138,7 +1231,9 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                     disp_sev = item.get("severity", severity)
                     line = f"**Severity:** {disp_sev} | **Confidence:** {confidence}"
                     if status:
-                        st_norm = "Verified" if status.lower() == "verified" else "Unverified"
+                        st_norm = (
+                            "Verified" if status.lower() == "verified" else "Unverified"
+                        )
                         line += f" | **Status:** {st_norm}"
                     evidence_text += line + "\n\n"
 
@@ -1149,7 +1244,9 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                         evidence_text += f"**Impact:** {parsed['impact']}\n\n"
 
                     if parsed.get("evidence"):
-                        evidence_text += f"**Evidence:**\n```\n{parsed['evidence']}\n```\n\n"
+                        evidence_text += (
+                            f"**Evidence:**\n```\n{parsed['evidence']}\n```\n\n"
+                        )
 
                     if parsed.get("steps"):
                         steps = parsed["steps"]
@@ -1160,7 +1257,9 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                             steps = steps.replace(" 3.", "\n3.")
                             steps = steps.replace(" 4.", "\n4.")
                             steps = steps.replace(" 5.", "\n5.")
-                        evidence_text += f"**Reproduction Steps:**\n```\n{steps}\n```\n\n"
+                        evidence_text += (
+                            f"**Reproduction Steps:**\n```\n{steps}\n```\n\n"
+                        )
 
                     if parsed.get("remediation"):
                         evidence_text += f"**Remediation:** {parsed['remediation']}\n"
@@ -1181,16 +1280,26 @@ def format_evidence_for_report(evidence: List[Dict[str, Any]], max_items: int = 
                             "[REMEDIATION]",
                             "[CONFIDENCE]",
                         ]:
-                            formatted_content = formatted_content.replace(f" {marker}", f"\n{marker}")
-                            formatted_content = formatted_content.replace(f"]{marker}", f"]\n{marker}")
+                            formatted_content = formatted_content.replace(
+                                f" {marker}", f"\n{marker}"
+                            )
+                            formatted_content = formatted_content.replace(
+                                f"]{marker}", f"]\n{marker}"
+                            )
                         content = formatted_content.strip()
 
                     if item.get("category") == "finding":
                         evidence_text += f"#### {finding_number}. Finding\n"
                         disp_sev = item.get("severity", severity)
-                        line = f"**Severity:** {disp_sev} | **Confidence:** {confidence}"
+                        line = (
+                            f"**Severity:** {disp_sev} | **Confidence:** {confidence}"
+                        )
                         if status:
-                            st_norm = "Verified" if status.lower() == "verified" else "Unverified"
+                            st_norm = (
+                                "Verified"
+                                if status.lower() == "verified"
+                                else "Unverified"
+                            )
                             line += f" | **Status:** {st_norm}"
                         evidence_text += line + "\n\n"
                         evidence_text += f"**Details:**\n```\n{content}\n```"
@@ -1244,7 +1353,10 @@ def format_tools_summary(tools_used: List[str] | Dict[str, int]) -> str:
 
 
 def _transform_evidence_to_content(
-    evidence: List[Dict[str, Any]], domain_lens: Dict[str, str], target: str, objective: str
+    evidence: List[Dict[str, Any]],
+    domain_lens: Dict[str, str],
+    target: str,
+    objective: str,
 ) -> Dict[str, str]:
     """
     Return empty content - LLM generates everything from raw_evidence.

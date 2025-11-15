@@ -14,7 +14,12 @@ class BatchingEmitter:
     reducing the number of React re-renders from hundreds to just a few.
     """
 
-    def __init__(self, base_emitter: EventEmitter, batch_ms: int = 50, operation_id: Optional[str] = None):
+    def __init__(
+        self,
+        base_emitter: EventEmitter,
+        batch_ms: int = 50,
+        operation_id: Optional[str] = None,
+    ):
         """Initialize batching emitter.
 
         Args:
@@ -60,7 +65,13 @@ class BatchingEmitter:
         Returns:
             True if event should bypass batching
         """
-        critical_types = {"error", "user_handoff", "assessment_complete", "step_header", "report_content"}
+        critical_types = {
+            "error",
+            "user_handoff",
+            "assessment_complete",
+            "step_header",
+            "report_content",
+        }
         return event.get("type") in critical_types
 
     def _flush(self) -> None:

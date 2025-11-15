@@ -18,7 +18,9 @@ def is_docker():
 
 
 # Use langfuse-web:3000 when in Docker, localhost:3000 otherwise
-DEFAULT_LANGFUSE_HOST = "http://langfuse-web:3000" if is_docker() else "http://localhost:3000"
+DEFAULT_LANGFUSE_HOST = (
+    "http://langfuse-web:3000" if is_docker() else "http://localhost:3000"
+)
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
 LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY", "pk-lf-placeholder")
 LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY", "sk-lf-placeholder")

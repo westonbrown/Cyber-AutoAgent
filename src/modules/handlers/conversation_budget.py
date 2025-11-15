@@ -19,6 +19,8 @@ from strands.types.content import Message
 from strands.types.exceptions import ContextWindowOverflowException
 from strands.hooks import BeforeModelCallEvent, AfterModelCallEvent  # type: ignore
 
+from modules.config.models.dev_client import get_models_client
+
 logger = logging.getLogger(__name__)
 
 # Module-level shared conversation manager for swarm agents
@@ -599,9 +601,20 @@ class MappingConversationManager(SummarizingConversationManager):
             self.mapper.max_tool_chars,
         )
 
+        # Skip pruning quietly for very small conversations (common for swarm agents)
+        if total < 3:
+            logger.debug(
+                "Skipping pruning for small conversation: %d messages (agent=%s)",
+                total,
+                getattr(agent, "name", "unknown")
+            )
+            return
+
         # Validate preservation ranges don't overlap entire message list
         if self.preserve_first + self.preserve_last >= total:
-            logger.warning(
+            # Downgrade to DEBUG for small conversations to reduce noise
+            log_level = logger.debug if total < 5 else logger.warning
+            log_level(
                 "Cannot prune: preservation ranges (%d first + %d last) cover all %d messages. "
                 "Consider reducing CYBER_CONVERSATION_PRESERVE_LAST (currently %d). "
                 "Skipping mapper.",
@@ -776,9 +789,64 @@ def _get_metrics_input_tokens(agent: Agent) -> Optional[int]:
     return None
 
 
+# Module-level cache for char/token ratios to avoid repeated lookups
+_RATIO_CACHE: Dict[str, float] = {}
+
+
+def _get_char_to_token_ratio_dynamic(model_id: str) -> float:
+    """Get char/token ratio using models.dev provider detection.
+
+    Different providers use different tokenizers with varying compression:
+    - Claude (Anthropic): ~3.7 chars/token (aggressive)
+    - GPT (OpenAI): ~4.0 chars/token (balanced)
+    - Kimi (Moonshot): ~3.8 chars/token (between)
+    - Gemini (Google): ~4.2 chars/token (conservative)
+
+    Args:
+        model_id: Model identifier (e.g., "azure/gpt-5", "bedrock/...")
+
+    Returns:
+        Character-to-token ratio for estimation
+    """
+    if not model_id:
+        return 3.7  # Conservative default (slight overestimation)
+
+    # Check cache first
+    if model_id in _RATIO_CACHE:
+        return _RATIO_CACHE[model_id]
+
+    # Compute ratio
+    ratio = 3.7  # Default
+    try:
+        client = get_models_client()
+        info = client.get_model_info(model_id)
+
+        if info:
+            provider = info.provider.lower()
+
+            # Provider-specific ratios based on tokenizer characteristics
+            if "anthropic" in provider or ("bedrock" in provider and "claude" in model_id.lower()):
+                ratio = 3.7  # Claude tokenizer
+            elif "google" in provider or "gemini" in provider or "vertex" in provider:
+                ratio = 4.2  # Gemini tokenizer (SentencePiece)
+            elif "moonshot" in provider or "moonshotai" in provider:
+                ratio = 3.8  # Kimi tokenizer
+            elif "openai" in provider or "azure" in provider:
+                # Check if it's a GPT model
+                model_lower = model_id.lower()
+                if any(gpt in model_lower for gpt in ["gpt-4", "gpt-5", "gpt4", "gpt5"]):
+                    ratio = 4.0  # GPT tokenizer
+    except Exception as e:
+        logger.debug("models.dev lookup failed for ratio: model=%s, error=%s", model_id, e)
+
+    # Cache and return
+    _RATIO_CACHE[model_id] = ratio
+    return ratio
+
+
 def _estimate_prompt_tokens(agent: Agent) -> int:
     """
-    Estimate prompt tokens with comprehensive content type coverage.
+    Estimate prompt tokens with model-aware character-to-token ratio.
 
     Purpose: Used for measuring reduction impact (how much was reduced?)
 
@@ -787,7 +855,7 @@ def _estimate_prompt_tokens(agent: Agent) -> int:
     that don't reflect intermediate reduction impact within a single operation.
 
     Includes text, toolUse, toolResult, image, and document content.
-    Uses character-to-token ratio of 4.0 to align with tests/docs.
+    Uses dynamic character-to-token ratio based on model provider.
 
     Note: We intentionally do NOT add extra weight for roles here to keep
     estimation deterministic and aligned with tests.
@@ -836,8 +904,16 @@ def _estimate_prompt_tokens(agent: Agent) -> int:
                 total_chars += len(doc.get("name", ""))
                 total_chars += 400
 
-    # Use 4.0 chars/token for deterministic estimation aligned with tests
-    estimated_tokens = max(1, int(total_chars / 4.0))
+    # Get model-appropriate ratio dynamically from models.dev
+    model_id = getattr(agent, "model", "")
+    ratio = _get_char_to_token_ratio_dynamic(model_id)
+    estimated_tokens = max(1, int(total_chars / ratio))
+
+    logger.debug(
+        "TOKEN ESTIMATION: %d chars / %.1f ratio = %d tokens (model=%s)",
+        total_chars, ratio, estimated_tokens, model_id
+    )
+
     return estimated_tokens
 
 

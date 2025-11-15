@@ -167,7 +167,11 @@ class OutputInterceptor(io.TextIOBase):
 
     # Implement other required methods
     def fileno(self):
-        return self.original_stream.fileno() if hasattr(self.original_stream, "fileno") else -1
+        return (
+            self.original_stream.fileno()
+            if hasattr(self.original_stream, "fileno")
+            else -1
+        )
 
     def readable(self):
         return False

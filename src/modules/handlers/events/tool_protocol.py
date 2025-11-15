@@ -21,10 +21,16 @@ class ToolOutputProtocol:
         Returns:
             Standardized tool start event
         """
-        return {"type": "tool_start", "tool": tool_name, "input": ToolOutputProtocol._normalize_input(tool_input)}
+        return {
+            "type": "tool_start",
+            "tool": tool_name,
+            "input": ToolOutputProtocol._normalize_input(tool_input),
+        }
 
     @staticmethod
-    def format_output(tool_name: str, result: Any, status: str = "success") -> Dict[str, Any]:
+    def format_output(
+        tool_name: str, result: Any, status: str = "success"
+    ) -> Dict[str, Any]:
         """Format tool output event.
 
         Args:

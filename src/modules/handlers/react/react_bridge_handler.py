@@ -22,7 +22,7 @@ from ..output_interceptor import (
     set_tool_execution_state,
 )
 from .tool_emitters import ToolEventEmitter
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 logger = get_logger("Handlers.ReactBridge")
 

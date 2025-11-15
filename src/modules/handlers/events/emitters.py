@@ -111,7 +111,9 @@ class StdoutEventEmitter:
                     if not isinstance(content, str):
                         try:
                             if isinstance(content, (dict, list)):
-                                event["content"] = json.dumps(content, ensure_ascii=False)
+                                event["content"] = json.dumps(
+                                    content, ensure_ascii=False
+                                )
                             else:
                                 event["content"] = str(content)
                         except Exception:
@@ -197,12 +199,22 @@ class StdoutEventEmitter:
         event_type = event.get("type", "")
 
         # Tool events and metrics updates should have unique signatures to avoid deduplication
-        if event_type in ("tool_start", "tool_end", "tool_invocation_start", "tool_invocation_end", "metrics_update"):
+        if event_type in (
+            "tool_start",
+            "tool_end",
+            "tool_invocation_start",
+            "tool_invocation_end",
+            "metrics_update",
+        ):
             # Include timestamp to make each event unique
             return f"{event_type}_{event.get('tool_name', '')}_{event.get('timestamp', datetime.now().isoformat())}"
 
         # Create a copy without volatile fields for other events
-        sig_dict = {k: v for k, v in event.items() if k not in ("timestamp", "id", "duration", "metrics")}
+        sig_dict = {
+            k: v
+            for k, v in event.items()
+            if k not in ("timestamp", "id", "duration", "metrics")
+        }
 
         # Special handling for output events - include content for dedup
         if event_type == "output":
@@ -222,7 +234,9 @@ class StdoutEventEmitter:
         return json.dumps(sig_dict, sort_keys=True)
 
 
-def get_emitter(transport: str = None, operation_id: Optional[str] = None) -> EventEmitter:
+def get_emitter(
+    transport: str = None, operation_id: Optional[str] = None
+) -> EventEmitter:
     """Factory function to get the appropriate emitter.
 
     Args:

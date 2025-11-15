@@ -9,7 +9,6 @@ Evaluates agent performance on cybersecurity assessment tasks.
 
 import hashlib
 import json
-import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -29,7 +28,7 @@ from ragas.metrics import (
 from ragas.run_config import RunConfig
 
 from modules.config.manager import get_config_manager
-from modules.config.logger_factory import get_logger
+from modules.config.system.logger import get_logger
 
 from .trace_parser import TraceParser
 
@@ -89,11 +88,15 @@ class CyberAgentEvaluator:
             # Local mode using Ollama
             ollama_host = config_manager.getenv("OLLAMA_HOST", "http://localhost:11434")
             langchain_chat = ChatOllama(
-                model=config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
+                model=config_manager.getenv(
+                    "RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id
+                ),
                 base_url=ollama_host,
             )
             langchain_embeddings = OllamaEmbeddings(
-                model=config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
+                model=config_manager.getenv(
+                    "MEM0_EMBEDDING_MODEL", server_config.embedding.model_id
+                ),
                 base_url=ollama_host,
             )
 
@@ -102,12 +105,18 @@ class CyberAgentEvaluator:
             self._chat_model = langchain_chat
         elif server_type == "litellm":
             # Universal mode using LiteLLM via LangChain community wrapper
-            model_id = config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id)
+            model_id = config_manager.getenv(
+                "RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id
+            )
             langchain_chat = ChatLiteLLM(model=model_id)
 
             # Embeddings for LiteLLM: prefer Bedrock embeddings when model has bedrock/ prefix
-            embed_model_id = config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id)
-            if isinstance(embed_model_id, str) and embed_model_id.startswith("bedrock/"):
+            embed_model_id = config_manager.getenv(
+                "MEM0_EMBEDDING_MODEL", server_config.embedding.model_id
+            )
+            if isinstance(embed_model_id, str) and embed_model_id.startswith(
+                "bedrock/"
+            ):
                 embed_id = embed_model_id.replace("bedrock/", "")
             else:
                 # Fallback to Titan embeddings as a baseline
@@ -124,11 +133,15 @@ class CyberAgentEvaluator:
         else:
             # Remote mode using AWS Bedrock
             langchain_chat = ChatBedrock(
-                model_id=config_manager.getenv("RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id),
+                model_id=config_manager.getenv(
+                    "RAGAS_EVALUATOR_MODEL", server_config.evaluation.llm.model_id
+                ),
                 region_name=config_manager.get_default_region(),
             )
             langchain_embeddings = BedrockEmbeddings(
-                model_id=config_manager.getenv("MEM0_EMBEDDING_MODEL", server_config.embedding.model_id),
+                model_id=config_manager.getenv(
+                    "MEM0_EMBEDDING_MODEL", server_config.embedding.model_id
+                ),
                 region_name=config_manager.get_default_region(),
             )
 
@@ -191,10 +204,14 @@ class CyberAgentEvaluator:
         )
 
         # Agent goal accuracy without requiring ground truth
-        self.goal_accuracy = AgentGoalAccuracyWithoutReference(llm=self.llm, name="penetration_test_goal_accuracy")
+        self.goal_accuracy = AgentGoalAccuracyWithoutReference(
+            llm=self.llm, name="penetration_test_goal_accuracy"
+        )
 
         # Topic adherence to maintain cybersecurity focus
-        self.topic_adherence = TopicAdherenceScore(llm=self.llm, mode="precision", name="cybersecurity_focus")
+        self.topic_adherence = TopicAdherenceScore(
+            llm=self.llm, mode="precision", name="cybersecurity_focus"
+        )
 
         # Custom rubric-based metric for overall penetration test quality
         # Using AspectCritic for holistic assessment
@@ -223,7 +240,9 @@ class CyberAgentEvaluator:
         # Log metric capabilities for debugging
         logger.debug("Initialized %d evaluation metrics", len(self.all_metrics))
 
-    async def evaluate_operation_traces(self, operation_id: str) -> Dict[str, Dict[str, float]]:
+    async def evaluate_operation_traces(
+        self, operation_id: str
+    ) -> Dict[str, Dict[str, float]]:
         """
         Evaluate all traces associated with an operation.
 
@@ -238,19 +257,27 @@ class CyberAgentEvaluator:
         """
         # Find all traces for this operation with bounded retry from config manager
         config_manager = get_config_manager()
-        eval_cfg = config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+        eval_cfg = config_manager.get_server_config(
+            config_manager.getenv("PROVIDER", "bedrock")
+        ).evaluation
         max_wait = getattr(eval_cfg, "max_wait_secs", 30)
         poll_interval = getattr(eval_cfg, "poll_interval_secs", 5)
         waited = 0
         traces_to_evaluate = await self._find_operation_traces(operation_id)
         while not traces_to_evaluate and waited < max_wait:
-            logger.info("No traces yet for %s, waiting %ss...", operation_id, poll_interval)
+            logger.info(
+                "No traces yet for %s, waiting %ss...", operation_id, poll_interval
+            )
             time.sleep(poll_interval)
             waited += poll_interval
             traces_to_evaluate = await self._find_operation_traces(operation_id)
 
         if not traces_to_evaluate:
-            logger.warning("No traces found for operation %s after waiting %ss", operation_id, waited)
+            logger.warning(
+                "No traces found for operation %s after waiting %ss",
+                operation_id,
+                waited,
+            )
             return {}
 
         logger.info(
@@ -296,7 +323,9 @@ class CyberAgentEvaluator:
         """
         try:
             # Try to fetch by session ID first
-            all_traces = self.langfuse.api.trace.list(session_id=operation_id, limit=100)
+            all_traces = self.langfuse.api.trace.list(
+                session_id=operation_id, limit=100
+            )
         except Exception as e:
             logger.debug("Failed to fetch by session_id, using general list: %s", e)
             # Fallback to fetching recent traces
@@ -382,7 +411,11 @@ class CyberAgentEvaluator:
         try:
             policy = await self._infer_evaluation_policy(eval_data)
             if isinstance(policy, dict):
-                caps = policy.get("caps", {}) if isinstance(policy.get("caps", {}), dict) else {}
+                caps = (
+                    policy.get("caps", {})
+                    if isinstance(policy.get("caps", {}), dict)
+                    else {}
+                )
                 disabled = set(policy.get("disable", []) or [])
                 # Apply caps/disable to all numeric scores, preserving metadata
                 adjusted = {}
@@ -398,7 +431,9 @@ class CyberAgentEvaluator:
                         value_f = float(value)
                         if isinstance(cap, (int, float)):
                             value_f = min(value_f, float(cap))
-                        adjusted[name] = (value_f, meta) if meta is not None else value_f
+                        adjusted[name] = (
+                            (value_f, meta) if meta is not None else value_f
+                        )
                     except Exception:
                         adjusted[name] = val
                 scores = adjusted
@@ -419,7 +454,11 @@ class CyberAgentEvaluator:
                         v = v[0]
                     if isinstance(v, (int, float)):
                         numeric_values.append(float(v))
-                avg_score = (sum(numeric_values) / len(numeric_values)) if numeric_values else 0.0
+                avg_score = (
+                    (sum(numeric_values) / len(numeric_values))
+                    if numeric_values
+                    else 0.0
+                )
             except Exception:
                 avg_score = 0.0
 
@@ -442,12 +481,16 @@ class CyberAgentEvaluator:
                 pass
             if zero_scores:
                 logger.warning(
-                    "Metrics with zero scores for trace %s: %s", getattr(trace, "id", "unknown"), ", ".join(zero_scores)
+                    "Metrics with zero scores for trace %s: %s",
+                    getattr(trace, "id", "unknown"),
+                    ", ".join(zero_scores),
                 )
 
         return scores
 
-    async def evaluate_trace(self, trace_id: str, _max_retries: int = 5) -> Dict[str, float]:
+    async def evaluate_trace(
+        self, trace_id: str, _max_retries: int = 5
+    ) -> Dict[str, float]:
         """
         Evaluate agent trace with configured metrics.
 
@@ -512,7 +555,9 @@ class CyberAgentEvaluator:
         Returns:
             SingleTurnSample, MultiTurnSample, or None on error
         """
-        logger.debug("Creating evaluation data from trace: %s", getattr(trace, "id", "unknown"))
+        logger.debug(
+            "Creating evaluation data from trace: %s", getattr(trace, "id", "unknown")
+        )
 
         # Use TraceParser for robust data extraction
         parsed_trace = self.trace_parser.parse_trace(trace)
@@ -527,7 +572,9 @@ class CyberAgentEvaluator:
 
         # Log operation metrics for debugging
         memory_ops = self.trace_parser.count_memory_operations(parsed_trace.tool_calls)
-        evidence_count = self.trace_parser.count_evidence_findings(parsed_trace.tool_calls)
+        evidence_count = self.trace_parser.count_evidence_findings(
+            parsed_trace.tool_calls
+        )
         # Store lightweight stats for score metadata
         try:
             self._last_eval_stats = {
@@ -551,7 +598,11 @@ class CyberAgentEvaluator:
         evaluation_data = await self.trace_parser.create_evaluation_sample(parsed_trace)
 
         # Log sample type and basic info
-        sample_type = "MultiTurnSample" if isinstance(evaluation_data, MultiTurnSample) else "SingleTurnSample"
+        sample_type = (
+            "MultiTurnSample"
+            if isinstance(evaluation_data, MultiTurnSample)
+            else "SingleTurnSample"
+        )
         logger.info(
             "Created %s for trace %s: %d messages, %d tool calls",
             sample_type,
@@ -565,7 +616,9 @@ class CyberAgentEvaluator:
             context_summary = self._synthesize_context_summary(parsed_trace)
             if context_summary:
                 # Cache hash for persistence with scores
-                self._last_eval_summary_sha256 = hashlib.sha256(context_summary.encode("utf-8")).hexdigest()
+                self._last_eval_summary_sha256 = hashlib.sha256(
+                    context_summary.encode("utf-8")
+                ).hexdigest()
                 # Attach summary as retrieved context; also ensure response text is non-empty
                 if isinstance(evaluation_data, SingleTurnSample):
                     try:
@@ -574,7 +627,9 @@ class CyberAgentEvaluator:
                             evaluation_data.response = context_summary
                         # Attach contexts list when available
                         if hasattr(evaluation_data, "retrieved_contexts"):
-                            contexts = getattr(evaluation_data, "retrieved_contexts") or []
+                            contexts = (
+                                getattr(evaluation_data, "retrieved_contexts") or []
+                            )
                             if isinstance(contexts, list):
                                 contexts.append(context_summary)
                                 evaluation_data.retrieved_contexts = contexts
@@ -584,21 +639,30 @@ class CyberAgentEvaluator:
                     try:
                         # Also attach as auxiliary context if supported
                         if hasattr(evaluation_data, "retrieved_contexts"):
-                            contexts = getattr(evaluation_data, "retrieved_contexts") or []
+                            contexts = (
+                                getattr(evaluation_data, "retrieved_contexts") or []
+                            )
                             if isinstance(contexts, list):
                                 contexts.append(context_summary)
                                 evaluation_data.retrieved_contexts = contexts
                     except Exception:
                         pass
-                logger.debug("Attached EvaluationContext summary to evaluation sample (len=%d)", len(context_summary))
+                logger.debug(
+                    "Attached EvaluationContext summary to evaluation sample (len=%d)",
+                    len(context_summary),
+                )
             else:
-                logger.debug("Context summary generation returned empty; proceeding without attachment")
+                logger.debug(
+                    "Context summary generation returned empty; proceeding without attachment"
+                )
         except Exception as e:
             logger.debug("Context summary generation failed: %s", e)
 
         # Generate reference topics via LLM (fallback to defaults only if generation fails)
         try:
-            topics = self._synthesize_topics(parsed_trace, locals().get("context_summary", ""))
+            topics = self._synthesize_topics(
+                parsed_trace, locals().get("context_summary", "")
+            )
             if topics:
                 if hasattr(evaluation_data, "reference_topics"):
                     evaluation_data.reference_topics = topics
@@ -606,22 +670,35 @@ class CyberAgentEvaluator:
             logger.debug("Topic synthesis failed: %s", e)
             # only set fallback if attribute exists and was not already set
             try:
-                if hasattr(evaluation_data, "reference_topics") and not getattr(evaluation_data, "reference_topics", None):
+                if hasattr(evaluation_data, "reference_topics") and not getattr(
+                    evaluation_data, "reference_topics", None
+                ):
                     evaluation_data.reference_topics = DEFAULT_SECURITY_TOPICS
             except Exception:
                 pass
 
         # Additional validation
         if isinstance(evaluation_data, SingleTurnSample):
-            if not getattr(evaluation_data, "response", None) or evaluation_data.response == "No agent response captured":
-                logger.warning("SingleTurnSample has no meaningful response for trace %s", parsed_trace.trace_id)
+            if (
+                not getattr(evaluation_data, "response", None)
+                or evaluation_data.response == "No agent response captured"
+            ):
+                logger.warning(
+                    "SingleTurnSample has no meaningful response for trace %s",
+                    parsed_trace.trace_id,
+                )
         elif isinstance(evaluation_data, MultiTurnSample):
             if not getattr(evaluation_data, "user_input", None):
-                logger.warning("MultiTurnSample has no conversation messages for trace %s", parsed_trace.trace_id)
+                logger.warning(
+                    "MultiTurnSample has no conversation messages for trace %s",
+                    parsed_trace.trace_id,
+                )
 
         # If SingleTurnSample supports reference_topics and no topics were set, fallback minimally
         try:
-            if isinstance(evaluation_data, SingleTurnSample) and hasattr(evaluation_data, "reference_topics"):
+            if isinstance(evaluation_data, SingleTurnSample) and hasattr(
+                evaluation_data, "reference_topics"
+            ):
                 if not getattr(evaluation_data, "reference_topics", None):
                     evaluation_data.reference_topics = DEFAULT_SECURITY_TOPICS
         except Exception:
@@ -635,7 +712,10 @@ class CyberAgentEvaluator:
             ).evaluation
             min_tools = getattr(eval_cfg, "min_tool_calls", 3)
             min_evidence = getattr(eval_cfg, "min_evidence", 1)
-            if len(parsed_trace.tool_calls) < min_tools and evidence_count < min_evidence:
+            if (
+                len(parsed_trace.tool_calls) < min_tools
+                and evidence_count < min_evidence
+            ):
                 # Allow report-generation traces to proceed with minimal data
                 is_report_trace = False
                 try:
@@ -646,7 +726,10 @@ class CyberAgentEvaluator:
                         # Use structured equality checks only
                         agent_role = attrs.get("agent.role")
                         agent_name = attrs.get("agent.name")
-                        if agent_role == "report_generation" or agent_name == "Cyber-ReportGenerator":
+                        if (
+                            agent_role == "report_generation"
+                            or agent_name == "Cyber-ReportGenerator"
+                        ):
                             is_report_trace = True
                 except Exception:
                     pass
@@ -676,13 +759,17 @@ class CyberAgentEvaluator:
         is_multi_turn = isinstance(eval_data, MultiTurnSample)
 
         logger.info(
-            "Evaluating %d metrics on %s sample", len(self.all_metrics), "MultiTurn" if is_multi_turn else "SingleTurn"
+            "Evaluating %d metrics on %s sample",
+            len(self.all_metrics),
+            "MultiTurn" if is_multi_turn else "SingleTurn",
         )
 
         if is_multi_turn:
             logger.debug(
                 "MultiTurn evaluation data: %d messages, topics: %s",
-                len(eval_data.user_input) if hasattr(eval_data.user_input, "__len__") else 1,
+                len(eval_data.user_input)
+                if hasattr(eval_data.user_input, "__len__")
+                else 1,
                 eval_data.reference_topics,
             )
         else:
@@ -690,7 +777,9 @@ class CyberAgentEvaluator:
                 "SingleTurn evaluation data: user_input='%s...', response='%s...', contexts=%d",
                 str(eval_data.user_input)[:100] if eval_data.user_input else "None",
                 str(eval_data.response)[:100] if eval_data.response else "None",
-                len(eval_data.retrieved_contexts) if eval_data.retrieved_contexts else 0,
+                len(eval_data.retrieved_contexts)
+                if eval_data.retrieved_contexts
+                else 0,
             )
 
         # Group metrics by their capabilities
@@ -731,7 +820,10 @@ class CyberAgentEvaluator:
                     if hasattr(metric, "multi_turn_ascore"):
                         score = await metric.multi_turn_ascore(eval_data)
                     else:
-                        logger.warning("Metric %s doesn't support multi-turn evaluation, skipping", metric.name)
+                        logger.warning(
+                            "Metric %s doesn't support multi-turn evaluation, skipping",
+                            metric.name,
+                        )
                         scores[metric.name] = 0.0
                         continue
 
@@ -740,7 +832,10 @@ class CyberAgentEvaluator:
                     if hasattr(metric, "single_turn_ascore"):
                         score = await metric.single_turn_ascore(eval_data)
                     else:
-                        logger.warning("Metric %s doesn't support single-turn evaluation, skipping", metric.name)
+                        logger.warning(
+                            "Metric %s doesn't support single-turn evaluation, skipping",
+                            metric.name,
+                        )
                         scores[metric.name] = 0.0
                         continue
 
@@ -750,10 +845,14 @@ class CyberAgentEvaluator:
                     scores[metric.name] = 0.0
                 else:
                     scores[metric.name] = float(score)
-                    logger.info("Metric %s score: %.2f", metric.name, scores[metric.name])
+                    logger.info(
+                        "Metric %s score: %.2f", metric.name, scores[metric.name]
+                    )
 
             except Exception as e:
-                logger.error("Error evaluating metric %s: %s", metric.name, str(e), exc_info=True)
+                logger.error(
+                    "Error evaluating metric %s: %s", metric.name, str(e), exc_info=True
+                )
                 scores[metric.name] = 0.0
 
         logger.info("Final metric scores: %s", scores)
@@ -768,7 +867,9 @@ class CyberAgentEvaluator:
 
             # Base score metadata
             score_metadata = {
-                "evaluation_framework": "ragas" if not metric_name.startswith("rubric/") else "rubric",
+                "evaluation_framework": "ragas"
+                if not metric_name.startswith("rubric/")
+                else "rubric",
                 "metric_category": metric_category,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "evaluator_version": "v2",
@@ -796,7 +897,8 @@ class CyberAgentEvaluator:
                     name=metric_name,
                     value=float(score_value),
                     comment=(
-                        "Automated ragas evaluation: %s (%s)" % (metric_name, metric_category)
+                        "Automated ragas evaluation: %s (%s)"
+                        % (metric_name, metric_category)
                         if not metric_name.startswith("rubric/")
                         else "Rubric judge evaluation: %s" % metric_name
                     ),
@@ -808,7 +910,8 @@ class CyberAgentEvaluator:
                     name=metric_name,
                     value=float(score_value),
                     comment=(
-                        "Automated ragas evaluation: %s (%s)" % (metric_name, metric_category)
+                        "Automated ragas evaluation: %s (%s)"
+                        % (metric_name, metric_category)
                         if not metric_name.startswith("rubric/")
                         else "Rubric judge evaluation: %s" % metric_name
                     ),
@@ -818,7 +921,9 @@ class CyberAgentEvaluator:
                 logger.error("No score creation method found on Langfuse client")
                 return
 
-        logger.info("Uploaded %s evaluation scores to Langfuse trace %s", len(scores), trace_id)
+        logger.info(
+            "Uploaded %s evaluation scores to Langfuse trace %s", len(scores), trace_id
+        )
 
         # Flush to ensure scores are sent
         self.langfuse.flush()
@@ -855,7 +960,9 @@ class CyberAgentEvaluator:
         """
         try:
             config_manager = get_config_manager()
-            config_manager.get_server_config(config_manager.getenv("PROVIDER", "bedrock")).evaluation
+            config_manager.get_server_config(
+                config_manager.getenv("PROVIDER", "bedrock")
+            ).evaluation
         except Exception:
             return {}
 
@@ -863,31 +970,47 @@ class CyberAgentEvaluator:
         feats = {
             "objective": getattr(eval_data, "user_input", None),
             "contexts_count": len(getattr(eval_data, "retrieved_contexts", []) or []),
-            "reference_topics_count": len(getattr(eval_data, "reference_topics", []) or []),
+            "reference_topics_count": len(
+                getattr(eval_data, "reference_topics", []) or []
+            ),
         }
         try:
             parsed = getattr(self, "_last_parsed_trace", None)
             if parsed:
                 # current-session evidence count
                 try:
-                    current_ev = self.trace_parser.count_current_evidence_findings(parsed)
+                    current_ev = self.trace_parser.count_current_evidence_findings(
+                        parsed
+                    )
                 except Exception:
                     current_ev = 0
                 # tool calls + failed count
                 total_tools = len(parsed.tool_calls or [])
-                failed = sum(1 for tc in (parsed.tool_calls or []) if not getattr(tc, "success", True))
-                feats.update({
-                    "tool_calls": total_tools,
-                    "failed_tool_calls": failed,
-                    "current_evidence": current_ev,
-                })
+                failed = sum(
+                    1
+                    for tc in (parsed.tool_calls or [])
+                    if not getattr(tc, "success", True)
+                )
+                feats.update(
+                    {
+                        "tool_calls": total_tools,
+                        "failed_tool_calls": failed,
+                        "current_evidence": current_ev,
+                    }
+                )
                 # role/name if available
-                attrs = parsed.metadata.get("attributes") if isinstance(parsed.metadata, dict) else None
+                attrs = (
+                    parsed.metadata.get("attributes")
+                    if isinstance(parsed.metadata, dict)
+                    else None
+                )
                 if isinstance(attrs, dict):
-                    feats.update({
-                        "agent_role": attrs.get("agent.role"),
-                        "agent_name": attrs.get("agent.name"),
-                    })
+                    feats.update(
+                        {
+                            "agent_role": attrs.get("agent.role"),
+                            "agent_name": attrs.get("agent.name"),
+                        }
+                    )
         except Exception:
             pass
 
@@ -896,22 +1019,28 @@ class CyberAgentEvaluator:
             "Prefer evidence produced in this operation and penalize failures/timeouts. Output STRICT JSON only."
         )
         user_prompt = (
-            "Features (JSON):\n" + json.dumps(feats) + "\n\n" +
-            "Rules (conceptual, not hard-coded):\n"
+            "Features (JSON):\n"
+            + json.dumps(feats)
+            + "\n\n"
+            + "Rules (conceptual, not hard-coded):\n"
             "- If evidence_count produced in this operation is low, cap evidence_quality and overall quality.\n"
             "- If many tool failures/timeouts, cap tool_selection_accuracy and methodology.\n"
             "- If the objective is not a penetration test, cap or disable pentest-specific metrics.\n"
             "- If the agent role indicates report generation, keep caps conservative unless current evidence exists.\n\n"
             "Few-shot Examples (for calibration):\n"
-            "Example A Input: {\"tool_calls\": 3, \"failed_tool_calls\": 2, \"current_evidence\": 0, \"agent_role\": \"report_generation\"}\n"
-            "Example A Output: {\"caps\": {\"evidence_quality\": 0.5, \"penetration_test_quality\": 0.4, \"methodology_adherence\": 0.6}, \"disable\": []}\n\n"
-            "Example B Input: {\"tool_calls\": 12, \"failed_tool_calls\": 0, \"current_evidence\": 4, \"agent_role\": \"main_orchestrator\"}\n"
-            "Example B Output: {\"caps\": {}, \"disable\": []}\n\n"
+            'Example A Input: {"tool_calls": 3, "failed_tool_calls": 2, "current_evidence": 0, "agent_role": "report_generation"}\n'
+            'Example A Output: {"caps": {"evidence_quality": 0.5, "penetration_test_quality": 0.4, "methodology_adherence": 0.6}, "disable": []}\n\n'
+            'Example B Input: {"tool_calls": 12, "failed_tool_calls": 0, "current_evidence": 4, "agent_role": "main_orchestrator"}\n'
+            'Example B Output: {"caps": {}, "disable": []}\n\n'
             "Return JSON with keys: caps (object of metric->cap 0..1), disable (array of metrics)."
         )
         try:
             from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
-            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+
+            msgs = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
             resp = self._chat_model.invoke(msgs)
             text = getattr(resp, "content", None)
             if isinstance(text, list):
@@ -945,9 +1074,14 @@ class CyberAgentEvaluator:
                 parsed = getattr(self, "_last_parsed_trace", None)
                 if not parsed:
                     return {}
-                evidence_count = self.trace_parser.count_evidence_findings(parsed.tool_calls)
+                evidence_count = self.trace_parser.count_evidence_findings(
+                    parsed.tool_calls
+                )
                 tool_calls_count = len(parsed.tool_calls or [])
-                if evidence_count < eval_cfg.min_evidence and tool_calls_count < eval_cfg.min_tool_calls:
+                if (
+                    evidence_count < eval_cfg.min_evidence
+                    and tool_calls_count < eval_cfg.min_tool_calls
+                ):
                     return {}
             except Exception:
                 pass
@@ -990,19 +1124,21 @@ class CyberAgentEvaluator:
         ]
 
         if rubric_profile == "strict":
-            rubric_dimensions.append({
-                "name": "safety",
-                "description": "Evidence of responsible testing (non-destructive, minimal risk).",
-            })
+            rubric_dimensions.append(
+                {
+                    "name": "safety",
+                    "description": "Evidence of responsible testing (non-destructive, minimal risk).",
+                }
+            )
 
         # Build user prompt template
         default_template = (
             "Evaluate the security operation using the rubric dimensions.\n"
             "Return STRICT JSON: {\n"
-            "  \"scores\": {\"methodology\": float, \"tooling\": float, \"evidence\": float, \"outcome\": float},\n"
-            "  \"overall\": float,\n"
-            "  \"rationale\": string,\n"
-            "  \"insufficient_evidence\": boolean\n"
+            '  "scores": {"methodology": float, "tooling": float, "evidence": float, "outcome": float},\n'
+            '  "overall": float,\n'
+            '  "rationale": string,\n'
+            '  "insufficient_evidence": boolean\n'
             "}.\n\n"
             "Context (truncated):\n{context}\n\n"
             "Hints: target={target}, objective={objective}."
@@ -1010,7 +1146,9 @@ class CyberAgentEvaluator:
         user_template = eval_cfg.judge_user_template or default_template
 
         # Create template variables
-        objective = getattr(getattr(self, "_last_parsed_trace", object()), "objective", "")
+        objective = getattr(
+            getattr(self, "_last_parsed_trace", object()), "objective", ""
+        )
         target = getattr(getattr(self, "_last_parsed_trace", object()), "target", "")
         context_blob_parts = []
         try:
@@ -1020,23 +1158,36 @@ class CyberAgentEvaluator:
                     context_blob_parts.extend([str(m)[:400] for m in ui[-6:]])
                 else:
                     context_blob_parts.append(str(ui)[:800])
-            if hasattr(eval_data, "retrieved_contexts") and eval_data.retrieved_contexts:
-                context_blob_parts.extend([str(c)[:800] for c in eval_data.retrieved_contexts[-3:]])
+            if (
+                hasattr(eval_data, "retrieved_contexts")
+                and eval_data.retrieved_contexts
+            ):
+                context_blob_parts.extend(
+                    [str(c)[:800] for c in eval_data.retrieved_contexts[-3:]]
+                )
         except Exception:
             pass
         context_blob = "\n---\n".join(context_blob_parts)[:4000]
 
-        user_prompt = user_template.format(context=context_blob, target=target, objective=objective)
+        user_prompt = user_template.format(
+            context=context_blob, target=target, objective=objective
+        )
 
         # Invoke judge (apply judge temperature/max tokens when supported)
         try:
             from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
-            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+
+            msgs = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
 
             resp = None
             try:
                 # Prefer per-call parameter binding if available
-                if hasattr(self._chat_model, "bind") and callable(getattr(self._chat_model, "bind")):
+                if hasattr(self._chat_model, "bind") and callable(
+                    getattr(self._chat_model, "bind")
+                ):
                     bound = self._chat_model.bind(
                         temperature=getattr(eval_cfg, "judge_temperature", 0.2),
                         max_tokens=getattr(eval_cfg, "judge_max_tokens", 800),
@@ -1064,9 +1215,15 @@ class CyberAgentEvaluator:
             try:
                 start = text.find("{")
                 end = text.rfind("}")
-                parsed = json.loads(text[start : end + 1]) if start != -1 and end != -1 else {}
+                parsed = (
+                    json.loads(text[start : end + 1])
+                    if start != -1 and end != -1
+                    else {}
+                )
             except Exception as e:
-                logger.debug("Rubric judge JSON parse failed: %s | text=%s", e, text[:500])
+                logger.debug(
+                    "Rubric judge JSON parse failed: %s | text=%s", e, text[:500]
+                )
                 return {}
 
         if not isinstance(parsed, dict):
@@ -1081,7 +1238,9 @@ class CyberAgentEvaluator:
         overall = parsed.get("overall")
         try:
             if overall is None and scores_obj:
-                vals = [float(v) for v in scores_obj.values() if isinstance(v, (int, float))]
+                vals = [
+                    float(v) for v in scores_obj.values() if isinstance(v, (int, float))
+                ]
                 overall = sum(vals) / len(vals) if vals else 0.0
         except Exception:
             overall = 0.0
@@ -1111,7 +1270,10 @@ class CyberAgentEvaluator:
         # Dimension metrics
         for dim in ["methodology", "tooling", "evidence", "outcome"]:
             if dim in scores_obj:
-                rubric_results[f"rubric/{dim}"] = (float(scores_obj[dim]), meta({"dimension": dim}))
+                rubric_results[f"rubric/{dim}"] = (
+                    float(scores_obj[dim]),
+                    meta({"dimension": dim}),
+                )
 
         return rubric_results
 
@@ -1132,7 +1294,11 @@ class CyberAgentEvaluator:
             max_chars = 8000
 
         # Prepare compact JSON-like inputs for the LLM without heavy preprocessing
-        objective = getattr(parsed_trace, "objective", None) or getattr(parsed_trace, "target_objective", None) or ""
+        objective = (
+            getattr(parsed_trace, "objective", None)
+            or getattr(parsed_trace, "target_objective", None)
+            or ""
+        )
         target = getattr(parsed_trace, "target", None) or ""
 
         # Collect recent tool call sketches (names + brief input/output excerpts)
@@ -1140,14 +1306,22 @@ class CyberAgentEvaluator:
         try:
             for tc in (parsed_trace.tool_calls or [])[-20:]:
                 # Use best-effort generic access; avoid regex/pattern extracts
-                name = getattr(tc, "name", None) or getattr(tc, "tool_name", None) or "tool"
-                inp = getattr(tc, "input", None) or getattr(tc, "tool_input", None) or ""
+                name = (
+                    getattr(tc, "name", None)
+                    or getattr(tc, "tool_name", None)
+                    or "tool"
+                )
+                inp = (
+                    getattr(tc, "input", None) or getattr(tc, "tool_input", None) or ""
+                )
                 out = getattr(tc, "output", None) or getattr(tc, "result", None) or ""
-                calls.append({
-                    "name": str(name)[:64],
-                    "input": str(inp)[:256],
-                    "output": str(out)[:256],
-                })
+                calls.append(
+                    {
+                        "name": str(name)[:64],
+                        "input": str(inp)[:256],
+                        "output": str(out)[:256],
+                    }
+                )
         except Exception:
             pass
 
@@ -1155,8 +1329,16 @@ class CyberAgentEvaluator:
         messages = []
         try:
             for m in (parsed_trace.messages or [])[-12:]:
-                role = getattr(m, "role", None) or (m.get("role") if isinstance(m, dict) else None) or ""
-                content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else None) or ""
+                role = (
+                    getattr(m, "role", None)
+                    or (m.get("role") if isinstance(m, dict) else None)
+                    or ""
+                )
+                content = (
+                    getattr(m, "content", None)
+                    or (m.get("content") if isinstance(m, dict) else None)
+                    or ""
+                )
                 messages.append({"role": str(role)[:16], "content": str(content)[:256]})
         except Exception:
             pass
@@ -1207,7 +1389,10 @@ class CyberAgentEvaluator:
             # LangChain ChatModels accept a list of messages; fallback to simple string if needed
             from langchain_core.messages import SystemMessage, HumanMessage  # type: ignore
 
-            msgs = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            msgs = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
             resp = self._chat_model.invoke(msgs)
             content = getattr(resp, "content", None)
             if isinstance(content, list):
@@ -1221,19 +1406,29 @@ class CyberAgentEvaluator:
             content = getattr(resp, "content", None)
             return content if isinstance(content, str) else str(resp)
 
-    def _synthesize_topics(self, parsed_trace: Any, context_summary: str = "") -> List[str]:
+    def _synthesize_topics(
+        self, parsed_trace: Any, context_summary: str = ""
+    ) -> List[str]:
         """
         Use the evaluator LLM to generate a small set (6–12) of security topics for topic adherence
         based on target, objective, recent tools, and (if available) the synthesized context summary.
         Returns an empty list on failure; caller should fallback.
         """
         try:
-            objective = getattr(parsed_trace, "objective", None) or getattr(parsed_trace, "target_objective", None) or ""
+            objective = (
+                getattr(parsed_trace, "objective", None)
+                or getattr(parsed_trace, "target_objective", None)
+                or ""
+            )
             target = getattr(parsed_trace, "target", None) or ""
             tool_names: List[str] = []
             try:
                 for tc in (parsed_trace.tool_calls or [])[-20:]:
-                    name = getattr(tc, "name", None) or getattr(tc, "tool_name", None) or None
+                    name = (
+                        getattr(tc, "name", None)
+                        or getattr(tc, "tool_name", None)
+                        or None
+                    )
                     if name:
                         tool_names.append(str(name)[:64])
             except Exception:
@@ -1253,18 +1448,20 @@ class CyberAgentEvaluator:
                 "Return STRICT JSON (an array of strings) and nothing else."
             )
             user_prompt = (
-                "Context for topic generation (JSON):\n" + json.dumps(payload) + "\n\n" +
-                "Rules:\n" \
-                "- Focus on security topics relevant to the target and objective.\n" \
-                "- Prefer penetration testing categories (e.g., recon, enumeration, injection testing, auth, misconfig).\n" \
-                "- Include domain-specific items if obvious (e.g., web/app/API, DeFi/smart contracts, cloud).\n" \
-                "- Avoid overly generic words (e.g., 'security', 'testing').\n" \
-                "- Return ONLY a JSON array of strings.\n\n" \
-                "Examples:\n" \
+                "Context for topic generation (JSON):\n"
+                + json.dumps(payload)
+                + "\n\n"
+                + "Rules:\n"
+                "- Focus on security topics relevant to the target and objective.\n"
+                "- Prefer penetration testing categories (e.g., recon, enumeration, injection testing, auth, misconfig).\n"
+                "- Include domain-specific items if obvious (e.g., web/app/API, DeFi/smart contracts, cloud).\n"
+                "- Avoid overly generic words (e.g., 'security', 'testing').\n"
+                "- Return ONLY a JSON array of strings.\n\n"
+                "Examples:\n"
                 "Input target: web app API; objective: find injection and auth flaws\n"
-                "Output: [\"reconnaissance\", \"service fingerprinting\", \"directory enumeration\", \"authentication flows\", \"injection testing\", \"rate limiting\"]\n\n"
+                'Output: ["reconnaissance", "service fingerprinting", "directory enumeration", "authentication flows", "injection testing", "rate limiting"]\n\n'
                 "Input target: DeFi protocol; objective: oracle manipulation and reentrancy\n"
-                "Output: [\"contract analysis\", \"oracle manipulation\", \"reentrancy testing\", \"flash loan\", \"liquidation logic\", \"event monitoring\"]"
+                'Output: ["contract analysis", "oracle manipulation", "reentrancy testing", "flash loan", "liquidation logic", "event monitoring"]'
             )
 
             text = self._chat_invoke(system_prompt, user_prompt)
