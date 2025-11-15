@@ -382,15 +382,6 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("ollama")
         assert config.llm.model_id == "custom-llm"
 
-    @patch.dict(os.environ, {"RAGAS_EVALUATOR_MODEL": "custom-evaluator"})
-    def test_legacy_environment_variable_support(self):
-        """Test that legacy environment variables are supported."""
-        # Clear cache to force re-evaluation
-        self.config_manager._config_cache = {}
-
-        config = self.config_manager.get_server_config("ollama")
-        assert config.evaluation.llm.model_id == "custom-evaluator"
-
     @patch.dict(os.environ, {"CYBER_AGENT_SWARM_MODEL": "custom-swarm-model"})
     def test_swarm_model_environment_variable_override(self):
         """Test that swarm model can be overridden with environment variables."""
@@ -749,19 +740,6 @@ class TestEnvironmentIntegration:
             assert config.embedding.model_id == "custom-embedding"
             assert config.evaluation.llm.model_id == "custom-evaluator"
             assert config.region == "us-west-2"
-
-    def test_legacy_environment_variable_precedence(self):
-        """Test that new environment variables take precedence over legacy ones."""
-        env_vars = {
-            "CYBER_AGENT_EVALUATION_MODEL": "new-evaluator",
-            "RAGAS_EVALUATOR_MODEL": "legacy-evaluator",
-        }
-
-        with patch.dict(os.environ, env_vars):
-            config_manager = ConfigManager()
-            config = config_manager.get_server_config("ollama")
-
-            assert config.evaluation.llm.model_id == "new-evaluator"
 
     def test_centralized_region_configuration(self):
         """Test that AWS regions are centralized and consistent across all components."""

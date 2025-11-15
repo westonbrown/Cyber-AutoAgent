@@ -314,9 +314,7 @@ class ConfigManager:
             embedding=self._get_evaluation_embedding_config(provider, defaults),
             min_tool_calls=self.getenv_int("EVAL_MIN_TOOL_CALLS", 3),
             min_evidence=self.getenv_int("EVAL_MIN_EVIDENCE", 1),
-            max_wait_secs=self.getenv_int(
-                "EVALUATION_MAX_WAIT_SECS", self.getenv_int("EVALUATION_WAIT_TIME", 30)
-            ),
+            max_wait_secs=self.getenv_int("EVALUATION_MAX_WAIT_SECS", 30),
             poll_interval_secs=self.getenv_int("EVALUATION_POLL_INTERVAL_SECS", 5),
             summary_max_chars=self.getenv_int("EVAL_SUMMARY_MAX_CHARS", 8000),
             rubric_enabled=self.getenv_bool("EVAL_RUBRIC_ENABLED", False),
@@ -794,14 +792,9 @@ class ConfigManager:
                 llm_cfg.top_p = top_p
                 llm_cfg.parameters["top_p"] = top_p
 
-        max_tokens_override = self.getenv("CYBER_AGENT_MAX_TOKENS") or self.getenv(
-            "MAX_TOKENS"
-        )
+        max_tokens_override = self.getenv("MAX_TOKENS")
         if max_tokens_override and llm_cfg is not None:
-            max_tokens = self.getenv_int(
-                "CYBER_AGENT_MAX_TOKENS",
-                self.getenv_int("MAX_TOKENS", llm_cfg.max_tokens),
-            )
+            max_tokens = self.getenv_int("MAX_TOKENS", llm_cfg.max_tokens)
             if max_tokens != llm_cfg.max_tokens:
                 llm_cfg.max_tokens = max_tokens
                 llm_cfg.parameters["max_tokens"] = max_tokens
@@ -818,9 +811,7 @@ class ConfigManager:
             embedding_cfg.model_id = embedding_model
             embedding_cfg.parameters["dimensions"] = embedding_cfg.dimensions
 
-        eval_model = self.getenv("CYBER_AGENT_EVALUATION_MODEL") or self.getenv(
-            "RAGAS_EVALUATOR_MODEL"
-        )
+        eval_model = self.getenv("CYBER_AGENT_EVALUATION_MODEL")
         if eval_model and isinstance(defaults.get("evaluation_llm"), LLMConfig):
             evaluation_cfg = defaults["evaluation_llm"]
             evaluation_cfg.model_id = eval_model

@@ -1,10 +1,14 @@
 """Unified model capabilities and limits.
 
 This module centralizes:
-- Capability detection (reasoning support, tool support, param allowance) via LiteLLM
+- Capability detection (reasoning, tool support, param allowance)
 - Static INPUT token limits and provider defaults for prompt budgeting
 
-It is the single place for model/provider metadata decisions used by the agent.
+Precedence order for all parameters:
+1. models.dev (authoritative, 500+ models)
+2. Static patterns (known models, version-controlled)
+3. LiteLLM detection (dynamic, for unknown models)
+4. Environment overrides (CYBER_REASONING_ALLOW/DENY)
 """
 
 from __future__ import annotations
@@ -17,6 +21,12 @@ from functools import lru_cache
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Models.dev client for authoritative model metadata
+try:
+    from modules.config.models.dev_client import get_models_client
+except ImportError:
+    get_models_client = None  # type: ignore
 
 # --- LiteLLM imports (guarded) -------------------------------------------------
 try:
@@ -111,8 +121,9 @@ class Capabilities:
 
 
 class ModelCapabilitiesResolver:
-    """Derive model capabilities using LiteLLM metadata with tiny, documented fallbacks.
+    """Model capability detection with authoritative models.dev source.
 
+    Precedence: models.dev → static patterns → LiteLLM → env overrides
     Cached per (provider, model_id).
     """
 
@@ -123,7 +134,6 @@ class ModelCapabilitiesResolver:
         model = model_id or ""
         base_provider = provider
 
-        # For LiteLLM, infer underlying provider from the model prefix when present
         if provider == "litellm":
             pfx, _ = _split_prefix(model)
             if pfx:
@@ -134,18 +144,50 @@ class ModelCapabilitiesResolver:
         supports_tools = True
         supports_tool_choice = True
 
-        # 1) Primary signal: LiteLLM supports_reasoning()
-        try:
-            custom = (
-                base_provider if base_provider and base_provider != "litellm" else None
-            )
-            supports_reason = bool(
-                llm_supports_reasoning(model=model, custom_llm_provider=custom)  # type: ignore[arg-type]
-            )
-        except Exception:
-            supports_reason = False
+        # Priority 1: models.dev (authoritative source for 500+ models)
+        if get_models_client is not None:
+            try:
+                client = get_models_client()
+                info = client.get_model_info(model)
+                if info and info.capabilities:
+                    caps = info.capabilities
+                    supports_reason = bool(caps.reasoning)
+                    supports_tools = bool(caps.tool_call)
+                    supports_tool_choice = supports_tools
+                    logger.debug(
+                        "Using models.dev: model=%s reasoning=%s tools=%s",
+                        model,
+                        supports_reason,
+                        supports_tools,
+                    )
+            except Exception as e:
+                logger.debug("models.dev lookup failed for %s: %s", model, e)
 
-        # 2) Provider config param list (allowed OpenAI-compatible params)
+        # Priority 2: Static patterns (known models, when models.dev unavailable)
+        if not supports_reason:
+            supports_reason = supports_reasoning_model(model)
+            if supports_reason:
+                logger.debug("Using static pattern: model=%s reasoning=%s", model, True)
+
+        # Priority 3: LiteLLM detection (fallback for unknown models)
+        if not supports_reason:
+            try:
+                custom = (
+                    base_provider
+                    if base_provider and base_provider != "litellm"
+                    else None
+                )
+                supports_reason = bool(
+                    llm_supports_reasoning(model=model, custom_llm_provider=custom)  # type: ignore[arg-type]
+                )
+                if supports_reason:
+                    logger.debug(
+                        "Using LiteLLM detection: model=%s reasoning=%s", model, True
+                    )
+            except Exception:
+                supports_reason = False
+
+        # Check provider params for reasoning_effort support
         allowed_params: list[str] = []
         try:
             if (
@@ -163,7 +205,7 @@ class ModelCapabilitiesResolver:
                     )
         except Exception as e:
             logger.debug(
-                "Capabilities: could not get provider chat config for %s/%s: %s",
+                "Provider config lookup failed for %s/%s: %s",
                 base_provider,
                 model,
                 e,
@@ -173,32 +215,25 @@ class ModelCapabilitiesResolver:
         if ("thinking" in lowered) or ("reasoning_effort" in lowered):
             supports_reason = True
         pass_reasoning_effort = "reasoning_effort" in lowered
-        supports_tools = "tools" in lowered if lowered else True
-        supports_tool_choice = "tool_choice" in lowered if lowered else True
 
-        # 3) Small pragmatic hint: Moonshot Kimi 'thinking' variants
+        # Update tool support from provider params if available
+        if lowered:
+            supports_tools = "tools" in lowered
+            supports_tool_choice = "tool_choice" in lowered
+
+        # Priority 4: Environment overrides (highest precedence)
         model_l = model.lower()
-        if base_provider == "moonshot" and "kimi-thinking" in model_l:
-            supports_reason = True
-            supports_tools = False
-
-        # 4) Ops overrides
-        allow = (
-            os.getenv("CYBER_REASONING_ALLOW", "").lower().split(",")
-            if os.getenv("CYBER_REASONING_ALLOW")
-            else []
-        )
-        deny = (
-            os.getenv("CYBER_REASONING_DENY", "").lower().split(",")
-            if os.getenv("CYBER_REASONING_DENY")
-            else []
-        )
+        allow = os.getenv("CYBER_REASONING_ALLOW", "").lower().split(",")
+        deny = os.getenv("CYBER_REASONING_DENY", "").lower().split(",")
         allow = [a.strip() for a in allow if a and a.strip()]
         deny = [d.strip() for d in deny if d and d.strip()]
+
         if any(tok in model_l for tok in allow):
             supports_reason = True
+            logger.info("ENV override: forcing reasoning=True for %s", model)
         if any(tok in model_l for tok in deny):
             supports_reason = False
+            logger.info("ENV override: forcing reasoning=False for %s", model)
 
         return Capabilities(
             supports_reasoning=supports_reason,
@@ -327,17 +362,30 @@ MODEL_FAMILY_PATTERNS = [
 def get_model_input_limit(model_id: str) -> Optional[int]:
     """Get INPUT token limit for a model (context window capacity).
 
-    Priority:
-    1. Exact model ID match
-    2. Pattern-based family match
-    3. None (caller should try LiteLLM or fallback config)
+    Precedence:
+    1. models.dev (authoritative)
+    2. Static registry (exact match)
+    3. Pattern matching (family match)
+    4. None (caller should use provider defaults)
     """
     if not model_id:
         return None
 
+    # Priority 1: models.dev
+    if get_models_client is not None:
+        try:
+            client = get_models_client()
+            info = client.get_model_info(model_id)
+            if info and info.limits and info.limits.context:
+                return info.limits.context
+        except Exception:
+            pass
+
+    # Priority 2: Static registry (exact match)
     if model_id in MODEL_INPUT_LIMITS:
         return MODEL_INPUT_LIMITS[model_id]
 
+    # Priority 3: Pattern matching (family match)
     for pattern, limit in MODEL_FAMILY_PATTERNS:
         if re.search(pattern, model_id, re.IGNORECASE):
             return limit
@@ -355,14 +403,81 @@ def get_provider_default_limit(provider: str) -> Optional[int]:
     return defaults.get((provider or "").lower())
 
 
+def get_model_output_limit(model_id: str) -> Optional[int]:
+    """Get OUTPUT token limit for a model (max completion length).
+
+    Precedence:
+    1. MAX_COMPLETION_TOKENS env var (UI reasoning models)
+    2. MAX_TOKENS env var (UI general setting)
+    3. models.dev (authoritative)
+    4. None (caller should use safe defaults)
+    """
+    if not model_id:
+        return None
+
+    # Priority 1: MAX_COMPLETION_TOKENS (UI reasoning models)
+    override = os.getenv("MAX_COMPLETION_TOKENS")
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            logger.warning("Invalid MAX_COMPLETION_TOKENS: %s", override)
+
+    # Priority 2: MAX_TOKENS (UI general setting)
+    override = os.getenv("MAX_TOKENS")
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            logger.warning("Invalid MAX_TOKENS: %s", override)
+
+    # Priority 3: models.dev
+    if get_models_client is not None:
+        try:
+            client = get_models_client()
+            info = client.get_model_info(model_id)
+            if info and info.limits and info.limits.output:
+                return info.limits.output
+        except Exception:
+            pass
+
+    return None
+
+
+def get_model_pricing(model_id: str) -> Optional[tuple[float, float]]:
+    """Get pricing for a model (cost per million tokens).
+
+    Returns:
+        Tuple of (input_cost, output_cost) in USD per million tokens
+        None if pricing unavailable
+    """
+    if not model_id:
+        return None
+
+    if get_models_client is not None:
+        try:
+            client = get_models_client()
+            info = client.get_model_info(model_id)
+            if info and info.pricing:
+                return (info.pricing.input, info.pricing.output)
+        except Exception:
+            pass
+
+    return None
+
+
 __all__ = [
     # Capabilities
     "Capabilities",
     "ModelCapabilitiesResolver",
     "get_capabilities",
+    "supports_reasoning_model",
     # Limits
     "get_model_input_limit",
+    "get_model_output_limit",
     "get_provider_default_limit",
     "MODEL_INPUT_LIMITS",
     "MODEL_FAMILY_PATTERNS",
+    # Pricing
+    "get_model_pricing",
 ]

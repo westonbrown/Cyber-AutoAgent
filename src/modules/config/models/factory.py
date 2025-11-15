@@ -555,9 +555,7 @@ def create_litellm_model(
         )
         if aws_profile:
             client_args["aws_profile_name"] = aws_profile
-        role_arn = config_manager.getenv("AWS_ROLE_ARN") or config_manager.getenv(
-            "AWS_ROLE_NAME"
-        )
+        role_arn = config_manager.getenv("AWS_ROLE_ARN")
         if role_arn:
             client_args["aws_role_name"] = role_arn
         session_name = config_manager.getenv("AWS_ROLE_SESSION_NAME")
