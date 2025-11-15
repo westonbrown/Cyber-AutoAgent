@@ -102,14 +102,27 @@ const CONFIG_FIELDS: ConfigField[] = [
       { label: 'High', value: 'high' }
     ]
   },
+  { key: 'reasoningVerbosity', label: 'Reasoning Verbosity (optional)', type: 'select', section: 'Models',
+    description: 'Azure Responses API (GPT-5-Pro) only. Controls output detail. Default: medium.',
+    options: [
+      { label: 'Auto (medium)', value: '' },
+      { label: 'Low', value: 'low' },
+      { label: 'Medium', value: 'medium' },
+      { label: 'High', value: 'high' }
+    ]
+  },
   { key: 'maxCompletionTokens', label: 'Max Completion Tokens (optional)', type: 'number', section: 'Models',
     description: 'OpenAI O1/GPT-5 only. Leave as Auto for default.' },
+
+  // Execution
 
   // Operations (renamed from Assessment)
   { key: 'iterations', label: 'Max Iterations', type: 'number', section: 'Operations' },
   { key: 'autoApprove', label: 'Auto-Approve Tools', type: 'boolean', section: 'Operations' },
+  { key: 'confirmations', label: 'Require Confirmation for Tools', type: 'boolean', section: 'Operations' },
   { key: 'maxThreads', label: 'Max Threads', type: 'number', section: 'Operations' },
   { key: 'dockerTimeout', label: 'Docker Timeout (s)', type: 'number', section: 'Operations' },
+  { key: 'dockerImage', label: 'Docker Image', type: 'text', section: 'Operations' },
   { key: 'verbose', label: 'Verbose Output', type: 'boolean', section: 'Operations' },
   
   // Memory
@@ -123,11 +136,14 @@ const CONFIG_FIELDS: ConfigField[] = [
   { key: 'keepMemory', label: 'Keep Memory After Operations', type: 'boolean', section: 'Memory' },
   { key: 'mem0ApiKey', label: 'Mem0 API Key', type: 'password', section: 'Memory' },
   { key: 'opensearchHost', label: 'OpenSearch Host', type: 'text', section: 'Memory' },
+  { key: 'opensearchUsername', label: 'OpenSearch Username', type: 'text', section: 'Memory' },
+  { key: 'opensearchPassword', label: 'OpenSearch Password', type: 'password', section: 'Memory' },
   
   // Observability
   { key: 'observability', label: 'Enable Remote Observability', type: 'boolean', section: 'Observability',
     description: 'Export traces to Langfuse. Requires Langfuse infrastructure. Auto-detected based on deployment mode. Token counting always enabled.' },
   { key: 'langfuseHost', label: 'Langfuse Host', type: 'text', section: 'Observability' },
+  { key: 'langfuseHostOverride', label: 'Force Use Configured Host', type: 'boolean', section: 'Observability' },
   { key: 'langfusePublicKey', label: 'Langfuse Public Key', type: 'password', section: 'Observability' },
   { key: 'langfuseSecretKey', label: 'Langfuse Secret Key', type: 'password', section: 'Observability' },
   { key: 'enableLangfusePrompts', label: 'Enable Prompt Management', type: 'boolean', section: 'Observability' },
@@ -325,7 +341,7 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
             'azureApiKey', 'azureApiBase', 'azureApiVersion',
             'awsAccessKeyId', 'awsSecretAccessKey', 'awsBearerToken', 'awsRegion',
             'awsProfile', 'awsRoleArn', 'awsSessionName', 'awsWebIdentityTokenFile', 'awsStsEndpoint', 'awsExternalId',
-            'temperature', 'maxTokens', 'topP', 'thinkingBudget', 'reasoningEffort', 'maxCompletionTokens',
+            'temperature', 'maxTokens', 'topP', 'thinkingBudget', 'reasoningEffort', 'reasoningVerbosity', 'maxCompletionTokens',
             'sagemakerBaseUrl'
           ];
           if (f.key === 'sagemakerBaseUrl') {
@@ -668,6 +684,14 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       return;
     }
     
+    // Synchronize confirmations/autoApprove relationship
+    if (key === 'confirmations') {
+      const boolVal = Boolean(value);
+      updateConfig({ confirmations: boolVal, autoApprove: !boolVal });
+      setUnsavedChanges(true);
+      return;
+    }
+
     // Handle nested keys
     if (key.includes('.')) {
       const parts = key.split('.');
@@ -812,6 +836,9 @@ export const ConfigEditor: React.FC<ConfigEditorProps> = ({ onClose }) => {
       }
       if (key === 'reasoningEffort') {
         return 'Auto';
+      }
+      if (key === 'reasoningVerbosity') {
+        return 'Auto (medium)';
       }
       if (key === 'maxCompletionTokens') {
         return 'Auto';

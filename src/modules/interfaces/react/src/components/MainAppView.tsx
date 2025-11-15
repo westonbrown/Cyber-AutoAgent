@@ -221,24 +221,43 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
         {/* HISTORY LOGS: Render before the stream. Suppress during active stream */}
         {!hideHistory && activeModal === ModalType.NONE && !showOperationStream && (
           <Box key={staticKey} flexDirection="column">
-            {filteredOperationHistory.map((entry) => {
-              if (entry.type === 'divider') {
-                return null;
-              }
-              
-              // Handle other entry types
-              const entryColor = 
-                entry.type === 'error' ? currentTheme.error :
-                entry.type === 'success' ? currentTheme.success :
-                currentTheme.foreground;
-              
+            {(() => {
+              const MAX_HISTORY_RENDERED = (() => {
+                const env = Number(process.env.CYBER_MAX_HISTORY_RENDERED);
+                if (Number.isFinite(env) && env > 50) return Math.floor(env);
+                return 200;
+              })();
+              const start = Math.max(0, filteredOperationHistory.length - MAX_HISTORY_RENDERED);
+              const historyToRender = filteredOperationHistory.slice(start);
+              const omitted = start;
               return (
-                <Box key={entry.id} marginBottom={0.5}>
-                  <Text color={currentTheme.muted}>[{entry.timestamp.toLocaleTimeString()}] </Text>
-                  <Text color={entryColor}>{entry.content}</Text>
-                </Box>
+                <>
+                  {omitted > 0 && (
+                    <Box marginBottom={0.5}>
+                      <Text dimColor>… {omitted} earlier log entries omitted</Text>
+                    </Box>
+                  )}
+                  {historyToRender.map((entry) => {
+                    if (entry.type === 'divider') {
+                      return null;
+                    }
+                    
+                    // Handle other entry types
+                    const entryColor = 
+                      entry.type === 'error' ? currentTheme.error :
+                      entry.type === 'success' ? currentTheme.success :
+                      currentTheme.foreground;
+                    
+                    return (
+                      <Box key={entry.id} marginBottom={0.5}>
+                        <Text color={currentTheme.muted}>[{entry.timestamp.toLocaleTimeString()}] </Text>
+                        <Text color={entryColor}>{entry.content}</Text>
+                      </Box>
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
           </Box>
         )}
 
@@ -248,6 +267,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
             <Box flexDirection="column" marginTop={1}>{customContent}</Box>
           ) : (!deferStreamMount) && (
             <Terminal
+              key={appState.activeOperation!.id}
               executionService={appState.executionService}
               sessionId={appState.activeOperation!.id}
               terminalWidth={appState.terminalDisplayWidth}

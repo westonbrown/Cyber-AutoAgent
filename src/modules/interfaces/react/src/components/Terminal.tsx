@@ -76,15 +76,20 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
       }
     } catch {}
   };
-  // Direct event rendering without Static component
+// Direct event rendering without Static component
   // Limit event buffer to prevent memory leaks - events are already persisted to disk
-const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N events in memory (default 3000)
+  // Use stricter defaults for docker-stack (full-stack) mode
+  const serviceMode = (executionService && typeof (executionService as any).getMode === 'function')
+    ? (executionService as any).getMode()
+    : undefined;
+  const isDockerStack = serviceMode === 'docker-stack';
+  const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || (isDockerStack ? 2000 : 3000)); // Keep last N events
   const [completedEvents, setCompletedEvents] = useState<DisplayStreamEvent[]>([]);
   const [activeEvents, setActiveEvents] = useState<DisplayStreamEvent[]>([]);
   const [staticSessionKey, setStaticSessionKey] = useState(0);
 
   // Ring buffers to bound memory regardless of session length
-  const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || 8 * 1024 * 1024); // 8 MiB default
+  const MAX_EVENT_BYTES = Number(process.env.CYBER_MAX_EVENT_BYTES || (isDockerStack ? 4 * 1024 * 1024 : 8 * 1024 * 1024)); // tighter cap in full-stack
   const completedBufRef = useRef(new ByteBudgetRingBuffer<DisplayStreamEvent>(
     MAX_EVENT_BYTES,
     {
@@ -252,9 +257,20 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     }, ACTIVE_EMIT_INTERVAL_MS);
   };
 
-  // Batch completed events updates to prevent memory leaks
+  // Batch completed events updates to prevent memory churn
+  const completedUpdateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const scheduleCompletedEventsUpdate = () => {
-    setCompletedEvents(completedBufRef.current.toArray());
+    if (completedUpdateTimerRef.current) return;
+    completedUpdateTimerRef.current = setTimeout(() => {
+      try {
+        setCompletedEvents(completedBufRef.current.toArray());
+      } finally {
+        if (completedUpdateTimerRef.current) {
+          clearTimeout(completedUpdateTimerRef.current);
+          completedUpdateTimerRef.current = null;
+        }
+      }
+    }, 33); // ~30fps coalescing
   };
 
   // Unified helpers for delayed thinking spinner scheduling/cancellation
@@ -424,6 +440,34 @@ const MAX_EVENTS = Number(process.env.CYBER_MAX_EVENTS || 3000); // Keep last N 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Soft memory pressure monitor (opt-in via env; enabled by default in docker-stack)
+  React.useEffect(() => {
+    const softLimitMb = Number(process.env.CYBER_HEAP_SOFT_LIMIT_MB || (isDockerStack ? 3072 : 0));
+    if (!softLimitMb || !Number.isFinite(softLimitMb) || softLimitMb <= 0) return;
+    let cooling = false;
+    const interval = setInterval(() => {
+      try {
+        const usedMb = Math.round((process.memoryUsage().heapUsed || 0) / (1024 * 1024));
+        if (!cooling && usedMb > softLimitMb) {
+          // Emergency prune: keep last 50 completed events and clear active tail
+          const keep = 50;
+          const snapshot = completedBufRef.current.toArray();
+          const trimmed = snapshot.slice(-keep);
+          completedBufRef.current.clear();
+          for (const evt of trimmed) completedBufRef.current.push(evt);
+          setCompletedEvents(trimmed);
+          activeBufRef.current.clear();
+          setActiveEvents([]);
+          // Hint GC if available
+          if (global.gc) { try { global.gc(); } catch {} }
+          cooling = true;
+          setTimeout(() => { cooling = false; }, 5000);
+        }
+      } catch {}
+    }, 3000);
+    return () => { try { clearInterval(interval); } catch {} };
+  }, [isDockerStack]);
 
   // Ensure immediate visual feedback at startup: schedule a lightweight spinner
   // right after the execution begins, before any backend events (e.g., operation_init)
