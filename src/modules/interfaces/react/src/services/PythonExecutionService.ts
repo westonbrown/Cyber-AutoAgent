@@ -709,7 +709,7 @@ export class PythonExecutionService extends EventEmitter {
           OPENAI_API_VERSION: config.azureApiVersion 
         } : {}),
         ...(config.embeddingModel ? { CYBER_AGENT_EMBEDDING_MODEL: config.embeddingModel } : {}),
-        ...(config.maxTokens ? { MAX_TOKENS: String(config.maxTokens), CYBER_AGENT_MAX_TOKENS: String(config.maxTokens) } : {}),
+        ...(config.maxTokens ? { MAX_TOKENS: String(config.maxTokens) } : {}),
         ...(config.temperature !== undefined ? { CYBER_AGENT_TEMPERATURE: String(config.temperature) } : {}),
         ...(config.topP !== undefined ? { CYBER_AGENT_TOP_P: String(config.topP) } : {}),
         ...(config.thinkingBudget ? { THINKING_BUDGET: String(config.thinkingBudget) } : {}),

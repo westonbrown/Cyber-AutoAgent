@@ -352,7 +352,6 @@ export class DirectDockerService extends EventEmitter {
       }
       if (config.maxTokens) {
         env.push(`MAX_TOKENS=${config.maxTokens}`);
-        env.push(`CYBER_AGENT_MAX_TOKENS=${config.maxTokens}`);
       }
       if (config.temperature !== undefined) {
         env.push(`CYBER_AGENT_TEMPERATURE=${config.temperature}`);
