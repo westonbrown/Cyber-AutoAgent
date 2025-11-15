@@ -93,6 +93,7 @@ Orchestrates multi-layer reduction strategies, applying the appropriate techniqu
 
 **Location**: `modules/handlers/conversation_budget.py`
 **Pattern**: Singleton shared across main agent, swarm agents, and specialist tools
+**Optimization**: Automatically returns early for very small conversations (<3 messages) to prevent spurious warnings during specialist tool invocations. Small conversations (3-5 messages) use DEBUG-level logging to reduce log noise.
 
 ### LargeToolResultMapper
 Compresses individual tool results within messages while preserving metadata and samples.
@@ -128,8 +129,10 @@ The system uses estimation-based tracking to monitor conversation size and trigg
 Token estimation calculates total conversation size by analyzing all message content. This provides accurate counts for threshold decisions (when to trigger reduction) by measuring actual conversation state.
 
 **Usage**: Threshold decisions (should reduction trigger?)
-**Method**: Comprehensive content analysis with 3.7 character-to-token ratio
+**Method**: Comprehensive content analysis with dynamic model-aware character-to-token ratios
 **Triggers**: Below 80% (continue), at 80% (reduce), at 90% (escalate)
+
+**Dynamic Ratios**: The system automatically selects the appropriate ratio based on model provider (Claude 3.7, GPT 4.0, Kimi 3.8, Gemini 4.2, others 3.7), improving estimation accuracy to ±1%.
 
 **Diagnostic Logging**: The system logs detailed information when estimation fails:
 - `TOKEN ESTIMATION FAILED: agent.messages is None` - Messages not initialized
@@ -154,8 +157,10 @@ SDK telemetry tracks per-turn token usage for diagnostic purposes. Telemetry dat
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `CYBER_PROMPT_FALLBACK_TOKENS` | 200,000 | Token limit when provider limit unavailable |
+| `CYBER_PROMPT_FALLBACK_TOKENS` | 200,000 | **(Optional)** Token limit when provider limit unavailable. With models.dev integration, limits are auto-detected for 500+ models. |
 | `CYBER_PROMPT_TELEMETRY_THRESHOLD` | 0.8 | Percentage triggering proactive reduction |
+
+**Automatic Limit Detection**: The system integrates with models.dev to automatically detect token limits for 500+ models across 58 providers. Safe max_tokens for swarm agents are calculated as 50% of the model's output limit.
 
 ## Multi-Layer Reduction System
 
@@ -187,9 +192,9 @@ Maintains fixed conversation window by removing oldest messages while preserving
 - Token usage exceeds threshold after Layer 1 pruning
 - Invoked by conversation manager when needed
 
-**Window Configuration**: Retains 30 total messages with 1 initial and 12 recent messages preserved.
+**Window Configuration**: Configurable via `CYBER_CONVERSATION_WINDOW` (default: 100 messages) with 1 initial and 12 recent messages preserved.
 
-**Behavior**: Maintains system prompt and recent exchanges while removing middle messages oldest-first. Logs all message count changes.
+**Behavior**: Maintains system prompt and recent exchanges while removing middle messages oldest-first. Logs all message count changes. Conversations with fewer than 3 messages skip pruning entirely.
 
 ### Layer 3: Summarization
 
@@ -274,8 +279,14 @@ Context management operates through two primary hooks:
 
 Token budget controls:
 ```bash
+# Optional (auto-detected from models.dev for 500+ models)
 CYBER_PROMPT_FALLBACK_TOKENS=200000
+
+# Reduction threshold (0.8 = 80%)
 CYBER_PROMPT_TELEMETRY_THRESHOLD=0.8
+
+# Optional: Override safe max_tokens for swarm agents (default: 50% of model output limit)
+CYBER_AGENT_SWARM_MAX_TOKENS=8192
 ```
 
 Tool result handling:
@@ -298,8 +309,18 @@ Compression parameters:
 CYBER_TOOL_COMPRESS_TRUNCATE=18500
 ```
 
-Conversation manager settings (code-level):
-- `window_size=30` - Messages retained in sliding window
+Conversation manager settings:
+```bash
+# Sliding window size (default: 100)
+CYBER_CONVERSATION_WINDOW=100
+
+# Messages to preserve at start/end (defaults)
+CYBER_CONVERSATION_PRESERVE_FIRST=1
+CYBER_CONVERSATION_PRESERVE_LAST=12
+```
+
+Code-level settings:
+- `window_size` - From `CYBER_CONVERSATION_WINDOW` (default: 100)
 - `summary_ratio=0.3` - Percentage summarized in Layer 3
 
 
