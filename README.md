@@ -435,7 +435,7 @@ export ENABLE_AUTO_EVALUATION=true
 | `ENABLE_OBSERVABILITY` | `true` | Enable/disable Langfuse tracing |
 | `ENABLE_AUTO_EVALUATION` | `false` | Enable automatic Ragas evaluation |
 | `LANGFUSE_HOST` | `http://langfuse-web:3000` | Langfuse server URL |
-| `RAGAS_EVALUATOR_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` | Model for evaluation |
+| `CYBER_AGENT_EVALUATION_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` | Model for evaluation |
 
 ### Evaluation Metrics
 

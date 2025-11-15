@@ -142,7 +142,7 @@ Cyber-AutoAgent supports **300+ LLM providers** via LiteLLM. Examples:
 
 ## Quick Start
 
-### Using Docker (Recommended)
+### Using Docker
 
 ```bash
 # Clone the repository

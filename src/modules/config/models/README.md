@@ -169,17 +169,45 @@ print(f"Safe max_tokens: {safe_max}")
 # Output: Safe max_tokens: 64000
 ```
 
-## Token Limit Resolution
+## Unified Precedence Order
 
-The factory uses a **five-tier precedence** for prompt token limits:
+All model parameters use consistent precedence across capabilities, limits, and pricing:
 
-1. Explicit override: `CYBER_CONTEXT_WINDOW` environment variable
-2. Models.dev API: Authoritative model registry
-3. Context window fallbacks: `CYBER_CONTEXT_WINDOW_FALLBACKS` mappings
-4. Capability detection: Provider-specific defaults
-5. Safe fallback: 128,000 tokens (works for most models)
+### 1. Environment Overrides (Highest Priority)
+```bash
+# UI-compatible (set via config.json → env vars)
+MAX_COMPLETION_TOKENS=50000          # Output token limit (UI uses this)
 
-This ensures accurate token limits for all 300+ supported providers.
+# Terminal/advanced overrides
+CYBER_CONTEXT_WINDOW=300000          # Input token limit override
+CYBER_MAX_TOKENS=50000               # Output token limit (alternative)
+CYBER_REASONING_ALLOW="model-name"   # Force enable reasoning
+CYBER_REASONING_DENY="model-name"    # Force disable reasoning
+```
+
+**Note:** UI config editor sets `MAX_COMPLETION_TOKENS` automatically when you configure `maxCompletionTokens` in settings.
+
+### 2. Models.dev (Authoritative Source)
+- 500+ models across 58+ providers
+- Weekly updates with new models
+- Used for: reasoning, tools, context window, max tokens, pricing
+- Cache: 24-hour TTL with snapshot fallback
+
+### 3. Static Patterns (Known Models)
+- Hardcoded in `capabilities.py`
+- Version-controlled, reliable
+- Used when models.dev unavailable
+
+### 4. LiteLLM Detection (Dynamic Fallback)
+- LiteLLM's model registry
+- For unknown models not in models.dev
+- May be incomplete for new providers
+
+### 5. Provider Defaults (Last Resort)
+- Conservative safe defaults
+- Ensures system works even without metadata
+
+This ensures accurate detection for all 300+ supported providers.
 
 ## Offline Support
 
