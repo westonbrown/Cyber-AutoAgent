@@ -8,20 +8,20 @@ describe('StreamDisplay report path resolution', () => {
   it('prioritizes explicit reportPath relative to project root', () => {
     const ctx = { operationId: 'OP_TEST', target: 'https://imf.bz/' };
     const relativeReportPath = './outputs/imf.bz/OP_TEST/security_assessment_report.md';
+    const outputBaseDir = path.join(projectRoot, 'outputs');
 
-    const candidates = getReportPathCandidates(ctx, relativeReportPath, projectRoot);
+    const candidates = getReportPathCandidates(ctx, relativeReportPath, projectRoot, outputBaseDir);
 
     expect(candidates.length).toBeGreaterThan(0);
-    expect(candidates[0]).toBe(path.resolve(projectRoot, relativeReportPath));
-    expect(candidates).toContain(path.resolve(process.cwd(), relativeReportPath));
+    expect(candidates[0]).toBe(path.resolve(outputBaseDir, relativeReportPath));
   });
 
   it('includes sanitized target path when explicit reportPath missing', () => {
     const ctx = { operationId: 'OP_OTHER', target: 'https://example.com/app' };
-    const candidates = getReportPathCandidates(ctx, null, projectRoot);
+    const outputBaseDir = path.join(projectRoot, 'outputs');
+    const candidates = getReportPathCandidates(ctx, null, projectRoot, outputBaseDir);
     const expectedPath = path.resolve(
-      projectRoot,
-      'outputs',
+      outputBaseDir,
       'example.com_app',
       'OP_OTHER',
       'security_assessment_report.md'
