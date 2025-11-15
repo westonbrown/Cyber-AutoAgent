@@ -142,19 +142,155 @@ export const formatGenericToolInput = (toolInput: any): string => {
 };
 
 // Tool-specific formatters
+export interface ToonPlanPreview {
+  objective: string;
+  currentPhase?: number;
+  totalPhases?: number;
+  activePhaseTitle?: string;
+}
+
+const parseToonPlanLines = (content: string): string[] => {
+  return content
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+};
+
+const extractOverviewValues = (lines: string[], header: string): string[] | null => {
+  const idx = lines.findIndex(line => line.startsWith(header));
+  if (idx === -1) return null;
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line || line.startsWith('plan_')) break;
+    return line.split(',').map(part => part.trim());
+  }
+  return null;
+};
+
+const extractPhaseRows = (lines: string[]): string[][] => {
+  const idx = lines.findIndex(line => line.startsWith('plan_phases'));
+  if (idx === -1) return [];
+  const rows: string[][] = [];
+  for (let i = idx + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line || line.startsWith('plan_')) break;
+    const parts = line.split(',').map(part => part.trim());
+    if (parts.length >= 4) {
+      rows.push(parts);
+    }
+  }
+  return rows;
+};
+
+export function getToonPlanPreview(content: unknown): string | null {
+  if (!isNonEmptyString(content)) return null;
+  const text = String(content).trim();
+  if (!text.includes('plan_overview')) return null;
+
+  const lines = parseToonPlanLines(text);
+  const overview = extractOverviewValues(lines, 'plan_overview');
+  if (!overview || overview.length < 3) return null;
+  const [objectiveRaw, currentPhaseRaw, totalPhasesRaw] = overview;
+
+  const preview: ToonPlanPreview = {
+    objective: objectiveRaw || 'Operation plan'
+  };
+  const currentPhase = parseInt(currentPhaseRaw, 10);
+  if (!Number.isNaN(currentPhase)) preview.currentPhase = currentPhase;
+  const totalPhases = parseInt(totalPhasesRaw, 10);
+  if (!Number.isNaN(totalPhases)) preview.totalPhases = totalPhases;
+
+  const phases = extractPhaseRows(lines);
+  const activePhase = phases.find(parts => parts[2]?.toLowerCase() === 'active');
+  if (activePhase) {
+    preview.activePhaseTitle = activePhase[1] || undefined;
+    if (!preview.currentPhase) {
+      const inferredPhase = parseInt(activePhase[0], 10);
+      if (!Number.isNaN(inferredPhase)) preview.currentPhase = inferredPhase;
+    }
+  }
+
+  const descriptorParts: string[] = [];
+  if (preview.currentPhase && preview.totalPhases) {
+    descriptorParts.push(`Phase ${preview.currentPhase}/${preview.totalPhases}`);
+  }
+  if (preview.activePhaseTitle) {
+    descriptorParts.push(preview.activePhaseTitle);
+  }
+
+  const descriptor = descriptorParts.length > 0 ? ` (${descriptorParts.join(' – ')})` : '';
+  return `${preview.objective}${descriptor}`;
+}
+
 export const toolFormatters: Record<string, ToolFormatter> = {
   mem0_memory: (input) => {
     const action = input.action || 'unknown';
     if (action === 'unknown') return '';
-    
-    const content = input.content || input.query || '';
-    const preview = truncate(content, 60);
-    const actionDisplay = action === 'store' ? 'storing memory' 
-      : action === 'retrieve' ? 'retrieving memory' 
+
+    // Handle list/retrieve - show count instead of truncated JSON
+    if (action === 'list' || action === 'retrieve') {
+      // If we have results in the output, count them
+      // This will be populated after tool completes, but input preview won't have it
+      return `${action} memories`;
+    }
+
+    let content = input.content || input.query || '';
+
+    // Extract memory content from nested JSON responses
+    // Memory tool results often come as: {results: [{memory: "...", ...}]}
+    if (typeof content === 'string' && content.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(content);
+
+        // Handle mem0 result format: {results: [{memory: "..."}]}
+        if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
+          const firstResult = parsed.results[0];
+          if (firstResult.memory) {
+            content = firstResult.memory;
+          }
+        }
+        // Handle direct memory object: {memory: "..."}
+        else if (parsed.memory) {
+          content = parsed.memory;
+        }
+      } catch {
+        // If parsing fails, keep original content
+      }
+    }
+
+    // Normalize content for display
+    const normalizedContent = typeof content === 'string'
+      ? content
+      : isObject(content)
+        ? (() => { try { return JSON.stringify(content); } catch { return toSafeString(content); } })()
+        : toSafeString(content);
+
+    // Try to extract TOON plan preview
+    const planPreview = getToonPlanPreview(normalizedContent);
+    const preview = planPreview ?? truncate(normalizedContent, 60);
+
+    const actionDisplay = action === 'store' ? 'storing memory'
+      : action === 'retrieve' ? 'retrieving memory'
       : action;
-    const labelDisplay = action === 'store' ? 'preview' : 'query';
-    
+    const labelDisplay = planPreview || action === 'store_plan' ? 'plan'
+      : action === 'store' ? 'content'
+      : 'query';
+
     return preview ? `${actionDisplay} | ${labelDisplay}: ${preview}` : actionDisplay;
+  },
+
+  validation_specialist: (input) => {
+    if (!input || typeof input !== 'object') {
+      return 'validating finding | 0 artifacts: ';
+    }
+
+    const finding = input.finding_description || input.finding || '';
+    const artifacts = input.artifact_paths || input.artifactPaths || [];
+    const artifactCount = Array.isArray(artifacts) ? artifacts.length : 0;
+
+    const findingPreview = finding.length > 60 ? finding.substring(0, 60) + '...' : finding;
+
+    return `validating finding | ${artifactCount} artifacts: ${findingPreview}`;
   },
   
   shell: (input) => {
