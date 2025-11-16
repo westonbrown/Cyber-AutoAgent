@@ -636,7 +636,7 @@ def main():
             module=args.module,
             mcp_connections=mcp_connections,
         )
-        agent, callback_handler = create_agent(
+        agent, callback_handler, feedback_manager = create_agent(
             target=args.target,
             objective=args.objective,
             config=config,
@@ -673,7 +673,18 @@ def main():
             # Continue until stop condition is met
             while not interrupted:
                 try:
+<<<<<<< HEAD
                     _ensure_prompt_within_budget(agent)
+=======
+                    # Check for HITL feedback before executing agent
+                    if feedback_manager:
+                        feedback_message = feedback_manager.get_pending_feedback_message()
+                        if feedback_message:
+                            logger.info("HITL feedback detected - injecting into agent conversation")
+                            current_message = feedback_message
+                            feedback_manager.clear_pending_feedback()
+
+>>>>>>> 001eaf2 (Implement HITL feedback injection in agent execution loop)
                     # Execute agent with current message
                     result = agent(current_message)
 

@@ -1004,4 +1004,4 @@ Available {config.module} MCP tools:
         pass
 
     agent_logger.debug("Agent initialized successfully")
-    return agent, callback_handler
+    return agent, callback_handler, feedback_manager
