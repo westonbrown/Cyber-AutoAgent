@@ -10,11 +10,11 @@ This test suite verifies that the HITLHookProvider correctly:
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch, call
-from strands.experimental.hooks.events import (
-    BeforeToolInvocationEvent,
-    BeforeModelInvocationEvent,
+from strands.hooks import (
+    BeforeToolCallEvent,
+    BeforeModelCallEvent,
+    HookRegistry,
 )
-from strands.hooks import HookRegistry
 
 from modules.handlers.hitl.feedback_manager import FeedbackManager
 from modules.handlers.hitl.hitl_hook_provider import HITLHookProvider
@@ -68,8 +68,8 @@ def mock_hook_registry():
 
 @pytest.fixture
 def mock_tool_event():
-    """Create mock BeforeToolInvocationEvent."""
-    event = Mock(spec=BeforeToolInvocationEvent)
+    """Create mock BeforeToolCallEvent."""
+    event = Mock(spec=BeforeToolCallEvent)
     event.tool_use = {
         "name": "test_tool",
         "toolUseId": "tool_123",
@@ -80,8 +80,8 @@ def mock_tool_event():
 
 @pytest.fixture
 def mock_model_event():
-    """Create mock BeforeModelInvocationEvent."""
-    event = Mock(spec=BeforeModelInvocationEvent)
+    """Create mock BeforeModelCallEvent."""
+    event = Mock(spec=BeforeModelCallEvent)
     return event
 
 
@@ -100,26 +100,26 @@ class TestHookRegistration:
     def test_register_hooks_for_tool_invocation(
         self, hitl_hook_provider, mock_hook_registry
     ):
-        """Test that BeforeToolInvocationEvent callback is registered."""
+        """Test that BeforeToolCallEvent callback is registered."""
         hitl_hook_provider.register_hooks(mock_hook_registry)
 
-        # Check for BeforeToolInvocationEvent registration
+        # Check for BeforeToolCallEvent registration
         calls = mock_hook_registry.add_callback.call_args_list
         tool_event_registered = any(
-            BeforeToolInvocationEvent in call[0] for call in calls
+            BeforeToolCallEvent in call[0] for call in calls
         )
         assert tool_event_registered
 
     def test_register_hooks_for_model_invocation(
         self, hitl_hook_provider, mock_hook_registry
     ):
-        """Test that BeforeModelInvocationEvent callback is registered."""
+        """Test that BeforeModelCallEvent callback is registered."""
         hitl_hook_provider.register_hooks(mock_hook_registry)
 
-        # Check for BeforeModelInvocationEvent registration
+        # Check for BeforeModelCallEvent registration
         calls = mock_hook_registry.add_callback.call_args_list
         model_event_registered = any(
-            BeforeModelInvocationEvent in call[0] for call in calls
+            BeforeModelCallEvent in call[0] for call in calls
         )
         assert model_event_registered
 
@@ -136,9 +136,9 @@ class TestHookRegistration:
         tool_callback = None
         model_callback = None
         for call_args in calls:
-            if call_args[0][0] == BeforeToolInvocationEvent:
+            if call_args[0][0] == BeforeToolCallEvent:
                 tool_callback = call_args[0][1]
-            elif call_args[0][0] == BeforeModelInvocationEvent:
+            elif call_args[0][0] == BeforeModelCallEvent:
                 model_callback = call_args[0][1]
 
         assert tool_callback == hitl_hook_provider._on_before_tool_call
@@ -167,7 +167,7 @@ class TestToolInvocationInterception:
     ):
         """Test that destructive operations trigger auto-pause."""
         # Create event with destructive command
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "shell",
             "toolUseId": "shell_123",
@@ -191,7 +191,7 @@ class TestToolInvocationInterception:
     ):
         """Test that safe operations do not trigger pause."""
         # Create event with safe command
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "shell",
             "toolUseId": "shell_456",
@@ -210,7 +210,7 @@ class TestToolInvocationInterception:
     ):
         """Test that hook blocks and waits for feedback when pause triggered."""
         # Create destructive event
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "shell",
             "toolUseId": "shell_789",
@@ -231,7 +231,7 @@ class TestToolInvocationInterception:
     ):
         """Test that hook handles timeout when feedback not received."""
         # Create destructive event
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "editor",
             "toolUseId": "editor_001",
@@ -485,7 +485,7 @@ class TestIntegrationWithFeedbackManager:
     ):
         """Test that hook uses FeedbackManager to request pause."""
         # Create destructive event
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "shell",
             "toolUseId": "integration_001",
@@ -507,7 +507,7 @@ class TestIntegrationWithFeedbackManager:
     ):
         """Test that hook uses FeedbackManager.wait_for_feedback()."""
         # Create destructive event
-        event = Mock(spec=BeforeToolInvocationEvent)
+        event = Mock(spec=BeforeToolCallEvent)
         event.tool_use = {
             "name": "shell",
             "toolUseId": "integration_002",

@@ -14,11 +14,11 @@ import time
 from unittest.mock import Mock, MagicMock, patch, call
 
 import pytest
-from strands.experimental.hooks.events import (
-    BeforeToolInvocationEvent,
-    BeforeModelInvocationEvent,
+from strands.hooks import (
+    BeforeToolCallEvent,
+    BeforeModelCallEvent,
+    HookRegistry,
 )
-from strands.hooks import HookRegistry
 
 from modules.handlers.hitl.feedback_handler import FeedbackInputHandler
 from modules.handlers.hitl.feedback_manager import FeedbackManager
@@ -105,7 +105,7 @@ class TestAutoPauseWorkflow:
         6. Feedback is cleared after injection
         """
         # Step 1: Hook intercepts destructive tool
-        tool_event = Mock(spec=BeforeToolInvocationEvent)
+        tool_event = Mock(spec=BeforeToolCallEvent)
         tool_event.tool_use = {
             "name": "shell",
             "toolUseId": "auto_001",
@@ -154,7 +154,7 @@ class TestAutoPauseWorkflow:
         assert feedback_manager.state == HITLState.ACTIVE
 
         # Step 5: Simulate model invocation with injection hook
-        model_event = Mock(spec=BeforeModelInvocationEvent)
+        model_event = Mock(spec=BeforeModelCallEvent)
         model_event.agent = mock_agent
 
         original_prompt = mock_agent.system_prompt
@@ -177,7 +177,7 @@ class TestAutoPauseWorkflow:
         feedback_manager.auto_pause_timeout = 1
 
         # Create destructive tool event
-        tool_event = Mock(spec=BeforeToolInvocationEvent)
+        tool_event = Mock(spec=BeforeToolCallEvent)
         tool_event.tool_use = {
             "name": "shell",
             "toolUseId": "timeout_001",
@@ -201,7 +201,7 @@ class TestAutoPauseWorkflow:
     ):
         """Test that safe operations bypass auto-pause."""
         # Create safe tool event
-        tool_event = Mock(spec=BeforeToolInvocationEvent)
+        tool_event = Mock(spec=BeforeToolCallEvent)
         tool_event.tool_use = {
             "name": "shell",
             "toolUseId": "safe_001",
@@ -243,7 +243,7 @@ class TestManualPauseWorkflow:
         assert feedback_manager.pending_tool.tool_name == "manual_intervention"
 
         # Step 2: Mock model invocation in background thread
-        model_event = Mock(spec=BeforeModelInvocationEvent)
+        model_event = Mock(spec=BeforeModelCallEvent)
 
         feedback_received_event = threading.Event()
 
@@ -297,7 +297,7 @@ class TestManualPauseWorkflow:
         feedback_manager.request_pause(is_manual=True)
 
         # Create model event
-        model_event = Mock(spec=BeforeModelInvocationEvent)
+        model_event = Mock(spec=BeforeModelCallEvent)
 
         # Check manual pause (will timeout)
         start_time = time.time()
@@ -389,7 +389,7 @@ class TestCompleteEndToEnd:
         This is the most realistic integration test simulating actual usage.
         """
         # Step 1: Hook intercepts destructive tool
-        tool_event = Mock(spec=BeforeToolInvocationEvent)
+        tool_event = Mock(spec=BeforeToolCallEvent)
         tool_event.tool_use = {
             "name": "shell",
             "toolUseId": "e2e_001",
@@ -437,7 +437,7 @@ class TestCompleteEndToEnd:
         assert feedback_manager.pending_feedback is not None
 
         # Step 5: Simulate model invocation with injection
-        model_event = Mock(spec=BeforeModelInvocationEvent)
+        model_event = Mock(spec=BeforeModelCallEvent)
         model_event.agent = mock_agent
 
         feedback_injection_hook.inject_feedback(model_event)
@@ -507,7 +507,7 @@ class TestCompleteEndToEnd:
         assert feedback_manager.pending_feedback is not None
 
         # Step 6: Inject feedback
-        model_event = Mock(spec=BeforeModelInvocationEvent)
+        model_event = Mock(spec=BeforeModelCallEvent)
         model_event.agent = mock_agent
 
         feedback_injection_hook.inject_feedback(model_event)
@@ -529,7 +529,7 @@ class TestCompleteEndToEnd:
 
         for i in range(3):
             # Create destructive tool event
-            tool_event = Mock(spec=BeforeToolInvocationEvent)
+            tool_event = Mock(spec=BeforeToolCallEvent)
             tool_event.tool_use = {
                 "name": "shell",
                 "toolUseId": f"cycle_{i}",
@@ -569,7 +569,7 @@ class TestCompleteEndToEnd:
             hook_thread.join(timeout=2)
 
             # Inject feedback
-            model_event = Mock(spec=BeforeModelInvocationEvent)
+            model_event = Mock(spec=BeforeModelCallEvent)
             model_event.agent = mock_agent
 
             feedback_injection_hook.inject_feedback(model_event)
@@ -590,7 +590,7 @@ class TestErrorRecovery:
     ):
         """Test that invalid stdin during pause doesn't break workflow."""
         # Setup pause
-        tool_event = Mock(spec=BeforeToolInvocationEvent)
+        tool_event = Mock(spec=BeforeToolCallEvent)
         tool_event.tool_use = {
             "name": "shell",
             "toolUseId": "error_001",
@@ -647,14 +647,14 @@ class TestErrorRecovery:
         feedback_manager.auto_pause_timeout = 1
 
         # Create two destructive events
-        event1 = Mock(spec=BeforeToolInvocationEvent)
+        event1 = Mock(spec=BeforeToolCallEvent)
         event1.tool_use = {
             "name": "shell",
             "toolUseId": "concurrent_001",
             "input": {"command": "rm file1"},
         }
 
-        event2 = Mock(spec=BeforeToolInvocationEvent)
+        event2 = Mock(spec=BeforeToolCallEvent)
         event2.tool_use = {
             "name": "shell",
             "toolUseId": "concurrent_002",

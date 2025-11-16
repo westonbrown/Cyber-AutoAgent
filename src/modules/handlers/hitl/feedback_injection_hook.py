@@ -4,8 +4,7 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any
 
-from strands.experimental.hooks.events import BeforeModelInvocationEvent
-from strands.hooks import HookProvider, HookRegistry
+from strands.hooks import BeforeModelCallEvent, HookProvider, HookRegistry
 
 from .hitl_logger import log_hitl
 
@@ -52,17 +51,17 @@ class HITLFeedbackInjectionHook(HookProvider):
         )
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any):
-        """Register BeforeModelInvocationEvent callback.
+        """Register BeforeModelCallEvent callback.
 
         Args:
             registry: Hook registry to register callback with
             **kwargs: Additional keyword arguments from base class
         """
-        registry.add_callback(BeforeModelInvocationEvent, self.inject_feedback)
-        logger.debug("[HITL-HOOK] Registered BeforeModelInvocationEvent callback")
-        direct_log("Registered BeforeModelInvocationEvent callback")
+        registry.add_callback(BeforeModelCallEvent, self.inject_feedback)
+        logger.debug("[HITL-HOOK] Registered BeforeModelCallEvent callback")
+        direct_log("Registered BeforeModelCallEvent callback")
 
-    def inject_feedback(self, event: BeforeModelInvocationEvent):
+    def inject_feedback(self, event: BeforeModelCallEvent):
         """Inject pending feedback into system prompt before model invocation.
 
         This method is called before each model invocation. If feedback is
@@ -70,12 +69,12 @@ class HITLFeedbackInjectionHook(HookProvider):
         system prompt and clears the pending feedback.
 
         Args:
-            event: BeforeModelInvocationEvent containing agent context
+            event: BeforeModelCallEvent containing agent context
         """
         direct_log("inject_feedback() called - checking for pending feedback")
         log_hitl(
             "InjectionHook",
-            "inject_feedback() triggered - BeforeModelInvocationEvent fired",
+            "inject_feedback() triggered - BeforeModelCallEvent fired",
             "INFO",
         )
 

@@ -3,11 +3,12 @@
 import logging
 from typing import Optional
 
-from strands.experimental.hooks.events import (
-    BeforeModelInvocationEvent,
-    BeforeToolInvocationEvent,
+from strands.hooks import (
+    BeforeModelCallEvent,
+    BeforeToolCallEvent,
+    HookProvider,
+    HookRegistry,
 )
-from strands.hooks import HookProvider, HookRegistry
 
 from .feedback_manager import FeedbackManager
 from .hitl_logger import log_hitl
@@ -63,15 +64,15 @@ class HITLHookProvider(HookProvider):
             **kwargs: Additional keyword arguments (unused)
         """
         logger.debug("Registering HITL hooks")
-        registry.add_callback(BeforeToolInvocationEvent, self._on_before_tool_call)
-        registry.add_callback(BeforeModelInvocationEvent, self._check_manual_pause)
+        registry.add_callback(BeforeToolCallEvent, self._on_before_tool_call)
+        registry.add_callback(BeforeModelCallEvent, self._check_manual_pause)
         logger.info("HITL hooks registered successfully (tool + model invocation)")
 
-    def _on_before_tool_call(self, event: BeforeToolInvocationEvent) -> None:
+    def _on_before_tool_call(self, event: BeforeToolCallEvent) -> None:
         """Handle before tool call event.
 
         Args:
-            event: BeforeToolInvocationEvent from Strands SDK
+            event: BeforeToolCallEvent from Strands SDK
 
         Raises:
             RuntimeError: If user rejects the tool execution
@@ -129,14 +130,14 @@ class HITLHookProvider(HookProvider):
                     f"Tool execution cancelled by user (tool={tool_name}, reason=rejection)"
                 )
 
-    def _check_manual_pause(self, event: BeforeModelInvocationEvent) -> None:
+    def _check_manual_pause(self, event: BeforeModelCallEvent) -> None:
         """Check for manual pause before each model invocation.
 
         This ensures manual pause requests (via [i] key) are honored even when
         the agent is not calling tools.
 
         Args:
-            event: BeforeModelInvocationEvent from Strands SDK
+            event: BeforeModelCallEvent from Strands SDK
         """
         if self.feedback_manager.is_paused():
             log_hitl(

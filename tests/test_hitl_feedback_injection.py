@@ -10,8 +10,7 @@ without requiring a live LLM. It mocks the Strands SDK components to test:
 
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from strands.experimental.hooks.events import BeforeModelInvocationEvent
-from strands.hooks import HookRegistry
+from strands.hooks import BeforeModelCallEvent, HookRegistry
 
 from modules.handlers.hitl.feedback_manager import FeedbackManager
 from modules.handlers.hitl.feedback_injection_hook import HITLFeedbackInjectionHook
@@ -60,8 +59,8 @@ def mock_agent():
 
 @pytest.fixture
 def mock_event(mock_agent):
-    """Create mock BeforeModelInvocationEvent."""
-    event = Mock(spec=BeforeModelInvocationEvent)
+    """Create mock BeforeModelCallEvent."""
+    event = Mock(spec=BeforeModelCallEvent)
     event.agent = mock_agent
     return event
 
@@ -74,15 +73,15 @@ class TestFeedbackInjectionHook:
         assert feedback_injection_hook.feedback_manager == feedback_manager
 
     def test_hook_registration(self, feedback_injection_hook):
-        """Test hook registers BeforeModelInvocationEvent callback."""
+        """Test hook registers BeforeModelCallEvent callback."""
         registry = Mock(spec=HookRegistry)
         registry.add_callback = Mock()
 
         feedback_injection_hook.register_hooks(registry)
 
-        # Verify callback was registered for BeforeModelInvocationEvent
+        # Verify callback was registered for BeforeModelCallEvent
         registry.add_callback.assert_called_once_with(
-            BeforeModelInvocationEvent,
+            BeforeModelCallEvent,
             feedback_injection_hook.inject_feedback,
         )
 
@@ -480,7 +479,7 @@ class TestFeedbackInjectionIntegration:
         )
         assert feedback_manager.pending_feedback is not None
 
-        # Step 3: Inject feedback (simulates BeforeModelInvocationEvent)
+        # Step 3: Inject feedback (simulates BeforeModelCallEvent)
         feedback_injection_hook.inject_feedback(mock_event)
 
         # Step 4: Verify injection
@@ -494,7 +493,7 @@ class TestFeedbackInjectionIntegration:
     ):
         """Test multiple sequential feedback submissions and injections."""
         # First feedback cycle
-        mock_event1 = Mock(spec=BeforeModelInvocationEvent)
+        mock_event1 = Mock(spec=BeforeModelCallEvent)
         mock_event1.agent = mock_agent
 
         feedback_manager.request_pause(
@@ -514,7 +513,7 @@ class TestFeedbackInjectionIntegration:
 
         # Second feedback cycle (new agent state for next invocation)
         mock_agent.system_prompt = first_prompt  # Carry over modified prompt
-        mock_event2 = Mock(spec=BeforeModelInvocationEvent)
+        mock_event2 = Mock(spec=BeforeModelCallEvent)
         mock_event2.agent = mock_agent
 
         feedback_manager.request_pause(

@@ -17,8 +17,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from strands.experimental.hooks.events import BeforeModelInvocationEvent
-from strands.hooks import HookProvider, HookRegistry
+from strands.hooks import BeforeModelCallEvent, HookProvider, HookRegistry
 
 from modules.config.system.logger import get_logger
 
@@ -115,16 +114,16 @@ class PromptRebuildHook(HookProvider):
             operation_id,
         )
 
-    def register_hooks(self, registry: HookRegistry):
-        """Register BeforeModelInvocationEvent callback."""
-        registry.add_callback(BeforeModelInvocationEvent, self.check_if_rebuild_needed)
-        logger.debug("PromptRebuildHook registered for BeforeModelInvocationEvent")
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any):
+        """Register BeforeModelCallEvent callback."""
+        registry.add_callback(BeforeModelCallEvent, self.check_if_rebuild_needed)
+        logger.debug("PromptRebuildHook registered for BeforeModelCallEvent")
 
-    def check_if_rebuild_needed(self, event: BeforeModelInvocationEvent):
+    def check_if_rebuild_needed(self, event: BeforeModelCallEvent):
         """Check triggers and rebuild prompt if needed.
 
         Args:
-            event: BeforeModelInvocationEvent from Strands SDK
+            event: BeforeModelCallEvent from Strands SDK
         """
         current_step = self.callback_handler.current_step
 
