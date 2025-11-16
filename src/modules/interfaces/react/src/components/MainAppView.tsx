@@ -279,6 +279,9 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
               cleanupRef={terminalCleanupRef}
               dispatch={dispatch}
+              hitlEnabled={appState.hitlEnabled}
+              hitlPendingTool={appState.hitlPendingTool}
+              hitlInterpretation={appState.hitlInterpretation}
             />
           )
         )}

@@ -670,6 +670,9 @@ Available {config.module} MCP tools:
     except Exception:
         pass
 
+    # Check if HITL is enabled before creating handler so we can include it in init_context
+    hitl_enabled = os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true"
+
     callback_handler = ReactBridgeHandler(
         max_steps=config.max_steps,
         operation_id=operation_id,
@@ -711,8 +714,14 @@ Available {config.module} MCP tools:
                     else {}
                 ),
             },
+<<<<<<< HEAD
             "observability": config_manager.getenv_bool("ENABLE_OBSERVABILITY", False),
             "ui_mode": config_manager.getenv("CYBER_UI_MODE", "cli").lower(),
+=======
+            "observability": (os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"),
+            "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
+            "hitl_enabled": hitl_enabled,
+>>>>>>> 1a9aad1 (Fix HITL panel state management to show persistent monitoring banner)
         },
     )
 
@@ -776,7 +785,7 @@ Available {config.module} MCP tools:
     feedback_manager = None
     feedback_handler = None
 
-    if os.environ.get("CYBER_AGENT_ENABLE_HITL", "false").lower() == "true":
+    if hitl_enabled:
         # Initialize feedback manager
         feedback_manager = FeedbackManager(
             memory=memory_client,
@@ -797,9 +806,6 @@ Available {config.module} MCP tools:
         )
 
         print_status("HITL system enabled - human feedback available", "SUCCESS")
-
-        # Update callback handler init_context with HITL status for React UI
-        callback_handler.init_context["hitl_enabled"] = True
 
     hooks = [react_hooks, prompt_rebuild_hook]
     if hitl_hook:
