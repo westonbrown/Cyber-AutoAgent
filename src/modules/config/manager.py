@@ -4,7 +4,7 @@ Centralized model configuration management for Cyber-AutoAgent.
 
 This module provides a unified configuration system for all model-related
 settings, including LLM models, embedding models, and provider configurations.
-It supports multiple providers (AWS Bedrock,Litellm, Ollama) and allows for easy
+It supports multiple providers (AWS Bedrock, Ollama) and allows for easy
 environment variable overrides.
 
 Key Components:
@@ -15,54 +15,314 @@ Key Components:
 - Validation and error handling
 """
 
-import json
+import importlib.util
+import logging
 import os
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-import litellm
+import boto3
 import ollama
+import requests
 
 from modules.handlers.utils import get_output_path, sanitize_target_name
-from modules.config.system.logger import get_logger
-from modules.config.models.dev_client import get_models_client
-from modules.config.types import (
-    ModelConfig,
-    LLMConfig,
-    EmbeddingConfig,
-    MemoryLLMConfig,
-    MemoryEmbeddingConfig,
-    MemoryVectorStoreConfig,
-    MemoryConfig,
-    EvaluationConfig,
-    SwarmConfig,
-    SDKConfig,
-    OutputConfig,
-    ServerConfig,
-    MCPConnection,
-    MCPConfig,
-    MEM0_PROVIDER_MAP,
-    get_default_base_dir,
-)
-from modules.config.system.env_reader import EnvironmentReader
-from modules.config.system.defaults import build_default_configs
-from modules.config.system.validation import validate_provider
-from modules.config.providers.bedrock_config import get_default_region
-from modules.config.providers.ollama_config import (
-    get_ollama_host as _get_ollama_host_from_env,
-)
-from modules.config.providers.litellm_config import (
-    align_litellm_defaults,
-    get_context_window_fallbacks,
-    split_litellm_model_id,
-)
 
-litellm.drop_params = True
-litellm.modify_params = True
-litellm.num_retries = 5
-litellm.respect_retry_after_header = True
+logger = logging.getLogger(__name__)
 
-logger = get_logger("Config.Manager")
 
+LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
+    "openai": ("openai/text-embedding-3-small", 1536),
+    "azure": ("azure/text-embedding-3-small", 1536),
+    "gemini": ("models/text-embedding-004", 768),
+    "google": ("models/text-embedding-004", 768),
+    "mistral": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "sagemaker": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
+}
+DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
+
+EMBEDDING_DIMENSIONS: Dict[str, int] = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "azure/text-embedding-3-small": 1536,
+    "azure/text-embedding-3-large": 3072,
+    "azure/text-embedding-ada-002": 1536,
+    "openai/text-embedding-3-small": 1536,
+    "openai/text-embedding-3-large": 3072,
+    "openai/text-embedding-ada-002": 1536,
+    "models/text-embedding-004": 768,
+    "text-embedding-004": 768,
+    "gemini/text-embedding-004": 768,
+    "amazon.titan-embed-text-v1": 1536,
+    "amazon.titan-embed-text-v2:0": 1024,
+    "cohere.embed-english-v3": 1024,
+    "cohere.embed-multilingual-v3": 1024,
+    "multi-qa-MiniLM-L6-cos-v1": 384,
+}
+MEM0_PROVIDER_MAP: Dict[str, str] = {
+    "bedrock": "aws_bedrock",
+    "openai": "openai",
+    "azure": "azure_openai",
+    "anthropic": "anthropic",
+    "gemini": "gemini",
+    "google": "gemini",
+    "deepseek": "deepseek",
+    "together": "together",
+    "groq": "groq",
+    "xai": "xai",
+    "lmstudio": "lmstudio",
+    "vllm": "vllm",
+    "mistral": "huggingface",
+    "sagemaker": "huggingface",
+}
+
+
+
+class ModelProvider(Enum):
+    """Supported model providers."""
+
+    AWS_BEDROCK = "aws_bedrock"
+    OLLAMA = "ollama"
+    LITELLM = "litellm"  # Universal provider gateway supporting 100+ model providers
+    ANTHROPIC_OAUTH = "anthropic_oauth"  # OAuth authentication for Claude Max billing
+
+
+@dataclass
+class ModelConfig:
+    """Base configuration for any model."""
+
+    provider: ModelProvider
+    model_id: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Validate model configuration."""
+        if not self.model_id:
+            raise ValueError("model_id cannot be empty")
+        if not isinstance(self.provider, ModelProvider):
+            raise ValueError(f"provider must be a ModelProvider enum, got {type(self.provider)}")
+
+
+@dataclass
+class LLMConfig(ModelConfig):
+    """Configuration for LLM models."""
+
+    temperature: float = 0.95
+    max_tokens: int = 4096
+    top_p: Optional[float] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Add LLM-specific parameters to the parameters dict
+        params = {
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        # Only include top_p if explicitly set (some providers like Anthropic reject both temperature and top_p)
+        if self.top_p is not None:
+            params["top_p"] = self.top_p
+        self.parameters.update(params)
+
+
+@dataclass
+class EmbeddingConfig(ModelConfig):
+    """Configuration for embedding models."""
+
+    dimensions: int = 1024
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Add embedding-specific parameters
+        self.parameters.update({"dimensions": self.dimensions})
+
+
+@dataclass
+class VectorStoreConfig:
+    """Configuration for vector storage."""
+
+    provider: str = "faiss"
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class MemoryLLMConfig(ModelConfig):
+    """Configuration for memory-specific LLM models."""
+
+    temperature: float = 0.1
+    max_tokens: int = 2000
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.parameters.update(
+            {
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "aws_region": self.aws_region,
+            }
+        )
+
+
+@dataclass
+class MemoryEmbeddingConfig(ModelConfig):
+    """Configuration for memory-specific embedding models."""
+
+    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
+    dimensions: int = 1024
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.parameters.update({"aws_region": self.aws_region, "dimensions": self.dimensions})
+
+
+@dataclass
+class MemoryVectorStoreConfig:
+    """Configuration for memory vector store with provider-specific settings."""
+
+    provider: str = "faiss"
+    opensearch_config: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "port": 443,
+            "collection_name": "mem0_memories",
+            "embedding_model_dims": 1024,
+            "pool_maxsize": 20,
+            "use_ssl": True,
+            "verify_certs": True,
+        }
+    )
+    faiss_config: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "embedding_model_dims": 1024,
+        }
+    )
+
+    def get_config_for_provider(self, provider: str, **overrides) -> Dict[str, Any]:
+        """Get configuration for specific provider."""
+        if provider == "opensearch":
+            config = self.opensearch_config.copy()
+            config.update(overrides)
+            return config
+        if provider == "faiss":
+            config = self.faiss_config.copy()
+            config.update(overrides)
+            return config
+        return overrides
+
+
+@dataclass
+class MemoryConfig:
+    """Configuration for memory system."""
+
+    embedder: MemoryEmbeddingConfig
+    llm: MemoryLLMConfig
+    vector_store: MemoryVectorStoreConfig = field(default_factory=MemoryVectorStoreConfig)
+
+
+@dataclass
+class EvaluationConfig:
+    """Configuration for evaluation system."""
+
+    llm: ModelConfig
+    embedding: ModelConfig
+    # LLM-driven evaluation tunables
+    min_tool_calls: int = 3
+    min_evidence: int = 1
+    max_wait_secs: int = 30
+    poll_interval_secs: int = 5
+    summary_max_chars: int = 8000
+    # Rubric judge controls
+    rubric_enabled: bool = False
+    judge_temperature: float = 0.2
+    judge_max_tokens: int = 800
+    rubric_profile: str = "default"
+    judge_system_prompt: Optional[str] = None
+    judge_user_template: Optional[str] = None
+    skip_if_insufficient_evidence: bool = True
+    rationale_persist_mode: str = "metadata"
+
+
+@dataclass
+class SwarmConfig:
+    """Configuration for swarm system."""
+
+    llm: ModelConfig
+
+
+def get_default_base_dir() -> str:
+    """Get the default base directory for outputs.
+
+    Returns:
+        Default base directory path, preferring project root if detectable
+    """
+    # Try to detect if we're in a project directory structure
+    cwd = os.getcwd()
+
+    # Check if we're in the project root (contains pyproject.toml)
+    if os.path.exists(os.path.join(cwd, "pyproject.toml")):
+        return os.path.join(cwd, "outputs")
+
+    # Check if we're in a subdirectory of the project
+    # Look for project root by traversing up the directory tree
+    current = cwd
+    while current != os.path.dirname(current):  # Stop at filesystem root
+        if os.path.exists(os.path.join(current, "pyproject.toml")):
+            return os.path.join(current, "outputs")
+        current = os.path.dirname(current)
+
+    # Fallback to current working directory
+    return os.path.join(cwd, "outputs")
+
+
+@dataclass
+class SDKConfig:
+    """Configuration for Strands SDK-specific features."""
+
+    # Hook system configuration
+    enable_hooks: bool = True
+    hook_timeout_ms: int = 1000
+
+    # Streaming configuration
+    enable_streaming: bool = True
+    stream_buffer_ms: int = 0  # No buffering for real-time streaming
+
+    # Conversation management
+    conversation_window_size: int = 100
+
+    # Telemetry configuration
+    enable_telemetry: bool = True
+    telemetry_sample_rate: float = 1.0
+
+    # Performance settings
+    max_concurrent_tools: int = 5
+    tool_timeout_seconds: int = 300
+
+
+@dataclass
+class OutputConfig:
+    """Configuration for output directory management."""
+
+    base_dir: str = field(default_factory=get_default_base_dir)
+    target_name: Optional[str] = None
+    enable_unified_output: bool = True  # Default to enabled for new unified structure
+    operation_id: Optional[str] = None  # Current operation ID for path generation
+
+
+@dataclass
+class ServerConfig:
+    """Complete server configuration."""
+
+    server_type: str  # "bedrock", "ollama", or "litellm"
+    llm: LLMConfig
+    embedding: EmbeddingConfig
+    memory: MemoryConfig
+    evaluation: EvaluationConfig
+    swarm: SwarmConfig
+    output: OutputConfig = field(default_factory=OutputConfig)
+    sdk: SDKConfig = field(default_factory=SDKConfig)
+    host: Optional[str] = None
+    region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
 
 
 class ConfigManager:
@@ -70,51 +330,16 @@ class ConfigManager:
 
     Provides provider defaults with environment overrides and lightweight
     validation helpers. Caches computed ServerConfig objects per provider.
-
-    Serves as the single source of truth for all configuration access,
-    including environment variables. All env var access should go through
-    this class to ensure consistent behavior and proper cache invalidation.
     """
 
     def __init__(self):
         """Initialize configuration manager."""
         self._config_cache = {}
-        self.env = EnvironmentReader()
-        self._default_configs = build_default_configs()
-
-        # Initialize models.dev client with error handling
-        try:
-            self.models_client = get_models_client()
-            logger.debug("models.dev client initialized successfully")
-        except Exception as e:
-            logger.warning(
-                "Failed to initialize models.dev client, using fallback mode: %s", e
-            )
-            # Create a minimal fallback that always returns None
-            # This allows ConfigManager to work with safe defaults
-            self.models_client = None
-
-    # Environment variable access methods
-
-    def getenv(self, key: str, default: str = "") -> str:
-        """Get environment variable value."""
-        return self.env.get(key, default)
-
-    def getenv_bool(self, key: str, default: bool = False) -> bool:
-        """Get environment variable as boolean."""
-        return self.env.get_bool(key, default)
-
-    def getenv_int(self, key: str, default: int = 0) -> int:
-        """Get environment variable as integer."""
-        return self.env.get_int(key, default)
-
-    def getenv_float(self, key: str, default: float = 0.0) -> float:
-        """Get environment variable as float."""
-        return self.env.get_float(key, default)
+        self._default_configs = self._initialize_default_configs()
 
     def get_default_region(self) -> str:
         """Get the default AWS region with environment override support."""
-        return get_default_region(self.env)
+        return os.getenv("AWS_REGION", "us-east-1")
 
     def get_thinking_models(self) -> List[str]:
         """Get list of models that support thinking capabilities."""
@@ -130,18 +355,13 @@ class ConfigManager:
         """Check if a model supports thinking capabilities."""
         return model_id in self.get_thinking_models()
 
-    def get_thinking_model_config(
-        self, model_id: str, region_name: str
-    ) -> Dict[str, Any]:
+    def get_thinking_model_config(self, model_id: str, region_name: str) -> Dict[str, Any]:
         """Get configuration for thinking-enabled models."""
         # Base beta flags for thinking models
         beta_flags = ["interleaved-thinking-2025-05-14"]
 
         # Add 1M context flag for Claude Sonnet 4 and 4.5
-        if (
-            "claude-sonnet-4-20250514" in model_id
-            or "claude-sonnet-4-5-20250929" in model_id
-        ):
+        if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             beta_flags.append("context-1m-2025-08-07")
 
         # Claude Sonnet 4.5 supports extended thinking with higher token limits
@@ -153,8 +373,8 @@ class ConfigManager:
             default_thinking_budget = 10000
 
         # Allow override via environment variables
-        max_tokens = self.getenv_int("MAX_TOKENS", default_max_tokens)
-        thinking_budget = self.getenv_int("THINKING_BUDGET", default_thinking_budget)
+        max_tokens = int(os.getenv("MAX_TOKENS", default_max_tokens))
+        thinking_budget = int(os.getenv("THINKING_BUDGET", default_thinking_budget))
 
         return {
             "model_id": model_id,
@@ -167,9 +387,7 @@ class ConfigManager:
             },
         }
 
-    def get_standard_model_config(
-        self, model_id: str, region_name: str, provider: str
-    ) -> Dict[str, Any]:
+    def get_standard_model_config(self, model_id: str, region_name: str, provider: str) -> Dict[str, Any]:
         """Get configuration for standard (non-thinking) models."""
         provider_config = self.get_server_config(provider)
         llm_config = provider_config.llm
@@ -186,10 +404,7 @@ class ConfigManager:
             config["top_p"] = llm_config.top_p
 
         # Add 1M context support for Claude Sonnet 4 and 4.5
-        if (
-            "claude-sonnet-4-20250514" in model_id
-            or "claude-sonnet-4-5-20250929" in model_id
-        ):
+        if "claude-sonnet-4-20250514" in model_id or "claude-sonnet-4-5-20250929" in model_id:
             config["additional_request_fields"] = {
                 "anthropic_beta": ["context-1m-2025-08-07"]
             }
@@ -208,48 +423,159 @@ class ConfigManager:
             "max_tokens": llm_config.max_tokens,
         }
 
-    # Default configs now built by build_default_configs() from defaults.py
+    def _initialize_default_configs(self) -> Dict[str, Dict[str, Any]]:
+        """Initialize default configurations for all provider types."""
+        return {
+            "ollama": {
+                "llm": LLMConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="llama3.2:3b",
+                    temperature=0.95,
+                    max_tokens=65000,
+                ),
+                "embedding": EmbeddingConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="mxbai-embed-large",
+                    dimensions=1024,
+                ),
+                "memory_llm": MemoryLLMConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="llama3.2:3b",
+                    temperature=0.1,
+                    max_tokens=2000,
+                    aws_region="ollama",
+                ),
+                "evaluation_llm": LLMConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="llama3.2:3b",
+                    temperature=0.1,
+                    max_tokens=2000,
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.OLLAMA,
+                    model_id="llama3.2:3b",
+                    temperature=0.7,
+                    max_tokens=500,
+                ),
+                "host": None,  # Will be resolved dynamically
+                "region": "ollama",
+            },
+            "bedrock": {
+                "llm": LLMConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                    temperature=0.95,
+                    max_tokens=32000,
+                    # top_p removed - global.* models reject both temperature and top_p
+                ),
+                "embedding": EmbeddingConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="amazon.titan-embed-text-v2:0",
+                    dimensions=1024,
+                ),
+                "memory_llm": MemoryLLMConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                    aws_region=os.getenv("AWS_REGION", "us-east-1"),
+                ),
+                "evaluation_llm": LLMConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.AWS_BEDROCK,
+                    model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.7,
+                    max_tokens=500,
+                ),
+                "host": None,
+                "region": os.getenv("AWS_REGION", "us-east-1"),
+            },
+            "litellm": {
+                "llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
+                    temperature=0.95,
+                    max_tokens=32000,  # LiteLLM auto-caps based on model limits
+                    # top_p omitted - LiteLLM forwards to various providers; Anthropic rejects both temperature and top_p
+                ),
+                "embedding": EmbeddingConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/amazon.titan-embed-text-v2:0",  # Default to Bedrock embedding via LiteLLM
+                    dimensions=1024,
+                ),
+                "memory_llm": MemoryLLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                    aws_region=os.getenv("AWS_REGION", "us-east-1"),
+                ),
+                "evaluation_llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.1,
+                    max_tokens=2000,
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    temperature=0.7,
+                    max_tokens=500,
+                ),
+                "host": None,
+                "region": os.getenv("AWS_REGION", "us-east-1"),
+            },
+            "anthropic_oauth": {
+                "llm": LLMConfig(
+                    provider=ModelProvider.ANTHROPIC_OAUTH,
+                    model_id="claude-sonnet-4-20250514",
+                    temperature=0.95,
+                    max_tokens=32000,
+                ),
+                # Anthropic doesn't provide embeddings, use local or alternative
+                "embedding": EmbeddingConfig(
+                    provider=ModelProvider.LITELLM,
+                    model_id="multi-qa-MiniLM-L6-cos-v1",
+                    dimensions=384,
+                ),
+                "memory_llm": MemoryLLMConfig(
+                    provider=ModelProvider.ANTHROPIC_OAUTH,
+                    model_id="claude-3-haiku-20240307",  # Cheaper for memory operations
+                    temperature=0.1,
+                    max_tokens=2000,
+                    aws_region="anthropic_oauth",  # Placeholder
+                ),
+                "evaluation_llm": LLMConfig(
+                    provider=ModelProvider.ANTHROPIC_OAUTH,
+                    model_id="claude-3-5-sonnet-20241022",
+                    temperature=0.1,
+                    max_tokens=2000,
+                ),
+                "swarm_llm": LLMConfig(
+                    provider=ModelProvider.ANTHROPIC_OAUTH,
+                    model_id="claude-3-haiku-20240307",  # Cheaper/faster for swarm
+                    temperature=0.7,
+                    max_tokens=500,
+                ),
+                "host": None,
+                "region": "anthropic_oauth",
+            },
+        }
 
     def get_server_config(self, provider: str, **overrides) -> ServerConfig:
         """Get complete provider configuration with optional overrides."""
         logger.debug("Getting server config for provider: %s", provider)
-
-        # Invalidate cache if environment has changed
-        if self.env.has_changed():
-            logger.debug("Environment changed, invalidating config cache")
-            self._config_cache.clear()
-
-        # Build stable cache key from known scalar overrides only
-        allowed_keys = (
-            "model_id",
-            "enable_hooks",
-            "enable_streaming",
-            "conversation_window_size",
-        )
-        parts: list[str] = [f"provider={provider}"]
-        unsupported: list[str] = []
-        for key in allowed_keys:
-            if key in overrides:
-                val = overrides.get(key)
-                if isinstance(val, (str, int, float, bool)) or val is None:
-                    parts.append(f"{key}={val}")
-                else:
-                    unsupported.append(key)
-        if unsupported:
-            logger.debug(
-                "Ignoring non-scalar override keys for cache: %s",
-                ", ".join(unsupported),
-            )
-        cache_key = "|".join(parts)
+        cache_key = f"provider_{provider}_{hash(frozenset(overrides.items()))}"
         if cache_key in self._config_cache:
             return self._config_cache[cache_key]
 
         if provider not in self._default_configs:
-            logger.error(
-                "Provider %s not in available configs: %s",
-                provider,
-                list(self._default_configs.keys()),
-            )
+            logger.error("Provider %s not in available configs: %s", provider, list(self._default_configs.keys()))
             raise ValueError(f"Unsupported provider type: {provider}")
 
         defaults = self._default_configs[provider].copy()
@@ -267,34 +593,21 @@ class ConfigManager:
             if "llm" in defaults and isinstance(defaults["llm"], LLMConfig):
                 defaults["llm"].model_id = user_model
             # Update memory LLM
-            if "memory_llm" in defaults and isinstance(
-                defaults["memory_llm"], MemoryLLMConfig
-            ):
+            if "memory_llm" in defaults and isinstance(defaults["memory_llm"], MemoryLLMConfig):
                 defaults["memory_llm"].model_id = user_model
             # Update evaluation LLM
-            if "evaluation_llm" in defaults and isinstance(
-                defaults["evaluation_llm"], LLMConfig
-            ):
+            if "evaluation_llm" in defaults and isinstance(defaults["evaluation_llm"], LLMConfig):
                 defaults["evaluation_llm"].model_id = user_model
             # Don't override swarm LLM with user model - keep swarm using v2 for better performance
             # Swarm model can be overridden via CYBER_AGENT_SWARM_MODEL env var if needed
             # For Ollama, also use the same model for embeddings if mxbai-embed-large is not available
-            if (
-                provider == "ollama"
-                and "embedding" in defaults
-                and isinstance(defaults["embedding"], EmbeddingConfig)
-            ):
+            if provider == "ollama" and "embedding" in defaults and isinstance(defaults["embedding"], EmbeddingConfig):
                 # Check if the default embedding model is available
                 try:
                     client = ollama.Client(host=self.get_ollama_host())
                     models_response = client.list()
-                    available_models = [
-                        m.get("model", m.get("name", ""))
-                        for m in models_response["models"]
-                    ]
-                    if not any(
-                        "mxbai-embed-large" in model for model in available_models
-                    ):
+                    available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
+                    if not any("mxbai-embed-large" in model for model in available_models):
                         # Use the user's model for embeddings too
                         defaults["embedding"].model_id = user_model
                 except Exception:
@@ -315,33 +628,27 @@ class ConfigManager:
         evaluation_config = EvaluationConfig(
             llm=self._get_evaluation_llm_config(provider, defaults),
             embedding=self._get_evaluation_embedding_config(provider, defaults),
-            min_tool_calls=self.getenv_int("EVAL_MIN_TOOL_CALLS", 3),
-            min_evidence=self.getenv_int("EVAL_MIN_EVIDENCE", 1),
-            max_wait_secs=self.getenv_int("EVALUATION_MAX_WAIT_SECS", 30),
-            poll_interval_secs=self.getenv_int("EVALUATION_POLL_INTERVAL_SECS", 5),
-            summary_max_chars=self.getenv_int("EVAL_SUMMARY_MAX_CHARS", 8000),
-            rubric_enabled=self.getenv_bool("EVAL_RUBRIC_ENABLED", False),
-            judge_temperature=self.getenv_float("EVAL_JUDGE_TEMPERATURE", 0.2),
-            judge_max_tokens=self.getenv_int("EVAL_JUDGE_MAX_TOKENS", 800),
-            rubric_profile=self.getenv("EVAL_RUBRIC_PROFILE", "default"),
-            judge_system_prompt=self.getenv("EVAL_JUDGE_SYSTEM_PROMPT"),
-            judge_user_template=self.getenv("EVAL_JUDGE_USER_TEMPLATE"),
-            skip_if_insufficient_evidence=self.getenv_bool(
-                "EVAL_SKIP_IF_INSUFFICIENT_EVIDENCE", True
-            ),
-            rationale_persist_mode=self.getenv(
-                "EVAL_RATIONALE_PERSIST_MODE", "metadata"
-            ),
+            min_tool_calls=int(os.getenv("EVAL_MIN_TOOL_CALLS", "3")),
+            min_evidence=int(os.getenv("EVAL_MIN_EVIDENCE", "1")),
+            max_wait_secs=int(os.getenv("EVALUATION_MAX_WAIT_SECS", os.getenv("EVALUATION_WAIT_TIME", "30"))),
+            poll_interval_secs=int(os.getenv("EVALUATION_POLL_INTERVAL_SECS", "5")),
+            summary_max_chars=int(os.getenv("EVAL_SUMMARY_MAX_CHARS", "8000")),
+            rubric_enabled=os.getenv("EVAL_RUBRIC_ENABLED", "false").lower() == "true",
+            judge_temperature=float(os.getenv("EVAL_JUDGE_TEMPERATURE", "0.2")),
+            judge_max_tokens=int(os.getenv("EVAL_JUDGE_MAX_TOKENS", "800")),
+            rubric_profile=os.getenv("EVAL_RUBRIC_PROFILE", "default"),
+            judge_system_prompt=os.getenv("EVAL_JUDGE_SYSTEM_PROMPT"),
+            judge_user_template=os.getenv("EVAL_JUDGE_USER_TEMPLATE"),
+            skip_if_insufficient_evidence=os.getenv("EVAL_SKIP_IF_INSUFFICIENT_EVIDENCE", "true").lower() == "true",
+            rationale_persist_mode=os.getenv("EVAL_RATIONALE_PERSIST_MODE", "metadata"),
         )
 
         # Build swarm configuration
         swarm_config = SwarmConfig(llm=self._get_swarm_llm_config(provider, defaults))
 
-        # Build MCP configuration
-        mcp_config = self._get_mcp_config(provider, defaults, overrides)
-
         # Build output configuration
         output_config = self._get_output_config(provider, defaults, overrides)
+
 
         # Resolve host for ollama provider
         host = self.get_ollama_host() if provider == "ollama" else None
@@ -351,7 +658,7 @@ class ConfigManager:
             enable_hooks=overrides.get("enable_hooks", True),
             enable_streaming=overrides.get("enable_streaming", True),
             conversation_window_size=overrides.get("conversation_window_size", 100),
-            enable_telemetry=self.getenv_bool("ENABLE_SDK_TELEMETRY", True),
+            enable_telemetry=os.getenv("ENABLE_SDK_TELEMETRY", "true").lower() == "true",
         )
 
         config = ServerConfig(
@@ -361,7 +668,6 @@ class ConfigManager:
             memory=memory_config,
             evaluation=evaluation_config,
             swarm=swarm_config,
-            mcp=mcp_config,
             output=output_config,
             sdk=sdk_config,
             host=host,
@@ -401,51 +707,11 @@ class ConfigManager:
         server_config = self.get_server_config(server, **overrides)
         return server_config.output
 
+
     def get_sdk_config(self, server: str, **overrides) -> SDKConfig:
         """Get SDK configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
         return server_config.sdk
-
-    def get_mcp_config(self, server: str, **overrides) -> MCPConfig:
-        """Get MCP configuration for the specified server."""
-        server_config = self.get_server_config(server, **overrides)
-        return server_config.mcp
-
-    # ---------------------------------------------------------------------
-    # Swarm helpers (used by specialist sub-agents)
-    # ---------------------------------------------------------------------
-    def get_swarm_model_id(self, server: Optional[str] = None, **overrides) -> str:
-        """Return the configured swarm model_id for the given provider.
-
-        Args:
-            server: Provider key (e.g., "bedrock", "ollama", "litellm"). If omitted,
-                    will use CYBER_AGENT_PROVIDER (default "bedrock").
-            **overrides: Optional overrides forwarded to get_server_config
-
-        Returns:
-            The model_id string for the swarm LLM. Falls back to primary llm.model_id
-            if swarm_llm is unavailable for the provider.
-        """
-        try:
-            provider = (
-                server or self.getenv("CYBER_AGENT_PROVIDER", "bedrock")
-            ).lower()
-            server_config = self.get_server_config(provider, **overrides)
-            # Prefer explicit swarm config when available
-            if (
-                server_config
-                and server_config.swarm
-                and server_config.swarm.llm
-                and server_config.swarm.llm.model_id
-            ):
-                return server_config.swarm.llm.model_id
-            # Fallback to main llm
-            if server_config and server_config.llm and server_config.llm.model_id:
-                return server_config.llm.model_id
-        except Exception:
-            pass
-        # Final fallback to safe default aligned with Bedrock memory/evaluation defaults
-        return "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
     def get_unified_output_path(
         self,
@@ -497,16 +763,14 @@ class ConfigManager:
         Returns:
             Dict[str, str]: Absolute paths to {'root', 'artifacts', 'tools'}
         """
+        # Pull configured output base directory to ensure consistency
+        output_config = self.get_output_config(server, **overrides)
+        base_dir = output_config.base_dir
+
         # Build operation-specific paths from config
-        root = self.get_unified_output_path(
-            server, target_name, operation_id, "", **overrides
-        )
-        artifacts = self.get_unified_output_path(
-            server, target_name, operation_id, "artifacts", **overrides
-        )
-        tools = self.get_unified_output_path(
-            server, target_name, operation_id, "tools", **overrides
-        )
+        root = self.get_unified_output_path(server, target_name, operation_id, "", **overrides)
+        artifacts = self.get_unified_output_path(server, target_name, operation_id, "artifacts", **overrides)
+        tools = self.get_unified_output_path(server, target_name, operation_id, "tools", **overrides)
         try:
             os.makedirs(root, exist_ok=True)
             os.makedirs(artifacts, exist_ok=True)
@@ -535,11 +799,8 @@ class ConfigManager:
         if optimized_path.exists():
             file_size = optimized_path.stat().st_size
             if file_size > 100:  # Anything over 100 bytes is likely real content
-                logger.debug(
-                    "Execution prompt already exists at %s (size: %d bytes)",
-                    optimized_path,
-                    file_size,
-                )
+                logger.debug("Execution prompt already exists at %s (size: %d bytes)",
+                            optimized_path, file_size)
                 return
 
         # Use the existing ModulePromptLoader to get correct paths
@@ -555,9 +816,7 @@ class ConfigManager:
 
         # If module-specific prompt not found and not already trying general, fall back
         if master_path is None and module != "general":
-            logger.warning(
-                "Module %s execution prompt not found, falling back to general", module
-            )
+            logger.warning("Module %s execution prompt not found, falling back to general", module)
             candidate = module_loader.plugins_dir / "general" / "execution_prompt.md"
             if candidate.exists() and candidate.is_file():
                 master_path = candidate
@@ -565,41 +824,28 @@ class ConfigManager:
         if master_path is None or not master_path.exists():
             logger.error("No execution prompt found for module %s", module)
             # Create a minimal prompt instead of failing silently
-            optimized_path.write_text(
-                f"# {module.upper()} Module Execution Prompt\n# No master prompt found - using minimal template\n"
-            )
+            optimized_path.write_text(f"# {module.upper()} Module Execution Prompt\n# No master prompt found - using minimal template\n")
             return
 
         # Check if master file has meaningful content
         master_size = master_path.stat().st_size
         if master_size < 100:  # Less than 100 bytes is likely a placeholder
-            logger.error(
-                "Master execution prompt at %s appears to be empty or placeholder (size: %d bytes)",
-                master_path,
-                master_size,
-            )
+            logger.error("Master execution prompt at %s appears to be empty or placeholder (size: %d bytes)",
+                        master_path, master_size)
             # Create a minimal template instead
-            optimized_path.write_text(
-                f"# {module.upper()} Module Execution Prompt\n"
-                f"# Master prompt appears empty - using minimal template\n"
-            )
+            optimized_path.write_text(f"# {module.upper()} Module Execution Prompt\n"
+                                    f"# Master prompt appears empty - using minimal template\n")
             return
 
         try:
             # Use shutil.copy() instead of copy2() to avoid preserving timestamps
             # This ensures file modification time reflects when it was actually copied
             shutil.copy(master_path, optimized_path)
-            logger.info(
-                "Copied master execution prompt from %s to %s",
-                master_path,
-                optimized_path,
-            )
+            logger.info("Copied master execution prompt from %s to %s", master_path, optimized_path)
         except Exception as e:
             logger.error("Failed to copy execution prompt: %s", e)
 
-    def get_unified_memory_path(
-        self, server: str, target_name: str, **overrides
-    ) -> str:
+    def get_unified_memory_path(self, server: str, target_name: str, **overrides) -> str:
         """Get unified memory path for target.
 
         Args:
@@ -630,9 +876,7 @@ class ConfigManager:
                 },
             }
         elif server == "litellm":
-            prefix, model_name = self._split_litellm_model_id(
-                memory_config.embedder.model_id
-            )
+            prefix, model_name = self._split_litellm_model_id(memory_config.embedder.model_id)
             mem0_provider = MEM0_PROVIDER_MAP.get(prefix, "huggingface")
             embedder_config = {
                 "provider": mem0_provider,
@@ -642,16 +886,14 @@ class ConfigManager:
                 },
             }
             if mem0_provider == "aws_bedrock":
-                embedder_config["config"]["aws_region"] = (
-                    memory_config.embedder.aws_region
-                )
+                embedder_config["config"]["aws_region"] = memory_config.embedder.aws_region
             elif mem0_provider == "azure_openai":
                 embedder_config["config"]["model"] = model_name
                 embedder_config["config"]["azure_kwargs"] = {
-                    "api_key": self.getenv("AZURE_API_KEY"),
+                    "api_key": os.getenv("AZURE_API_KEY"),
                     "azure_deployment": model_name,
-                    "azure_endpoint": self.getenv("AZURE_API_BASE"),
-                    "api_version": self.getenv("AZURE_API_VERSION"),
+                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
+                    "api_version": os.getenv("AZURE_API_VERSION"),
                 }
         else:  # bedrock
             embedder_config = {
@@ -675,9 +917,7 @@ class ConfigManager:
             }
         elif server == "litellm":
             # Map LiteLLM model prefix to a Mem0-supported provider (e.g., azure_openai, openai, aws_bedrock)
-            prefix, model_name = self._split_litellm_model_id(
-                memory_config.llm.model_id
-            )
+            prefix, model_name = self._split_litellm_model_id(memory_config.llm.model_id)
             mem0_llm_provider = MEM0_PROVIDER_MAP.get(prefix, "huggingface")
             llm_config = {
                 "provider": mem0_llm_provider,
@@ -690,10 +930,10 @@ class ConfigManager:
             if mem0_llm_provider == "azure_openai":
                 llm_config["config"]["model"] = model_name
                 llm_config["config"]["azure_kwargs"] = {
-                    "api_key": self.getenv("AZURE_API_KEY"),
+                    "api_key": os.getenv("AZURE_API_KEY"),
                     "azure_deployment": model_name,
-                    "azure_endpoint": self.getenv("AZURE_API_BASE"),
-                    "api_version": self.getenv("AZURE_API_VERSION"),
+                    "azure_endpoint": os.getenv("AZURE_API_BASE"),
+                    "api_version": os.getenv("AZURE_API_VERSION"),
                 }
         else:  # bedrock
             llm_config = {
@@ -706,12 +946,11 @@ class ConfigManager:
             }
 
         # Build vector store config
-        opensearch_host = self.getenv("OPENSEARCH_HOST")
-        if opensearch_host:
+        if os.environ.get("OPENSEARCH_HOST"):
             vector_store_config = {
                 "provider": "opensearch",
                 "config": memory_config.vector_store.get_config_for_provider(
-                    "opensearch", host=opensearch_host
+                    "opensearch", host=os.environ.get("OPENSEARCH_HOST")
                 ),
             }
         else:
@@ -720,9 +959,7 @@ class ConfigManager:
                 "config": memory_config.vector_store.get_config_for_provider("faiss"),
             }
 
-        vector_store_config["config"]["embedding_model_dims"] = (
-            memory_config.embedder.dimensions
-        )
+        vector_store_config["config"]["embedding_model_dims"] = memory_config.embedder.dimensions
 
         return {
             "embedder": embedder_config,
@@ -732,22 +969,36 @@ class ConfigManager:
 
     def validate_requirements(self, provider: str) -> None:
         """Validate that all requirements are met for the specified provider."""
-        # Delegate to validation module
-        ollama_host = _get_ollama_host_from_env(self.env) if provider == "ollama" else None
-        region = self.get_default_region() if provider == "bedrock" else None
-        server_config = self.get_server_config(provider) if provider == "ollama" else None
-
-        validate_provider(provider, self.env, ollama_host, region, server_config)
-
-    def get_context_window_fallbacks(
-        self, provider: str
-    ) -> Optional[List[Dict[str, List[str]]]]:
-        """Optional model fallback mappings for context window resolution."""
-        return get_context_window_fallbacks(provider)
+        logger.debug("Validating requirements for provider: %s", provider)
+        if provider == "ollama":
+            self._validate_ollama_requirements()
+        elif provider == "bedrock":
+            self._validate_aws_requirements()
+        elif provider == "litellm":
+            self._validate_litellm_requirements()
+        else:
+            raise ValueError(f"Unsupported provider type: {provider}")
 
     def get_ollama_host(self) -> str:
         """Determine appropriate Ollama host based on environment."""
-        return _get_ollama_host_from_env(self.env)
+        env_host = os.getenv("OLLAMA_HOST")
+        if env_host:
+            return env_host
+
+        # Check if running in Docker
+        if os.path.exists("/app"):
+            candidates = ["http://localhost:11434", "http://host.docker.internal:11434"]
+            for host in candidates:
+                try:
+                    response = requests.get(f"{host}/api/version", timeout=2)
+                    if response.status_code == 200:
+                        return host
+                except (requests.exceptions.RequestException, ConnectionError):
+                    pass
+            # Fallback to host.docker.internal if no connection works
+            return "http://host.docker.internal:11434"
+        # Native execution - use localhost
+        return "http://localhost:11434"
 
     def set_environment_variables(self, server: str) -> None:
         """Set environment variables for backward compatibility."""
@@ -761,22 +1012,12 @@ class ConfigManager:
             os.environ["MEM0_LLM_MODEL"] = server_config.memory.llm.model_id
             os.environ["MEM0_EMBEDDING_MODEL"] = server_config.memory.embedder.model_id
 
-    def _apply_environment_overrides(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _apply_environment_overrides(self, _server: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Apply environment variable overrides to default configuration."""
-        llm_cfg = (
-            defaults.get("llm") if isinstance(defaults.get("llm"), LLMConfig) else None
-        )
+        llm_cfg = defaults.get("llm") if isinstance(defaults.get("llm"), LLMConfig) else None
 
-        llm_model = self.getenv("CYBER_AGENT_LLM_MODEL")
+        llm_model = os.getenv("CYBER_AGENT_LLM_MODEL")
         if llm_model and llm_cfg is not None:
-            if llm_model != llm_cfg.model_id:
-                logger.info(
-                    "ENV override: CYBER_AGENT_LLM_MODEL=%s replaces config model=%s",
-                    llm_model,
-                    llm_cfg.model_id,
-                )
             llm_cfg = LLMConfig(
                 provider=llm_cfg.provider,
                 model_id=llm_model,
@@ -786,79 +1027,193 @@ class ConfigManager:
             )
             defaults["llm"] = llm_cfg
 
-        temperature_override = self.getenv("CYBER_AGENT_TEMPERATURE")
+        temperature_override = os.getenv("CYBER_AGENT_TEMPERATURE")
         if temperature_override and llm_cfg is not None:
-            temperature = self.getenv_float(
-                "CYBER_AGENT_TEMPERATURE", llm_cfg.temperature
-            )
-            if temperature != llm_cfg.temperature:
+            try:
+                temperature = float(temperature_override)
                 llm_cfg.temperature = temperature
                 llm_cfg.parameters["temperature"] = temperature
+            except ValueError:
+                logger.warning("Invalid CYBER_AGENT_TEMPERATURE=%s - ignoring", temperature_override)
 
-        top_p_override = self.getenv("CYBER_AGENT_TOP_P")
+        top_p_override = os.getenv("CYBER_AGENT_TOP_P")
         if top_p_override and llm_cfg is not None:
-            top_p = self.getenv_float(
-                "CYBER_AGENT_TOP_P", llm_cfg.top_p if llm_cfg.top_p is not None else 0.0
-            )
-            if top_p != llm_cfg.top_p:
+            try:
+                top_p = float(top_p_override)
                 llm_cfg.top_p = top_p
                 llm_cfg.parameters["top_p"] = top_p
+            except ValueError:
+                logger.warning("Invalid CYBER_AGENT_TOP_P=%s - ignoring", top_p_override)
 
-        max_tokens_override = self.getenv("MAX_TOKENS")
+        max_tokens_override = os.getenv("CYBER_AGENT_MAX_TOKENS") or os.getenv("MAX_TOKENS")
         if max_tokens_override and llm_cfg is not None:
-            max_tokens = self.getenv_int("MAX_TOKENS", llm_cfg.max_tokens)
-            if max_tokens != llm_cfg.max_tokens:
+            try:
+                max_tokens = int(float(max_tokens_override))
                 llm_cfg.max_tokens = max_tokens
                 llm_cfg.parameters["max_tokens"] = max_tokens
+            except ValueError:
+                logger.warning("Invalid MAX_TOKENS override=%s - ignoring", max_tokens_override)
 
-        embedding_model = self.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+        embedding_model = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
         if embedding_model and isinstance(defaults.get("embedding"), EmbeddingConfig):
             embedding_cfg = defaults["embedding"]
-            if embedding_model != embedding_cfg.model_id:
-                logger.info(
-                    "ENV override: CYBER_AGENT_EMBEDDING_MODEL=%s replaces config=%s",
-                    embedding_model,
-                    embedding_cfg.model_id,
-                )
             embedding_cfg.model_id = embedding_model
             embedding_cfg.parameters["dimensions"] = embedding_cfg.dimensions
 
-        eval_model = self.getenv("CYBER_AGENT_EVALUATION_MODEL")
+        eval_model = os.getenv("CYBER_AGENT_EVALUATION_MODEL") or os.getenv("RAGAS_EVALUATOR_MODEL")
         if eval_model and isinstance(defaults.get("evaluation_llm"), LLMConfig):
             evaluation_cfg = defaults["evaluation_llm"]
             evaluation_cfg.model_id = eval_model
 
-        swarm_model = self.getenv("CYBER_AGENT_SWARM_MODEL")
+        swarm_model = os.getenv("CYBER_AGENT_SWARM_MODEL")
         if swarm_model and isinstance(defaults.get("swarm_llm"), LLMConfig):
             swarm_cfg = defaults["swarm_llm"]
             swarm_cfg.model_id = swarm_model
 
-        memory_llm_model = self.getenv("MEM0_LLM_MODEL")
+        memory_llm_model = os.getenv("MEM0_LLM_MODEL")
         if memory_llm_model and isinstance(defaults.get("memory_llm"), MemoryLLMConfig):
             memory_llm_cfg = defaults["memory_llm"]
             memory_llm_cfg.model_id = memory_llm_model
-
-        # Apply AWS_REGION to region and aws_region fields (but not for ollama)
-        if _server not in ("ollama",):
-            aws_region = self.getenv("AWS_REGION", "us-east-1")
-            if defaults.get("region"):
-                defaults["region"] = aws_region
-            if isinstance(defaults.get("memory_llm"), MemoryLLMConfig):
-                defaults["memory_llm"].aws_region = aws_region
 
         return defaults
 
     def _split_litellm_model_id(self, model_id: str) -> Tuple[str, str]:
         """Split LiteLLM model id into provider prefix and base id."""
-        return split_litellm_model_id(model_id)
+        if not model_id:
+            return "", ""
+        if "/" in model_id:
+            prefix, base = model_id.split("/", 1)
+            if prefix.lower() == "models":
+                prefix = "gemini"
+            return prefix.lower(), base
+        return "", model_id
 
     def _align_litellm_defaults(self, defaults: Dict[str, Any]) -> None:
-        """Ensure LiteLLM configuration components stay aligned with the selected model."""
-        align_litellm_defaults(defaults, self.env)
+        """Ensure LiteLLM configuration components stay aligned with the selected model.
 
-    def _get_memory_embedder_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryEmbeddingConfig:
+        Uses LiteLLM's get_max_tokens() API to dynamically cap max_tokens based on
+        model limits from model_prices_and_context_window.json. This ensures we stay
+        within model limits without hardcoding values that may change.
+        """
+        llm_cfg = defaults.get("llm")
+        if not isinstance(llm_cfg, LLMConfig):
+            return
+
+        provider_prefix, base_model = self._split_litellm_model_id(llm_cfg.model_id)
+        if not base_model:
+            return
+
+        # Use LiteLLM's model database to get max_output_tokens for this model
+        # This handles all providers and updates automatically with LiteLLM
+        try:
+            import litellm
+
+            # Query LiteLLM's model database for max output tokens
+            model_max_tokens = litellm.get_max_tokens(base_model)
+
+            if model_max_tokens and llm_cfg.max_tokens > model_max_tokens:
+                logger.info(
+                    "Capping max_tokens from %d to %d for model '%s' (model limit from LiteLLM database)",
+                    llm_cfg.max_tokens,
+                    model_max_tokens,
+                    llm_cfg.model_id
+                )
+                llm_cfg.max_tokens = model_max_tokens
+                llm_cfg.parameters["max_tokens"] = model_max_tokens
+            elif model_max_tokens:
+                logger.debug(
+                    "Model '%s' max_tokens=%d is within limit (model max: %d)",
+                    llm_cfg.model_id,
+                    llm_cfg.max_tokens,
+                    model_max_tokens
+                )
+            else:
+                logger.debug(
+                    "Model '%s' not in LiteLLM database, using configured max_tokens=%d",
+                    llm_cfg.model_id,
+                    llm_cfg.max_tokens
+                )
+        except Exception as e:
+            # If LiteLLM doesn't know about this model, log and continue
+            # The API call will fail with a clear error if max_tokens is invalid
+            logger.debug(
+                "Could not query max_tokens for model '%s': %s (will use configured value)",
+                llm_cfg.model_id,
+                str(e)
+            )
+
+        embed_override = os.getenv("CYBER_AGENT_EMBEDDING_MODEL")
+
+        for key in ("memory_llm", "evaluation_llm", "swarm_llm"):
+            cfg = defaults.get(key)
+            if isinstance(cfg, MemoryLLMConfig):
+                cfg.model_id = llm_cfg.model_id
+                cfg.provider = ModelProvider.LITELLM
+                cfg.parameters["temperature"] = cfg.temperature
+                cfg.parameters["max_tokens"] = cfg.max_tokens
+            elif isinstance(cfg, LLMConfig):
+                cfg.model_id = llm_cfg.model_id
+                cfg.provider = ModelProvider.LITELLM
+                cfg.parameters["temperature"] = cfg.temperature
+                cfg.parameters["max_tokens"] = cfg.max_tokens
+
+        embed_cfg = defaults.get("embedding")
+        if isinstance(embed_cfg, EmbeddingConfig):
+            if embed_override:
+                embed_model = embed_override
+                dims = EMBEDDING_DIMENSIONS.get(embed_model)
+                if dims is None:
+                    logger.warning(
+                        "Unknown embedding model '%s', dimensions not in lookup table. "
+                        "Attempting to infer from model name or defaulting to 1536.",
+                        embed_model
+                    )
+                    if "3-large" in embed_model:
+                        dims = 3072
+                    elif "ada-002" in embed_model or "3-small" in embed_model:
+                        dims = 1536
+                    elif "text-embedding-004" in embed_model:
+                        dims = 768
+                    elif "MiniLM" in embed_model:
+                        dims = 384
+                    elif "titan" in embed_model and "v2" in embed_model:
+                        dims = 1024
+                    else:
+                        dims = 1536
+                        logger.warning(
+                            "Could not infer dimensions for '%s', defaulting to 1536. "
+                            "If this is incorrect, the FAISS index will fail to load.",
+                            embed_model
+                        )
+            else:
+                embed_model, dims = LITELLM_EMBEDDING_DEFAULTS.get(
+                    provider_prefix, DEFAULT_LITELLM_EMBEDDING
+                )
+
+            if embed_model == "models/text-embedding-004":
+                if importlib.util.find_spec("google.genai") is None:
+                    logger.error(
+                        "LiteLLM provider '%s' requires optional dependency 'google-genai'. "
+                        "Install it or set CYBER_AGENT_EMBEDDING_MODEL to a supported embedding.",
+                        provider_prefix,
+                    )
+                    raise ImportError("google-genai is required for Gemini embeddings")
+            elif embed_model == "multi-qa-MiniLM-L6-cos-v1":
+                if importlib.util.find_spec("sentence_transformers") is None:
+                    logger.error(
+                        "LiteLLM provider '%s' requires optional dependency 'sentence-transformers'. "
+                        "Install it or set CYBER_AGENT_EMBEDDING_MODEL to a supported embedding.",
+                        provider_prefix,
+                    )
+                    raise ImportError("sentence-transformers is required for Hugging Face embeddings")
+
+            embed_cfg.model_id = embed_model
+            embed_cfg.dimensions = dims
+            embed_cfg.provider = ModelProvider.LITELLM
+            embed_cfg.parameters["dimensions"] = dims
+
+
+    def _get_memory_embedder_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryEmbeddingConfig:
         """Get memory embedder configuration."""
         embedding_config = defaults["embedding"]
         return MemoryEmbeddingConfig(
@@ -868,190 +1223,26 @@ class ConfigManager:
             dimensions=embedding_config.dimensions,
         )
 
-    def _get_memory_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> MemoryLLMConfig:
+    def _get_memory_llm_config(self, _server: str, defaults: Dict[str, Any]) -> MemoryLLMConfig:
         """Get memory LLM configuration."""
         return defaults["memory_llm"]
 
-    def _get_evaluation_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation LLM configuration."""
         return defaults["evaluation_llm"]
 
-    def _get_evaluation_embedding_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
+    def _get_evaluation_embedding_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
         """Get evaluation embedding configuration."""
         return defaults["embedding"]
 
-    def get_safe_max_tokens(self, model_id: str, buffer: float = 0.5) -> int:
-        """Get safe max_tokens using models.dev (50% of limit by default).
+    def _get_swarm_llm_config(self, _server: str, defaults: Dict[str, Any]) -> ModelConfig:
+        """Get swarm LLM configuration."""
+        return defaults["swarm_llm"]
 
-        Args:
-            model_id: Model identifier (e.g., "azure/gpt-5", "bedrock/...")
-            buffer: Safety buffer (0.5 = 50% of limit, must be between 0 and 1)
-
-        Returns:
-            Safe max_tokens value
-        """
-        # Validate buffer parameter
-        if not (0 < buffer <= 1.0):
-            logger.warning(
-                "Invalid buffer %.2f (must be between 0 and 1), using default 0.5",
-                buffer
-            )
-            buffer = 0.5
-
-        # Try models.dev first (authoritative)
-        try:
-            if self.models_client is None:
-                raise ValueError("models.dev client not available")
-
-            limits = self.models_client.get_limits(model_id)
-            if limits and limits.output > 0:
-                safe = int(limits.output * buffer)
-                logger.debug(
-                    "Safe max_tokens from models.dev: model=%s, limit=%d, safe=%d (%.0f%%)",
-                    model_id, limits.output, safe, buffer * 100
-                )
-                return safe
-        except (ValueError, KeyError, AttributeError) as e:
-            logger.debug("models.dev lookup failed for %s: %s", model_id, e)
-        except Exception as e:
-            logger.error(
-                "Unexpected error in models.dev lookup for %s: %s",
-                model_id, e, exc_info=True
-            )
-
-        # Fallback to 4096 if model not found
-        logger.warning(
-            "Model not found in models.dev, using safe default: model=%s, safe=4096",
-            model_id
-        )
-        return 4096
-
-    def _get_swarm_llm_config(
-        self, _server: str, defaults: Dict[str, Any]
-    ) -> ModelConfig:
-        """Get swarm LLM configuration with model-aware token limits."""
-        swarm_cfg = defaults["swarm_llm"]
-
-        # Get safe max_tokens from models.dev (50% of actual limit)
-        safe_max = self.get_safe_max_tokens(swarm_cfg.model_id)
-
-        # Allow explicit override via dedicated env var (don't inherit from main LLM)
-        explicit_max = self.getenv_int("CYBER_AGENT_SWARM_MAX_TOKENS", None)
-        if explicit_max is not None:
-            swarm_cfg.max_tokens = explicit_max
-            logger.info(
-                "Swarm config: model=%s, max_tokens=%d (source=env override)",
-                swarm_cfg.model_id,
-                swarm_cfg.max_tokens
-            )
-        else:
-            swarm_cfg.max_tokens = safe_max
-            logger.info(
-                "Swarm config: model=%s, max_tokens=%d (source=models.dev safe default)",
-                swarm_cfg.model_id,
-                swarm_cfg.max_tokens
-            )
-
-        return swarm_cfg
-
-    def _get_mcp_config(self, _server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> MCPConfig:
-        """Get MCP configuration with validation."""
-        enabled = overrides.get("mcp_enabled") or os.getenv("CYBER_MCP_ENABLED", "false").lower() == "true"
-
-        connections = []
-
-        if enabled:
-            conns_json = overrides.get("mcp_conns") or os.getenv("CYBER_MCP_CONNECTIONS")
-            if conns_json and conns_json.strip():
-                try:
-                    conns = json.loads(conns_json)
-                    if not isinstance(conns, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS is not an array")
-                except json.JSONDecodeError:
-                    raise ValueError("CYBER_MCP_CONNECTIONS is not valid JSON")
-                for conn in conns:
-                    mcp_id = conn.get("id")
-                    if mcp_id is None or len(mcp_id) == 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS requires an id property")
-                    if mcp_id in map(lambda x: x.id, connections):
-                        raise ValueError("CYBER_MCP_CONNECTIONS id property must be unique")
-
-                    mcp_transport = conn.get("transport")
-                    if mcp_transport not in ["stdio", "sse", "streamable-http"]:
-                        raise ValueError(f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}")
-
-                    mcp_command = conn.get("command") or None
-                    if mcp_transport == "stdio":
-                        if not mcp_command:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport requires the command property")
-                        if isinstance(mcp_command, str):
-                            mcp_command = [str]
-                        if not isinstance(mcp_command, list):
-                            raise ValueError("CYBER_MCP_CONNECTIONS command property is expected to be a list")
-                    else:
-                        if mcp_command is not None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports do not use the command property")
-
-                    mcp_server_url = conn.get("server_url") or None
-                    if mcp_transport == "stdio":
-                        if mcp_server_url:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property")
-                    else:
-                        if mcp_server_url is None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports require the server_url property")
-
-                    mcp_headers = conn.get("headers")
-                    if mcp_headers is not None and not isinstance(mcp_headers, dict):
-                        raise ValueError("CYBER_MCP_CONNECTIONS headers property is expected to be a dictionary")
-
-                    mcp_plugins = conn.get("plugins")
-                    if mcp_plugins is not None and not isinstance(mcp_plugins, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS plugins property is expected to be a list")
-                    if not mcp_plugins or "*" in mcp_plugins:
-                        mcp_plugins = ["*"]
-
-                    mcp_timeout = conn.get("timeoutSeconds")
-                    if mcp_timeout is not None and not isinstance(mcp_timeout, int):
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be an integer")
-                    if mcp_timeout is not None and mcp_timeout < 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer")
-
-                    mcp_allowed_tools = conn.get("allowedTools")
-                    if mcp_allowed_tools is not None and not isinstance(mcp_allowed_tools, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list")
-                    if not mcp_allowed_tools or "*" in mcp_allowed_tools:
-                        mcp_allowed_tools = ["*"]
-
-                    mcp_conn = MCPConnection(
-                        id=mcp_id,
-                        transport=mcp_transport,
-                        command=mcp_command,
-                        server_url=mcp_server_url,
-                        headers=mcp_headers,
-                        plugins=mcp_plugins,
-                        timeoutSeconds=mcp_timeout,
-                        allowed_tools=mcp_allowed_tools,
-                    )
-                    connections.append(mcp_conn)
-
-        return MCPConfig(enabled=enabled, connections=connections)
-
-    def _get_output_config(
-        self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]
-    ) -> OutputConfig:
+    def _get_output_config(self, _server: str, _defaults: Dict[str, Any], overrides: Dict[str, Any]) -> OutputConfig:
         """Get output configuration with environment variable and override support."""
         # Get base output directory
-        base_dir = (
-            overrides.get("output_dir")
-            or self.getenv("CYBER_AGENT_OUTPUT_DIR")
-            or get_default_base_dir()
-        )
+        base_dir = overrides.get("output_dir") or os.getenv("CYBER_AGENT_OUTPUT_DIR") or get_default_base_dir()
 
         # Get target name
         target_name = overrides.get("target_name")
@@ -1060,9 +1251,10 @@ class ConfigManager:
         operation_id = overrides.get("operation_id")
 
         # Get feature flags - unified output is now enabled by default
-        enable_unified_output = overrides.get(
-            "enable_unified_output", True
-        ) or self.getenv_bool("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", True)
+        enable_unified_output = (
+            overrides.get("enable_unified_output", True)
+            or os.getenv("CYBER_AGENT_ENABLE_UNIFIED_OUTPUT", "true").lower() == "true"
+        )
 
         return OutputConfig(
             base_dir=base_dir,
@@ -1071,126 +1263,181 @@ class ConfigManager:
             operation_id=operation_id,
         )
 
-    # Validation helper methods now in validation.py module
 
+    def _validate_ollama_requirements(self) -> None:
+        """Validate Ollama requirements."""
+        ollama_host = self.get_ollama_host()
 
-# Memory utility functions
+        # Check if Ollama is running
+        try:
+            response = requests.get(f"{ollama_host}/api/version", timeout=5)
+            if response.status_code != 200:
+                raise ConnectionError("Ollama server not responding")
+        except Exception as e:
+            raise ConnectionError(
+                f"Ollama server not accessible at {ollama_host}. " "Please ensure Ollama is installed and running."
+            ) from e
 
+        # Check if at least one model is available
+        try:
+            client = ollama.Client(host=ollama_host)
+            models_response = client.list()
+            available_models = [m.get("model", m.get("name", "")) for m in models_response["models"]]
 
-def align_mem0_config(model_id: Optional[str], memory_config: dict[str, Any]) -> None:
-    """Align Mem0 memory configuration provider based on model prefix.
+            if not available_models:
+                raise ValueError("No Ollama models found. Please pull at least one model, e.g.: ollama pull qwen3:1.7b")
 
-    Ensures memory provider matches the LLM provider for LiteLLM configurations.
-    Respects MEM0_LLM_MODEL override for non-Bedrock providers.
+            # Log available models for debugging
+            logger.info(f"Available Ollama models: {available_models}")
 
-    Args:
-        model_id: Model ID to extract provider from (e.g., "azure/gpt-4")
-        memory_config: Memory configuration dict to update in-place
-    """
-    if not model_id or not isinstance(memory_config, dict):
-        return
-    # Respect MEM0_LLM_MODEL override for non-Bedrock providers only. Bedrock configs
-    # still need alignment when switching to Azure/OpenAI-style models for memory LLM.
-    try:
-        if os.getenv("MEM0_LLM_MODEL"):
-            llm_section = memory_config.get("llm")
-            if isinstance(llm_section, dict):
-                current_provider = (llm_section.get("provider") or "").lower()
-                if current_provider and current_provider not in ("aws_bedrock",):
-                    logger.debug(
-                        "Skipping Mem0 alignment because MEM0_LLM_MODEL override is set and provider=%s",
-                        current_provider,
-                    )
-                    return
-    except Exception:
-        # If any issue occurs, continue with alignment logic
-        pass
+            # Enforce presence of default models for predictable local dev unless user overrides
+            server_config = self.get_server_config("ollama")
+            required_models = [
+                server_config.llm.model_id,
+                server_config.embedding.model_id,
+            ]
 
-    # Split model ID to get provider prefix
-    prefix, remainder = split_litellm_model_id(model_id)
-    if not prefix:
-        return
-    expected = MEM0_PROVIDER_MAP.get(prefix)
-    if not expected:
-        return
-    llm_section = memory_config.get("llm")
-    if not isinstance(llm_section, dict):
-        return
-    current_provider = (llm_section.get("provider") or "").lower()
-    if current_provider != expected.lower():
-        llm_section["provider"] = expected
-    config_section = llm_section.setdefault("config", {})
-    if expected == "azure_openai" and remainder:
-        config_section["model"] = remainder
+            # Require at least one required model to be available
+            has_required = any(
+                any(req in model for model in available_models) for req in required_models
+            )
 
-
-def check_existing_memories(target: str, _provider: str = "bedrock") -> bool:
-    """Check if existing memories exist for a target.
-
-    Checks FAISS, OpenSearch, or Mem0 Platform backends for existing memory.
-
-    Args:
-        target: Target system being assessed
-        _provider: Provider type for configuration (currently unused)
-
-    Returns:
-        True if existing memories are detected, False otherwise
-    """
-    try:
-        from modules.handlers.utils import sanitize_target_name
-
-        # Sanitize target name for consistent path handling
-        target_name = sanitize_target_name(target)
-
-        # Check based on backend type
-        if os.environ.get("MEM0_API_KEY"):
-            # Mem0 Platform - always check (cloud-based)
-            return True
-
-        elif os.environ.get("OPENSEARCH_HOST"):
-            # OpenSearch - always check (remote service)
-            return True
-
-        else:
-            # FAISS - check if local store exists with actual memory content
-            # Use default relative outputs directory for compatibility with tests
-            output_dir = "outputs"
-            # Keep relative path for compatibility with tests and local runs
-            # Important: tests expect the sanitized target to include dot preserved (test.com)
-            # Our sanitize_target_name preserves dots, so join directly
-            memory_base_path = os.path.join(output_dir, target_name, "memory")
-
-            # Explicit exists() call for assertion in tests
-            os.path.exists(memory_base_path)
-
-            # Check if memory directory exists and has FAISS index files
-            if os.path.exists(memory_base_path):
-                faiss_file = os.path.join(memory_base_path, "mem0.faiss")
-                pkl_file = os.path.join(memory_base_path, "mem0.pkl")
-
-                # In some environments, test fixture paths use underscore in sanitized name
-                alt_memory_base_path = os.path.join(
-                    output_dir, target_name.replace(".", "_"), "memory"
+            if not has_required:
+                raise ValueError(
+                    "Required models not found. Ensure default models are pulled or override with --model."
                 )
-                alt_faiss = os.path.join(alt_memory_base_path, "mem0.faiss")
-                alt_pkl = os.path.join(alt_memory_base_path, "mem0.pkl")
 
-                # Verify both FAISS index files exist with non-zero size
-                # In unit tests, getsize is mocked to 100; treat >0 as meaningful
-                has_faiss = (
-                    os.path.exists(faiss_file) and os.path.getsize(faiss_file) > 0
-                ) or (os.path.exists(alt_faiss) and os.path.getsize(alt_faiss) > 0)
-                has_pkl = (
-                    os.path.exists(pkl_file) and os.path.getsize(pkl_file) > 0
-                ) or (os.path.exists(alt_pkl) and os.path.getsize(alt_pkl) > 0)
-                if has_faiss and has_pkl:
-                    return True
+        except Exception as e:
+            if "No Ollama models found" in str(e) or "Required models not found" in str(e) or "No models available" in str(e):
+                raise e
+            raise ConnectionError(f"Could not verify Ollama models: {e}") from e
 
-        return False
+    def _validate_bedrock_model_access(self) -> None:
+        """Validate AWS Bedrock model access and availability.
 
-    except Exception as e:
-        logger.debug("Error checking existing memories: %s", str(e))
-        return False
+        Performs basic validation of AWS region configuration.
+        Model access validation is handled by the strands-agents framework.
+
+        Raises:
+            EnvironmentError: If AWS region is not configured
+        """
+        region = self.get_default_region()
+        if not region:
+            raise EnvironmentError(
+                "AWS region not configured. Set AWS_REGION environment variable or configure default region."
+            )
+
+        # Verify boto3 client can be created with current credentials
+        try:
+            boto3.client("bedrock-runtime", region_name=region)
+        except Exception as e:
+            logger.debug("Could not create bedrock-runtime client: %s", e)
+            # Model-specific errors will be handled by strands-agents during actual usage
+
+    def _validate_aws_requirements(self) -> None:
+        """Validate AWS requirements including Bedrock model access.
+
+        Supports either standard AWS credentials (ACCESS_KEY/SECRET or PROFILE)
+        or Bedrock bearer token via AWS_BEARER_TOKEN_BEDROCK without mutating
+        credential environment variables.
+        """
+        bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+
+        # Verify AWS credentials are configured (standard creds OR bearer token)
+        if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE") or bearer_token):
+            raise EnvironmentError(
+                "AWS credentials not configured for remote mode. "
+                "Set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, configure AWS_PROFILE, "
+                "or set AWS_BEARER_TOKEN_BEDROCK for API key authentication"
+            )
+
+        # Prefer standard AWS credentials when present; use bearer token only if no standard credentials
+        if bearer_token and not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer_token
+        else:
+            # Ensure bearer token does not override SigV4 when standard creds are set
+            os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+
+        # Optionally validate region and client construction; ignore client errors here.
+        self._validate_bedrock_model_access()
+
+    def _validate_litellm_requirements(self) -> None:
+        """Validate LiteLLM requirements based on model provider prefix.
+
+        LiteLLM handles most validation internally:
+        - max_tokens: Auto-capped to model limits via get_modified_max_tokens()
+        - temperature: Validated by provider (e.g., reasoning models require 1.0)
+        - Model limits: Maintained in model_prices_and_context_window.json
+
+        This validation only checks that required API credentials are configured.
+        """
+        # Get default LiteLLM model ID
+        litellm_config = self._default_configs.get("litellm", {})
+        model_id = os.getenv("CYBER_AGENT_LLM_MODEL")
+        if not model_id:
+            llm_cfg = litellm_config.get("llm")
+            model_id = llm_cfg.model_id if hasattr(llm_cfg, "model_id") else ""
+
+        logger.info("Validating LiteLLM configuration for model: %s", model_id)
+
+        # Check provider-specific requirements based on model prefix
+        if model_id.startswith("bedrock/"):
+            # LiteLLM does NOT support AWS bearer tokens - only standard credentials
+            if not (os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("AWS_PROFILE")):
+                raise EnvironmentError(
+                    "AWS credentials not configured for LiteLLM Bedrock models.\n"
+                    "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE\n"
+                    "Note: LiteLLM does not support AWS_BEARER_TOKEN_BEDROCK"
+                )
+
+        elif model_id.startswith("openai/"):
+            if not os.getenv("OPENAI_API_KEY"):
+                raise EnvironmentError(
+                    "OPENAI_API_KEY not configured for LiteLLM OpenAI models. "
+                    "Set OPENAI_API_KEY environment variable."
+                )
+        elif model_id.startswith("anthropic/"):
+            if not os.getenv("ANTHROPIC_API_KEY"):
+                raise EnvironmentError(
+                    "ANTHROPIC_API_KEY not configured for LiteLLM Anthropic models. "
+                    "Set ANTHROPIC_API_KEY environment variable."
+                )
+        elif model_id.startswith("cohere/"):
+            if not os.getenv("COHERE_API_KEY"):
+                raise EnvironmentError(
+                    "COHERE_API_KEY not configured for LiteLLM Cohere models. "
+                    "Set COHERE_API_KEY environment variable."
+                )
+        elif model_id.startswith("azure/"):
+            if not os.getenv("AZURE_API_KEY"):
+                raise EnvironmentError(
+                    "AZURE_API_KEY not configured for LiteLLM Azure models. "
+                    "Set AZURE_API_KEY, AZURE_API_BASE, and AZURE_API_VERSION environment variables."
+                )
+        elif model_id.startswith("gemini/"):
+            if not os.getenv("GEMINI_API_KEY"):
+                raise EnvironmentError(
+                    "GEMINI_API_KEY not configured for LiteLLM Gemini models. "
+                    "Set GEMINI_API_KEY environment variable."
+                )
+        elif model_id.startswith("sagemaker/"):
+            has_std_creds = os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY")
+            if not (has_std_creds or os.getenv("AWS_PROFILE")):
+                raise EnvironmentError(
+                    "AWS credentials not configured for LiteLLM SageMaker models.\n"
+                    "Required: AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY OR AWS_PROFILE"
+                )
+            if not (os.getenv("AWS_REGION") or os.getenv("AWS_REGION_NAME")):
+                raise EnvironmentError(
+                    "AWS region not configured for LiteLLM SageMaker models.\n"
+                    "Set AWS_REGION or AWS_REGION_NAME environment variable."
+                )
+        else:
+            # No explicit prefix - LiteLLM will auto-detect based on available credentials
+            logger.debug(
+                "Model '%s' has no explicit prefix. LiteLLM will auto-detect provider based on credentials.",
+                model_id
+            )
 
 
 # Global configuration manager instance
@@ -1229,9 +1476,6 @@ def get_default_model_configs(server: str) -> Dict[str, Any]:
     }
 
 
-def get_ollama_host(env_reader=None) -> str:
-    """Get Ollama host (backward compatibility wrapper)."""
-    if env_reader is None:
-        return get_config_manager().get_ollama_host()
-    # When called with env_reader, delegate to providers module
-    return _get_ollama_host_from_env(env_reader)
+def get_ollama_host() -> str:
+    """Get Ollama host (backward compatibility)."""
+    return get_config_manager().get_ollama_host()

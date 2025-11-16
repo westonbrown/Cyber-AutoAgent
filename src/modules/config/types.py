@@ -46,6 +46,7 @@ MEM0_PROVIDER_MAP: Dict[str, str] = {
     "openai": "openai",
     "azure": "azure_openai",
     "anthropic": "anthropic",
+    "anthropic_oauth": "anthropic",  # OAuth uses Anthropic API
     "gemini": "gemini",
     "google": "gemini",
     "deepseek": "deepseek",
@@ -65,6 +66,7 @@ class ModelProvider(Enum):
     AWS_BEDROCK = "aws_bedrock"
     OLLAMA = "ollama"
     LITELLM = "litellm"  # Universal provider gateway supporting 100+ model providers
+    ANTHROPIC_OAUTH = "anthropic_oauth"  # Anthropic Claude Max OAuth billing
 
 
 @dataclass

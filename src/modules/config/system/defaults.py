@@ -34,6 +34,7 @@ def build_default_configs() -> Dict[str, Dict[str, Any]]:
         "ollama": build_ollama_defaults(),
         "bedrock": build_bedrock_defaults(),
         "litellm": build_litellm_defaults(),
+        "anthropic_oauth": build_anthropic_oauth_defaults(),
     }
 
 
@@ -165,4 +166,51 @@ def build_litellm_defaults() -> Dict[str, Any]:
         ),
         "host": None,
         "region": "us-east-1",  # Will be overridden by environment
+    }
+
+
+def build_anthropic_oauth_defaults() -> Dict[str, Any]:
+    """Build default configuration for Anthropic OAuth provider.
+
+    Uses Claude Max unlimited quota via OAuth authentication.
+    Bills against Claude Max subscription instead of per-token API usage.
+    Note: Anthropic doesn't provide embeddings, so defaults to local model.
+
+    Returns:
+        Anthropic OAuth default configuration with Claude models
+    """
+    return {
+        "llm": LLMConfig(
+            provider=ModelProvider.ANTHROPIC_OAUTH,
+            model_id="claude-sonnet-4-20250514",
+            temperature=0.95,
+            max_tokens=8192,
+        ),
+        # Anthropic doesn't offer embeddings - use local model
+        "embedding": EmbeddingConfig(
+            provider=ModelProvider.ANTHROPIC_OAUTH,
+            model_id="multi-qa-MiniLM-L6-cos-v1",
+            dimensions=384,
+        ),
+        "memory_llm": MemoryLLMConfig(
+            provider=ModelProvider.ANTHROPIC_OAUTH,
+            model_id="claude-3-5-sonnet-20241022",
+            temperature=0.1,
+            max_tokens=2000,
+            aws_region="anthropic",
+        ),
+        "evaluation_llm": LLMConfig(
+            provider=ModelProvider.ANTHROPIC_OAUTH,
+            model_id="claude-3-5-sonnet-20241022",
+            temperature=0.1,
+            max_tokens=2000,
+        ),
+        "swarm_llm": LLMConfig(
+            provider=ModelProvider.ANTHROPIC_OAUTH,
+            model_id="claude-3-5-sonnet-20241022",
+            temperature=0.7,
+            max_tokens=4096,
+        ),
+        "host": None,
+        "region": "anthropic",
     }

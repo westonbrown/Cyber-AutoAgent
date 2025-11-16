@@ -329,9 +329,9 @@ def main():
     parser.add_argument(
         "--provider",
         type=str,
-        choices=["bedrock", "ollama", "litellm"],
+        choices=["bedrock", "ollama", "litellm", "anthropic_oauth"],
         default=os.getenv("CYBER_AGENT_PROVIDER", "bedrock"),
-        help="Model provider: 'bedrock' for AWS Bedrock, 'ollama' for local models, 'litellm' for universal access (default: from CYBER_AGENT_PROVIDER or bedrock)",
+        help="Model provider: 'bedrock' for AWS Bedrock, 'ollama' for local models, 'litellm' for universal access, 'anthropic_oauth' for Claude Max billing (default: from CYBER_AGENT_PROVIDER or bedrock)",
     )
     parser.add_argument(
         "--confirmations",
