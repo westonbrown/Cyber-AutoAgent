@@ -52,7 +52,6 @@ from modules.config.system.environment import auto_setup, clean_operation_memory
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
 from strands.types.exceptions import MaxTokensReachedException
-from modules.handlers.hitl.hitl_logger import log_hitl
 from modules.handlers.utils import (
     Colors,
     get_output_path,
@@ -681,28 +680,13 @@ def main():
 
                     # Check for HITL pause AFTER agent execution
                     # This ensures pause is honored before starting next iteration
-                    log_hitl(
-                        "MainLoop",
-                        f"After agent execution - feedback_manager={'EXISTS' if feedback_manager else 'NONE'}",
-                        "WARNING",
-                    )
                     if feedback_manager:
                         is_paused = feedback_manager.is_paused()
-                        log_hitl(
-                            "MainLoop",
-                            f"Pause check: feedback_manager exists, is_paused={is_paused}",
-                            "INFO",
-                        )
                         logger.info(
                             "[HITL] Pause check: feedback_manager exists, is_paused=%s",
                             is_paused,
                         )
                         if is_paused:
-                            log_hitl(
-                                "MainLoop",
-                                "⏸️  PAUSE DETECTED - entering wait loop",
-                                "WARNING",
-                            )
                             logger.info(
                                 "[HITL] Execution paused after iteration - blocking until resume"
                             )
@@ -715,17 +699,6 @@ def main():
                             while feedback_manager.is_paused():
                                 time.sleep(0.5)
                                 poll_count += 1
-                                if poll_count % 10 == 0:  # Log every 5 seconds
-                                    log_hitl(
-                                        "MainLoop",
-                                        f"Still paused... (poll #{poll_count})",
-                                        "INFO",
-                                    )
-                            log_hitl(
-                                "MainLoop",
-                                "▶️  PAUSE CLEARED - resuming execution",
-                                "WARNING",
-                            )
                             logger.info(
                                 "[HITL] Resumed after pause - continuing execution"
                             )

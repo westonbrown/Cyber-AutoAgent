@@ -11,7 +11,6 @@ from strands.hooks import (
 )
 
 from .feedback_manager import FeedbackManager
-from .hitl_logger import log_hitl
 
 logger = logging.getLogger(__name__)
 
@@ -119,11 +118,6 @@ class HITLHookProvider(HookProvider):
                     "Tool %s rejected by user - preventing execution",
                     tool_name,
                 )
-                log_hitl(
-                    "HITLHook",
-                    f"🚫 Tool {tool_name} rejected by user - raising exception to prevent execution",
-                    "WARNING",
-                )
                 # Raise exception to prevent tool from executing
                 # The agent will see the rejection feedback at next model invocation
                 raise RuntimeError(
@@ -140,29 +134,14 @@ class HITLHookProvider(HookProvider):
             event: BeforeModelCallEvent from Strands SDK
         """
         if self.feedback_manager.is_paused():
-            log_hitl(
-                "HITLHook",
-                "⏸️ Manual pause detected before model invocation - blocking",
-                "WARNING",
-            )
             logger.info("[HITL-Hook] Manual pause detected - waiting for feedback")
 
             # Block until feedback received or timeout
             feedback_received = self.feedback_manager.wait_for_feedback()
 
             if feedback_received:
-                log_hitl(
-                    "HITLHook",
-                    "▶️ Manual pause cleared - continuing execution",
-                    "WARNING",
-                )
                 logger.info("[HITL-Hook] Feedback received - resuming execution")
             else:
-                log_hitl(
-                    "HITLHook",
-                    "⏱ Manual pause timeout expired - auto-resuming",
-                    "WARNING",
-                )
                 logger.warning(
                     "[HITL-Hook] Manual pause timeout expired - auto-resuming"
                 )

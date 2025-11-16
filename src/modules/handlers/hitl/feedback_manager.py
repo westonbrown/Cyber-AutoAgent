@@ -5,7 +5,6 @@ import threading
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from .hitl_logger import log_hitl
 from .types import (
     FeedbackType,
     HITLState,
@@ -113,7 +112,6 @@ class FeedbackManager:
         # Block execution by clearing the event
         self._is_manual_pause = is_manual
         self._pause_event.clear()
-        log_hitl("FeedbackMgr", f"Execution blocked ({log_msg})", "INFO")
 
         # Emit pause event to UI
         if self.emitter:
@@ -153,11 +151,6 @@ class FeedbackManager:
         )
         pause_type = "manual" if self._is_manual_pause else "auto"
 
-        log_hitl(
-            "FeedbackMgr",
-            f"Waiting for feedback ({pause_type} pause, timeout={timeout}s)",
-            "INFO",
-        )
         logger.info(
             "[HITL-FM] Blocking execution - waiting for feedback (%s pause, timeout=%ds)",
             pause_type,
@@ -168,15 +161,9 @@ class FeedbackManager:
         feedback_received = self._pause_event.wait(timeout=timeout)
 
         if feedback_received:
-            log_hitl("FeedbackMgr", "Feedback received, execution resuming", "INFO")
             logger.info("[HITL-FM] Feedback received, execution resuming")
             return True
         else:
-            log_hitl(
-                "FeedbackMgr",
-                f"Timeout expired ({timeout}s), auto-resuming execution",
-                "WARNING",
-            )
             logger.warning(
                 "[HITL-FM] Timeout expired after %ds, auto-resuming execution", timeout
             )
@@ -200,15 +187,6 @@ class FeedbackManager:
             content: Feedback content
             tool_id: Tool invocation ID
         """
-        log_hitl(
-            "FeedbackMgr",
-            "submit_feedback() called",
-            "INFO",
-            feedback_type=feedback_type.value,
-            content_length=len(content),
-            tool_id=tool_id,
-        )
-
         logger.info(
             "[HITL-FM] Feedback submitted for tool %s: type=%s, operation=%s",
             tool_id,
@@ -227,22 +205,8 @@ class FeedbackManager:
             tool_id=tool_id,
             timestamp=time.time(),
         )
-
-        log_hitl(
-            "FeedbackMgr",
-            f"Created UserFeedback object at timestamp={feedback.timestamp}",
-            "DEBUG",
-        )
-
         self.pending_feedback = feedback
         self.feedback_queue[tool_id] = feedback
-
-        log_hitl(
-            "FeedbackMgr",
-            f"✓ Feedback stored in state - pending_feedback={'SET' if self.pending_feedback else 'None'}",
-            "INFO",
-            queue_size=len(self.feedback_queue),
-        )
 
         logger.debug(
             "[HITL-FM] Feedback stored - pending_feedback=%s, queue_size=%d",
@@ -271,7 +235,6 @@ class FeedbackManager:
         self._pause_event.set()
         self.state = HITLState.ACTIVE
         self._is_manual_pause = False
-        log_hitl("FeedbackMgr", "Auto-resuming execution after feedback", "INFO")
         logger.info("[HITL-FM] Execution auto-resumed after feedback submission")
 
     def get_pending_feedback(self, tool_id: str) -> Optional[UserFeedback]:
@@ -291,7 +254,6 @@ class FeedbackManager:
 
     def resume(self) -> None:
         """Resume execution from paused state."""
-        log_hitl("FeedbackMgr", "Resuming execution", "INFO")
         logger.info("[HITL-FM] Resuming execution from paused state")
         self.state = HITLState.ACTIVE
         self.pending_tool = None
@@ -300,21 +262,14 @@ class FeedbackManager:
         # Signal the pause event to unblock wait_for_feedback()
         self._pause_event.set()
         self._is_manual_pause = False
-        log_hitl("FeedbackMgr", "Signaled pause event and cleared pause type", "INFO")
-
     def get_pending_feedback_message(self) -> Optional[str]:
         """Get pending feedback formatted as agent message.
 
         Returns:
             Formatted message if feedback pending, None otherwise
         """
-        log_hitl("FeedbackMgr", "get_pending_feedback_message() called", "INFO")
-
         if not self.pending_feedback:
             logger.debug("[HITL-FM] No pending feedback to retrieve")
-            log_hitl(
-                "FeedbackMgr", "No pending feedback found - returning None", "INFO"
-            )
             return None
 
         feedback = self.pending_feedback
@@ -333,39 +288,21 @@ Please incorporate this feedback and adjust your approach accordingly. Continue 
         )
         logger.debug("[HITL-FM] Formatted message preview:\n%s", message[:300])
 
-        log_hitl(
-            "FeedbackMgr",
-            f"✓ Formatted feedback message: {len(message)} chars",
-            "INFO",
-            feedback_type=feedback.feedback_type.value,
-            message_preview=message[:100],
-        )
-
         return message
 
     def clear_pending_feedback(self) -> None:
         """Clear pending feedback after it has been injected into agent context."""
-        log_hitl("FeedbackMgr", "clear_pending_feedback() called", "INFO")
-
         if self.pending_feedback:
-            feedback_info = f"type={self.pending_feedback.feedback_type.value}, tool_id={self.pending_feedback.tool_id}"
             logger.info(
                 "[HITL-FM] Clearing pending feedback after injection (type=%s, tool_id=%s)",
                 self.pending_feedback.feedback_type.value,
                 self.pending_feedback.tool_id,
             )
             self.pending_feedback = None
-            log_hitl(
-                "FeedbackMgr",
-                f"✓ Cleared pending feedback: {feedback_info}",
-                "INFO",
-            )
         else:
             logger.warning(
                 "[HITL-FM] clear_pending_feedback called but no feedback was pending"
             )
-            log_hitl("FeedbackMgr", "WARNING: No feedback to clear", "WARNING")
-
     def _store_intervention(self, feedback: UserFeedback) -> None:
         """Store intervention in memory and logs.
 

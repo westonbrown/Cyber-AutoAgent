@@ -80,14 +80,7 @@ from modules.tools.memory import (
 from modules.handlers.hitl import FeedbackInputHandler, FeedbackManager, HITLHookProvider
 from modules.config.manager import get_config_manager
 from modules.handlers import ReasoningHandler
-from modules.handlers.hitl import (
-    FeedbackInputHandler,
-    FeedbackManager,
-    HITLHookProvider,
-    setup_hitl_logging,
-)
 from modules.handlers.hitl.feedback_injection_hook import HITLFeedbackInjectionHook
-from modules.handlers.hitl.hitl_logger import log_hitl
 from modules.handlers.utils import print_status, sanitize_target_name
 from modules.tools.memory import (
     get_memory_client,
@@ -800,14 +793,6 @@ Available {config.module} MCP tools:
     feedback_handler = None
 
     if hitl_enabled:
-        # Setup HITL logging to dedicated file
-        log_dir = os.path.join(artifacts_path, "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        setup_hitl_logging(log_dir)
-        log_hitl(
-            "CyberAgent", "HITL logging initialized", "INFO", operation_id=operation_id
-        )
-
         # Initialize feedback manager with configuration
         feedback_manager = FeedbackManager(
             memory=memory_client,
@@ -815,12 +800,10 @@ Available {config.module} MCP tools:
             emitter=callback_handler.emitter,
             hitl_config=hitl_config,
         )
-        log_hitl("CyberAgent", "FeedbackManager created", "INFO")
 
         # Initialize feedback input handler for receiving UI commands
         feedback_handler = FeedbackInputHandler(feedback_manager=feedback_manager)
         feedback_handler.start_listening()
-        log_hitl("CyberAgent", "FeedbackInputHandler started listening", "INFO")
 
         # Verify thread is actually running
         import time
@@ -830,18 +813,12 @@ Available {config.module} MCP tools:
             feedback_handler._listener_thread
             and feedback_handler._listener_thread.is_alive()
         ):
-            log_hitl(
-                "CyberAgent",
-                f"✓ Listener thread CONFIRMED running (ID: {feedback_handler._listener_thread.ident}, name: {feedback_handler._listener_thread.name})",
-                "INFO",
-            )
             logger.info(
                 "[HITL] Listener thread verified: ID=%s, alive=%s",
                 feedback_handler._listener_thread.ident,
                 feedback_handler._listener_thread.is_alive(),
             )
         else:
-            log_hitl("CyberAgent", "✗ WARNING: Listener thread NOT running!", "ERROR")
             logger.error("[HITL] WARNING: Listener thread failed to start!")
 
         # Create HITL hook provider using centralized configuration
@@ -851,13 +828,11 @@ Available {config.module} MCP tools:
             auto_pause_on_low_confidence=hitl_config.auto_pause_on_low_confidence,
             confidence_threshold=hitl_config.confidence_threshold,
         )
-        log_hitl("CyberAgent", "HITLHookProvider created", "INFO")
 
         # Create feedback injection hook for system prompt modification
         feedback_injection_hook = HITLFeedbackInjectionHook(
             feedback_manager=feedback_manager
         )
-        log_hitl("CyberAgent", "HITLFeedbackInjectionHook created", "INFO")
 
         print_status("HITL system enabled - human feedback available", "SUCCESS")
 
@@ -865,11 +840,6 @@ Available {config.module} MCP tools:
     if hitl_hook:
         hooks.append(hitl_hook)
         hooks.append(feedback_injection_hook)
-        log_hitl(
-            "CyberAgent",
-            f"Hooks registered: {[type(h).__name__ for h in hooks]}",
-            "INFO",
-        )
 
     # Create model based on provider type
     try:
