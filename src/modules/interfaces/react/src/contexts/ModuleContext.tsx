@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import * as fs from 'fs/promises';
+import { existsSync } from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { loggingService } from '../services/LoggingService.js';
@@ -47,8 +48,12 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       // The React app is located at: src/modules/interfaces/react
       // The operation_plugins are at: src/modules/operation_plugins
-      // So we need to go up 2 directories from the react folder
-      const modulesDir = path.resolve(process.cwd(), '..', '..', 'operation_plugins');
+      // In Docker: process.cwd() = /app, so we need src/modules/operation_plugins
+      // In dev: process.cwd() might be the react folder, so handle both cases
+      const isDocker = process.env.CONTAINER === 'docker' || existsSync('/app/src/modules');
+      const modulesDir = isDocker
+        ? path.resolve('/app/src/modules/operation_plugins')
+        : path.resolve(process.cwd(), '..', '..', 'operation_plugins');
       
       // Debug logging for module discovery
       if (process.env.DEBUG) {
@@ -113,8 +118,11 @@ export const ModuleProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const loadModuleInfo = async (moduleName: string): Promise<ModuleInfo | null> => {
     try {
-      // Use the same relative path as loadAvailableModules
-      const modulePath = path.resolve(process.cwd(), '..', '..', 'operation_plugins', moduleName);
+      // Use the same path logic as loadAvailableModules
+      const isDocker = process.env.CONTAINER === 'docker' || existsSync('/app/src/modules');
+      const modulePath = isDocker
+        ? path.resolve('/app/src/modules/operation_plugins', moduleName)
+        : path.resolve(process.cwd(), '..', '..', 'operation_plugins', moduleName);
       const yamlPath = path.join(modulePath, 'module.yaml');
       
       // Check if module.yaml exists
