@@ -45,8 +45,8 @@ export type EnvironmentMap = RawEnvironmentMap;
  */
 export interface Config {
   // AI Model Provider Configuration
-  /** Primary AI model provider (AWS Bedrock, Ollama local, or LiteLLM proxy) */
-  modelProvider: 'bedrock' | 'ollama' | 'litellm';
+  /** Primary AI model provider (AWS Bedrock, Ollama local, LiteLLM proxy, or Anthropic OAuth) */
+  modelProvider: 'bedrock' | 'ollama' | 'litellm' | 'anthropic_oauth';
   /** Main assessment model identifier (e.g., 'claude-sonnet-4', 'llama3.1:8b') */
   modelId: string;
   /** Vector embedding model for memory operations */
@@ -306,8 +306,8 @@ const deploymentDefaults = getDeploymentDefaults();
 
 export const defaultConfig: Config = {
   // Model Provider Settings
-  modelProvider: 'bedrock',
-  modelId: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', // Latest Sonnet 4.5 as default
+  modelProvider: (process.env.CYBER_AGENT_PROVIDER as Config['modelProvider']) || 'bedrock',
+  modelId: process.env.CYBER_AGENT_LLM_MODEL || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0', // Latest Sonnet 4.5 as default
   embeddingModel: 'amazon.titan-embed-text-v2:0',
   evaluationModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
   swarmModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',

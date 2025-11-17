@@ -274,3 +274,4 @@ package-lock.json
 *.tar.gz
 
 CLAUDE.md
+claude-changes/

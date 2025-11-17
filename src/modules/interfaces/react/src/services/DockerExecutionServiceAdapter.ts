@@ -155,6 +155,9 @@ export class DockerExecutionServiceAdapter extends EventEmitter implements Execu
         if (!config.ollamaHost) {
           warnings.push('Using default Ollama host (localhost:11434)');
         }
+      } else if (config.modelProvider === 'anthropic_oauth') {
+        // OAuth token is mounted as volume, no validation needed here
+        warnings.push('Using Anthropic OAuth authentication (Claude Max billing)');
       }
 
       // Check Docker image availability
