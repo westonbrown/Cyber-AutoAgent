@@ -321,13 +321,13 @@ def _create_anthropic_oauth_model(
             top_p=llm_config.top_p,
         )
 
-    # Determine fallback model
+    # Determine fallback model using latest aliases
     # Default: If using Opus, fallback to Sonnet; if using Sonnet, fallback to Haiku
-    default_fallback = "claude-sonnet-4-20250514"
+    default_fallback = "claude-sonnet-4-latest"
     if "opus" in model_id.lower():
-        default_fallback = "claude-sonnet-4-20250514"
+        default_fallback = "claude-sonnet-4-latest"
     elif "sonnet" in model_id.lower():
-        default_fallback = "claude-3-haiku-20240307"
+        default_fallback = "claude-3-5-haiku-latest"
 
     fallback_model_id = os.getenv("ANTHROPIC_OAUTH_FALLBACK_MODEL", default_fallback)
 

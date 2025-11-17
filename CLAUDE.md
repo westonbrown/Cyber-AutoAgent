@@ -278,7 +278,8 @@ LANGFUSE_HOST=http://langfuse-web:3000
 **Important:** LiteLLM does NOT support AWS bearer tokens - use standard credentials only.
 
 ### Anthropic OAuth (Claude Max Billing)
-- Default model: `claude-opus-4-20250514` with automatic fallback to `claude-sonnet-4-20250514`
+- Default model: `claude-opus-4-latest` with automatic fallback to `claude-sonnet-4-latest`
+- **Uses `-latest` aliases for automatic model updates** (or specify exact versions for reproducibility)
 - **Bills against Claude Max unlimited quota** instead of per-token API usage
 - **Automatic fallback on rate limits**: Opus → Sonnet → Haiku (configurable)
 - Authentication: OAuth flow (interactive browser-based)
@@ -303,15 +304,26 @@ python src/cyberautoagent.py \
   --objective "Security assessment"
 ```
 
+**Model Selection:**
+Uses Anthropic's model aliases that automatically point to the latest version:
+- `claude-opus-4-latest` - Latest Opus 4 (most capable, default)
+- `claude-sonnet-4-latest` - Latest Sonnet 4 (balanced)
+- `claude-3-7-sonnet-latest` - Latest Sonnet 3.7
+- `claude-3-5-haiku-latest` - Latest Haiku (fastest)
+
+Or specify exact versions for reproducibility:
+- `claude-opus-4-20250514`, `claude-sonnet-4-20250514`, etc.
+
 **Automatic Model Fallback:**
 The OAuth provider includes intelligent fallback to handle rate limits:
 - **Default**: Opus (best) → Sonnet (balanced) → Haiku (fast)
+- Uses `-latest` aliases to automatically get newest versions
 - Retries primary model up to 3 times with exponential backoff
 - Automatically switches to fallback model when rate limited
 - Logs all fallback events for visibility
 - Configure via environment variables:
   - `ANTHROPIC_OAUTH_FALLBACK_ENABLED=true` (default)
-  - `ANTHROPIC_OAUTH_FALLBACK_MODEL=claude-sonnet-4-20250514`
+  - `ANTHROPIC_OAUTH_FALLBACK_MODEL=claude-sonnet-4-latest`
   - `ANTHROPIC_OAUTH_MAX_RETRIES=3`
   - `ANTHROPIC_OAUTH_RETRY_DELAY=1.0`
 
