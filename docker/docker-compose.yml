@@ -76,8 +76,10 @@ services:
       # Use :delegated for Docker Desktop on macOS to fix permission issues
       - ../outputs:/app/outputs:delegated
       - ../tools:/app/tools:delegated
-      
-    
+
+      # OAuth token persistence (for anthropic_oauth provider)
+      - ~/.config/cyber-autoagent:/home/cyberagent/.config/cyber-autoagent:ro
+
     # Network configuration
     networks:
       - default                    # Langfuse observability stack
