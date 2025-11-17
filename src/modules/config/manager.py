@@ -533,7 +533,7 @@ class ConfigManager:
             "anthropic_oauth": {
                 "llm": LLMConfig(
                     provider=ModelProvider.ANTHROPIC_OAUTH,
-                    model_id="claude-opus-4-latest",  # Auto-updates to latest Opus 4
+                    model_id="claude-opus-4-1",  # Alias for latest Opus (currently 4.1)
                     temperature=0.95,
                     max_tokens=32000,
                 ),
@@ -545,7 +545,7 @@ class ConfigManager:
                 ),
                 "memory_llm": MemoryLLMConfig(
                     provider=ModelProvider.ANTHROPIC_OAUTH,
-                    model_id="claude-3-5-haiku-latest",  # Auto-updates to latest Haiku
+                    model_id="claude-haiku-4-5",  # Alias for latest Haiku (currently 4.5)
                     temperature=0.1,
                     max_tokens=2000,
                     aws_region="anthropic_oauth",  # Placeholder
@@ -558,7 +558,7 @@ class ConfigManager:
                 ),
                 "swarm_llm": LLMConfig(
                     provider=ModelProvider.ANTHROPIC_OAUTH,
-                    model_id="claude-3-5-haiku-latest",  # Auto-updates to latest Haiku
+                    model_id="claude-haiku-4-5",  # Alias for latest Haiku (currently 4.5)
                     temperature=0.7,
                     max_tokens=500,
                 ),
