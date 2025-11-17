@@ -47,7 +47,7 @@ services:
       - PYTHONUNBUFFERED=1
 
       # Application configuration
-      - DEV=true
+      - DEV=${DEV:-false}
       - FORCE_COLOR=1
       - CONTAINER=docker  # Mark as Docker environment for React terminal detection
 
