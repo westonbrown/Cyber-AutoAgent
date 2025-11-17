@@ -278,8 +278,9 @@ LANGFUSE_HOST=http://langfuse-web:3000
 **Important:** LiteLLM does NOT support AWS bearer tokens - use standard credentials only.
 
 ### Anthropic OAuth (Claude Max Billing)
-- Default model: `claude-sonnet-4-20250514`
+- Default model: `claude-opus-4-20250514` with automatic fallback to `claude-sonnet-4-20250514`
 - **Bills against Claude Max unlimited quota** instead of per-token API usage
+- **Automatic fallback on rate limits**: Opus → Sonnet → Haiku (configurable)
 - Authentication: OAuth flow (interactive browser-based)
 - First run prompts for authentication, token stored in `~/.config/cyber-autoagent/.claude_oauth`
 - Auto-refresh token when expired (human-in-loop fallback if refresh fails)
@@ -302,12 +303,24 @@ python src/cyberautoagent.py \
   --objective "Security assessment"
 ```
 
+**Automatic Model Fallback:**
+The OAuth provider includes intelligent fallback to handle rate limits:
+- **Default**: Opus (best) → Sonnet (balanced) → Haiku (fast)
+- Retries primary model up to 3 times with exponential backoff
+- Automatically switches to fallback model when rate limited
+- Logs all fallback events for visibility
+- Configure via environment variables:
+  - `ANTHROPIC_OAUTH_FALLBACK_ENABLED=true` (default)
+  - `ANTHROPIC_OAUTH_FALLBACK_MODEL=claude-sonnet-4-20250514`
+  - `ANTHROPIC_OAUTH_MAX_RETRIES=3`
+  - `ANTHROPIC_OAUTH_RETRY_DELAY=1.0`
+
 **OAuth Implementation Details:**
 - Client ID: `9d1c250a-e61b-44d9-88ed-5944d1962f5e` (Claude Code's official ID)
 - Uses PKCE for security
 - Adds headers: `Authorization: Bearer {token}`, `anthropic-beta: oauth-2025-04-20`, `User-Agent: ai-sdk/anthropic`
 - System message: "You are Claude Code, Anthropic's official CLI for Claude."
-- Implementation: `src/modules/auth/anthropic_oauth.py`, `src/modules/models/anthropic_oauth_model.py`
+- Implementation: `src/modules/auth/anthropic_oauth.py`, `src/modules/models/anthropic_oauth_model.py`, `src/modules/models/anthropic_oauth_fallback.py`
 
 ## Event System (React UI)
 

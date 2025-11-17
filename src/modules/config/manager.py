@@ -533,7 +533,7 @@ class ConfigManager:
             "anthropic_oauth": {
                 "llm": LLMConfig(
                     provider=ModelProvider.ANTHROPIC_OAUTH,
-                    model_id="claude-sonnet-4-20250514",
+                    model_id="claude-opus-4-20250514",  # Default to Opus (best model)
                     temperature=0.95,
                     max_tokens=32000,
                 ),

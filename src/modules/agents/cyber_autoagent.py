@@ -293,19 +293,63 @@ def _create_anthropic_oauth_model(
     model_id: str,
     provider: str = "anthropic_oauth",
 ) -> Any:
-    """Create Anthropic OAuth model instance for Claude Max billing."""
+    """Create Anthropic OAuth model instance for Claude Max billing.
+
+    Supports automatic fallback from primary to fallback model on rate limits.
+    Configure via environment variables:
+    - ANTHROPIC_OAUTH_FALLBACK_ENABLED: Enable fallback (default: true)
+    - ANTHROPIC_OAUTH_FALLBACK_MODEL: Fallback model (default: claude-sonnet-4-20250514)
+    """
+    import os
     from modules.models.anthropic_oauth_model import AnthropicOAuthModel
+    from modules.models.anthropic_oauth_fallback import AnthropicOAuthFallbackModel
 
     # Get centralized configuration
     config_manager = get_config_manager()
     server_config = config_manager.get_server_config(provider)
     llm_config = server_config.llm
 
-    return AnthropicOAuthModel(
-        model_id=model_id,
+    # Check if fallback is enabled (default: true for OAuth)
+    fallback_enabled = os.getenv("ANTHROPIC_OAUTH_FALLBACK_ENABLED", "true").lower() in ["true", "1", "yes"]
+
+    if not fallback_enabled:
+        # Simple model without fallback
+        return AnthropicOAuthModel(
+            model_id=model_id,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
+            top_p=llm_config.top_p,
+        )
+
+    # Determine fallback model
+    # Default: If using Opus, fallback to Sonnet; if using Sonnet, fallback to Haiku
+    default_fallback = "claude-sonnet-4-20250514"
+    if "opus" in model_id.lower():
+        default_fallback = "claude-sonnet-4-20250514"
+    elif "sonnet" in model_id.lower():
+        default_fallback = "claude-3-haiku-20240307"
+
+    fallback_model_id = os.getenv("ANTHROPIC_OAUTH_FALLBACK_MODEL", default_fallback)
+
+    # Get retry configuration
+    max_retries = int(os.getenv("ANTHROPIC_OAUTH_MAX_RETRIES", "3"))
+    retry_delay = float(os.getenv("ANTHROPIC_OAUTH_RETRY_DELAY", "1.0"))
+
+    logger.info(
+        "Creating OAuth model with fallback: %s -> %s (retries=%d)",
+        model_id,
+        fallback_model_id,
+        max_retries,
+    )
+
+    return AnthropicOAuthFallbackModel(
+        primary_model_id=model_id,
+        fallback_model_id=fallback_model_id,
         temperature=llm_config.temperature,
         max_tokens=llm_config.max_tokens,
         top_p=llm_config.top_p,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
     )
 
 
