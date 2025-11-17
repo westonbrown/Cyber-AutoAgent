@@ -75,7 +75,9 @@ services:
       # Unified output structure persistence
       # Use :delegated for Docker Desktop on macOS to fix permission issues
       - ../outputs:/app/outputs:delegated
-      - ../tools:/app/tools:delegated
+      # NOTE: Modules are built into the image at /app/src/modules/operation_plugins
+      # Don't mount empty tools/ directory over them
+      # - ../tools:/app/tools:delegated
 
       # OAuth token persistence (for anthropic_oauth provider)
       - ~/.config/cyber-autoagent:/home/cyberagent/.config/cyber-autoagent:ro

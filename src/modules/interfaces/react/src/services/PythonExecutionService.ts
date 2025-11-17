@@ -852,6 +852,19 @@ export class PythonExecutionService extends EventEmitter {
 
       // Spawn Python process
       // detached: true creates new process group for proper tree cleanup
+
+      // DEBUG: Log full spawn command for diagnostics
+      this.logger.info('=== SPAWN DEBUG ===');
+      this.logger.info(`Python path: ${this.pythonPath}`);
+      this.logger.info(`Working dir: ${this.projectRoot}`);
+      this.logger.info(`Args: ${JSON.stringify(args, null, 2)}`);
+      this.logger.info(`Provider: ${env.CYBER_AGENT_PROVIDER || 'not set'}`);
+      this.logger.info(`Model: ${env.CYBER_AGENT_LLM_MODEL || 'not set'}`);
+      this.logger.info(`Objective env: ${env.CYBER_OBJECTIVE || 'not set'}`);
+      this.logger.info(`Target arg: ${args.find((a, i) => args[i-1] === '--target') || 'not found'}`);
+      this.logger.info(`Module arg: ${args.find((a, i) => args[i-1] === '--module') || 'not found'}`);
+      this.logger.info('===================');
+
       this.activeProcess = spawn(this.pythonPath, args, {
         cwd: this.projectRoot,
         env,
