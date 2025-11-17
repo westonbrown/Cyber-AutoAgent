@@ -232,6 +232,7 @@ test-*.sh
 final-*.sh
 validate-*.sh
 debug-*.sh
+docker/launcher.sh
 
 # =============================================================================
 # IDE and Editor Files

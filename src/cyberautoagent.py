@@ -273,8 +273,9 @@ def main():
     signal.signal(signal.SIGTSTP, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Check for service mode before normal argument parsing to avoid validation issues
+    # Check for service mode and auth-only mode before normal argument parsing to avoid validation issues
     is_service_mode = "--service-mode" in sys.argv
+    is_auth_only = "--auth-only" in sys.argv
 
     # Parse command line arguments first to get the confirmations flag
     parser = argparse.ArgumentParser(
@@ -290,14 +291,19 @@ def main():
     parser.add_argument(
         "--objective",
         type=str,
-        required=not is_service_mode,
-        help="Security assessment objective (required unless in service mode)",
+        required=not (is_service_mode or is_auth_only),
+        help="Security assessment objective (required unless in service mode or auth-only mode)",
     )
     parser.add_argument(
         "--target",
         type=str,
-        required=not is_service_mode,
-        help="Target system/network to assess (ensure you have permission!)",
+        required=not (is_service_mode or is_auth_only),
+        help="Target system/network to assess (required unless in service mode or auth-only mode)",
+    )
+    parser.add_argument(
+        "--auth-only",
+        action="store_true",
+        help="Authenticate with provider and save credentials, then exit (no assessment run)",
     )
     parser.add_argument(
         "--service-mode",
@@ -390,6 +396,50 @@ def main():
         os.environ["CYBER_AGENT_PROVIDER"] = args.provider
     if args.model:
         os.environ["CYBER_AGENT_LLM_MODEL"] = args.model
+
+    # Handle auth-only mode
+    if args.auth_only:
+        print("🔐 Authentication Mode - Validating provider credentials...")
+        print(f"Provider: {args.provider}")
+
+        if args.provider == "anthropic_oauth":
+            print("\n📋 OAuth Authentication Flow:")
+            print("1. Browser will open for authorization")
+            print("2. Approve access in your browser")
+            print("3. Token will be saved to ~/.config/cyber-autoagent/.claude_oauth")
+            print("\nStarting authentication...\n")
+
+            # Import and trigger OAuth flow
+            from modules.auth.anthropic_oauth import get_valid_token
+            try:
+                token = get_valid_token("claude")
+                print("\n✅ Authentication successful!")
+                print(f"Token saved to: ~/.config/cyber-autoagent/.claude_oauth")
+                print("\nYou can now run assessments with:")
+                print(f"  python src/cyberautoagent.py --provider {args.provider} --target <url> --objective <goal>")
+                return
+            except Exception as e:
+                print(f"\n❌ Authentication failed: {e}")
+                print("\nPlease ensure:")
+                print("  - You have a Claude Max/Pro account")
+                print("  - Your browser can open the authorization URL")
+                print("  - You approve the access request")
+                return
+        else:
+            print(f"\n⚠️  Auth-only mode is currently only supported for 'anthropic_oauth' provider")
+            print(f"Provider '{args.provider}' uses API keys - set them in environment variables:")
+            if args.provider == "bedrock":
+                print("  export AWS_ACCESS_KEY_ID=...")
+                print("  export AWS_SECRET_ACCESS_KEY=...")
+                print("  export AWS_REGION=us-east-1")
+            elif args.provider == "ollama":
+                print("  Ollama uses local models - no authentication needed")
+                print("  Make sure Ollama is running: ollama serve")
+            elif args.provider == "litellm":
+                print("  Set API keys for your chosen provider:")
+                print("  export OPENAI_API_KEY=...")
+                print("  export GEMINI_API_KEY=...")
+            return
 
     # Handle service mode
     if args.service_mode:

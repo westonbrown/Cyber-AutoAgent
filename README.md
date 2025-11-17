@@ -641,6 +641,7 @@ The unified structure organizes all artifacts under operation-specific directori
 
 **Optional Arguments**:
 - `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), `litellm` (universal), or `anthropic_oauth` (Claude Max), default: bedrock
+- `--auth-only`: Authenticate with provider and save credentials, then exit (useful for OAuth setup)
 - `--module`: Security module - `general` (web apps) or `ctf` (challenges), default: general
 - `--iterations`: Maximum tool executions before stopping, default: 100
 - `--model`: Model ID to use (default: remote=claude-sonnet-4-5, local=qwen3-coder:30b-a3b-q4_K_M)
@@ -656,12 +657,10 @@ The unified structure organizes all artifacts under operation-specific directori
 
 ```bash
 # Using Claude Max (OAuth) - No API costs!
-# First authenticate once (opens browser)
+# First authenticate once (opens browser, no target needed!)
 python src/cyberautoagent.py \
-  --target "http://testphp.vulnweb.com" \
-  --objective "Initial authentication" \
   --provider anthropic_oauth \
-  --iterations 1
+  --auth-only
 
 # Then run assessments (uses stored OAuth token)
 python src/cyberautoagent.py \

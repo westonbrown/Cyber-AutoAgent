@@ -4,23 +4,52 @@ This guide shows how to run the full Docker stack (agent + Langfuse observabilit
 
 ## Quick Start
 
-### 1. Authenticate Locally First (Recommended)
+### Option A: Automated Setup (Easiest)
 
-The easiest approach is to authenticate locally first, then share the OAuth token with Docker:
+For a fully automated setup, you can create a launcher script that handles authentication and Docker startup:
 
 ```bash
-# From project root
+# The launcher.sh script (available in docker/launcher.sh) will:
+# 1. Check for existing OAuth token
+# 2. Run authentication if needed
+# 3. Configure Docker environment
+# 4. Start the full stack
+
+./docker/launcher.sh
+
+# Or skip auth check if already authenticated
+./docker/launcher.sh --skip-auth
+```
+
+See the "Launcher Script" section below for more details.
+
+### Option B: Manual Setup
+
+### 1. Authenticate Locally First (Recommended)
+
+The easiest approach is to authenticate locally first using the standalone auth command:
+
+```bash
+# Authenticate with Claude Max (opens browser, saves token)
+python src/cyberautoagent.py \
+  --provider anthropic_oauth \
+  --auth-only
+
+# This creates: ~/.config/cyber-autoagent/.claude_oauth
+```
+
+**Alternative:** If you prefer using the React interface:
+
+```bash
 cd src/modules/interfaces/react
 npm install
 npm run build
 
-# Authenticate and get OAuth token (will open browser)
+# Authenticate via React CLI (opens browser)
 CYBER_AGENT_PROVIDER=anthropic_oauth node dist/index.js \
   --target "http://testphp.vulnweb.com" \
   --objective "Test OAuth" \
   --iterations 1
-
-# This creates: ~/.config/cyber-autoagent/.claude_oauth
 ```
 
 ### 2. Configure Docker Environment
@@ -91,17 +120,24 @@ docker-compose run --rm cyber-autoagent bash
 ### 2. Authenticate Inside Container
 
 ```bash
-# Inside container
+# Inside container - use standalone auth command
+python /app/src/cyberautoagent.py \
+  --provider anthropic_oauth \
+  --auth-only
+
+# Follow OAuth flow in browser, approve access
+# Token will be saved in container's filesystem
+```
+
+**Alternative:** Using React interface:
+
+```bash
 cd /app/src/modules/interfaces/react
 
-# Authenticate (browser will open on host machine)
 CYBER_AGENT_PROVIDER=anthropic_oauth node dist/index.js \
   --target "http://testphp.vulnweb.com" \
   --objective "Test" \
   --iterations 1
-
-# Follow OAuth flow, paste code when prompted
-# Token will be saved in container's filesystem
 ```
 
 ### 3. Copy Token to Host
@@ -363,6 +399,87 @@ docker-compose logs cyber-autoagent | grep -i "token refresh"
 ```bash
 # Regular backup of security assessment outputs
 tar -czf outputs-backup-$(date +%Y%m%d).tar.gz outputs/
+```
+
+## Launcher Script
+
+The launcher script (`docker/launcher.sh`) automates the entire setup process:
+
+### Features
+
+- **Automatic OAuth Check**: Detects if you're already authenticated
+- **Guided Authentication**: Runs `--auth-only` if token not found
+- **Environment Setup**: Creates `.env` from OAuth template
+- **Volume Mount Verification**: Checks docker-compose.yml configuration
+- **Service Startup**: Starts Langfuse and all dependencies
+- **Helpful Output**: Shows access URLs and usage examples
+
+### Usage
+
+```bash
+# Basic usage - checks auth, configures, and starts services
+./docker/launcher.sh
+
+# Skip authentication check (use existing token)
+./docker/launcher.sh --skip-auth
+
+# Headless mode (no interactive prompts)
+./docker/launcher.sh --headless
+
+# Show help
+./docker/launcher.sh --help
+```
+
+### What It Does
+
+1. **Check Authentication** (Step 1/4)
+   - Looks for `~/.config/cyber-autoagent/.claude_oauth`
+   - If missing, runs `python src/cyberautoagent.py --auth-only`
+   - Warns if token is older than 30 days
+
+2. **Configure Environment** (Step 2/4)
+   - Creates `docker/.env` from `docker/.env.oauth` template
+   - Checks if provider is set to `anthropic_oauth`
+
+3. **Verify Docker Setup** (Step 3/4)
+   - Checks for OAuth volume mount in docker-compose.yml
+   - Prompts to continue if mount is missing
+
+4. **Start Services** (Step 4/4)
+   - Builds Docker image if needed
+   - Starts Langfuse stack (PostgreSQL, ClickHouse, Redis, MinIO)
+   - Shows service URLs and usage examples
+
+### Example Output
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Cyber-AutoAgent OAuth Docker Launcher
+  Claude Max Unlimited Billing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[1/4] Checking OAuth authentication...
+✓ OAuth token found at: ~/.config/cyber-autoagent/.claude_oauth
+
+[2/4] Configuring Docker environment...
+✓ Environment file exists: docker/.env
+
+[3/4] Verifying Docker Compose configuration...
+✓ OAuth token volume mount configured
+
+[4/4] Starting Docker stack...
+✓ Docker stack started successfully!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Ready to run assessments!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Services:
+  • Langfuse Dashboard: http://localhost:3000
+  • MinIO Console: http://localhost:9091
+
+Run an assessment:
+  docker compose run --rm cyber-autoagent
 ```
 
 ## Next Steps
