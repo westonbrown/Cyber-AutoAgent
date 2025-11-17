@@ -149,24 +149,24 @@ services:
       
       # MinIO/S3 configuration for batch exports
       LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
-      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: minio
-      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
       LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
       LANGFUSE_S3_BATCH_EXPORT_REGION: us-east-1
       LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
-      
-      # MinIO/S3 configuration for media uploads  
+
+      # MinIO/S3 configuration for media uploads
       LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
-      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
       LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
       LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
-      
+
       # MinIO/S3 configuration for event uploads
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
-      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
-      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-miniosecret}
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
@@ -335,8 +335,8 @@ services:
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: miniosecret
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret}
     ports:
       - "9090:9000"
       - "9091:9001"
