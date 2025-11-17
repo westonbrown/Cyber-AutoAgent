@@ -269,3 +269,5 @@ yarn-error.log*
 # Package files
 package-lock.json
 *.tar.gz
+
+CLAUDE.md
