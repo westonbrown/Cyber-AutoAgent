@@ -95,48 +95,46 @@ The React terminal will automatically spawn the Python agent as a subprocess and
 
 ### Docker Deployment
 
+**Provider Options**: Docker supports all model providers. Choose based on your needs:
+
+| Provider | AWS Keys Required? | Additional Setup |
+|----------|-------------------|------------------|
+| **Bedrock** | ✅ Yes | AWS credentials or bearer token |
+| **OAuth (Claude Max)** | ❌ No | One-time browser authentication → [Setup Guide](docker/README-OAUTH.md) |
+| **Ollama** | ❌ No | Local Ollama installation |
+| **LiteLLM** | Depends | API keys for chosen provider |
+
+> **Running with Claude Max (OAuth)?** See **[docker/README-OAUTH.md](docker/README-OAUTH.md)** for complete setup instructions. No AWS keys needed!
+
 #### Single Container
 
-**Interactive Mode (React Terminal UI):**
+**Example: Bedrock Provider (requires AWS credentials)**
 ```bash
+# Interactive mode with React terminal
 docker run -it --rm \
-  -e AZURE_API_KEY=your_azure_key \
-  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
-  -e AZURE_API_VERSION=2024-12-01-preview \
-  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
-  -e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/outputs:/app/outputs \
-  cyberautoagent:latest
-```
+  cyber-autoagent
 
-**Direct Python Execution (Non-Interactive):**
-```bash
-# Override entrypoint for direct Python execution
-docker run --rm --entrypoint python \
-  -e AZURE_API_KEY=your_azure_key \
-  -e AZURE_API_BASE=https://your-endpoint.openai.azure.com/ \
-  -e AZURE_API_VERSION=2024-12-01-preview \
-  -e CYBER_AGENT_LLM_MODEL=azure/gpt-5 \
-  -e CYBER_AGENT_EMBEDDING_MODEL=azure/text-embedding-3-large \
-  -e REASONING_EFFORT=medium \
+# Or start directly with parameters
+docker run -it --rm \
+  -e AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} \
+  -e AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} \
+  -e AWS_REGION=${AWS_REGION:-us-east-1} \
   -v $(pwd)/outputs:/app/outputs \
-  cyberautoagent:latest \
-  src/cyberautoagent.py \
+  cyber-autoagent \
   --target "http://testphp.vulnweb.com" \
   --objective "Identify SQL injection vulnerabilities" \
-  --iterations 50 \
-  --provider litellm
+  --auto-run
 ```
-
-**Works with any LiteLLM provider (300+ supported):**
-- Azure OpenAI: `azure/model-name`
-- AWS Bedrock: Use AWS credentials instead
-- OpenRouter: Set `OPENROUTER_API_KEY`, use `openrouter/model-name`
-- Moonshot AI: Set `MOONSHOT_API_KEY`, use `moonshot/model-name`
 
 #### Docker Compose (Full Stack with Observability)
 
-**Setup:** Create `.env` file in project root with your configuration:
+**For Local Development**: Docker Compose runs the full stack locally (agent + Langfuse observability + databases).
+
+**Setup:** Create `.env` file in project root with your provider configuration:
 
 ```bash
 # Copy example and configure
@@ -144,11 +142,28 @@ cp .env.example .env
 # Edit .env with your provider settings
 ```
 
-Example `.env` for LiteLLM:
+**Example Configurations:**
+
 ```bash
+# Option 1: Claude Max (OAuth) - No AWS keys needed!
+# See docker/README-OAUTH.md for complete setup
+cp docker/.env.oauth .env
+# Then authenticate locally once (opens browser)
+
+# Option 2: LiteLLM with Gemini
 CYBER_AGENT_PROVIDER=litellm
 CYBER_AGENT_LLM_MODEL=gemini/gemini-2.5-flash
 GEMINI_API_KEY=your_api_key_here
+
+# Option 3: AWS Bedrock (requires AWS credentials)
+CYBER_AGENT_PROVIDER=bedrock
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
+AWS_REGION=us-east-1
+
+# Option 4: Local Ollama (requires Ollama running on host)
+CYBER_AGENT_PROVIDER=ollama
+OLLAMA_HOST=http://host.docker.internal:11434
 ```
 
 **Run assessments** with the full observability stack:
@@ -161,7 +176,7 @@ docker compose -f docker/docker-compose.yml run --rm cyber-autoagent
 docker compose -f docker/docker-compose.yml run --user root --rm cyber-autoagent
 ```
 
-**Note:** The `.env` file in the project root is automatically loaded by docker-compose.
+**Note:** The `.env` file in the project root is automatically loaded by docker-compose. AWS keys in the docker-compose.yml are **optional** and only needed if using the Bedrock provider.
 
 The compose stack automatically provides:
 - **Langfuse observability** at http://localhost:3000 (login: admin@cyber-autoagent.com / changeme)
@@ -183,7 +198,6 @@ The compose stack automatically provides:
 
 - **Autonomous Operation**: Conducts security assessments with minimal human intervention
 - **Intelligent Tool Selection**: Automatically chooses appropriate security tools (nmap, sqlmap, nikto, etc.)
-- **Model Context Protocol (MCP)**: MCP support for local and remote, fine-grained tool selection
 - **Natural Language Reasoning**: Uses Strands framework with metacognitive architecture
 - **Evidence Collection**: Automatically stores findings with Mem0 memory (category="finding")
 - **Meta-Tool Creation**: Dynamically creates custom exploitation tools when needed
@@ -361,6 +375,13 @@ This meta-architecture allows the system to transcend static tool limitations an
 
 Cyber-AutoAgent supports multiple model providers for maximum flexibility:
 
+### Anthropic OAuth (Claude Max)
+- **Best for**: Unlimited usage with Claude Max subscription, cost control
+- **Requirements**: Claude Max/Pro account, one-time browser authentication
+- **Default Model**: Claude Opus 4.1 with automatic fallback to Sonnet on rate limits
+- **Benefits**: Bills against Claude Max unlimited quota instead of API usage, no per-token costs
+- **Setup**: See **[docker/README-OAUTH.md](docker/README-OAUTH.md)** and **[docs/anthropic-models.md](docs/anthropic-models.md)**
+
 ### Bedrock Provider (Direct AWS)
 - **Best for**: Production use, high-quality results, no local GPU requirements
 - **Requirements**: AWS account with Bedrock access
@@ -381,13 +402,13 @@ Cyber-AutoAgent supports multiple model providers for maximum flexibility:
 
 ### Comparison
 
-| Feature | Bedrock | Ollama | LiteLLM |
-|---------|---------|--------|----------|
-| Cost | Pay per call | Free | Varies by provider |
-| Performance | High | Hardware dependent | Provider dependent |
-| Offline Use | No | Yes | No |
-| Setup | Easy | Higher | Medium |
-| Model Selection | 100+ models | Limited | 100+ models |
+| Feature | OAuth (Claude Max) | Bedrock | Ollama | LiteLLM |
+|---------|-------------------|---------|--------|----------|
+| Cost | Claude Max subscription | Pay per call | Free | Varies by provider |
+| Performance | High (Opus/Sonnet) | High | Hardware dependent | Provider dependent |
+| Offline Use | No | No | Yes | No |
+| Setup | One-time auth | Easy | Higher | Medium |
+| Model Selection | Claude models only | 100+ models | Limited | 100+ models |
 
 ## Observability & Evaluation
 
@@ -436,7 +457,7 @@ export ENABLE_AUTO_EVALUATION=true
 | `ENABLE_OBSERVABILITY` | `true` | Enable/disable Langfuse tracing |
 | `ENABLE_AUTO_EVALUATION` | `false` | Enable automatic Ragas evaluation |
 | `LANGFUSE_HOST` | `http://langfuse-web:3000` | Langfuse server URL |
-| `CYBER_AGENT_EVALUATION_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` | Model for evaluation |
+| `RAGAS_EVALUATOR_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` | Model for evaluation |
 
 ### Evaluation Metrics
 
@@ -619,7 +640,7 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--target`: Target system/network to assess (ensure you have permission!)
 
 **Optional Arguments**:
-- `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), or `litellm` (universal), default: bedrock
+- `--provider`: Model provider - `bedrock` (AWS), `ollama` (local), `litellm` (universal), or `anthropic_oauth` (Claude Max), default: bedrock
 - `--module`: Security module - `general` (web apps) or `ctf` (challenges), default: general
 - `--iterations`: Maximum tool executions before stopping, default: 100
 - `--model`: Model ID to use (default: remote=claude-sonnet-4-5, local=qwen3-coder:30b-a3b-q4_K_M)
@@ -630,12 +651,25 @@ The unified structure organizes all artifacts under operation-specific directori
 - `--memory-mode`: Memory initialization mode - `auto` (loads existing) or `fresh` (starts new), default: auto
 - `--keep-memory`: Keep memory data after operation completes (default: true)
 - `--output-dir`: Custom output directory (default: ./outputs)
-- `--mcp-enabled`: Enable MCP tools
-- `--mcp-conns`: Provide JSON of MCP server, the same `mcp.connections` block present in the configuration file 
 
 ### Usage Examples
 
 ```bash
+# Using Claude Max (OAuth) - No API costs!
+# First authenticate once (opens browser)
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Initial authentication" \
+  --provider anthropic_oauth \
+  --iterations 1
+
+# Then run assessments (uses stored OAuth token)
+python src/cyberautoagent.py \
+  --target "http://testphp.vulnweb.com" \
+  --objective "Find SQL injection vulnerabilities" \
+  --provider anthropic_oauth \
+  --iterations 50
+
 # Basic Python Usage (Bedrock Provider)
 python src/cyberautoagent.py \
   --target "http://testphp.vulnweb.com" \
@@ -668,15 +702,6 @@ docker run --rm \
   --target "http://testphp.vulnweb.com" \
   --objective "Comprehensive SQL injection and XSS assessment" \
   --iterations 25
-
-# Using MCP
-python src/cyberautoagent.py \
-  --target "http://testphp.vulnweb.com" \
-  --objective "Find SQL injection vulnerabilities" \
-  --provider bedrock \
-  --iterations 50 \
-  --mcp-enabled \
-  --map-conns '[{"id":"mcp1","transport":"stdio","command":["python","-m","mymcp.server"]}]'
 ```
 
 ## Security
