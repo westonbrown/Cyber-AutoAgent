@@ -180,9 +180,9 @@ services:
       LANGFUSE_INIT_PROJECT_NAME: penetration-tests
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: cyber-public
       LANGFUSE_INIT_PROJECT_SECRET_KEY: cyber-secret
-      LANGFUSE_INIT_USER_EMAIL: admin@cyber-autoagent.com
-      LANGFUSE_INIT_USER_NAME: Admin
-      LANGFUSE_INIT_USER_PASSWORD: changeme
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@cyber-autoagent.com}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-changeme}
       
       # Features
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
