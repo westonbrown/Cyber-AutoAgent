@@ -352,7 +352,7 @@ class TestCreateAgent:
         config = AgentConfig(
             target="test.com", objective="test objective", provider="bedrock"
         )
-        agent, handler = create_agent(
+        agent, handler, feedback_manager = create_agent(
             target="test.com", objective="test objective", config=config
         )
 
@@ -395,7 +395,7 @@ class TestCreateAgent:
         config = AgentConfig(
             target="test.com", objective="test objective", provider="ollama"
         )
-        agent, handler = create_agent(
+        agent, handler, feedback_manager = create_agent(
             target="test.com", objective="test objective", config=config
         )
 

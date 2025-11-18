@@ -48,10 +48,14 @@ class TestCLIArguments:
                 parser.add_argument("--verbose", action="store_true")
                 parser.add_argument("--model", type=str)
                 parser.add_argument("--region", type=str, default="us-east-1")
-                parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
+                parser.add_argument(
+                    "--server", type=str, choices=["remote", "local"], default="remote"
+                )
                 parser.add_argument("--confirmations", action="store_true")
 
-                args = parser.parse_args(["--target", "test.com", "--objective", "test objective"])
+                args = parser.parse_args(
+                    ["--target", "test.com", "--objective", "test objective"]
+                )
 
                 assert args.target == "test.com"
                 assert args.objective == "test objective"
@@ -63,7 +67,9 @@ class TestCLIArguments:
     def test_server_argument_choices(self):
         """Test that --server argument accepts only valid choices"""
         parser = argparse.ArgumentParser()
-        parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
+        parser.add_argument(
+            "--server", type=str, choices=["remote", "local"], default="remote"
+        )
 
         # Valid choices should work
         args = parser.parse_args(["--server", "local"])
@@ -85,7 +91,9 @@ class TestCLIArguments:
         parser.add_argument("--verbose", action="store_true")
         parser.add_argument("--model", type=str)
         parser.add_argument("--region", type=str, default="us-east-1")
-        parser.add_argument("--server", type=str, choices=["remote", "local"], default="remote")
+        parser.add_argument(
+            "--server", type=str, choices=["remote", "local"], default="remote"
+        )
         parser.add_argument("--confirmations", action="store_true")
 
         args = parser.parse_args(
@@ -189,7 +197,7 @@ class TestMainFunction:
         }
         mock_handler.get_evidence_summary.return_value = []
 
-        mock_create_agent.return_value = (mock_agent, mock_handler)
+        mock_create_agent.return_value = (mock_agent, mock_handler, None)
         mock_auto_setup.return_value = ["nmap", "nikto"]
         mock_get_prompt.return_value = "test prompt"
 
@@ -248,7 +256,7 @@ class TestMainFunction:
         }
         mock_handler.get_evidence_summary.return_value = []
 
-        mock_create_agent.return_value = (mock_agent, mock_handler)
+        mock_create_agent.return_value = (mock_agent, mock_handler, None)
         mock_auto_setup.return_value = []
         mock_get_prompt.return_value = "test prompt"
 
@@ -269,7 +277,9 @@ class TestMainFunction:
         "sys.argv",
         ["cyberautoagent.py", "--target", "test.com", "--objective", "test objective"],
     )
-    def test_main_create_agent_failure(self, mock_print_status, mock_create_agent, mock_auto_setup, mock_setup_logging):
+    def test_main_create_agent_failure(
+        self, mock_print_status, mock_create_agent, mock_auto_setup, mock_setup_logging
+    ):
         """Test main function when create_agent fails"""
 
         mock_create_agent.side_effect = Exception("Agent creation failed")
@@ -303,14 +313,14 @@ class TestMainFunction:
         ],
     )
     def test_main_local_mcp_flow(
-            self,
-            mock_print_status,
-            mock_print_section,
-            mock_print_banner,
-            mock_get_prompt,
-            mock_create_agent,
-            mock_auto_setup,
-            mock_setup_logging,
+        self,
+        mock_print_status,
+        mock_print_section,
+        mock_print_banner,
+        mock_get_prompt,
+        mock_create_agent,
+        mock_auto_setup,
+        mock_setup_logging,
     ):
         """Test main function execution with local server and an MCP"""
 
@@ -328,7 +338,7 @@ class TestMainFunction:
         }
         mock_handler.get_evidence_summary.return_value = []
 
-        mock_create_agent.return_value = (mock_agent, mock_handler)
+        mock_create_agent.return_value = (mock_agent, mock_handler, None)
         mock_auto_setup.return_value = []
         mock_get_prompt.return_value = "test prompt"
 
@@ -364,7 +374,9 @@ class TestEnvironmentVariables:
         parser.add_argument("--target", type=str, required=True)
         parser.add_argument("--confirmations", action="store_true")
 
-        args = parser.parse_args(["--target", "test.com", "--objective", "test", "--confirmations"])
+        args = parser.parse_args(
+            ["--target", "test.com", "--objective", "test", "--confirmations"]
+        )
 
         # Simulate the environment variable logic from main()
         if not args.confirmations:
@@ -376,7 +388,9 @@ class TestEnvironmentVariables:
         assert "BYPASS_TOOL_CONSENT" not in os.environ
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch("sys.argv", ["cyberautoagent.py", "--target", "test.com", "--objective", "test"])
+    @patch(
+        "sys.argv", ["cyberautoagent.py", "--target", "test.com", "--objective", "test"]
+    )
     def test_no_confirmations_flag_sets_env_var(self):
         """Test that without --confirmations flag, environment variable is set"""
         parser = argparse.ArgumentParser()
