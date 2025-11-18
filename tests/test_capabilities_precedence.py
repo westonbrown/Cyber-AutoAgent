@@ -1,7 +1,6 @@
 """Test unified precedence order for model capabilities."""
 
 import os
-import pytest
 
 from modules.config.models.capabilities import (
     get_capabilities,
@@ -180,6 +179,6 @@ class TestPrecedenceOrder:
 
         for provider, model, expected_reasoning in test_cases:
             caps = get_capabilities(provider, model)
-            assert (
-                caps.supports_reasoning == expected_reasoning
-            ), f"{model} reasoning should be {expected_reasoning}"
+            assert caps.supports_reasoning == expected_reasoning, (
+                f"{model} reasoning should be {expected_reasoning}"
+            )

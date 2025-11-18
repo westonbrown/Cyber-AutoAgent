@@ -102,13 +102,17 @@ class TestEmbeddingConfig:
 
     def test_default_dimensions(self):
         """Test embedding config with default dimensions."""
-        config = EmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large")
+        config = EmbeddingConfig(
+            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large"
+        )
         assert config.dimensions == 1024
         assert config.parameters["dimensions"] == 1024
 
     def test_custom_dimensions(self):
         """Test embedding config with custom dimensions."""
-        config = EmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large", dimensions=512)
+        config = EmbeddingConfig(
+            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large", dimensions=512
+        )
         assert config.dimensions == 512
         assert config.parameters["dimensions"] == 512
 
@@ -146,7 +150,9 @@ class TestMemoryEmbeddingConfig:
 
     def test_default_parameters(self):
         """Test memory embedding config with default parameters."""
-        config = MemoryEmbeddingConfig(provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large")
+        config = MemoryEmbeddingConfig(
+            provider=ModelProvider.OLLAMA, model_id="mxbai-embed-large"
+        )
         assert config.aws_region == "us-east-1"
         assert config.dimensions == 1024
         assert config.parameters["aws_region"] == "us-east-1"
@@ -192,7 +198,9 @@ class TestMemoryVectorStoreConfig:
     def test_config_overrides(self):
         """Test configuration overrides."""
         config = MemoryVectorStoreConfig()
-        opensearch_config = config.get_config_for_provider("opensearch", host="test-host")
+        opensearch_config = config.get_config_for_provider(
+            "opensearch", host="test-host"
+        )
         assert opensearch_config["host"] == "test-host"
         assert opensearch_config["port"] == 443  # Default preserved
 
@@ -392,14 +400,18 @@ class TestConfigManager:
         config = self.config_manager.get_server_config("ollama")
         assert config.swarm.llm.model_id == "custom-swarm-model"
 
-    @patch.dict(os.environ, {
-        "CYBER_AGENT_PROVIDER": "litellm",
-        "CYBER_AGENT_LLM_MODEL": "xai/grok-4-fast-reasoning",
-        "CYBER_AGENT_EMBEDDING_MODEL": "bedrock/amazon.titan-embed-text-v2:0",
-        "XAI_API_KEY": "test-key",
-        "AWS_BEARER_TOKEN_BEDROCK": "test-token",
-        "AWS_REGION": "us-east-1",
-    }, clear=True)
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_AGENT_PROVIDER": "litellm",
+            "CYBER_AGENT_LLM_MODEL": "xai/grok-4-fast-reasoning",
+            "CYBER_AGENT_EMBEDDING_MODEL": "bedrock/amazon.titan-embed-text-v2:0",
+            "XAI_API_KEY": "test-key",
+            "AWS_BEARER_TOKEN_BEDROCK": "test-token",
+            "AWS_REGION": "us-east-1",
+        },
+        clear=True,
+    )
     def test_litellm_gemini_configuration(self):
         """Ensure LiteLLM + hybrid configuration (XAI LLM + Bedrock embeddings) works."""
         self.config_manager._config_cache = {}
@@ -564,7 +576,9 @@ class TestConfigManager:
         # The new implementation delegates model validation to strands-agents
         # So this test now verifies that validation completes without error
         mock_bedrock = MagicMock()
-        mock_bedrock.list_foundation_models.return_value = {"modelSummaries": [{"modelId": "some.other.model:1.0"}]}
+        mock_bedrock.list_foundation_models.return_value = {
+            "modelSummaries": [{"modelId": "some.other.model:1.0"}]
+        }
 
         mock_boto_client.return_value = mock_bedrock
 
@@ -596,7 +610,9 @@ class TestConfigManager:
         # Should not raise an exception - model errors handled by strands-agents
         self.config_manager.validate_requirements("bedrock")
 
-    @patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
+    @patch.dict(
+        os.environ, {"AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"}
+    )
     @patch("boto3.client")
     def test_validate_bedrock_no_region(self, mock_boto_client):
         """Test Bedrock validation when region returns None."""
@@ -696,10 +712,13 @@ class TestConfigManager:
 
         assert not config.enabled
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": "[]",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": "[]",
+        },
+    )
     def test_get_mcp_config_empty(self):
         """Test MCP empty configuration."""
         # Clear cache to ensure fresh config
@@ -709,9 +728,11 @@ class TestConfigManager:
 
         assert config.enabled
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """
 [
     {
         "id": "mcp1",
@@ -737,7 +758,8 @@ class TestConfigManager:
     }
 ]
 """,
-    })
+        },
+    )
     def test_get_mcp_config_three(self):
         """Test two MCP servers configuration."""
         # Clear cache to ensure fresh config
@@ -751,18 +773,18 @@ class TestConfigManager:
         mcp = config.connections[0]
         assert mcp.id == "mcp1"
         assert mcp.transport == "stdio"
-        assert mcp.command == ["python3","-m","mymcp.server"]
+        assert mcp.command == ["python3", "-m", "mymcp.server"]
         assert mcp.plugins == ["general"]
         assert mcp.timeoutSeconds == 900
-        assert mcp.allowed_tools == ['*']
+        assert mcp.allowed_tools == ["*"]
 
         mcp = config.connections[1]
         assert mcp.id == "mcp2"
         assert mcp.transport == "streamable-http"
         assert mcp.server_url == "http://127.0.0.1:8000/mcp"
         assert mcp.headers == {"Authorization": "Bearer ${MCP_TOKEN}"}
-        assert mcp.plugins == ["general","ctf"]
-        assert mcp.allowed_tools == [ "tool1", "tool2" ]
+        assert mcp.plugins == ["general", "ctf"]
+        assert mcp.allowed_tools == ["tool1", "tool2"]
 
         mcp = config.connections[2]
         assert mcp.id == "mcp3"
@@ -771,12 +793,13 @@ class TestConfigManager:
         assert mcp.command is None
         assert mcp.headers is None
         assert mcp.plugins == ["*"]
-        assert mcp.allowed_tools == ['*']
+        assert mcp.allowed_tools == ["*"]
 
-
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """
 [
     {
         "id": "mcp1",
@@ -790,7 +813,8 @@ class TestConfigManager:
     }
 ]
 """,
-    })
+        },
+    )
     def test_get_mcp_config_duplicate_id_validation(self):
         """Test MCP duplicate ID configuration."""
         # Clear cache to ensure fresh config
@@ -799,46 +823,64 @@ class TestConfigManager:
         with pytest.raises(ValueError, match="id property must be unique"):
             self.config_manager.get_mcp_config("bedrock")
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "stdio","server_url": "http://127.0.0.1:8000/mcp"}]""",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "stdio","server_url": "http://127.0.0.1:8000/mcp"}]""",
+        },
+    )
     def test_get_mcp_config_stdio_command_validation(self):
         """Test MCP stdio requires command property."""
         # Clear cache to ensure fresh config
         self.config_manager._config_cache = {}
 
-        with pytest.raises(ValueError, match="stdio transport requires the command property"):
+        with pytest.raises(
+            ValueError, match="stdio transport requires the command property"
+        ):
             self.config_manager.get_mcp_config("bedrock")
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "sse","command": ["python3","-m","mymcp.server"]}]""",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "sse","command": ["python3","-m","mymcp.server"]}]""",
+        },
+    )
     def test_get_mcp_config_sse_command_validation(self):
         """Test MCP see does not use the command property."""
         # Clear cache to ensure fresh config
         self.config_manager._config_cache = {}
 
-        with pytest.raises(ValueError, match="network transports do not use the command property"):
+        with pytest.raises(
+            ValueError, match="network transports do not use the command property"
+        ):
             self.config_manager.get_mcp_config("bedrock")
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "streamable-http"}]""",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "streamable-http"}]""",
+        },
+    )
     def test_get_mcp_config_streamable_http_server_url_validation(self):
         """Test MCP streamable-http requires server_url property."""
         # Clear cache to ensure fresh config
         self.config_manager._config_cache = {}
 
-        with pytest.raises(ValueError, match="network transports require the server_url property"):
+        with pytest.raises(
+            ValueError, match="network transports require the server_url property"
+        ):
             self.config_manager.get_mcp_config("bedrock")
 
-    @patch.dict(os.environ, {
-        "CYBER_MCP_ENABLED": "true",
-        "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "telnet"}]""",
-    })
+    @patch.dict(
+        os.environ,
+        {
+            "CYBER_MCP_ENABLED": "true",
+            "CYBER_MCP_CONNECTIONS": """[{"id": "mcp1","transport": "telnet"}]""",
+        },
+    )
     def test_get_mcp_config_transport_validation(self):
         """Test MCP validate transport property."""
         # Clear cache to ensure fresh config
@@ -1054,9 +1096,15 @@ class TestEnvironmentIntegration:
             assert model in thinking_models
 
         # Test is_thinking_model method
-        assert config_manager.is_thinking_model("us.anthropic.claude-opus-4-20250514-v1:0")
-        assert config_manager.is_thinking_model("us.anthropic.claude-sonnet-4-20250514-v1:0")
-        assert not config_manager.is_thinking_model("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+        assert config_manager.is_thinking_model(
+            "us.anthropic.claude-opus-4-20250514-v1:0"
+        )
+        assert config_manager.is_thinking_model(
+            "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        )
+        assert not config_manager.is_thinking_model(
+            "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+        )
         assert not config_manager.is_thinking_model("llama3.2:3b")
 
     def test_centralized_model_configuration_methods(self):
@@ -1094,7 +1142,9 @@ class TestEnvironmentIntegration:
 
         # Test local config has ollama_base_url
         local_config = config_manager.get_mem0_service_config("ollama")
-        assert local_config["embedder"]["config"]["ollama_base_url"].startswith("http://")
+        assert local_config["embedder"]["config"]["ollama_base_url"].startswith(
+            "http://"
+        )
         assert local_config["llm"]["config"]["ollama_base_url"].startswith("http://")
         assert "aws_region" not in local_config["embedder"]["config"]
         assert "aws_region" not in local_config["llm"]["config"]
@@ -1197,7 +1247,9 @@ class TestOutputConfigIntegration:
         """Test that overrides take precedence over environment variables."""
         with patch.dict(os.environ, {"CYBER_AGENT_OUTPUT_DIR": "/env/outputs"}):
             config_manager = ConfigManager()
-            output_config = config_manager.get_output_config("bedrock", output_dir="/override/outputs")
+            output_config = config_manager.get_output_config(
+                "bedrock", output_dir="/override/outputs"
+            )
 
             # Override should take precedence over environment variable
             assert output_config.base_dir == "/override/outputs"

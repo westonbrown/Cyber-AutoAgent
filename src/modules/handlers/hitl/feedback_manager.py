@@ -262,6 +262,7 @@ class FeedbackManager:
         # Signal the pause event to unblock wait_for_feedback()
         self._pause_event.set()
         self._is_manual_pause = False
+
     def get_pending_feedback_message(self) -> Optional[str]:
         """Get pending feedback formatted as agent message.
 
@@ -303,6 +304,7 @@ Please incorporate this feedback and adjust your approach accordingly. Continue 
             logger.warning(
                 "[HITL-FM] clear_pending_feedback called but no feedback was pending"
             )
+
     def _store_intervention(self, feedback: UserFeedback) -> None:
         """Store intervention in memory and logs.
 

@@ -11,7 +11,6 @@ Run with: uv run python tests/test_hitl_hook_manual.py
 """
 
 import sys
-import time
 from unittest.mock import Mock
 
 from strands import Agent
@@ -46,7 +45,9 @@ def test_feedback_injection_hook():
         operation_id="test_op_001",
         emitter=mock_emitter,
     )
-    direct_print(f"   FeedbackManager created for operation: {feedback_manager.operation_id}")
+    direct_print(
+        f"   FeedbackManager created for operation: {feedback_manager.operation_id}"
+    )
 
     # Step 3: Create feedback injection hook
     direct_print("3. Creating HITLFeedbackInjectionHook...")
@@ -91,7 +92,9 @@ If you receive feedback, acknowledge it in your response."""
     if hasattr(result1, "message") and result1.message:
         msg_content = result1.message.get("content", [])
         if msg_content and isinstance(msg_content, list):
-            content1 = "".join([block.get("text", "") for block in msg_content if "text" in block])
+            content1 = "".join(
+                [block.get("text", "") for block in msg_content if "text" in block]
+            )
 
     direct_print(f"   Agent response length: {len(content1)} chars")
     direct_print(f"   Response preview: {content1[:100] if content1 else '(empty)'}...")
@@ -136,7 +139,9 @@ If you receive feedback, acknowledge it in your response."""
     if hasattr(result2, "message") and result2.message:
         msg_content = result2.message.get("content", [])
         if msg_content and isinstance(msg_content, list):
-            content2 = "".join([block.get("text", "") for block in msg_content if "text" in block])
+            content2 = "".join(
+                [block.get("text", "") for block in msg_content if "text" in block]
+            )
 
     direct_print(f"   Agent response length: {len(content2)} chars")
     direct_print(f"   Full response:\n{content2}")
@@ -158,7 +163,9 @@ If you receive feedback, acknowledge it in your response."""
         if still_pending:
             direct_print("   ✗ Feedback still pending (hook didn't clear it)")
         else:
-            direct_print("   ! Feedback was cleared (hook may have fired but agent didn't see it)")
+            direct_print(
+                "   ! Feedback was cleared (hook may have fired but agent didn't see it)"
+            )
 
         return False
 
@@ -185,5 +192,6 @@ if __name__ == "__main__":
     except Exception as e:
         direct_print(f"\n\nTEST ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

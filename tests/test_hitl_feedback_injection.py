@@ -9,7 +9,7 @@ without requiring a live LLM. It mocks the Strands SDK components to test:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 from strands.hooks import BeforeModelCallEvent, HookRegistry
 
 from modules.handlers.hitl.feedback_manager import FeedbackManager
@@ -53,7 +53,9 @@ def feedback_injection_hook(feedback_manager):
 def mock_agent():
     """Create mock agent with system_prompt attribute."""
     agent = Mock()
-    agent.system_prompt = "You are a helpful assistant. Follow user instructions carefully."
+    agent.system_prompt = (
+        "You are a helpful assistant. Follow user instructions carefully."
+    )
     return agent
 
 
@@ -85,7 +87,9 @@ class TestFeedbackInjectionHook:
             feedback_injection_hook.inject_feedback,
         )
 
-    def test_inject_feedback_no_pending(self, feedback_injection_hook, mock_event, mock_agent):
+    def test_inject_feedback_no_pending(
+        self, feedback_injection_hook, mock_event, mock_agent
+    ):
         """Test inject_feedback does nothing when no feedback pending."""
         original_prompt = mock_agent.system_prompt
         original_length = len(original_prompt)

@@ -9,7 +9,9 @@ from strands import tool
 
 
 @tool
-def advanced_payload_coordinator(target_url: str, test_type: str = "comprehensive", parameters: str = None) -> str:
+def advanced_payload_coordinator(
+    target_url: str, test_type: str = "comprehensive", parameters: str = None
+) -> str:
     """
     Coordinates advanced payload testing using specialized external tools.
 
@@ -76,11 +78,15 @@ def advanced_payload_coordinator(target_url: str, test_type: str = "comprehensiv
             output += "Phase 3: Advanced XSS Payload Testing\\n"
             output += "-" * 40 + "\\n"
 
-            xss_results = _coordinate_xss_testing(target_url, results.get("parameters_discovered", []))
+            xss_results = _coordinate_xss_testing(
+                target_url, results.get("parameters_discovered", [])
+            )
             results["payload_results"].extend(xss_results)
 
             xss_vulns = [r for r in xss_results if r.get("vulnerable", False)]
-            output += f"XSS testing completed: {len(xss_vulns)} potential vulnerabilities\\n"
+            output += (
+                f"XSS testing completed: {len(xss_vulns)} potential vulnerabilities\\n"
+            )
             for vuln in xss_vulns[:3]:
                 output += f"  • {vuln['parameter']}: {vuln['payload_type']}\\n"
             output += "\\n"
@@ -104,10 +110,14 @@ def advanced_payload_coordinator(target_url: str, test_type: str = "comprehensiv
             output += "Phase 5: Advanced Injection Testing\\n"
             output += "-" * 40 + "\\n"
 
-            injection_results = _coordinate_injection_testing(target_url, results.get("parameters_discovered", []))
+            injection_results = _coordinate_injection_testing(
+                target_url, results.get("parameters_discovered", [])
+            )
             results["payload_results"].extend(injection_results)
 
-            injection_vulns = [r for r in injection_results if r.get("vulnerable", False)]
+            injection_vulns = [
+                r for r in injection_results if r.get("vulnerable", False)
+            ]
             output += f"Injection testing: {len(injection_vulns)} potential vulnerabilities\\n"
             for vuln in injection_vulns[:3]:
                 output += f"  • {vuln['injection_type']}: {vuln['parameter']}\\n"
@@ -120,9 +130,7 @@ def advanced_payload_coordinator(target_url: str, test_type: str = "comprehensiv
         intelligence = _analyze_payload_intelligence(results["payload_results"])
         results["intelligence"] = intelligence
 
-        output += (
-            f"Total vulnerabilities: {len([r for r in results['payload_results'] if r.get('vulnerable', False)])}\\n"
-        )
+        output += f"Total vulnerabilities: {len([r for r in results['payload_results'] if r.get('vulnerable', False)])}\\n"
         output += f"Attack vectors identified: {len(intelligence['attack_vectors'])}\\n"
         output += f"Bypass techniques: {len(intelligence['bypass_techniques'])}\\n"
 
@@ -177,10 +185,16 @@ def _setup_payload_tools() -> Dict[str, Any]:
                     tools_status["failed"].append(tool_name)
             else:
                 # Python tool - try pip install
-                pip_names = {"arjun": "arjun", "corsy": "corsy", "paramspider": "ParamSpider"}
+                pip_names = {
+                    "arjun": "arjun",
+                    "corsy": "corsy",
+                    "paramspider": "ParamSpider",
+                }
                 if tool_name in pip_names:
                     install_cmd = ["pip3", "install", pip_names[tool_name]]
-                    result = subprocess.run(install_cmd, capture_output=True, timeout=120)
+                    result = subprocess.run(
+                        install_cmd, capture_output=True, timeout=120
+                    )
                     if result.returncode == 0:
                         tools_status["tools"].append(tool_name)
                     else:
@@ -193,7 +207,9 @@ def _setup_payload_tools() -> Dict[str, Any]:
     return tools_status
 
 
-def _advanced_parameter_discovery(target_url: str, provided_params: str = None) -> List[str]:
+def _advanced_parameter_discovery(
+    target_url: str, provided_params: str = None
+) -> List[str]:
     """Advanced parameter discovery using multiple techniques"""
     discovered_params = set()
 
@@ -302,7 +318,9 @@ def _advanced_parameter_discovery(target_url: str, provided_params: str = None) 
     return sorted(list(discovered_params))
 
 
-def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict[str, Any]]:
+def _coordinate_xss_testing(
+    target_url: str, parameters: List[str]
+) -> List[Dict[str, Any]]:
     """Coordinate XSS testing using advanced payloads and techniques"""
     xss_results = []
 
@@ -345,7 +363,12 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
                     )
                 else:
                     xss_results.append(
-                        {"parameter": param, "vulnerable": False, "payload_type": "XSS tested", "tool": "dalfox"}
+                        {
+                            "parameter": param,
+                            "vulnerable": False,
+                            "payload_type": "XSS tested",
+                            "tool": "dalfox",
+                        }
                     )
 
     except Exception:
@@ -360,7 +383,7 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
         "<svg onload=alert(1)>",
         # Context-aware payloads
         "'\\\"><script>alert(1)</script>",  # Breaking out of attributes
-        "\\\";alert(1);//",  # Breaking out of JavaScript strings
+        '\\";alert(1);//',  # Breaking out of JavaScript strings
         "<iframe src=javascript:alert(1)>",
         # Modern DOM-based
         "<input onfocus=alert(1) autofocus>",
@@ -399,9 +422,15 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
                         if not any(
                             encoded in response
                             for encoded in [
-                                payload.replace("<", "&lt;").replace(">", "&gt;"),  # HTML entity encoded
-                                payload.replace("<", "\\x3c").replace(">", "\\x3e"),  # Hex encoded
-                                payload.replace("<", "\\u003c").replace(">", "\\u003e"),  # Unicode encoded
+                                payload.replace("<", "&lt;").replace(
+                                    ">", "&gt;"
+                                ),  # HTML entity encoded
+                                payload.replace("<", "\\x3c").replace(
+                                    ">", "\\x3e"
+                                ),  # Hex encoded
+                                payload.replace("<", "\\u003c").replace(
+                                    ">", "\\u003e"
+                                ),  # Unicode encoded
                             ]
                         ):
                             xss_results.append(
@@ -421,7 +450,7 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
                                     "parameter": param,
                                     "vulnerable": False,
                                     "payload_type": "Reflected but encoded (not exploitable)",
-                                    "evidence": f"Payload reflected with encoding",
+                                    "evidence": "Payload reflected with encoding",
                                     "tool": "custom",
                                 }
                             )
@@ -433,7 +462,12 @@ def _coordinate_xss_testing(target_url: str, parameters: List[str]) -> List[Dict
         # If no vulnerability found, add negative result
         if param not in {r["parameter"] for r in xss_results}:
             xss_results.append(
-                {"parameter": param, "vulnerable": False, "payload_type": "XSS tested", "tool": "custom"}
+                {
+                    "parameter": param,
+                    "vulnerable": False,
+                    "payload_type": "XSS tested",
+                    "tool": "custom",
+                }
             )
 
     return xss_results
@@ -484,7 +518,11 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
 
         for origin in cors_test_origins[:2]:  # Test first 2 origins
             try:
-                cmd = ["curl", "-s", "-I", "--max-time", "10"] + ["-H", f"Origin: {origin}"] + [target_url]
+                cmd = (
+                    ["curl", "-s", "-I", "--max-time", "10"]
+                    + ["-H", f"Origin: {origin}"]
+                    + [target_url]
+                )
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
                 if result.returncode == 0:
@@ -519,7 +557,9 @@ def _test_cors_configurations(target_url: str) -> List[Dict[str, Any]]:
     return cors_results
 
 
-def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> List[Dict[str, Any]]:
+def _coordinate_injection_testing(
+    target_url: str, parameters: List[str]
+) -> List[Dict[str, Any]]:
     """Coordinate advanced injection testing (beyond SQL)"""
     injection_results = []
 
@@ -539,7 +579,13 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
     command_payloads = ["; whoami", "| whoami", "& whoami", "`whoami`", "$(whoami)"]
 
     # LDAP injection payloads
-    ldap_payloads = ["*", "*)(&", "*))%00", "admin*)((|userPassword=*)", "*))(|(objectClass=*"]
+    ldap_payloads = [
+        "*",
+        "*)(&",
+        "*))%00",
+        "admin*)((|userPassword=*)",
+        "*))(|(objectClass=*",
+    ]
 
     injection_types = [
         ("SSTI", template_payloads),
@@ -557,7 +603,9 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
                     test_url = f"{target_url}{separator}{param}={payload}"
 
                     cmd = ["curl", "-s", "--max-time", "10", test_url]
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=15
+                    )
 
                     if result.returncode == 0:
                         response = result.stdout
@@ -577,7 +625,10 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
 
                         elif injection_type == "Command Injection":
                             # Check for command execution indicators
-                            if any(indicator in response.lower() for indicator in ["root:", "uid=", "gid=", "whoami"]):
+                            if any(
+                                indicator in response.lower()
+                                for indicator in ["root:", "uid=", "gid=", "whoami"]
+                            ):
                                 vulnerable = True
                                 evidence = "Command execution indicators detected"
 
@@ -585,7 +636,11 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
                             # Check for LDAP error patterns or unexpected responses
                             if any(
                                 indicator in response.lower()
-                                for indicator in ["ldap", "invalid dn", "bad search filter"]
+                                for indicator in [
+                                    "ldap",
+                                    "invalid dn",
+                                    "bad search filter",
+                                ]
                             ):
                                 vulnerable = True
                                 evidence = "LDAP error patterns detected"
@@ -607,7 +662,9 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
                     continue
 
     # Add summary for tested parameters without vulnerabilities
-    tested_params = {r["parameter"] for r in injection_results if r.get("vulnerable", False)}
+    tested_params = {
+        r["parameter"] for r in injection_results if r.get("vulnerable", False)
+    }
     for param in parameters[:5]:
         if param not in tested_params:
             injection_results.append(
@@ -622,7 +679,9 @@ def _coordinate_injection_testing(target_url: str, parameters: List[str]) -> Lis
     return injection_results
 
 
-def _analyze_payload_intelligence(payload_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _analyze_payload_intelligence(
+    payload_results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
     """Analyze payload testing results for intelligence insights"""
     intelligence = {
         "severity_distribution": {},
@@ -636,7 +695,11 @@ def _analyze_payload_intelligence(payload_results: List[Dict[str, Any]]) -> Dict
     vulnerable_results = [r for r in payload_results if r.get("vulnerable", False)]
 
     for result in vulnerable_results:
-        vuln_type = result.get("payload_type") or result.get("injection_type") or result.get("issue_type", "Unknown")
+        vuln_type = (
+            result.get("payload_type")
+            or result.get("injection_type")
+            or result.get("issue_type", "Unknown")
+        )
         vuln_types[vuln_type] = vuln_types.get(vuln_type, 0) + 1
 
     intelligence["severity_distribution"] = vuln_types
@@ -645,13 +708,17 @@ def _analyze_payload_intelligence(payload_results: List[Dict[str, Any]]) -> Dict
     if vulnerable_results:
         for result in vulnerable_results:
             if "XSS" in str(result.get("payload_type", "")):
-                intelligence["attack_vectors"].append("Client-side code injection via XSS")
+                intelligence["attack_vectors"].append(
+                    "Client-side code injection via XSS"
+                )
             elif "Command Injection" in str(result.get("injection_type", "")):
                 intelligence["attack_vectors"].append("Server-side command execution")
             elif "SSTI" in str(result.get("injection_type", "")):
                 intelligence["attack_vectors"].append("Server-side template injection")
             elif "CORS" in str(result.get("issue_type", "")):
-                intelligence["attack_vectors"].append("Cross-origin resource sharing abuse")
+                intelligence["attack_vectors"].append(
+                    "Cross-origin resource sharing abuse"
+                )
             elif "LDAP" in str(result.get("injection_type", "")):
                 intelligence["attack_vectors"].append("LDAP directory manipulation")
 
@@ -667,11 +734,17 @@ def _analyze_payload_intelligence(payload_results: List[Dict[str, Any]]) -> Dict
     # Suggest exploitation chains
     vuln_types_present = list(vuln_types.keys())
     if "XSS" in str(vuln_types_present) and "CORS" in str(vuln_types_present):
-        intelligence["exploitation_chains"].append("XSS + CORS misconfiguration = Full account takeover")
+        intelligence["exploitation_chains"].append(
+            "XSS + CORS misconfiguration = Full account takeover"
+        )
     if "Command Injection" in str(vuln_types_present):
-        intelligence["exploitation_chains"].append("Command injection = Remote code execution")
+        intelligence["exploitation_chains"].append(
+            "Command injection = Remote code execution"
+        )
     if "SSTI" in str(vuln_types_present):
-        intelligence["exploitation_chains"].append("SSTI = Server-side code execution and data exfiltration")
+        intelligence["exploitation_chains"].append(
+            "SSTI = Server-side code execution and data exfiltration"
+        )
 
     # Remove duplicates
     intelligence["attack_vectors"] = list(set(intelligence["attack_vectors"]))
@@ -684,49 +757,79 @@ def _generate_payload_recommendations(results: Dict[str, Any]) -> List[str]:
     """Generate coordinated payload exploitation recommendations"""
     recommendations = []
 
-    vulnerable_results = [r for r in results["payload_results"] if r.get("vulnerable", False)]
+    vulnerable_results = [
+        r for r in results["payload_results"] if r.get("vulnerable", False)
+    ]
     intelligence = results.get("intelligence", {})
 
     if not vulnerable_results:
-        recommendations.append("No critical vulnerabilities detected - conduct manual verification")
-        recommendations.append("Test additional parameters discovered during reconnaissance")
-        recommendations.append("Perform authenticated testing if credentials are available")
+        recommendations.append(
+            "No critical vulnerabilities detected - conduct manual verification"
+        )
+        recommendations.append(
+            "Test additional parameters discovered during reconnaissance"
+        )
+        recommendations.append(
+            "Perform authenticated testing if credentials are available"
+        )
         return recommendations
 
     # Severity-based recommendations
     if intelligence.get("severity_distribution"):
         high_severity = ["Command Injection", "SSTI", "Advanced XSS"]
         detected_high_severity = [
-            vuln for vuln in intelligence["severity_distribution"].keys() if any(hs in vuln for hs in high_severity)
+            vuln
+            for vuln in intelligence["severity_distribution"].keys()
+            if any(hs in vuln for hs in high_severity)
         ]
 
         if detected_high_severity:
             recommendations.append(
                 "CRITICAL: High-severity vulnerabilities detected - prioritize immediate remediation"
             )
-            recommendations.append("Implement comprehensive input validation and output encoding")
+            recommendations.append(
+                "Implement comprehensive input validation and output encoding"
+            )
 
     # Attack vector recommendations
     if "Client-side code injection" in intelligence.get("attack_vectors", []):
-        recommendations.append("Deploy Content Security Policy (CSP) headers to mitigate XSS attacks")
-        recommendations.append("Implement proper output encoding for all user-controlled data")
+        recommendations.append(
+            "Deploy Content Security Policy (CSP) headers to mitigate XSS attacks"
+        )
+        recommendations.append(
+            "Implement proper output encoding for all user-controlled data"
+        )
 
     if "Server-side command execution" in intelligence.get("attack_vectors", []):
         recommendations.append("Remove or sandbox command execution functionality")
-        recommendations.append("Implement strict input validation and use parameterized commands")
+        recommendations.append(
+            "Implement strict input validation and use parameterized commands"
+        )
 
     if "Cross-origin resource sharing abuse" in intelligence.get("attack_vectors", []):
-        recommendations.append("Review and restrict CORS policy to trusted origins only")
-        recommendations.append("Implement proper authentication for cross-origin requests")
+        recommendations.append(
+            "Review and restrict CORS policy to trusted origins only"
+        )
+        recommendations.append(
+            "Implement proper authentication for cross-origin requests"
+        )
 
     # Exploitation chain recommendations
     if intelligence.get("exploitation_chains"):
-        recommendations.append("Chain multiple vulnerabilities for maximum impact demonstration")
-        recommendations.append("Document complete attack scenarios for stakeholder communication")
+        recommendations.append(
+            "Chain multiple vulnerabilities for maximum impact demonstration"
+        )
+        recommendations.append(
+            "Document complete attack scenarios for stakeholder communication"
+        )
 
     # Testing expansion recommendations
     recommendations.append("Extend testing to authenticated endpoints and user roles")
-    recommendations.append("Test for business logic vulnerabilities in identified workflows")
-    recommendations.append("Perform payload variation testing to identify filter bypasses")
+    recommendations.append(
+        "Test for business logic vulnerabilities in identified workflows"
+    )
+    recommendations.append(
+        "Perform payload variation testing to identify filter bypasses"
+    )
 
     return recommendations

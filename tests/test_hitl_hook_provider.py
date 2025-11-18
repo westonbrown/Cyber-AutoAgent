@@ -9,7 +9,7 @@ This test suite verifies that the HITLHookProvider correctly:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock
 from strands.hooks import (
     BeforeToolCallEvent,
     BeforeModelCallEvent,
@@ -105,9 +105,7 @@ class TestHookRegistration:
 
         # Check for BeforeToolCallEvent registration
         calls = mock_hook_registry.add_callback.call_args_list
-        tool_event_registered = any(
-            BeforeToolCallEvent in call[0] for call in calls
-        )
+        tool_event_registered = any(BeforeToolCallEvent in call[0] for call in calls)
         assert tool_event_registered
 
     def test_register_hooks_for_model_invocation(
@@ -118,9 +116,7 @@ class TestHookRegistration:
 
         # Check for BeforeModelCallEvent registration
         calls = mock_hook_registry.add_callback.call_args_list
-        model_event_registered = any(
-            BeforeModelCallEvent in call[0] for call in calls
-        )
+        model_event_registered = any(BeforeModelCallEvent in call[0] for call in calls)
         assert model_event_registered
 
     def test_register_hooks_correct_callbacks(
@@ -502,9 +498,7 @@ class TestIntegrationWithFeedbackManager:
         assert feedback_manager.state == HITLState.PAUSED
         assert feedback_manager.pending_tool is not None
 
-    def test_hook_waits_using_manager(
-        self, hitl_hook_provider, feedback_manager
-    ):
+    def test_hook_waits_using_manager(self, hitl_hook_provider, feedback_manager):
         """Test that hook uses FeedbackManager.wait_for_feedback()."""
         # Create destructive event
         event = Mock(spec=BeforeToolCallEvent)

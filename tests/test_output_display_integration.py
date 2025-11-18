@@ -157,7 +157,9 @@ class TestEnvironmentLoggingIntegration:
 
             try:
                 # Capture log messages
-                with patch("modules.config.system.environment.get_logger") as mock_logger:
+                with patch(
+                    "modules.config.system.environment.get_logger"
+                ) as mock_logger:
                     mock_log = MagicMock()
                     mock_logger.return_value = mock_log
 
@@ -211,7 +213,8 @@ class TestEnvironmentLoggingIntegration:
                 side_effect=OSError("Permission denied"),
             ):
                 with patch(
-                    "modules.config.system.environment.os.path.exists", return_value=True
+                    "modules.config.system.environment.os.path.exists",
+                    return_value=True,
                 ):
                     # Call cleanup
                     clean_operation_memory(operation_id, target_name)

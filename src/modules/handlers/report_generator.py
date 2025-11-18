@@ -21,6 +21,7 @@ from modules.tools.memory import get_memory_client
 
 logger = get_logger("Handlers.ReportGenerator")
 
+
 def generate_security_report(
     target: str,
     objective: str,

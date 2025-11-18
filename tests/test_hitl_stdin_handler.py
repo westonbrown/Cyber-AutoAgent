@@ -10,11 +10,8 @@ This test suite verifies that the FeedbackInputHandler correctly:
 """
 
 import json
-import sys
 import threading
-import time
-from io import StringIO
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -351,9 +348,7 @@ class TestSubmitFeedbackHandler:
         feedback = feedback_manager.get_pending_feedback("test_002")
         assert feedback.feedback_type == FeedbackType.SUGGESTION
 
-    def test_handle_submit_feedback_approval(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_handle_submit_feedback_approval(self, feedback_handler, feedback_manager):
         """Test handling approval feedback."""
         command = {
             "feedback_type": "approval",
@@ -374,9 +369,7 @@ class TestSubmitFeedbackHandler:
         feedback = feedback_manager.get_pending_feedback("test_003")
         assert feedback.feedback_type == FeedbackType.APPROVAL
 
-    def test_handle_submit_feedback_rejection(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_handle_submit_feedback_rejection(self, feedback_handler, feedback_manager):
         """Test handling rejection feedback."""
         command = {
             "feedback_type": "rejection",
@@ -471,9 +464,7 @@ class TestSubmitFeedbackHandler:
 class TestPauseRequestHandler:
     """Tests for _handle_pause_request method."""
 
-    def test_handle_pause_request_manual(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_handle_pause_request_manual(self, feedback_handler, feedback_manager):
         """Test handling manual pause request."""
         command = {
             "is_manual": True,
@@ -487,9 +478,7 @@ class TestPauseRequestHandler:
         # Verify pause was requested
         feedback_manager.wait_for_feedback.assert_called_once()
 
-    def test_handle_pause_request_auto(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_handle_pause_request_auto(self, feedback_handler, feedback_manager):
         """Test handling auto pause request."""
         command = {
             "is_manual": False,
@@ -517,9 +506,7 @@ class TestPauseRequestHandler:
         # Verify pause was requested (default is manual)
         feedback_manager.wait_for_feedback.assert_called_once()
 
-    def test_handle_pause_request_timeout(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_handle_pause_request_timeout(self, feedback_handler, feedback_manager):
         """Test handling timeout during pause."""
         command = {
             "is_manual": True,
@@ -541,7 +528,7 @@ class TestEdgeCases:
         """Test that malformed JSON doesn't crash handler."""
         lines = [
             "__HITL_COMMAND__{not valid json__HITL_COMMAND_END__\n",
-            "__HITL_COMMAND__{\"type\": }__HITL_COMMAND_END__\n",
+            '__HITL_COMMAND__{"type": }__HITL_COMMAND_END__\n',
             "__HITL_COMMAND__{{}}__HITL_COMMAND_END__\n",
         ]
 
@@ -554,7 +541,7 @@ class TestEdgeCases:
         lines = [
             "__HITL_COMMAND__\n",
             "__HITL_COMMAND_END__\n",
-            "__HITL_COMMAND__{\"type\": \"submit\n",
+            '__HITL_COMMAND__{"type": "submit\n',
         ]
 
         for line in lines:

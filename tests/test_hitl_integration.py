@@ -11,13 +11,12 @@ This test suite verifies complete HITL workflows:
 import json
 import threading
 import time
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock
 
 import pytest
 from strands.hooks import (
     BeforeToolCallEvent,
     BeforeModelCallEvent,
-    HookRegistry,
 )
 
 from modules.handlers.hitl.feedback_handler import FeedbackInputHandler
@@ -169,9 +168,7 @@ class TestAutoPauseWorkflow:
         # Step 7: Verify feedback was cleared after injection
         assert feedback_manager.pending_feedback is None
 
-    def test_auto_pause_with_timeout(
-        self, feedback_manager, hitl_hook_provider
-    ):
+    def test_auto_pause_with_timeout(self, feedback_manager, hitl_hook_provider):
         """Test auto-pause workflow when timeout expires without feedback."""
         # Configure short timeout for testing
         feedback_manager.auto_pause_timeout = 1
@@ -286,9 +283,7 @@ class TestManualPauseWorkflow:
         prompt = mock_agent.system_prompt
         assert "Check system logs before proceeding" in prompt
 
-    def test_manual_pause_with_timeout(
-        self, feedback_manager, hitl_hook_provider
-    ):
+    def test_manual_pause_with_timeout(self, feedback_manager, hitl_hook_provider):
         """Test manual pause with timeout expiration."""
         # Configure short timeout
         feedback_manager.manual_pause_timeout = 1
@@ -352,9 +347,7 @@ class TestStdinToFeedbackFlow:
         assert feedback.content == "Feedback from stdin"
         assert feedback_manager.state == HITLState.ACTIVE
 
-    def test_stdin_request_pause_integration(
-        self, feedback_handler, feedback_manager
-    ):
+    def test_stdin_request_pause_integration(self, feedback_handler, feedback_manager):
         """Test stdin pause request flows to feedback manager."""
         # Mock wait_for_feedback to avoid blocking
         feedback_manager.wait_for_feedback = Mock(return_value=True)
@@ -474,7 +467,9 @@ class TestCompleteEndToEnd:
         # Process pause request in background
         pause_thread = threading.Thread(
             target=feedback_handler._process_input_line,
-            args=(f"__HITL_COMMAND__{json.dumps(pause_command)}__HITL_COMMAND_END__\n",),
+            args=(
+                f"__HITL_COMMAND__{json.dumps(pause_command)}__HITL_COMMAND_END__\n",
+            ),
         )
         pause_thread.start()
 
@@ -494,7 +489,9 @@ class TestCompleteEndToEnd:
             "content": "Review security implications first",
             "tool_id": tool_id,
         }
-        feedback_line = f"__HITL_COMMAND__{json.dumps(feedback_command)}__HITL_COMMAND_END__\n"
+        feedback_line = (
+            f"__HITL_COMMAND__{json.dumps(feedback_command)}__HITL_COMMAND_END__\n"
+        )
         feedback_handler._process_input_line(feedback_line)
 
         # Signal feedback received
@@ -628,7 +625,9 @@ class TestErrorRecovery:
             "content": "Valid feedback",
             "tool_id": "error_001",
         }
-        valid_line = f"__HITL_COMMAND__{json.dumps(valid_command)}__HITL_COMMAND_END__\n"
+        valid_line = (
+            f"__HITL_COMMAND__{json.dumps(valid_command)}__HITL_COMMAND_END__\n"
+        )
         feedback_handler._process_input_line(valid_line)
 
         feedback_received_event.set()
@@ -639,9 +638,7 @@ class TestErrorRecovery:
         feedback = feedback_manager.get_pending_feedback("error_001")
         assert feedback.content == "Valid feedback"
 
-    def test_concurrent_pause_requests(
-        self, feedback_manager, hitl_hook_provider
-    ):
+    def test_concurrent_pause_requests(self, feedback_manager, hitl_hook_provider):
         """Test handling of concurrent pause requests."""
         # Configure short timeout
         feedback_manager.auto_pause_timeout = 1

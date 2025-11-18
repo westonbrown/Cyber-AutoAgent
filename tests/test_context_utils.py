@@ -10,7 +10,9 @@ from modules.config.models.factory import (
 
 
 def test_parse_context_window_fallbacks_valid():
-    os.environ["CYBER_CONTEXT_WINDOW_FALLBACKS"] = "gpt-4o:gpt-4o-mini,gpt-3.5;model-b:model-c"
+    os.environ["CYBER_CONTEXT_WINDOW_FALLBACKS"] = (
+        "gpt-4o:gpt-4o-mini,gpt-3.5;model-b:model-c"
+    )
     fallbacks = _parse_context_window_fallbacks()
     assert fallbacks == [
         {"gpt-4o": ["gpt-4o-mini", "gpt-3.5"]},
@@ -28,7 +30,9 @@ def test_parse_context_window_fallbacks_uses_config_defaults(monkeypatch):
     os.environ.pop("CYBER_CONTEXT_WINDOW_FALLBACKS", None)
     mock_config = MagicMock()
     mock_config.get_context_window_fallbacks.return_value = [{"model-a": ["model-b"]}]
-    monkeypatch.setattr("modules.config.models.factory._get_config_manager", lambda: mock_config)
+    monkeypatch.setattr(
+        "modules.config.models.factory._get_config_manager", lambda: mock_config
+    )
     fallbacks = _parse_context_window_fallbacks()
     assert fallbacks == [{"model-a": ["model-b"]}]
 
