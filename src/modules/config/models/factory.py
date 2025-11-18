@@ -28,6 +28,7 @@ logger = get_logger("Config.ModelFactory")
 def _get_config_manager():
     """Lazy import to avoid circular dependency."""
     from modules.config.manager import get_config_manager
+
     return get_config_manager()
 
 
@@ -254,9 +255,7 @@ def _parse_context_window_fallbacks() -> Optional[List[Dict[str, List[str]]]]:
             return parsed
     try:
         config_manager = _get_config_manager()
-        config_fallbacks = (
-            config_manager.get_context_window_fallbacks("litellm") or []
-        )
+        config_fallbacks = config_manager.get_context_window_fallbacks("litellm") or []
         if config_fallbacks:
             copied: List[Dict[str, List[str]]] = []
             for mapping in config_fallbacks:
@@ -436,9 +435,7 @@ def create_bedrock_model(
 
     # Add additional request fields if present (e.g., anthropic_beta for extended context)
     if config.get("additional_request_fields"):
-        model_kwargs["additional_request_fields"] = config[
-            "additional_request_fields"
-        ]
+        model_kwargs["additional_request_fields"] = config["additional_request_fields"]
 
     return BedrockModel(**model_kwargs)
 

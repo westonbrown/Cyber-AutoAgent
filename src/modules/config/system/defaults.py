@@ -136,8 +136,7 @@ def build_litellm_defaults() -> Dict[str, Any]:
             provider=ModelProvider.LITELLM,
             model_id="bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",  # Default to Bedrock via LiteLLM
             temperature=0.95,
-            max_tokens=32000,  
-
+            max_tokens=32000,
         ),
         "embedding": EmbeddingConfig(
             provider=ModelProvider.LITELLM,

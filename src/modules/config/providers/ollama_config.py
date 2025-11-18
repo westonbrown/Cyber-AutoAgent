@@ -46,9 +46,7 @@ def get_ollama_host(env_reader: EnvironmentReader) -> str:
             except (requests.exceptions.RequestException, ConnectionError):
                 pass
         # Fallback to host.docker.internal if no connection works
-        logger.debug(
-            "No Ollama connection found, falling back to host.docker.internal"
-        )
+        logger.debug("No Ollama connection found, falling back to host.docker.internal")
         return "http://host.docker.internal:11434"
     # Native execution - use localhost
     return "http://localhost:11434"

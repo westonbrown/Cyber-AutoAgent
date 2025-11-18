@@ -62,6 +62,7 @@ def configure_sdk_logging(enable_debug: bool = False) -> None:
     Args:
         enable_debug: If True, enable verbose logging for SDK components
     """
+
     # Suppress unrecognized tool specification warnings from Strands toolkit registry
     # These are benign warnings from the Strands SDK when built-in tools (stop, http_request, python_repl)
     # are processed during tool registration. The tools work correctly despite the warnings.

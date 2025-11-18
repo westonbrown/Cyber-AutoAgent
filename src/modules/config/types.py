@@ -324,6 +324,28 @@ class SDKConfig:
 
 
 @dataclass
+class HITLConfig:
+    """Configuration for Human-in-the-Loop (HITL) system."""
+
+    # Feature toggle - only this reads from environment
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("CYBER_AGENT_HITL_ENABLED", "false").lower()
+        == "true"
+    )
+
+    # Timeout for manual (user-triggered via [i] key) pauses in seconds
+    manual_pause_timeout: int = 180
+
+    # Timeout for auto-pause (destructive operations/low confidence) in seconds
+    auto_pause_timeout: int = 120
+
+    # Auto-pause triggers
+    auto_pause_on_destructive: bool = True
+    auto_pause_on_low_confidence: bool = True
+    confidence_threshold: int = 90  # Threshold for low confidence (0-100)
+
+
+@dataclass
 class OutputConfig:
     """Configuration for output directory management."""
 
@@ -346,6 +368,6 @@ class ServerConfig:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     sdk: SDKConfig = field(default_factory=SDKConfig)
+    hitl: HITLConfig = field(default_factory=HITLConfig)
     host: Optional[str] = None
     region: str = "us-east-1"  # Default, can be overridden via environment
-

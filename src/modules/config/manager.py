@@ -36,6 +36,7 @@ from modules.config.types import (
     EvaluationConfig,
     SwarmConfig,
     SDKConfig,
+    HITLConfig,
     OutputConfig,
     ServerConfig,
     MCPConnection,
@@ -63,8 +64,6 @@ litellm.respect_retry_after_header = True
 
 logger = get_logger("Config.Manager")
 
-<<<<<<< HEAD
-=======
 LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "openai": ("openai/text-embedding-3-small", 1536),
     "azure": ("azure/text-embedding-3-small", 1536),
@@ -75,287 +74,6 @@ LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
     "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
 }
 DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
-MEM0_PROVIDER_MAP: Dict[str, str] = {
-    "bedrock": "aws_bedrock",
-    "openai": "openai",
-    "azure": "azure_openai",
-    "anthropic": "anthropic",
-    "cohere": "cohere",
-    "gemini": "gemini",
-    "google": "gemini",
-    "mistral": "huggingface",
-    "groq": "openai",
-    "xai": "huggingface",
-    "sagemaker": "huggingface",
-}
-
-
-
-class ModelProvider(Enum):
-    """Supported model providers."""
-
-    AWS_BEDROCK = "aws_bedrock"
-    OLLAMA = "ollama"
-    LITELLM = "litellm"  # Universal provider gateway supporting 100+ model providers
-
-
-@dataclass
-class ModelConfig:
-    """Base configuration for any model."""
-
-    provider: ModelProvider
-    model_id: str
-    parameters: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        """Validate model configuration."""
-        if not self.model_id:
-            raise ValueError("model_id cannot be empty")
-        if not isinstance(self.provider, ModelProvider):
-            raise ValueError(f"provider must be a ModelProvider enum, got {type(self.provider)}")
-
-
-@dataclass
-class LLMConfig(ModelConfig):
-    """Configuration for LLM models."""
-
-    temperature: float = 0.95
-    max_tokens: int = 4096
-    top_p: Optional[float] = None
-
-    def __post_init__(self):
-        super().__post_init__()
-        # Add LLM-specific parameters to the parameters dict
-        params = {
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-        }
-        # Only include top_p if explicitly set (some providers like Anthropic reject both temperature and top_p)
-        if self.top_p is not None:
-            params["top_p"] = self.top_p
-        self.parameters.update(params)
-
-
-@dataclass
-class EmbeddingConfig(ModelConfig):
-    """Configuration for embedding models."""
-
-    dimensions: int = 1024
-
-    def __post_init__(self):
-        super().__post_init__()
-        # Add embedding-specific parameters
-        self.parameters.update({"dimensions": self.dimensions})
-
-
-@dataclass
-class VectorStoreConfig:
-    """Configuration for vector storage."""
-
-    provider: str = "faiss"
-    config: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class MemoryLLMConfig(ModelConfig):
-    """Configuration for memory-specific LLM models."""
-
-    temperature: float = 0.1
-    max_tokens: int = 2000
-    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.parameters.update(
-            {
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "aws_region": self.aws_region,
-            }
-        )
-
-
-@dataclass
-class MemoryEmbeddingConfig(ModelConfig):
-    """Configuration for memory-specific embedding models."""
-
-    aws_region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
-    dimensions: int = 1024
-
-    def __post_init__(self):
-        super().__post_init__()
-        self.parameters.update({"aws_region": self.aws_region, "dimensions": self.dimensions})
-
-
-@dataclass
-class MemoryVectorStoreConfig:
-    """Configuration for memory vector store with provider-specific settings."""
-
-    provider: str = "faiss"
-    opensearch_config: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "port": 443,
-            "collection_name": "mem0_memories",
-            "embedding_model_dims": 1024,
-            "pool_maxsize": 20,
-            "use_ssl": True,
-            "verify_certs": True,
-        }
-    )
-    faiss_config: Dict[str, Any] = field(
-        default_factory=lambda: {
-            "embedding_model_dims": 1024,
-        }
-    )
-
-    def get_config_for_provider(self, provider: str, **overrides) -> Dict[str, Any]:
-        """Get configuration for specific provider."""
-        if provider == "opensearch":
-            config = self.opensearch_config.copy()
-            config.update(overrides)
-            return config
-        if provider == "faiss":
-            config = self.faiss_config.copy()
-            config.update(overrides)
-            return config
-        return overrides
-
-
-@dataclass
-class MemoryConfig:
-    """Configuration for memory system."""
-
-    embedder: MemoryEmbeddingConfig
-    llm: MemoryLLMConfig
-    vector_store: MemoryVectorStoreConfig = field(default_factory=MemoryVectorStoreConfig)
-
-
-@dataclass
-class EvaluationConfig:
-    """Configuration for evaluation system."""
-
-    llm: ModelConfig
-    embedding: ModelConfig
-    # LLM-driven evaluation tunables
-    min_tool_calls: int = 3
-    min_evidence: int = 1
-    max_wait_secs: int = 30
-    poll_interval_secs: int = 5
-    summary_max_chars: int = 8000
-    # Rubric judge controls
-    rubric_enabled: bool = False
-    judge_temperature: float = 0.2
-    judge_max_tokens: int = 800
-    rubric_profile: str = "default"
-    judge_system_prompt: Optional[str] = None
-    judge_user_template: Optional[str] = None
-    skip_if_insufficient_evidence: bool = True
-    rationale_persist_mode: str = "metadata"
-
-
-@dataclass
-class SwarmConfig:
-    """Configuration for swarm system."""
-
-    llm: ModelConfig
-
-
-def get_default_base_dir() -> str:
-    """Get the default base directory for outputs.
-
-    Returns:
-        Default base directory path, preferring project root if detectable
-    """
-    # Try to detect if we're in a project directory structure
-    cwd = os.getcwd()
-
-    # Check if we're in the project root (contains pyproject.toml)
-    if os.path.exists(os.path.join(cwd, "pyproject.toml")):
-        return os.path.join(cwd, "outputs")
-
-    # Check if we're in a subdirectory of the project
-    # Look for project root by traversing up the directory tree
-    current = cwd
-    while current != os.path.dirname(current):  # Stop at filesystem root
-        if os.path.exists(os.path.join(current, "pyproject.toml")):
-            return os.path.join(current, "outputs")
-        current = os.path.dirname(current)
-
-    # Fallback to current working directory
-    return os.path.join(cwd, "outputs")
-
-
-@dataclass
-class SDKConfig:
-    """Configuration for Strands SDK-specific features."""
-
-    # Hook system configuration
-    enable_hooks: bool = True
-    hook_timeout_ms: int = 1000
-
-    # Streaming configuration
-    enable_streaming: bool = True
-    stream_buffer_ms: int = 0  # No buffering for real-time streaming
-
-    # Conversation management
-    conversation_window_size: int = 100
-
-    # Telemetry configuration
-    enable_telemetry: bool = True
-    telemetry_sample_rate: float = 1.0
-
-    # Performance settings
-    max_concurrent_tools: int = 5
-    tool_timeout_seconds: int = 300
-
-
-@dataclass
-class HITLConfig:
-    """Configuration for Human-in-the-Loop (HITL) system."""
-
-    # Feature toggle - only this reads from environment
-    enabled: bool = field(
-        default_factory=lambda: os.getenv("CYBER_AGENT_HITL_ENABLED", "false").lower() == "true"
-    )
-
-    # Timeout for manual (user-triggered via [i] key) pauses in seconds
-    manual_pause_timeout: int = 180
-
-    # Timeout for auto-pause (destructive operations/low confidence) in seconds
-    auto_pause_timeout: int = 120
-
-    # Auto-pause triggers
-    auto_pause_on_destructive: bool = True
-    auto_pause_on_low_confidence: bool = True
-    confidence_threshold: int = 90  # Threshold for low confidence (0-100)
-
-
-@dataclass
-class OutputConfig:
-    """Configuration for output directory management."""
-
-    base_dir: str = field(default_factory=get_default_base_dir)
-    target_name: Optional[str] = None
-    enable_unified_output: bool = True  # Default to enabled for new unified structure
-    operation_id: Optional[str] = None  # Current operation ID for path generation
-
-
-@dataclass
-class ServerConfig:
-    """Complete server configuration."""
-
-    server_type: str  # "bedrock", "ollama", or "litellm"
-    llm: LLMConfig
-    embedding: EmbeddingConfig
-    memory: MemoryConfig
-    evaluation: EvaluationConfig
-    swarm: SwarmConfig
-    output: OutputConfig = field(default_factory=OutputConfig)
-    sdk: SDKConfig = field(default_factory=SDKConfig)
-    hitl: HITLConfig = field(default_factory=HITLConfig)
-    host: Optional[str] = None
-    region: str = field(default_factory=lambda: os.getenv("AWS_REGION", "us-east-1"))
->>>>>>> 2c30436 (Centralize HITL configuration in ConfigManager)
 
 
 class ConfigManager:
@@ -743,7 +461,7 @@ class ConfigManager:
             pass
         # Final fallback to safe default aligned with Bedrock memory/evaluation defaults
         return "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-    
+
     def get_hitl_config(self, server: str, **overrides) -> HITLConfig:
         """Get HITL configuration for the specified server."""
         server_config = self.get_server_config(server, **overrides)
@@ -1035,9 +753,13 @@ class ConfigManager:
     def validate_requirements(self, provider: str) -> None:
         """Validate that all requirements are met for the specified provider."""
         # Delegate to validation module
-        ollama_host = _get_ollama_host_from_env(self.env) if provider == "ollama" else None
+        ollama_host = (
+            _get_ollama_host_from_env(self.env) if provider == "ollama" else None
+        )
         region = self.get_default_region() if provider == "bedrock" else None
-        server_config = self.get_server_config(provider) if provider == "ollama" else None
+        server_config = (
+            self.get_server_config(provider) if provider == "ollama" else None
+        )
 
         validate_provider(provider, self.env, ollama_host, region, server_config)
 
@@ -1202,7 +924,7 @@ class ConfigManager:
         if not (0 < buffer <= 1.0):
             logger.warning(
                 "Invalid buffer %.2f (must be between 0 and 1), using default 0.5",
-                buffer
+                buffer,
             )
             buffer = 0.5
 
@@ -1216,7 +938,10 @@ class ConfigManager:
                 safe = int(limits.output * buffer)
                 logger.debug(
                     "Safe max_tokens from models.dev: model=%s, limit=%d, safe=%d (%.0f%%)",
-                    model_id, limits.output, safe, buffer * 100
+                    model_id,
+                    limits.output,
+                    safe,
+                    buffer * 100,
                 )
                 return safe
         except (ValueError, KeyError, AttributeError) as e:
@@ -1224,13 +949,15 @@ class ConfigManager:
         except Exception as e:
             logger.error(
                 "Unexpected error in models.dev lookup for %s: %s",
-                model_id, e, exc_info=True
+                model_id,
+                e,
+                exc_info=True,
             )
 
         # Fallback to 4096 if model not found
         logger.warning(
             "Model not found in models.dev, using safe default: model=%s, safe=4096",
-            model_id
+            model_id,
         )
         return 4096
 
@@ -1250,26 +977,33 @@ class ConfigManager:
             logger.info(
                 "Swarm config: model=%s, max_tokens=%d (source=env override)",
                 swarm_cfg.model_id,
-                swarm_cfg.max_tokens
+                swarm_cfg.max_tokens,
             )
         else:
             swarm_cfg.max_tokens = safe_max
             logger.info(
                 "Swarm config: model=%s, max_tokens=%d (source=models.dev safe default)",
                 swarm_cfg.model_id,
-                swarm_cfg.max_tokens
+                swarm_cfg.max_tokens,
             )
 
         return swarm_cfg
 
-    def _get_mcp_config(self, _server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> MCPConfig:
+    def _get_mcp_config(
+        self, _server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]
+    ) -> MCPConfig:
         """Get MCP configuration with validation."""
-        enabled = overrides.get("mcp_enabled") or os.getenv("CYBER_MCP_ENABLED", "false").lower() == "true"
+        enabled = (
+            overrides.get("mcp_enabled")
+            or os.getenv("CYBER_MCP_ENABLED", "false").lower() == "true"
+        )
 
         connections = []
 
         if enabled:
-            conns_json = overrides.get("mcp_conns") or os.getenv("CYBER_MCP_CONNECTIONS")
+            conns_json = overrides.get("mcp_conns") or os.getenv(
+                "CYBER_MCP_CONNECTIONS"
+            )
             if conns_json and conns_json.strip():
                 try:
                     conns = json.loads(conns_json)
@@ -1280,53 +1014,81 @@ class ConfigManager:
                 for conn in conns:
                     mcp_id = conn.get("id")
                     if mcp_id is None or len(mcp_id) == 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS requires an id property")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS requires an id property"
+                        )
                     if mcp_id in map(lambda x: x.id, connections):
-                        raise ValueError("CYBER_MCP_CONNECTIONS id property must be unique")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS id property must be unique"
+                        )
 
                     mcp_transport = conn.get("transport")
                     if mcp_transport not in ["stdio", "sse", "streamable-http"]:
-                        raise ValueError(f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}")
+                        raise ValueError(
+                            f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}"
+                        )
 
                     mcp_command = conn.get("command") or None
                     if mcp_transport == "stdio":
                         if not mcp_command:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport requires the command property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS stdio transport requires the command property"
+                            )
                         if isinstance(mcp_command, str):
                             mcp_command = [str]
                         if not isinstance(mcp_command, list):
-                            raise ValueError("CYBER_MCP_CONNECTIONS command property is expected to be a list")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS command property is expected to be a list"
+                            )
                     else:
                         if mcp_command is not None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports do not use the command property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS network transports do not use the command property"
+                            )
 
                     mcp_server_url = conn.get("server_url") or None
                     if mcp_transport == "stdio":
                         if mcp_server_url:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property"
+                            )
                     else:
                         if mcp_server_url is None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports require the server_url property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS network transports require the server_url property"
+                            )
 
                     mcp_headers = conn.get("headers")
                     if mcp_headers is not None and not isinstance(mcp_headers, dict):
-                        raise ValueError("CYBER_MCP_CONNECTIONS headers property is expected to be a dictionary")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS headers property is expected to be a dictionary"
+                        )
 
                     mcp_plugins = conn.get("plugins")
                     if mcp_plugins is not None and not isinstance(mcp_plugins, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS plugins property is expected to be a list")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS plugins property is expected to be a list"
+                        )
                     if not mcp_plugins or "*" in mcp_plugins:
                         mcp_plugins = ["*"]
 
                     mcp_timeout = conn.get("timeoutSeconds")
                     if mcp_timeout is not None and not isinstance(mcp_timeout, int):
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be an integer")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be an integer"
+                        )
                     if mcp_timeout is not None and mcp_timeout < 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer"
+                        )
 
                     mcp_allowed_tools = conn.get("allowedTools")
-                    if mcp_allowed_tools is not None and not isinstance(mcp_allowed_tools, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list")
+                    if mcp_allowed_tools is not None and not isinstance(
+                        mcp_allowed_tools, list
+                    ):
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list"
+                        )
                     if not mcp_allowed_tools or "*" in mcp_allowed_tools:
                         mcp_allowed_tools = ["*"]
 
