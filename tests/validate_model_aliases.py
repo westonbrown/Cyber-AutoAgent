@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Test script to validate Anthropic model aliases work correctly.
+Validation script to verify Anthropic model aliases work correctly.
 
 This verifies that:
 1. -latest aliases are supported by Anthropic API
 2. They resolve to actual model versions
 3. Response metadata shows which model was used
+
+NOTE: This is an integration test that makes real API calls.
+Run manually with: python tests/validate_model_aliases.py
 """
 import sys
 from pathlib import Path
