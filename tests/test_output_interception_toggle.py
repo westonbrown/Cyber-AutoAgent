@@ -10,6 +10,12 @@ def _minimal_server_config():
         output=SimpleNamespace(base_dir="./outputs"),
         swarm=SimpleNamespace(llm=SimpleNamespace(model_id="claude-3-sonnet")),
         sdk=SimpleNamespace(conversation_window_size=64),
+        hitl=SimpleNamespace(
+            enabled=False,
+            auto_pause_on_destructive=False,
+            auto_pause_on_low_confidence=False,
+            confidence_threshold=0.7,
+        ),
     )
 
 

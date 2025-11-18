@@ -32,11 +32,21 @@ class TestMemoryAwareAgentIntegration:
     ):
         """Test agent creation with memory overview integration"""
         # Mock config manager
+        from types import SimpleNamespace
+
         mock_config = Mock()
         mock_config.validate_requirements.return_value = None
-        mock_config.get_server_config.return_value = Mock(
-            llm=Mock(model_id="claude-3-sonnet"),
-            output=Mock(base_dir="./outputs"),
+        mock_config.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="claude-3-sonnet"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="claude-3-sonnet")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
         )
         mock_config.get_default_region.return_value = "us-east-1"
         mock_config.get_mem0_service_config.return_value = {
@@ -67,6 +77,7 @@ class TestMemoryAwareAgentIntegration:
 
         # Create agent
         from modules.agents.cyber_autoagent import AgentConfig
+
         config = AgentConfig(
             target="test.com",
             objective="test objective",
@@ -74,13 +85,17 @@ class TestMemoryAwareAgentIntegration:
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
-        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
+        agent, handler, feedback_manager = create_agent(
+            target="test.com", objective="test objective", config=config
+        )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
         mock_check_memories.assert_called_once_with("test.com", "bedrock")
         assert mock_get_client.call_count == 2  # Called for overview and active plan
-        mock_memory_client.get_memory_overview.assert_called_once_with(user_id="cyber_agent")
+        mock_memory_client.get_memory_overview.assert_called_once_with(
+            user_id="cyber_agent"
+        )
 
         # Verify agent was created with memory-aware system prompt
         assert agent is not None
@@ -108,11 +123,21 @@ class TestMemoryAwareAgentIntegration:
     ):
         """Test agent creation for fresh start (no existing memories)"""
         # Mock config manager
+        from types import SimpleNamespace
+
         mock_config = Mock()
         mock_config.validate_requirements.return_value = None
-        mock_config.get_server_config.return_value = Mock(
-            llm=Mock(model_id="claude-3-sonnet"),
-            output=Mock(base_dir="./outputs"),
+        mock_config.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="claude-3-sonnet"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="claude-3-sonnet")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
         )
         mock_config.get_default_region.return_value = "us-east-1"
         mock_config.get_mem0_service_config.return_value = {
@@ -132,6 +157,7 @@ class TestMemoryAwareAgentIntegration:
 
         # Create agent
         from modules.agents.cyber_autoagent import AgentConfig
+
         config = AgentConfig(
             target="test.com",
             objective="test objective",
@@ -139,7 +165,9 @@ class TestMemoryAwareAgentIntegration:
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
-        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
+        agent, handler, feedback_manager = create_agent(
+            target="test.com", objective="test objective", config=config
+        )
 
         # Verify memory system was initialized
         mock_initialize_memory.assert_called_once()
@@ -171,11 +199,21 @@ class TestMemoryAwareAgentIntegration:
     ):
         """Test agent creation with explicit memory path"""
         # Mock config manager
+        from types import SimpleNamespace
+
         mock_config = Mock()
         mock_config.validate_requirements.return_value = None
-        mock_config.get_server_config.return_value = Mock(
-            llm=Mock(model_id="claude-3-sonnet"),
-            output=Mock(base_dir="./outputs"),
+        mock_config.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="claude-3-sonnet"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="claude-3-sonnet")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
         )
         mock_config.get_default_region.return_value = "us-east-1"
         mock_config.get_mem0_service_config.return_value = {
@@ -209,6 +247,7 @@ class TestMemoryAwareAgentIntegration:
         ):
             # Create agent with memory path
             from modules.agents.cyber_autoagent import AgentConfig
+
             config = AgentConfig(
                 target="test.com",
                 objective="test objective",
@@ -217,7 +256,9 @@ class TestMemoryAwareAgentIntegration:
                 provider="bedrock",
                 memory_path="/test/memory/path",
             )
-            agent, handler = create_agent(target="test.com", objective="test objective", config=config)
+            agent, handler, feedback_manager = create_agent(
+                target="test.com", objective="test objective", config=config
+            )
 
         # Verify memory system was initialized with path
         mock_initialize_memory.assert_called_once()
@@ -247,11 +288,21 @@ class TestMemoryAwareAgentIntegration:
     ):
         """Test agent creation handles memory overview errors gracefully"""
         # Mock config manager
+        from types import SimpleNamespace
+
         mock_config = Mock()
         mock_config.validate_requirements.return_value = None
-        mock_config.get_server_config.return_value = Mock(
-            llm=Mock(model_id="claude-3-sonnet"),
-            output=Mock(base_dir="./outputs"),
+        mock_config.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="claude-3-sonnet"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="claude-3-sonnet")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
         )
         mock_config.get_default_region.return_value = "us-east-1"
         mock_config.get_mem0_service_config.return_value = {
@@ -264,7 +315,9 @@ class TestMemoryAwareAgentIntegration:
         # Mock memory system with error
         mock_check_memories.return_value = True
         mock_memory_client = Mock()
-        mock_memory_client.get_memory_overview.side_effect = Exception("Memory overview error")
+        mock_memory_client.get_memory_overview.side_effect = Exception(
+            "Memory overview error"
+        )
         mock_get_client.return_value = mock_memory_client
 
         # Mock model creation
@@ -273,6 +326,7 @@ class TestMemoryAwareAgentIntegration:
 
         # Create agent - should handle error gracefully
         from modules.agents.cyber_autoagent import AgentConfig
+
         config = AgentConfig(
             target="test.com",
             objective="test objective",
@@ -280,7 +334,9 @@ class TestMemoryAwareAgentIntegration:
             op_id="OP_20240101_120000",
             provider="bedrock",
         )
-        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
+        agent, handler, feedback_manager = create_agent(
+            target="test.com", objective="test objective", config=config
+        )
 
         # Verify agent was still created successfully
         assert agent is not None
@@ -306,11 +362,21 @@ class TestMemoryAwareAgentIntegration:
     ):
         """Test agent creation with local server and memory overview"""
         # Mock config manager for local server
+        from types import SimpleNamespace
+
         mock_config = Mock()
         mock_config.validate_requirements.return_value = None
-        mock_config.get_server_config.return_value = Mock(
-            llm=Mock(model_id="llama3.2:3b"),
-            output=Mock(base_dir="./outputs"),
+        mock_config.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="llama3.2:3b"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="llama3.2:3b")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
         )
         mock_config.get_default_region.return_value = "us-east-1"
         mock_config.get_mem0_service_config.return_value = {
@@ -339,6 +405,7 @@ class TestMemoryAwareAgentIntegration:
 
         # Create agent with local server
         from modules.agents.cyber_autoagent import AgentConfig
+
         config = AgentConfig(
             target="test.com",
             objective="test objective",
@@ -346,7 +413,9 @@ class TestMemoryAwareAgentIntegration:
             op_id="OP_20240101_120000",
             provider="ollama",
         )
-        agent, handler = create_agent(target="test.com", objective="test objective", config=config)
+        agent, handler, feedback_manager = create_agent(
+            target="test.com", objective="test objective", config=config
+        )
 
         # Verify agent was created successfully
         assert agent is not None

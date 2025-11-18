@@ -13,6 +13,12 @@ def _minimal_server_config():
         output=SimpleNamespace(base_dir="./outputs"),
         swarm=SimpleNamespace(llm=SimpleNamespace(model_id="gpt-4o")),
         sdk=SimpleNamespace(conversation_window_size=64),
+        hitl=SimpleNamespace(
+            enabled=False,
+            auto_pause_on_destructive=False,
+            auto_pause_on_low_confidence=False,
+            confidence_threshold=0.7,
+        ),
     )
 
 
@@ -51,7 +57,9 @@ def test_agent_creation_litellm(
     from modules.agents.cyber_autoagent import create_agent, AgentConfig
 
     config = AgentConfig(target="t", objective="o", provider="litellm", op_id="OP_TEST")
-    agent, handler = create_agent(target="t", objective="o", config=config)
+    agent, handler, feedback_manager = create_agent(
+        target="t", objective="o", config=config
+    )
 
     assert agent is not None
     assert handler is not None
