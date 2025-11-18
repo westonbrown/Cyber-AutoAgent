@@ -7,12 +7,20 @@
 This test verifies that the feedback injection hook mechanism works correctly
 by creating a minimal agent setup and testing feedback injection in isolation.
 
-Run with: uv run python tests/test_hitl_hook_manual.py
+Run with:
+  - Standalone: uv run python tests/test_hitl_hook_manual.py
+  - Via pytest: pytest tests/test_hitl_hook_manual.py
+  - All manual tests: pytest -m manual
+
+Requirements:
+  - Ollama server running at http://localhost:11434
+  - llama3.2:3b model installed
 """
 
 import sys
 from unittest.mock import Mock
 
+import pytest
 from strands import Agent
 from strands.models.ollama import OllamaModel
 
@@ -27,6 +35,7 @@ def direct_print(msg: str):
     sys.stdout.flush()
 
 
+@pytest.mark.manual
 def test_feedback_injection_hook():
     """Test that feedback injection hook modifies system prompt."""
     direct_print("=" * 80)
