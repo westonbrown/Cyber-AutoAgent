@@ -8,7 +8,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Optional, Callable, Sequence, TypedDict
+from typing import Any, Optional, Callable, Sequence, TypedDict, Dict
 
 from strands import Agent
 from strands.agent.conversation_manager import (
@@ -606,7 +606,7 @@ class MappingConversationManager(SummarizingConversationManager):
             logger.debug(
                 "Skipping pruning for small conversation: %d messages (agent=%s)",
                 total,
-                getattr(agent, "name", "unknown")
+                getattr(agent, "name", "unknown"),
             )
             return
 
@@ -693,7 +693,7 @@ def _safe_estimate_tokens(agent: Agent) -> Optional[int]:
         if messages is None:
             logger.warning(
                 "TOKEN ESTIMATION FAILED: agent.messages is None (agent=%s)",
-                getattr(agent, "name", "unknown")
+                getattr(agent, "name", "unknown"),
             )
             return None
 
@@ -701,14 +701,14 @@ def _safe_estimate_tokens(agent: Agent) -> Optional[int]:
             logger.warning(
                 "TOKEN ESTIMATION FAILED: agent.messages is not a list (type=%s, agent=%s)",
                 type(messages).__name__,
-                getattr(agent, "name", "unknown")
+                getattr(agent, "name", "unknown"),
             )
             return None
 
         if len(messages) == 0:
             logger.info(
                 "TOKEN ESTIMATION: agent.messages is empty, returning 0 tokens (agent=%s)",
-                getattr(agent, "name", "unknown")
+                getattr(agent, "name", "unknown"),
             )
             return 0
 
@@ -717,7 +717,7 @@ def _safe_estimate_tokens(agent: Agent) -> Optional[int]:
             "TOKEN ESTIMATION: Estimated %d tokens from %d messages (agent=%s)",
             estimated,
             len(messages),
-            getattr(agent, "name", "unknown")
+            getattr(agent, "name", "unknown"),
         )
         return estimated
     except Exception as e:
@@ -725,7 +725,7 @@ def _safe_estimate_tokens(agent: Agent) -> Optional[int]:
             "TOKEN ESTIMATION ERROR: Exception during estimation (agent=%s, error=%s)",
             getattr(agent, "name", "unknown"),
             str(e),
-            exc_info=True
+            exc_info=True,
         )
         return None
 
@@ -825,7 +825,9 @@ def _get_char_to_token_ratio_dynamic(model_id: str) -> float:
             provider = info.provider.lower()
 
             # Provider-specific ratios based on tokenizer characteristics
-            if "anthropic" in provider or ("bedrock" in provider and "claude" in model_id.lower()):
+            if "anthropic" in provider or (
+                "bedrock" in provider and "claude" in model_id.lower()
+            ):
                 ratio = 3.7  # Claude tokenizer
             elif "google" in provider or "gemini" in provider or "vertex" in provider:
                 ratio = 4.2  # Gemini tokenizer (SentencePiece)
@@ -834,10 +836,14 @@ def _get_char_to_token_ratio_dynamic(model_id: str) -> float:
             elif "openai" in provider or "azure" in provider:
                 # Check if it's a GPT model
                 model_lower = model_id.lower()
-                if any(gpt in model_lower for gpt in ["gpt-4", "gpt-5", "gpt4", "gpt5"]):
+                if any(
+                    gpt in model_lower for gpt in ["gpt-4", "gpt-5", "gpt4", "gpt5"]
+                ):
                     ratio = 4.0  # GPT tokenizer
     except Exception as e:
-        logger.debug("models.dev lookup failed for ratio: model=%s, error=%s", model_id, e)
+        logger.debug(
+            "models.dev lookup failed for ratio: model=%s, error=%s", model_id, e
+        )
 
     # Cache and return
     _RATIO_CACHE[model_id] = ratio
@@ -911,7 +917,10 @@ def _estimate_prompt_tokens(agent: Agent) -> int:
 
     logger.debug(
         "TOKEN ESTIMATION: %d chars / %.1f ratio = %d tokens (model=%s)",
-        total_chars, ratio, estimated_tokens, model_id
+        total_chars,
+        ratio,
+        estimated_tokens,
+        model_id,
     )
 
     return estimated_tokens
@@ -976,14 +985,14 @@ def _ensure_prompt_within_budget(agent: Agent) -> None:
             "BUDGET CHECK FAILED: Token estimation returned None for agent=%s. "
             "Cannot perform budget enforcement without token count. "
             "This may indicate empty messages or estimation error.",
-            getattr(agent, "name", "unknown")
+            getattr(agent, "name", "unknown"),
         )
 
         # Try to use telemetry as fallback
         if telemetry_tokens is not None and telemetry_tokens > 0:
             logger.info(
                 "BUDGET CHECK FALLBACK: Using telemetry tokens (%d) as proxy for context size",
-                telemetry_tokens
+                telemetry_tokens,
             )
             current_tokens = telemetry_tokens
         else:

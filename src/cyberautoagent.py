@@ -46,12 +46,14 @@ from strands.types.exceptions import MaxTokensReachedException
 from modules.agents.cyber_autoagent import (
     AgentConfig,
     create_agent,
-    _ensure_prompt_within_budget,
 )
-from modules.config.system.environment import auto_setup, clean_operation_memory, setup_logging
+from modules.config.system.environment import (
+    auto_setup,
+    clean_operation_memory,
+    setup_logging,
+)
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
-from strands.types.exceptions import MaxTokensReachedException
 from modules.handlers.utils import (
     Colors,
     get_output_path,
@@ -481,7 +483,12 @@ def main():
 
     mcp_config = config_manager.get_mcp_config(args.provider, **config_overrides)
     if mcp_config.enabled:
-        mcp_connections = list(filter(lambda c: '*' in c.plugins or args.module in c.plugins, mcp_config.connections))
+        mcp_connections = list(
+            filter(
+                lambda c: "*" in c.plugins or args.module in c.plugins,
+                mcp_config.connections,
+            )
+        )
     else:
         mcp_connections = []
 
@@ -766,13 +773,6 @@ def main():
                     if remaining_steps > 0:
                         # Simple continuation message
                         current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
-                    # Generate continuation prompt (skip if feedback was just injected)
-                    if feedback_injected_this_turn:
-                        # Feedback was injected this turn, don't overwrite with continuation
-                        logger.info(
-                            "[HITL] Skipping continuation prompt - feedback was injected this turn"
-                        )
-                        feedback_injected_this_turn = False
                         logger.debug(
                             "Generated continuation message for next iteration (length=%d)",
                             len(current_message),
