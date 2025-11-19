@@ -713,6 +713,11 @@ class ConfigManager:
         server_config = self.get_server_config(server, **overrides)
         return server_config.sdk
 
+    def get_mcp_config(self, server: str, **overrides):
+        """Get MCP configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.mcp
+
     def get_unified_output_path(
         self,
         server: str,
