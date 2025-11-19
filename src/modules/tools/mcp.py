@@ -1,13 +1,14 @@
 """
 Lists the full catalog of MCP tools.
 """
+
 import json
 import os
 import re
 import time
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, List, Optional, AsyncIterator, TypedDict, Tuple
+from typing import Any, Dict, List, TypedDict, Tuple
 from strands.types.tools import AgentTool, ToolSpec, ToolUse, ToolGenerator, ToolResult
 from modules.config.system.logger import get_logger
 
@@ -17,8 +18,9 @@ from modules.handlers.core import sanitize_target_name
 
 logger = get_logger("Agents.CyberAutoAgent")
 
+
 def list_mcp_tools_wrapper(mcp_tools: List[AgentTool]):
-    mcp_full_catalog = f"""
+    mcp_full_catalog = """
 ## MCP FULL TOOL CATALOG
 
 """
@@ -69,6 +71,7 @@ def _snake_case(name: str) -> str:
 
 def _type_hint_for(prop: Dict[str, Any]) -> str:
     """Infer a Python type hint from the JSON schema property."""
+
     def _map_simple(t: str) -> str:
         return {
             "string": "str",
@@ -130,7 +133,9 @@ def _default_value_for(prop: Dict[str, Any]) -> str:
     return repr(val)
 
 
-def mcp_tools_input_schema_to_function_call(schema: Dict[str, Any], func_name: str | None = None) -> str:
+def mcp_tools_input_schema_to_function_call(
+    schema: Dict[str, Any], func_name: str | None = None
+) -> str:
     """
     Convert a JSON Schema object into a Python-style function signature and call example.
     """
@@ -159,7 +164,9 @@ def mcp_tools_input_schema_to_function_call(schema: Dict[str, Any], func_name: s
 _VAR_PATTERN = re.compile(r"\$\{([^}]+)}")
 
 
-def resolve_env_vars_in_dict(input_dict: Dict[str, str], env: Dict[str, str]) -> Dict[str, str]:
+def resolve_env_vars_in_dict(
+    input_dict: Dict[str, str], env: Dict[str, str]
+) -> Dict[str, str]:
     """
     Replace ${VAR} references in values with env['VAR'] where available.
     Unrecognized variables are left as-is.
@@ -170,6 +177,7 @@ def resolve_env_vars_in_dict(input_dict: Dict[str, str], env: Dict[str, str]) ->
     resolved: Dict[str, str] = {}
 
     for key, value in input_dict.items():
+
         def _sub(match: re.Match) -> str:
             var_name = match.group(1)
             return env.get(var_name, match.group(0))  # leave ${VAR} if not found
@@ -190,6 +198,7 @@ def resolve_env_vars_in_list(input_array: List[str], env: Dict[str, str]) -> Lis
     resolved: List[str] = []
 
     for value in input_array:
+
         def _sub(match: re.Match) -> str:
             var_name = match.group(1)
             return env.get(var_name, match.group(0))  # leave ${VAR} if not found
@@ -232,10 +241,10 @@ class FileWritingAgentToolAdapter(AgentTool):
         return False
 
     def stream(
-            self,
-            tool_use: ToolUse,
-            invocation_state: dict[str, Any],
-            **kwargs: Any,
+        self,
+        tool_use: ToolUse,
+        invocation_state: dict[str, Any],
+        **kwargs: Any,
     ) -> ToolGenerator:
         inner_gen = self._inner.stream(tool_use, invocation_state, **kwargs)
 
@@ -245,16 +254,26 @@ class FileWritingAgentToolAdapter(AgentTool):
                     # offload sync file IO to a thread so we don't block the event loop
                     try:
                         tool_result = getattr(event, "tool_result", None)
-                        output_paths, output_size = await asyncio.to_thread(self._write_result, tool_result)
+                        output_paths, output_size = await asyncio.to_thread(
+                            self._write_result, tool_result
+                        )
                         if output_size > 4096:
                             summary = {"artifact_paths": output_paths, "has_more": True}
-                            tool_result["content"] = [{"text": json.dumps(summary), "json": summary}]
+                            tool_result["content"] = [
+                                {"text": json.dumps(summary), "json": summary}
+                            ]
                             tool_result["structuredContent"] = summary
                         else:
-                            tool_result["structuredContent"]["artifact_paths"] = output_paths
-                            if "content" in tool_result and isinstance(tool_result["content"], list):
+                            tool_result["structuredContent"]["artifact_paths"] = (
+                                output_paths
+                            )
+                            if "content" in tool_result and isinstance(
+                                tool_result["content"], list
+                            ):
                                 summary = {"artifact_paths": output_paths}
-                                tool_result["content"].append({"text": json.dumps(summary), "json": summary})
+                                tool_result["content"].append(
+                                    {"text": json.dumps(summary), "json": summary}
+                                )
 
                     except Exception:
                         logger.debug(
@@ -279,14 +298,22 @@ class FileWritingAgentToolAdapter(AgentTool):
                 # ToolResultContent
 
                 if "json" in content:
-                    output_path = Path(os.path.join(self._output_base_path, f"{output_basename}_{idx}.json"))
+                    output_path = Path(
+                        os.path.join(
+                            self._output_base_path, f"{output_basename}_{idx}.json"
+                        )
+                    )
                     with output_path.open("a", encoding="utf-8") as f:
                         f.write(json.dumps(content.get("json", "")))
                     output_paths.append(output_path)
                     size += output_path.stat().st_size
 
                 if "text" in content:
-                    output_path = Path(os.path.join(self._output_base_path, f"{output_basename}_{idx}.txt"))
+                    output_path = Path(
+                        os.path.join(
+                            self._output_base_path, f"{output_basename}_{idx}.txt"
+                        )
+                    )
                     with output_path.open("a", encoding="utf-8") as f:
                         f.write(content.get("text", ""))
                     output_paths.append(output_path)
@@ -296,9 +323,13 @@ class FileWritingAgentToolAdapter(AgentTool):
                     if file_type in content:
                         document: TypedDict = content.get(file_type)
                         ext = sanitize_target_name(document.get("format", "bin"))
-                        output_path = Path(os.path.join(self._output_base_path, f"{output_basename}_{idx}.{ext}"))
+                        output_path = Path(
+                            os.path.join(
+                                self._output_base_path, f"{output_basename}_{idx}.{ext}"
+                            )
+                        )
                         with output_path.open("ab") as f:
-                            f.write(document.get("source", {}).get("bytes", b''))
+                            f.write(document.get("source", {}).get("bytes", b""))
                         output_paths.append(output_path)
                         size += output_path.stat().st_size
 

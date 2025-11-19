@@ -17,12 +17,22 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from strands.experimental.hooks.events import BeforeModelInvocationEvent
-from strands.hooks import HookProvider, HookRegistry
+from strands.hooks import BeforeModelCallEvent, HookProvider, HookRegistry
 
 from modules.config.system.logger import get_logger
 
 logger = get_logger("Handlers.PromptRebuildHook")
+
+# Import HITL logger for debugging hook interactions
+try:
+    from modules.handlers.hitl.hitl_logger import log_hitl
+
+    HITL_LOGGING_AVAILABLE = True
+except ImportError:
+    HITL_LOGGING_AVAILABLE = False
+
+    def log_hitl(*args, **kwargs):
+        pass
 
 
 class PromptRebuildHook(HookProvider):
@@ -106,16 +116,16 @@ class PromptRebuildHook(HookProvider):
             operation_id,
         )
 
-    def register_hooks(self, registry: HookRegistry):
-        """Register BeforeModelInvocationEvent callback."""
-        registry.add_callback(BeforeModelInvocationEvent, self.check_if_rebuild_needed)
-        logger.debug("PromptRebuildHook registered for BeforeModelInvocationEvent")
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any):
+        """Register BeforeModelCallEvent callback."""
+        registry.add_callback(BeforeModelCallEvent, self.check_if_rebuild_needed)
+        logger.debug("PromptRebuildHook registered for BeforeModelCallEvent")
 
-    def check_if_rebuild_needed(self, event: BeforeModelInvocationEvent):
+    def check_if_rebuild_needed(self, event: BeforeModelCallEvent):
         """Check triggers and rebuild prompt if needed.
 
         Args:
-            event: BeforeModelInvocationEvent from Strands SDK
+            event: BeforeModelCallEvent from Strands SDK
         """
         current_step = self.callback_handler.current_step
 
@@ -128,12 +138,27 @@ class PromptRebuildHook(HookProvider):
         )
 
         if not should_rebuild:
+            logger.debug(
+                "Prompt rebuild skipped at step %d (last rebuild: step %d)",
+                current_step,
+                self.last_rebuild_step,
+            )
+            log_hitl(
+                "PromptRebuild",
+                f"Rebuild skipped at step {current_step} (interval not reached)",
+                "DEBUG",
+            )
             return  # Keep using existing prompt
 
         logger.info(
             "Prompt rebuild triggered at step %d (last rebuild: step %d)",
             current_step,
             self.last_rebuild_step,
+        )
+        log_hitl(
+            "PromptRebuild",
+            f"⚠️  Prompt rebuild TRIGGERED at step {current_step} (last: {self.last_rebuild_step})",
+            "WARNING",
         )
 
         # Rebuild prompt with fresh context
@@ -188,7 +213,17 @@ class PromptRebuildHook(HookProvider):
                 )
 
             # Update agent's system prompt
+            old_prompt_len = (
+                len(event.agent.system_prompt) if event.agent.system_prompt else 0
+            )
             event.agent.system_prompt = new_prompt
+            new_prompt_len = len(new_prompt)
+
+            log_hitl(
+                "PromptRebuild",
+                f"✓ Prompt completely rebuilt: {old_prompt_len} → {new_prompt_len} chars",
+                "WARNING",
+            )
 
             # Update tracking
             self.last_rebuild_step = current_step

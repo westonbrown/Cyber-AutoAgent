@@ -51,6 +51,7 @@ class ModelLimits:
         context: Maximum input tokens (context window)
         output: Maximum output tokens (completion limit)
     """
+
     context: int
     output: int
 
@@ -66,6 +67,7 @@ class ModelPricing:
         cache_write: Cost per million cached write tokens (optional)
         reasoning: Cost per million reasoning tokens (optional, for o1/o3 models)
     """
+
     input: float
     output: float
     cache_read: Optional[float] = None
@@ -91,6 +93,7 @@ class ModelCapabilities:
         modalities_input: Supported input modalities (text, image, audio, video, pdf)
         modalities_output: Supported output modalities (text, image, audio)
     """
+
     name: str
     reasoning: bool
     tool_call: bool
@@ -117,6 +120,7 @@ class ModelInfo:
         limits: Token limits
         pricing: Pricing information (None if not available)
     """
+
     provider: str
     model_id: str
     full_id: str
@@ -258,14 +262,14 @@ class ModelsDevClient:
 
         if provider:
             provider_data = data.get(provider, {})
-            models_data = provider_data.get('models', {})
+            models_data = provider_data.get("models", {})
             return sorted(models_data.keys())
 
         # Return all models across all providers
         all_models = []
         for provider_id, provider_data in data.items():
-            if 'models' in provider_data:
-                for model_id in provider_data['models'].keys():
+            if "models" in provider_data:
+                for model_id in provider_data["models"].keys():
                     all_models.append(f"{provider_id}/{model_id}")
         return sorted(all_models)
 
@@ -310,7 +314,9 @@ class ModelsDevClient:
                 with open(self.cache_file) as f:
                     self._data = json.load(f)
                     self._data_source = "cache"
-                    logger.info(f"Loaded models from cache ({len(self._data)} providers)")
+                    logger.info(
+                        f"Loaded models from cache ({len(self._data)} providers)"
+                    )
                     return self._data
             except Exception as e:
                 logger.warning(f"Failed to load cache: {e}")
@@ -322,11 +328,13 @@ class ModelsDevClient:
             # Use httpx if available, fall back to urllib
             try:
                 import httpx
+
                 response = httpx.get(self.API_URL, timeout=10.0, follow_redirects=True)
                 response.raise_for_status()
                 self._data = response.json()
             except ImportError:
                 import urllib.request
+
                 with urllib.request.urlopen(self.API_URL, timeout=10) as response:
                     self._data = json.loads(response.read().decode())
 
@@ -347,7 +355,9 @@ class ModelsDevClient:
                 with open(self.snapshot_file) as f:
                     self._data = json.load(f)
                     self._data_source = "snapshot"
-                    logger.info(f"Loaded models from snapshot ({len(self._data)} providers)")
+                    logger.info(
+                        f"Loaded models from snapshot ({len(self._data)} providers)"
+                    )
                     return self._data
             except Exception as e:
                 logger.error(f"Failed to load snapshot: {e}")
@@ -388,7 +398,7 @@ class ModelsDevClient:
         """
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with open(self.cache_file, 'w') as f:
+            with open(self.cache_file, "w") as f:
                 json.dump(data, f, indent=2)
             logger.debug(f"Saved cache: {self.cache_file}")
         except Exception as e:
@@ -405,18 +415,18 @@ class ModelsDevClient:
             ModelInfo if found, None otherwise
         """
         # Handle provider/model format
-        if '/' in model_id:
-            parts = model_id.split('/', 1)
+        if "/" in model_id:
+            parts = model_id.split("/", 1)
             if len(parts) == 2:
                 provider, model = parts
                 return self._parse_model(data, provider, model)
 
         # Search across all providers for exact match
         for provider_id, provider_data in data.items():
-            if 'models' not in provider_data:
+            if "models" not in provider_data:
                 continue
 
-            if model_id in provider_data['models']:
+            if model_id in provider_data["models"]:
                 return self._parse_model(data, provider_id, model_id)
 
         return None
@@ -439,14 +449,14 @@ class ModelsDevClient:
         """
         # Provider aliases mapping
         provider_aliases = {
-            'moonshot': 'moonshotai',
-            'anthropic': 'amazon-bedrock',  # When used with ARN format
-            'gemini': 'google',  # Gemini models are under google provider
+            "moonshot": "moonshotai",
+            "anthropic": "amazon-bedrock",  # When used with ARN format
+            "gemini": "google",  # Gemini models are under google provider
         }
 
         # Handle provider/model format with alias resolution
-        if '/' in model_id:
-            parts = model_id.split('/', 1)
+        if "/" in model_id:
+            parts = model_id.split("/", 1)
             if len(parts) == 2:
                 provider, model = parts
                 # Try with aliased provider
@@ -457,25 +467,25 @@ class ModelsDevClient:
                         return info
 
         # Normalize dots to dashes (e.g., claude-3.5-haiku → claude-3-5-haiku)
-        normalized = model_id.replace('.', '-')
+        normalized = model_id.replace(".", "-")
         if normalized != model_id:
             info = self._lookup_model(data, normalized)
             if info:
                 return info
 
         # Handle Bedrock ARN format (us.anthropic.claude-sonnet-4-5-20250929-v1:0)
-        if model_id.startswith('us.') or model_id.startswith('anthropic.'):
+        if model_id.startswith("us.") or model_id.startswith("anthropic."):
             # Extract the actual model name
-            parts = model_id.split('.')
+            parts = model_id.split(".")
             if len(parts) >= 2:
                 # Try "anthropic/claude-sonnet-4-5-20250929"
-                bedrock_model = '.'.join(parts[1:])
+                bedrock_model = ".".join(parts[1:])
                 info = self._lookup_model(data, f"amazon-bedrock/{bedrock_model}")
                 if info:
                     return info
 
         # Try with -latest suffix removed
-        if model_id.endswith('-latest'):
+        if model_id.endswith("-latest"):
             base = model_id[:-7]
             info = self._lookup_model(data, base)
             if info:
@@ -483,7 +493,9 @@ class ModelsDevClient:
 
         return None
 
-    def _parse_model(self, data: Dict, provider: str, model: str) -> Optional[ModelInfo]:
+    def _parse_model(
+        self, data: Dict, provider: str, model: str
+    ) -> Optional[ModelInfo]:
         """Parse model data into ModelInfo.
 
         Args:
@@ -496,41 +508,45 @@ class ModelsDevClient:
         """
         try:
             provider_data = data[provider]
-            model_data = provider_data['models'][model]
+            model_data = provider_data["models"][model]
 
             # Parse capabilities
             capabilities = ModelCapabilities(
-                name=model_data.get('name', model),
-                reasoning=model_data.get('reasoning', False),
-                tool_call=model_data.get('tool_call', False),
-                attachment=model_data.get('attachment', False),
-                temperature=model_data.get('temperature', True),
-                structured_output=model_data.get('structured_output'),
-                knowledge=model_data.get('knowledge'),
-                release_date=model_data.get('release_date'),
-                last_updated=model_data.get('last_updated'),
-                open_weights=model_data.get('open_weights', False),
-                modalities_input=model_data.get('modalities', {}).get('input', ['text']),
-                modalities_output=model_data.get('modalities', {}).get('output', ['text']),
+                name=model_data.get("name", model),
+                reasoning=model_data.get("reasoning", False),
+                tool_call=model_data.get("tool_call", False),
+                attachment=model_data.get("attachment", False),
+                temperature=model_data.get("temperature", True),
+                structured_output=model_data.get("structured_output"),
+                knowledge=model_data.get("knowledge"),
+                release_date=model_data.get("release_date"),
+                last_updated=model_data.get("last_updated"),
+                open_weights=model_data.get("open_weights", False),
+                modalities_input=model_data.get("modalities", {}).get(
+                    "input", ["text"]
+                ),
+                modalities_output=model_data.get("modalities", {}).get(
+                    "output", ["text"]
+                ),
             )
 
             # Parse limits
-            limit_data = model_data.get('limit', {})
+            limit_data = model_data.get("limit", {})
             limits = ModelLimits(
-                context=limit_data.get('context', 0),
-                output=limit_data.get('output', 0),
+                context=limit_data.get("context", 0),
+                output=limit_data.get("output", 0),
             )
 
             # Parse pricing (optional)
             pricing = None
-            if 'cost' in model_data:
-                cost_data = model_data['cost']
+            if "cost" in model_data:
+                cost_data = model_data["cost"]
                 pricing = ModelPricing(
-                    input=cost_data.get('input', 0.0),
-                    output=cost_data.get('output', 0.0),
-                    cache_read=cost_data.get('cache_read'),
-                    cache_write=cost_data.get('cache_write'),
-                    reasoning=cost_data.get('reasoning'),
+                    input=cost_data.get("input", 0.0),
+                    output=cost_data.get("output", 0.0),
+                    cache_read=cost_data.get("cache_read"),
+                    cache_write=cost_data.get("cache_write"),
+                    reasoning=cost_data.get("reasoning"),
                 )
 
             return ModelInfo(
@@ -564,10 +580,10 @@ def get_models_client() -> ModelsDevClient:
 
 # Public API
 __all__ = [
-    'ModelLimits',
-    'ModelPricing',
-    'ModelCapabilities',
-    'ModelInfo',
-    'ModelsDevClient',
-    'get_models_client',
+    "ModelLimits",
+    "ModelPricing",
+    "ModelCapabilities",
+    "ModelInfo",
+    "ModelsDevClient",
+    "get_models_client",
 ]

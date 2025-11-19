@@ -352,7 +352,7 @@ class TestCreateAgent:
         config = AgentConfig(
             target="test.com", objective="test objective", provider="bedrock"
         )
-        agent, handler = create_agent(
+        agent, handler, feedback_manager = create_agent(
             target="test.com", objective="test objective", config=config
         )
 
@@ -395,7 +395,7 @@ class TestCreateAgent:
         config = AgentConfig(
             target="test.com", objective="test objective", provider="ollama"
         )
-        agent, handler = create_agent(
+        agent, handler, feedback_manager = create_agent(
             target="test.com", objective="test objective", config=config
         )
 
@@ -423,15 +423,46 @@ class TestCreateAgent:
     @patch("modules.config.ConfigManager.validate_requirements")
     @patch("modules.agents.cyber_autoagent.create_ollama_model")
     @patch("modules.agents.cyber_autoagent._handle_model_creation_error")
+    @patch("modules.agents.cyber_autoagent.get_config_manager")
+    @patch("modules.handlers.react.react_bridge_handler.ReactBridgeHandler")
     @patch("modules.agents.cyber_autoagent.initialize_memory_system")
     def test_create_agent_model_creation_failure(
         self,
         mock_init_memory,
+        mock_react_bridge_handler,
+        mock_get_cfg,
         mock_handle_error,
         mock_create_ollama,
         mock_validate,
     ):
         """Test agent creation when model creation fails"""
+        # Setup minimal mocks to get to model creation
+        mock_handler = Mock()
+        mock_react_bridge_handler.return_value = mock_handler
+
+        from types import SimpleNamespace
+        mock_cfg = Mock()
+        mock_cfg.validate_requirements.return_value = None
+        mock_cfg.get_server_config.return_value = SimpleNamespace(
+            llm=SimpleNamespace(model_id="llama3.2:3b"),
+            output=SimpleNamespace(base_dir="./outputs"),
+            swarm=SimpleNamespace(llm=SimpleNamespace(model_id="llama3.2:3b")),
+            sdk=SimpleNamespace(conversation_window_size=64),
+            hitl=SimpleNamespace(
+                enabled=False,
+                auto_pause_on_destructive=False,
+                auto_pause_on_low_confidence=False,
+                confidence_threshold=0.7,
+            ),
+        )
+        mock_cfg.get_default_region.return_value = "us-east-1"
+        mock_cfg.get_mem0_service_config.return_value = {
+            "vector_store": {"provider": "faiss", "config": {"path": "test"}},
+            "embedder": {"provider": "ollama", "config": {"model": "test"}},
+            "llm": {"provider": "ollama", "config": {"model": "test"}},
+        }
+        mock_get_cfg.return_value = mock_cfg
+
         mock_create_ollama.side_effect = Exception("Model creation failed")
 
         with pytest.raises(Exception):

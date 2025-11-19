@@ -225,7 +225,13 @@ class ReactBridgeHandler(PrintingCallbackHandler):
         When in swarm operation context, callbacks are attributed to the
         currently active swarm agent for proper visibility in the UI.
         """
-        # Minimal logging for production
+        # Log callback invocations for HITL debugging
+        callback_type = kwargs.get("event", {}).get("type", "unknown")
+        logger.debug(
+            "[HITL-RBH] Callback invoked: type=%s, step=%d",
+            callback_type,
+            self.current_step,
+        )
 
         # Transform SDK events to UI events
         self._transform_sdk_event(kwargs)

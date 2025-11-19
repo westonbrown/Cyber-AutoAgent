@@ -126,6 +126,9 @@ addopts = [
     "--verbose"
 ]
 pythonpath = ["src"]
+markers = [
+    "manual: marks tests that require manual execution (e.g., integration tests with external services)"
+]
 
 [tool.pylint.main]
 # Disable specific warnings that are not relevant for this project

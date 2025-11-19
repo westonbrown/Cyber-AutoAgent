@@ -11,7 +11,9 @@ from strands import tool
 
 
 @tool
-def specialized_recon_orchestrator(target: str, recon_type: str = "comprehensive") -> str:
+def specialized_recon_orchestrator(
+    target: str, recon_type: str = "comprehensive"
+) -> str:
     """
     Orchestrates advanced reconnaissance using specialized external tools.
 
@@ -120,7 +122,9 @@ def specialized_recon_orchestrator(target: str, recon_type: str = "comprehensive
         intelligence = _analyze_attack_surface(results)
         results["intelligence"] = intelligence
 
-        output += f"Attack surface size: {intelligence['attack_surface_size']} assets\\n"
+        output += (
+            f"Attack surface size: {intelligence['attack_surface_size']} assets\\n"
+        )
         output += f"High-value targets: {len(intelligence['high_value_targets'])}\\n"
         output += f"Technology risks: {len(intelligence['technology_risks'])}\\n"
 
@@ -167,13 +171,20 @@ def _setup_specialized_tools() -> Dict[str, Any]:
         try:
             # Check if tool already exists
             check_cmd = ["which", tool_name]
-            if subprocess.run(check_cmd, capture_output=True, text=True, timeout=5).returncode == 0:
+            if (
+                subprocess.run(
+                    check_cmd, capture_output=True, text=True, timeout=5
+                ).returncode
+                == 0
+            ):
                 tools_status["tools"].append(tool_name)
                 continue
 
             # Use modern 'go install' for modules (not deprecated 'go get')
             install_cmd = ["go", "install", install_path]
-            result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                install_cmd, capture_output=True, text=True, timeout=120
+            )
 
             if result.returncode == 0:
                 tools_status["tools"].append(tool_name)
@@ -198,7 +209,9 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
         cmd = ["subfinder", "-d", target, "-silent", "-timeout", "60"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
         if result.returncode == 0:
-            subdomains = [line.strip() for line in result.stdout.split("\\n") if line.strip()]
+            subdomains = [
+                line.strip() for line in result.stdout.split("\\n") if line.strip()
+            ]
             all_subdomains.update(subdomains)
     except Exception:
         pass
@@ -208,7 +221,9 @@ def _advanced_subdomain_enum(target: str) -> List[str]:
         cmd = ["assetfinder", "--subs-only", target]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
-            subdomains = [line.strip() for line in result.stdout.split("\\n") if line.strip()]
+            subdomains = [
+                line.strip() for line in result.stdout.split("\\n") if line.strip()
+            ]
             all_subdomains.update(subdomains)
     except Exception:
         pass
@@ -269,7 +284,17 @@ def _analyze_live_hosts(hosts: List[str]) -> Dict[str, Any]:
             hosts_file = f.name
 
         # Use httpx to probe hosts
-        cmd = ["httpx", "-l", hosts_file, "-title", "-tech-detect", "-status-code", "-silent", "-timeout", "10"]
+        cmd = [
+            "httpx",
+            "-l",
+            hosts_file,
+            "-title",
+            "-tech-detect",
+            "-status-code",
+            "-silent",
+            "-timeout",
+            "10",
+        ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
@@ -298,7 +323,9 @@ def _analyze_live_hosts(hosts: List[str]) -> Dict[str, Any]:
                 for protocol in ["https", "http"]:
                     test_url = f"{protocol}://{host}"
                     cmd = ["curl", "-s", "-I", "--max-time", "5", test_url]
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    result = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=10
+                    )
 
                     if result.returncode == 0 and "HTTP/" in result.stdout:
                         live_analysis["hosts"].append(test_url)
@@ -332,7 +359,17 @@ def _deep_web_intelligence(live_hosts: List[str]) -> Dict[str, Any]:
                 f.write(f"{host}\\n")
             hosts_file = f.name
 
-        cmd = ["katana", "-list", hosts_file, "-js-crawl", "-depth", "2", "-silent", "-timeout", "30"]
+        cmd = [
+            "katana",
+            "-list",
+            hosts_file,
+            "-js-crawl",
+            "-depth",
+            "2",
+            "-silent",
+            "-timeout",
+            "30",
+        ]
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
@@ -406,11 +443,18 @@ def _deep_web_intelligence(live_hosts: List[str]) -> Dict[str, Any]:
 
 def _analyze_attack_surface(results: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze and prioritize the attack surface"""
-    intelligence = {"attack_surface_size": 0, "high_value_targets": [], "technology_risks": [], "hidden_services": []}
+    intelligence = {
+        "attack_surface_size": 0,
+        "high_value_targets": [],
+        "technology_risks": [],
+        "hidden_services": [],
+    }
 
     # Calculate attack surface size
     intelligence["attack_surface_size"] = (
-        len(results.get("subdomains", [])) + len(results.get("live_hosts", [])) + len(results.get("endpoints", []))
+        len(results.get("subdomains", []))
+        + len(results.get("live_hosts", []))
+        + len(results.get("endpoints", []))
     )
 
     # Identify high-value targets
@@ -438,13 +482,17 @@ def _analyze_attack_surface(results: Dict[str, Any]) -> Dict[str, Any]:
     for subdomain in results.get("subdomains", []):
         for keyword in high_value_keywords:
             if keyword in subdomain.lower():
-                intelligence["high_value_targets"].append(f"Subdomain: {subdomain} (contains '{keyword}')")
+                intelligence["high_value_targets"].append(
+                    f"Subdomain: {subdomain} (contains '{keyword}')"
+                )
                 break
 
     for endpoint in results.get("endpoints", []):
         for keyword in high_value_keywords:
             if keyword in endpoint.lower():
-                intelligence["high_value_targets"].append(f"Endpoint: {endpoint} (contains '{keyword}')")
+                intelligence["high_value_targets"].append(
+                    f"Endpoint: {endpoint} (contains '{keyword}')"
+                )
                 break
 
     # Analyze technology risks with exploitation context
@@ -469,12 +517,19 @@ def _analyze_attack_surface(results: Dict[str, Any]) -> Dict[str, Any]:
         tech_lower = tech.lower()
         for risky_tech, risk_desc in risky_technologies.items():
             if risky_tech in tech_lower:
-                intelligence["technology_risks"].append(f"{risky_tech.capitalize()}: {risk_desc}")
+                intelligence["technology_risks"].append(
+                    f"{risky_tech.capitalize()}: {risk_desc}"
+                )
 
     # Identify hidden services (non-standard ports, dev/staging environments)
     for host in results.get("live_hosts", []):
-        if any(keyword in host.lower() for keyword in ["dev", "staging", "test", "internal"]):
-            intelligence["hidden_services"].append(f"Development/staging service: {host}")
+        if any(
+            keyword in host.lower()
+            for keyword in ["dev", "staging", "test", "internal"]
+        ):
+            intelligence["hidden_services"].append(
+                f"Development/staging service: {host}"
+            )
 
         # Check for non-standard ports
         if ":" in host and not host.endswith(":80") and not host.endswith(":443"):
@@ -491,35 +546,57 @@ def _generate_recon_recommendations(results: Dict[str, Any]) -> List[str]:
 
     # Attack surface recommendations
     if intelligence.get("attack_surface_size", 0) > 50:
-        recommendations.append("Large attack surface detected - prioritize asset inventory and monitoring")
+        recommendations.append(
+            "Large attack surface detected - prioritize asset inventory and monitoring"
+        )
 
     # High-value target recommendations
     if intelligence.get("high_value_targets"):
-        recommendations.append("High-value targets identified - focus security testing on admin/API endpoints")
-        recommendations.append("Implement additional access controls for sensitive services")
+        recommendations.append(
+            "High-value targets identified - focus security testing on admin/API endpoints"
+        )
+        recommendations.append(
+            "Implement additional access controls for sensitive services"
+        )
 
     # Technology risk recommendations
     if intelligence.get("technology_risks"):
-        recommendations.append("Technology vulnerabilities detected - perform version analysis and patching")
-        recommendations.append("Review server configurations for security hardening opportunities")
+        recommendations.append(
+            "Technology vulnerabilities detected - perform version analysis and patching"
+        )
+        recommendations.append(
+            "Review server configurations for security hardening opportunities"
+        )
 
     # Parameter security recommendations
     if len(results.get("parameters", [])) > 20:
-        recommendations.append("Extensive parameter usage detected - test for injection vulnerabilities")
-        recommendations.append("Implement comprehensive input validation and sanitization")
+        recommendations.append(
+            "Extensive parameter usage detected - test for injection vulnerabilities"
+        )
+        recommendations.append(
+            "Implement comprehensive input validation and sanitization"
+        )
 
     # JavaScript analysis recommendations
     if results.get("js_files"):
-        recommendations.append("Analyze JavaScript files for hardcoded secrets and sensitive information")
-        recommendations.append("Review client-side security controls and DOM manipulation")
+        recommendations.append(
+            "Analyze JavaScript files for hardcoded secrets and sensitive information"
+        )
+        recommendations.append(
+            "Review client-side security controls and DOM manipulation"
+        )
 
     # Hidden service recommendations
     if intelligence.get("hidden_services"):
-        recommendations.append("Hidden/dev services found - verify proper access controls and network segmentation")
+        recommendations.append(
+            "Hidden/dev services found - verify proper access controls and network segmentation"
+        )
 
     # General recommendations
     recommendations.append("Conduct business logic testing on discovered workflows")
-    recommendations.append("Test authentication mechanisms across all discovered services")
+    recommendations.append(
+        "Test authentication mechanisms across all discovered services"
+    )
     recommendations.append("Validate SSL/TLS configurations and certificate management")
 
     return recommendations

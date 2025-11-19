@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { StreamDisplay, StaticStreamDisplay, DisplayStreamEvent } from './StreamDisplay.js';
 import { ExecutionService } from '../services/ExecutionService.js';
 import { themeManager } from '../themes/theme-manager.js';
@@ -20,6 +20,8 @@ import { ByteBudgetRingBuffer } from '../utils/ByteBudgetRingBuffer.js';
 import { DISPLAY_LIMITS } from '../constants/config.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
 import { calculateAvailableHeight } from '../utils/layoutConstants.js';
+import { submitFeedback, requestManualIntervention, setExecutionServiceForHITL } from '../utils/hitlCommands.js';
+import { ActionType } from '../hooks/useApplicationState.js';
 
 // Exported helper: build a trimmed report preview to avoid storing huge content in memory
 export const buildTrimmedReportContent = (raw: string): string => {
@@ -50,6 +52,10 @@ interface TerminalProps {
   onMetricsUpdate?: (metrics: { tokens?: number; cost?: number; duration: string; memoryOps: number; evidence: number }) => void;
   animationsEnabled?: boolean;
   cleanupRef?: React.MutableRefObject<(() => void) | null>;
+  dispatch?: (action: any) => void;
+  hitlEnabled?: boolean;
+  hitlPendingTool?: any;
+  hitlInterpretation?: any;
 }
 
 export const Terminal: React.FC<TerminalProps> = React.memo(({
@@ -60,11 +66,67 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
   onEvent,
   onMetricsUpdate,
   animationsEnabled = true,
-  cleanupRef
+  cleanupRef,
+  dispatch,
+  hitlEnabled = false,
+  hitlPendingTool,
+  hitlInterpretation
 }) => {
   // Use production-grade terminal size hook with resize handling
   const { availableWidth, availableHeight, columns } = useTerminalSize();
   const terminalWidth = propsTerminalWidth || availableWidth;
+
+  // Set execution service for HITL commands
+  useEffect(() => {
+    setExecutionServiceForHITL(executionService);
+    return () => setExecutionServiceForHITL(null);
+  }, [executionService]);
+
+  // Manual intervention handler - [i] key (always active when HITL enabled)
+  useInput((input, key) => {
+    if (!hitlEnabled) return;
+    if (input?.toLowerCase() === 'i' && !hitlPendingTool && !hitlInterpretation) {
+      requestManualIntervention();
+    }
+  });
+
+  // HITL keyboard handler
+  useInput((input, key) => {
+    if (!hitlPendingTool && !hitlInterpretation) return;
+
+    const isManualIntervention = hitlPendingTool?.toolName === 'manual_intervention';
+
+    // Escape key - cancel intervention and resume
+    if (key.escape) {
+      if (dispatch) {
+        dispatch({ type: ActionType.CLEAR_HITL_STATE });
+      }
+      return;
+    }
+
+    // Manual intervention - only handle Esc, all other keys handled by panel
+    if (isManualIntervention) {
+      // TextInput in panel handles all input
+      return;
+    }
+
+    // Destructive operation review mode: a/c/r keys
+    if (hitlPendingTool && !hitlInterpretation) {
+      if (input === 'a') {
+        submitFeedback('approval', 'Approved - continuing as planned', hitlPendingTool.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+      } else if (input === 'r') {
+        submitFeedback('rejection', 'Rejected - stopping execution', hitlPendingTool.toolId);
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+        }
+      }
+      // [c] is handled by HITLInterventionPanel to switch to feedback mode
+    }
+  });
+
   // Test marker utility for diagnosing spinner/timer behavior
   const emitTestMarker = (msg: string) => {
     try {
@@ -577,6 +639,43 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
     };
     
     switch (event.type) {
+      case 'hitl_pause_requested':
+        // Update HITL state when tool execution is paused
+        if (dispatch) {
+          dispatch({
+            type: ActionType.SET_HITL_PENDING_TOOL,
+            payload: {
+              toolName: event.tool_name || 'unknown',
+              toolId: event.tool_id || '',
+              parameters: event.parameters || {},
+              reason: event.reason,
+              confidence: event.confidence,
+              timeoutSeconds: event.timeout_seconds
+            }
+          });
+          // Set userHandoffActive to prevent ESC from terminating the operation
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: true
+          });
+        }
+        results.push(event as DisplayStreamEvent);
+        break;
+
+      case 'hitl_feedback_submitted':
+      case 'hitl_resume':
+        // Clear HITL state when feedback is submitted or execution resumes
+        if (dispatch) {
+          dispatch({ type: ActionType.CLEAR_HITL_STATE });
+          // Clear userHandoffActive to restore normal ESC behavior
+          dispatch({
+            type: ActionType.SET_USER_HANDOFF,
+            payload: false
+          });
+        }
+        results.push(event as DisplayStreamEvent);
+        break;
+
       case 'operation_init':
         // Reset dedup sets at operation start
         perToolOutputSeenRef.current.clear();
@@ -590,6 +689,10 @@ export const Terminal: React.FC<TerminalProps> = React.memo(({
         }
         if (typeof event.target === 'string') {
       targetRef.current = event.target;
+    }
+    // Set HITL enabled status from operation init
+    if (dispatch && 'hitl_enabled' in event && event.hitl_enabled === true) {
+      dispatch({ type: ActionType.SET_HITL_ENABLED, payload: true });
     }
     // Reset counters at operation start
     stepCounterRef.current = 0;

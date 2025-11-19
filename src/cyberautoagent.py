@@ -46,9 +46,12 @@ from strands.types.exceptions import MaxTokensReachedException
 from modules.agents.cyber_autoagent import (
     AgentConfig,
     create_agent,
-    _ensure_prompt_within_budget,
 )
-from modules.config.system.environment import auto_setup, clean_operation_memory, setup_logging
+from modules.config.system.environment import (
+    auto_setup,
+    clean_operation_memory,
+    setup_logging,
+)
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
 from modules.handlers.utils import (
@@ -480,7 +483,12 @@ def main():
 
     mcp_config = config_manager.get_mcp_config(args.provider, **config_overrides)
     if mcp_config.enabled:
-        mcp_connections = list(filter(lambda c: '*' in c.plugins or args.module in c.plugins, mcp_config.connections))
+        mcp_connections = list(
+            filter(
+                lambda c: "*" in c.plugins or args.module in c.plugins,
+                mcp_config.connections,
+            )
+        )
     else:
         mcp_connections = []
 
@@ -636,7 +644,7 @@ def main():
             module=args.module,
             mcp_connections=mcp_connections,
         )
-        agent, callback_handler = create_agent(
+        agent, callback_handler, feedback_manager = create_agent(
             target=args.target,
             objective=args.objective,
             config=config,
@@ -669,13 +677,39 @@ def main():
             )
 
             current_message = initial_prompt
-
             # Continue until stop condition is met
             while not interrupted:
                 try:
-                    _ensure_prompt_within_budget(agent)
                     # Execute agent with current message
+                    # Note: HITL feedback is now injected via HITLFeedbackInjectionHook
+                    # which modifies the system prompt in BeforeModelInvocationEvent
                     result = agent(current_message)
+
+                    # Check for HITL pause AFTER agent execution
+                    # This ensures pause is honored before starting next iteration
+                    if feedback_manager:
+                        is_paused = feedback_manager.is_paused()
+                        logger.info(
+                            "[HITL] Pause check: feedback_manager exists, is_paused=%s",
+                            is_paused,
+                        )
+                        if is_paused:
+                            logger.info(
+                                "[HITL] Execution paused after iteration - blocking until resume"
+                            )
+                            print_status(
+                                "⏸️  Execution paused - awaiting user feedback",
+                                "INFO",
+                            )
+                            # Poll until pause is cleared (by feedback or timeout)
+                            poll_count = 0
+                            while feedback_manager.is_paused():
+                                time.sleep(0.5)
+                                poll_count += 1
+                            logger.info(
+                                "[HITL] Resumed after pause - continuing execution"
+                            )
+                            print_status("▶️  Execution resumed", "INFO")
 
                     # Pass the metrics from the result to the callback handler
                     if (
@@ -739,7 +773,12 @@ def main():
                     if remaining_steps > 0:
                         # Simple continuation message
                         current_message = f"Continue the security assessment. You have {remaining_steps} steps remaining out of {args.iterations} total. Focus on achieving the objective efficiently."
+                        logger.debug(
+                            "Generated continuation message for next iteration (length=%d)",
+                            len(current_message),
+                        )
                     else:
+                        logger.info("No remaining steps - breaking execution loop")
                         break
 
                 except StepLimitReached:

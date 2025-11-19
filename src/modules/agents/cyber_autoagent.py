@@ -33,7 +33,7 @@ from modules.config import (
     configure_sdk_logging,
     get_config_manager,
 )
-from modules.config.types import MCPConnection, ServerConfig
+from modules.config.types import ServerConfig
 from modules.config.system.logger import get_logger
 from modules.config.models.factory import (
     create_bedrock_model,
@@ -77,6 +77,12 @@ from modules.tools.memory import (
     initialize_memory_system,
     mem0_memory,
 )
+from modules.handlers.hitl import (
+    FeedbackInputHandler,
+    FeedbackManager,
+    HITLHookProvider,
+)
+from modules.handlers.hitl.feedback_injection_hook import HITLFeedbackInjectionHook
 from modules.tools.prompt_optimizer import prompt_optimizer
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -90,12 +96,14 @@ get_system_prompt = prompts.get_system_prompt
 # for better separation of concerns. See imports above for available functions.
 
 
-def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> List[AgentTool]:
+def _discover_mcp_tools(
+    config: AgentConfig, server_config: ServerConfig
+) -> List[AgentTool]:
     """Discover and register MCP tools from configured connections."""
     mcp_tools = []
     environ = os.environ.copy()
-    for mcp_conn in (config.mcp_connections or []):
-        if '*' in mcp_conn.plugins or config.module in mcp_conn.plugins:
+    for mcp_conn in config.mcp_connections or []:
+        if "*" in mcp_conn.plugins or config.module in mcp_conn.plugins:
             logger.debug("Discover MCP tools from: %s", mcp_conn)
             try:
                 headers = resolve_env_vars_in_dict(mcp_conn.headers, environ)
@@ -103,25 +111,36 @@ def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> Lis
                     case "stdio":
                         if not mcp_conn.command:
                             raise ValueError(f"{mcp_conn.transport} requires command")
-                        command_list: List[str] = resolve_env_vars_in_list(mcp_conn.command, environ)
-                        transport = lambda: stdio_client(StdioServerParameters(
-                            command = command_list[0], args=command_list[1:],
-                            env=environ,
-                        ))
+                        command_list: List[str] = resolve_env_vars_in_list(
+                            mcp_conn.command, environ
+                        )
+                        transport = lambda: stdio_client(  # noqa: E731
+                            StdioServerParameters(
+                                command=command_list[0],
+                                args=command_list[1:],
+                                env=environ,
+                            )
+                        )
                     case "streamable-http":
-                        transport = lambda: streamablehttp_client(
+                        transport = lambda: streamablehttp_client(  # noqa: E731
                             url=mcp_conn.server_url,
                             headers=headers,
-                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
+                            timeout=mcp_conn.timeoutSeconds
+                            if mcp_conn.timeoutSeconds
+                            else 30,
                         )
                     case "sse":
-                        transport = lambda: sse_client(
+                        transport = lambda: sse_client(  # noqa: E731
                             url=mcp_conn.server_url,
                             headers=headers,
-                            timeout=mcp_conn.timeoutSeconds if mcp_conn.timeoutSeconds else 30,
+                            timeout=mcp_conn.timeoutSeconds
+                            if mcp_conn.timeoutSeconds
+                            else 30,
                         )
                     case _:
-                        raise ValueError(f"Unsupported MCP transport {mcp_conn.transport}")
+                        raise ValueError(
+                            f"Unsupported MCP transport {mcp_conn.transport}"
+                        )
                 client = MCPClient(transport, prefix=mcp_conn.id)
                 prefix_idx = len(mcp_conn.id) + 1
                 client.start()
@@ -131,7 +150,10 @@ def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> Lis
                     page_token = tools.pagination_token
                     for tool in tools:
                         logger.debug(f"Considering tool: {tool.tool_name}")
-                        if '*' in mcp_conn.allowed_tools or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools:
+                        if (
+                            "*" in mcp_conn.allowed_tools
+                            or tool.tool_name[prefix_idx:] in mcp_conn.allowed_tools
+                        ):
                             logger.debug(f"Allowed tool: {tool.tool_name}")
                             # Wrap output and save into output path
                             output_base_path = get_output_path(
@@ -145,7 +167,9 @@ def _discover_mcp_tools(config: AgentConfig, server_config: ServerConfig) -> Lis
                             client_used = True
                     if not page_token:
                         break
-                client_stop = lambda *_: client.stop(exc_type=None, exc_val=None, exc_tb=None)
+                client_stop = lambda *_: client.stop(  # noqa: E731
+                    exc_type=None, exc_val=None, exc_tb=None
+                )
                 if client_used:
                     atexit.register(client_stop)
                     signal.signal(signal.SIGTERM, client_stop)
@@ -194,6 +218,9 @@ def create_agent(
         overrides["model_id"] = config.model_id
 
     server_config = config_manager.get_server_config(config.provider, **overrides)
+
+    # Get HITL configuration
+    hitl_config = server_config.hitl
 
     # Get centralized region configuration
     if config.region_name is None:
@@ -667,6 +694,9 @@ Available {config.module} MCP tools:
     except Exception:
         pass
 
+    # Check if HITL is enabled before creating handler so we can include it in init_context
+    hitl_enabled = hitl_config.enabled
+
     callback_handler = ReactBridgeHandler(
         max_steps=config.max_steps,
         operation_id=operation_id,
@@ -708,8 +738,11 @@ Available {config.module} MCP tools:
                     else {}
                 ),
             },
-            "observability": config_manager.getenv_bool("ENABLE_OBSERVABILITY", False),
-            "ui_mode": config_manager.getenv("CYBER_UI_MODE", "cli").lower(),
+            "observability": (
+                os.getenv("ENABLE_OBSERVABILITY", "false").lower() == "true"
+            ),
+            "ui_mode": os.getenv("CYBER_UI_MODE", "cli").lower(),
+            "hitl_enabled": hitl_enabled,
         },
     )
 
@@ -768,6 +801,59 @@ Available {config.module} MCP tools:
             rebuild_interval=20,
         )
         hooks.append(prompt_rebuild_hook)
+    # Create HITL hook if enabled
+    hitl_hook = None
+    feedback_manager = None
+    feedback_handler = None
+
+    if hitl_enabled:
+        # Initialize feedback manager with configuration
+        feedback_manager = FeedbackManager(
+            memory=memory_client,
+            operation_id=operation_id,
+            emitter=callback_handler.emitter,
+            hitl_config=hitl_config,
+        )
+
+        # Initialize feedback input handler for receiving UI commands
+        feedback_handler = FeedbackInputHandler(feedback_manager=feedback_manager)
+        feedback_handler.start_listening()
+
+        # Verify thread is actually running
+        import time
+
+        time.sleep(0.5)  # Give thread time to start
+        if (
+            feedback_handler._listener_thread
+            and feedback_handler._listener_thread.is_alive()
+        ):
+            logger.info(
+                "[HITL] Listener thread verified: ID=%s, alive=%s",
+                feedback_handler._listener_thread.ident,
+                feedback_handler._listener_thread.is_alive(),
+            )
+        else:
+            logger.error("[HITL] WARNING: Listener thread failed to start!")
+
+        # Create HITL hook provider using centralized configuration
+        hitl_hook = HITLHookProvider(
+            feedback_manager=feedback_manager,
+            auto_pause_on_destructive=hitl_config.auto_pause_on_destructive,
+            auto_pause_on_low_confidence=hitl_config.auto_pause_on_low_confidence,
+            confidence_threshold=hitl_config.confidence_threshold,
+        )
+
+        # Create feedback injection hook for system prompt modification
+        feedback_injection_hook = HITLFeedbackInjectionHook(
+            feedback_manager=feedback_manager
+        )
+
+        print_status("HITL system enabled - human feedback available", "SUCCESS")
+
+    # Add HITL hooks if enabled
+    if hitl_hook:
+        hooks.append(hitl_hook)
+        hooks.append(feedback_injection_hook)
 
     # Create model based on provider type
     try:
@@ -967,4 +1053,4 @@ Available {config.module} MCP tools:
         pass
 
     agent_logger.debug("Agent initialized successfully")
-    return agent, callback_handler
+    return agent, callback_handler, feedback_manager

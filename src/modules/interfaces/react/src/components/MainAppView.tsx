@@ -15,15 +15,18 @@ import { Footer } from './Footer.js';
 import { UnifiedInputPrompt } from './UnifiedInputPrompt.js';
 import { Terminal } from './Terminal.js';
 import { ModalRegistry } from './ModalRegistry.js';
+import { HITLInterventionPanel } from './HITLInterventionPanel.js';
+import { submitFeedback } from '../utils/hitlCommands.js';
 
 // Types
-import { ApplicationState } from '../hooks/useApplicationState.js';
+import { ApplicationState, ActionType } from '../hooks/useApplicationState.js';
 import { OperationHistoryEntry } from '../hooks/useOperationManager.js';
 import { ModalType } from '../hooks/useModalManager.js';
 
 interface MainAppViewProps {
   appState: ApplicationState;
   actions: any; // Application state actions
+  dispatch?: any; // Application state dispatch function
   currentTheme: any; // Theme configuration object
   operationHistoryEntries: OperationHistoryEntry[];
   assessmentFlowState: any; // Assessment flow state object
@@ -47,6 +50,7 @@ interface MainAppViewProps {
 export const MainAppView: React.FC<MainAppViewProps> = ({
   appState,
   actions,
+  dispatch,
   currentTheme,
   operationHistoryEntries,
   assessmentFlowState,
@@ -276,6 +280,10 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
               onMetricsUpdate={handleMetricsUpdate}
               animationsEnabled={isAutoScrollEnabled && activeModal === ModalType.NONE}
               cleanupRef={terminalCleanupRef}
+              dispatch={dispatch}
+              hitlEnabled={appState.hitlEnabled}
+              hitlPendingTool={appState.hitlPendingTool}
+              hitlInterpretation={appState.hitlInterpretation}
             />
           )
         )}
@@ -283,7 +291,27 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
 
       {/* INPUT & FOOTER AREA: Static at the bottom */}
       <Box flexDirection="column">
-        {!hideInput && activeModal === ModalType.NONE && (!showOperationStream || appState.userHandoffActive) && (
+        {/* HITL Intervention Panel - Pinned above footer */}
+        {appState.hitlEnabled && activeModal === ModalType.NONE && (
+          <HITLInterventionPanel
+            toolName={appState.hitlPendingTool?.toolName || ''}
+            toolId={appState.hitlPendingTool?.toolId || ''}
+            parameters={appState.hitlPendingTool?.parameters || {}}
+            reason={appState.hitlPendingTool?.reason}
+            confidence={appState.hitlPendingTool?.confidence}
+            timeoutSeconds={appState.hitlPendingTool?.timeoutSeconds}
+            isActive={!!appState.hitlPendingTool}
+            onSubmitFeedback={(feedbackType: string, content: string) => {
+              if (appState.hitlPendingTool) {
+                submitFeedback(feedbackType as any, content, appState.hitlPendingTool.toolId);
+              }
+            }}
+          />
+        )}
+
+        {!hideInput && activeModal === ModalType.NONE &&
+         !appState.hitlPendingTool &&
+         (!showOperationStream || appState.userHandoffActive) && (
           <UnifiedInputPrompt
             flowState={assessmentFlowState}
             onInput={onInput}
@@ -291,7 +319,7 @@ export const MainAppView: React.FC<MainAppViewProps> = ({
             userHandoffActive={appState.userHandoffActive}
           />
         )}
-        
+
         {/* Spacer above footer when streaming to preserve breathing room */}
         {showOperationStream && (
           <Box>

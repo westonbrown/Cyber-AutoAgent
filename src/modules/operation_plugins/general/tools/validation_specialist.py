@@ -101,8 +101,11 @@ Return JSON only:
 def _create_specialist_model():
     """Create model for specialist - reuse main LLM/provider when swarm override is unavailable."""
     import os
-    from modules.config.models.factory import create_bedrock_model, create_ollama_model, create_litellm_model
-    from modules.config.manager import ConfigManager
+    from modules.config.models.factory import (
+        create_bedrock_model,
+        create_ollama_model,
+        create_litellm_model,
+    )
 
     provider = os.getenv("CYBER_AGENT_PROVIDER", "bedrock")
     config_manager = ConfigManager()
@@ -132,12 +135,9 @@ def _create_specialist_model():
         return _build(primary_model)
 
 
-
 @tool
 def validation_specialist(
-    finding_description: str,
-    artifact_paths: list[str],
-    claimed_severity: str = "HIGH"
+    finding_description: str, artifact_paths: list[str], claimed_severity: str = "HIGH"
 ) -> dict:
     """Validate HIGH/CRITICAL findings via rigorous 7-gate checklist."""
     try:
@@ -147,7 +147,6 @@ def validation_specialist(
             model=_create_specialist_model(),
             system_prompt=VALIDATION_METHODOLOGY,
             tools=[editor, shell],
-            
         )
 
         task = f"""Validate security finding:
@@ -179,7 +178,7 @@ Execute 7-gate validation checklist. Return JSON only."""
             "severity_max": "MEDIUM",
             "failed_gates": list(range(1, 8)),
             "evidence_summary": "Could not parse validation results",
-            "recommendation": "Manually review artifacts"
+            "recommendation": "Manually review artifacts",
         }
 
     except Exception as e:
@@ -190,5 +189,5 @@ Execute 7-gate validation checklist. Return JSON only."""
             "severity_max": "INFO",
             "failed_gates": [],
             "evidence_summary": f"Validation error: {str(e)}",
-            "recommendation": "Fix specialist configuration"
+            "recommendation": "Fix specialist configuration",
         }

@@ -51,6 +51,22 @@ export interface ApplicationState {
   // Terminal dimensions
   terminalDisplayHeight: number;
   terminalDisplayWidth: number;
+
+  // HITL (Human-in-the-Loop) state
+  hitlEnabled: boolean;
+  hitlPendingTool: {
+    toolName: string;
+    toolId: string;
+    parameters: Record<string, any>;
+    reason?: string;
+    confidence?: number;
+    timeoutSeconds?: number;
+  } | null;
+  hitlInterpretation: {
+    toolId: string;
+    text: string;
+    modifiedParameters: Record<string, any>;
+  } | null;
 }
 
 // Action types
@@ -88,6 +104,12 @@ export enum ActionType {
   
   // Context usage
   UPDATE_CONTEXT_USAGE = 'UPDATE_CONTEXT_USAGE',
+
+  // HITL actions
+  SET_HITL_ENABLED = 'SET_HITL_ENABLED',
+  SET_HITL_PENDING_TOOL = 'SET_HITL_PENDING_TOOL',
+  SET_HITL_INTERPRETATION = 'SET_HITL_INTERPRETATION',
+  CLEAR_HITL_STATE = 'CLEAR_HITL_STATE',
 }
 
 // Action definitions
@@ -111,7 +133,11 @@ type Action =
   | { type: ActionType.INCREMENT_ERROR_COUNT }
   | { type: ActionType.RESET_ERROR_COUNT }
   | { type: ActionType.SET_DOCKER_AVAILABLE; payload: boolean }
-  | { type: ActionType.UPDATE_CONTEXT_USAGE; payload: number };
+  | { type: ActionType.UPDATE_CONTEXT_USAGE; payload: number }
+  | { type: ActionType.SET_HITL_ENABLED; payload: boolean }
+  | { type: ActionType.SET_HITL_PENDING_TOOL; payload: { toolName: string; toolId: string; parameters: Record<string, any>; reason?: string; confidence?: number; timeoutSeconds?: number } | null }
+  | { type: ActionType.SET_HITL_INTERPRETATION; payload: { toolId: string; text: string; modifiedParameters: Record<string, any> } | null }
+  | { type: ActionType.CLEAR_HITL_STATE };
 
 // Reducer function
 function applicationReducer(state: ApplicationState, action: Action): ApplicationState {
@@ -199,7 +225,19 @@ function applicationReducer(state: ApplicationState, action: Action): Applicatio
       
     case ActionType.UPDATE_CONTEXT_USAGE:
       return { ...state, contextUsage: action.payload };
-      
+
+    case ActionType.SET_HITL_ENABLED:
+      return { ...state, hitlEnabled: action.payload };
+
+    case ActionType.SET_HITL_PENDING_TOOL:
+      return { ...state, hitlPendingTool: action.payload };
+
+    case ActionType.SET_HITL_INTERPRETATION:
+      return { ...state, hitlInterpretation: action.payload };
+
+    case ActionType.CLEAR_HITL_STATE:
+      return { ...state, hitlPendingTool: null, hitlInterpretation: null };
+
     default:
       return state;
   }
@@ -233,6 +271,9 @@ function getInitialState(): ApplicationState {
     recentTargets: [],
     terminalDisplayHeight: process.stdout.rows || 24,
     terminalDisplayWidth: process.stdout.columns || 80,
+    hitlEnabled: false,
+    hitlPendingTool: null,
+    hitlInterpretation: null,
   };
 }
 

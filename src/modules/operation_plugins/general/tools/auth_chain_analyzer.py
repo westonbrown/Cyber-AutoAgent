@@ -64,7 +64,9 @@ def auth_chain_analyzer(target_url: str, auth_type: str = "auto") -> str:
         output += "Phase 2: Authentication Mechanism Analysis\\n"
         output += "-" * 40 + "\\n"
 
-        auth_mechanisms = _analyze_auth_mechanisms(target_url, auth_endpoints, auth_type)
+        auth_mechanisms = _analyze_auth_mechanisms(
+            target_url, auth_endpoints, auth_type
+        )
         results["auth_mechanisms"] = auth_mechanisms
 
         output += f"Authentication mechanisms identified: {len(auth_mechanisms)}\\n"
@@ -93,7 +95,9 @@ def auth_chain_analyzer(target_url: str, auth_type: str = "auto") -> str:
         results["flow_analysis"].update(flow_analysis)
 
         output += f"Authentication steps mapped: {len(flow_analysis['authentication_steps'])}\\n"
-        output += f"Bypass opportunities: {len(flow_analysis['bypass_opportunities'])}\\n"
+        output += (
+            f"Bypass opportunities: {len(flow_analysis['bypass_opportunities'])}\\n"
+        )
         output += f"Privilege escalation vectors: {len(flow_analysis['privilege_escalation'])}\\n"
         output += "\\n"
 
@@ -220,7 +224,9 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
                         {
                             "path": path,
                             "full_url": test_url,
-                            "status": status_line.split()[1] if len(status_line.split()) > 1 else "unknown",
+                            "status": status_line.split()[1]
+                            if len(status_line.split()) > 1
+                            else "unknown",
                             "type": endpoint_type,
                         }
                     )
@@ -283,7 +289,12 @@ def _discover_auth_endpoints(target_url: str) -> List[Dict[str, Any]]:
                             endpoint_type = _classify_auth_endpoint(path, "")
 
                             auth_endpoints.append(
-                                {"path": path, "full_url": url, "status": status, "type": endpoint_type}
+                                {
+                                    "path": path,
+                                    "full_url": url,
+                                    "status": status,
+                                    "type": endpoint_type,
+                                }
                             )
     except Exception:
         pass
@@ -304,7 +315,10 @@ def _classify_auth_endpoint(path: str, headers: str) -> str:
         return "JWT"
 
     # OAuth/OIDC-related
-    if any(keyword in path_lower for keyword in ["oauth", "authorize", "callback", "oidc", ".well-known/openid"]):
+    if any(
+        keyword in path_lower
+        for keyword in ["oauth", "authorize", "callback", "oidc", ".well-known/openid"]
+    ):
         return "OAuth"
 
     # SAML-related
@@ -312,15 +326,22 @@ def _classify_auth_endpoint(path: str, headers: str) -> str:
         return "SAML"
 
     # Session-based
-    if any(keyword in path_lower for keyword in ["login", "signin", "session", "logout"]):
+    if any(
+        keyword in path_lower for keyword in ["login", "signin", "session", "logout"]
+    ):
         return "Session-based"
 
     # API authentication (generic)
-    if "/api/" in path_lower and any(keyword in path_lower for keyword in ["auth", "login", "token"]):
+    if "/api/" in path_lower and any(
+        keyword in path_lower for keyword in ["auth", "login", "token"]
+    ):
         return "API Authentication"
 
     # Admin/privileged
-    if any(keyword in path_lower for keyword in ["admin", "administrator", "portal", "dashboard", "console"]):
+    if any(
+        keyword in path_lower
+        for keyword in ["admin", "administrator", "portal", "dashboard", "console"]
+    ):
         return "Administrative"
 
     # Multi-factor
@@ -334,7 +355,9 @@ def _classify_auth_endpoint(path: str, headers: str) -> str:
     return "Generic Authentication"
 
 
-def _analyze_auth_mechanisms(target_url: str, auth_endpoints: List[Dict], auth_type: str) -> List[Dict[str, Any]]:
+def _analyze_auth_mechanisms(
+    target_url: str, auth_endpoints: List[Dict], auth_type: str
+) -> List[Dict[str, Any]]:
     """Analyze authentication mechanisms in detail"""
     mechanisms = []
 
@@ -401,7 +424,10 @@ def _analyze_auth_mechanisms(target_url: str, auth_endpoints: List[Dict], auth_t
                         }
                     )
 
-                if any(keyword in content.lower() for keyword in ["session", "csrf", "xsrf"]):
+                if any(
+                    keyword in content.lower()
+                    for keyword in ["session", "csrf", "xsrf"]
+                ):
                     mechanisms.append(
                         {
                             "type": "Session-based",
@@ -478,7 +504,14 @@ def _analyze_oauth_mechanism(endpoint: Dict, content: str) -> Dict[str, Any]:
         oauth_info["confidence"] = "high"
 
     # Check for OAuth providers
-    oauth_providers = ["google", "facebook", "github", "microsoft", "twitter", "linkedin"]
+    oauth_providers = [
+        "google",
+        "facebook",
+        "github",
+        "microsoft",
+        "twitter",
+        "linkedin",
+    ]
     found_providers = []
 
     for provider in oauth_providers:
@@ -560,20 +593,35 @@ def _analyze_session_mechanism(endpoint: Dict, content: str) -> Dict[str, Any]:
     return session_info
 
 
-def _analyze_tokens_and_sessions(target_url: str, mechanisms: List[Dict]) -> Dict[str, Any]:
+def _analyze_tokens_and_sessions(
+    target_url: str, mechanisms: List[Dict]
+) -> Dict[str, Any]:
     """Analyze tokens and session management"""
     token_analysis = {"tokens": [], "session_info": {}}
 
     # Test with a simple request to gather session information
     try:
-        cmd = ["curl", "-s", "-I", "--max-time", "10", "-c", "/tmp/cookies.txt", target_url]
+        cmd = [
+            "curl",
+            "-s",
+            "-I",
+            "--max-time",
+            "10",
+            "-c",
+            "/tmp/cookies.txt",
+            target_url,
+        ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
         if result.returncode == 0:
             headers = result.stdout
 
             # Analyze cookies
-            cookie_lines = [line for line in headers.split("\\n") if line.lower().startswith("set-cookie:")]
+            cookie_lines = [
+                line
+                for line in headers.split("\\n")
+                if line.lower().startswith("set-cookie:")
+            ]
 
             for cookie_line in cookie_lines:
                 cookie_info = _analyze_cookie_security(cookie_line)
@@ -593,7 +641,8 @@ def _analyze_tokens_and_sessions(target_url: str, mechanisms: List[Dict]) -> Dic
                 token
                 for token in token_analysis["tokens"]
                 if any(
-                    keyword in token.get("name", "").lower() for keyword in ["session", "sess", "auth", "token", "jwt"]
+                    keyword in token.get("name", "").lower()
+                    for keyword in ["session", "sess", "auth", "token", "jwt"]
                 )
             ]
 
@@ -666,8 +715,14 @@ def _analyze_session_security(session_cookies: List[Dict]) -> List[str]:
         return analysis
 
     # Check for security flags across all session cookies
-    missing_secure = any(not cookie.get("security_flags", {}).get("secure", False) for cookie in session_cookies)
-    missing_httponly = any(not cookie.get("security_flags", {}).get("httponly", False) for cookie in session_cookies)
+    missing_secure = any(
+        not cookie.get("security_flags", {}).get("secure", False)
+        for cookie in session_cookies
+    )
+    missing_httponly = any(
+        not cookie.get("security_flags", {}).get("httponly", False)
+        for cookie in session_cookies
+    )
 
     if missing_secure:
         analysis.append("Some session cookies lack Secure flag")
@@ -684,7 +739,9 @@ def _analyze_session_security(session_cookies: List[Dict]) -> List[str]:
     return analysis
 
 
-def _analyze_jwt_with_tools(target_url: str, jwt_mechanisms: List[Dict]) -> List[Dict[str, Any]]:
+def _analyze_jwt_with_tools(
+    target_url: str, jwt_mechanisms: List[Dict]
+) -> List[Dict[str, Any]]:
     """Analyze JWT tokens using jwt_tool if available"""
     jwt_tokens = []
 
@@ -740,7 +797,10 @@ def _parse_jwt_tool_output(output: str) -> Dict[str, Any]:
                 analysis["algorithm"] = alg_match.group(1)
 
         # Look for vulnerability indicators
-        if any(vuln in line_lower for vuln in ["vulnerability", "weak", "none", "algorithm"]):
+        if any(
+            vuln in line_lower
+            for vuln in ["vulnerability", "weak", "none", "algorithm"]
+        ):
             analysis["vulnerabilities"].append(line.strip())
 
         # Extract key claims
@@ -755,7 +815,11 @@ def _parse_jwt_tool_output(output: str) -> Dict[str, Any]:
 
 def _map_authentication_flows(target_url: str, results: Dict) -> Dict[str, Any]:
     """Map complete authentication flows and identify vulnerabilities"""
-    flow_analysis = {"authentication_steps": [], "bypass_opportunities": [], "privilege_escalation": []}
+    flow_analysis = {
+        "authentication_steps": [],
+        "bypass_opportunities": [],
+        "privilege_escalation": [],
+    }
 
     # Map authentication steps based on discovered mechanisms
     for mechanism in results.get("auth_mechanisms", []):
@@ -787,7 +851,11 @@ def _map_authentication_flows(target_url: str, results: Dict) -> Dict[str, Any]:
                 )
 
     # Check for JWT vulnerabilities
-    jwt_tokens = [token for token in results.get("tokens_discovered", []) if token.get("type") == "JWT"]
+    jwt_tokens = [
+        token
+        for token in results.get("tokens_discovered", [])
+        if token.get("type") == "JWT"
+    ]
     for token in jwt_tokens:
         jwt_analysis = token.get("analysis", {})
         if "none" in jwt_analysis.get("algorithm", "").lower():
@@ -802,13 +870,21 @@ def _map_authentication_flows(target_url: str, results: Dict) -> Dict[str, Any]:
         if jwt_analysis.get("vulnerabilities"):
             for vuln in jwt_analysis["vulnerabilities"]:
                 bypass_opportunities.append(
-                    {"type": "JWT Vulnerability", "description": vuln, "technique": "JWT exploitation"}
+                    {
+                        "type": "JWT Vulnerability",
+                        "description": vuln,
+                        "technique": "JWT exploitation",
+                    }
                 )
 
     flow_analysis["bypass_opportunities"] = bypass_opportunities
 
     # Identify privilege escalation opportunities
-    admin_endpoints = [ep for ep in results.get("auth_endpoints", []) if ep.get("type") == "Administrative"]
+    admin_endpoints = [
+        ep
+        for ep in results.get("auth_endpoints", [])
+        if ep.get("type") == "Administrative"
+    ]
 
     for endpoint in admin_endpoints:
         flow_analysis["privilege_escalation"].append(
@@ -830,8 +906,16 @@ def _generate_auth_steps(mechanism: Dict) -> List[Dict[str, Any]]:
 
     if mech_type == "Session-based":
         steps = [
-            {"step": 1, "action": "GET login form", "description": "Retrieve login form with CSRF token"},
-            {"step": 2, "action": "POST credentials", "description": "Submit username/password with CSRF token"},
+            {
+                "step": 1,
+                "action": "GET login form",
+                "description": "Retrieve login form with CSRF token",
+            },
+            {
+                "step": 2,
+                "action": "POST credentials",
+                "description": "Submit username/password with CSRF token",
+            },
             {
                 "step": 3,
                 "action": "Receive session cookie",
@@ -851,9 +935,21 @@ def _generate_auth_steps(mechanism: Dict) -> List[Dict[str, Any]]:
                 "action": "POST credentials to token endpoint",
                 "description": "Submit credentials to obtain JWT",
             },
-            {"step": 2, "action": "Receive JWT token", "description": "Server returns signed JWT token"},
-            {"step": 3, "action": "Include JWT in requests", "description": "Send JWT in Authorization header"},
-            {"step": 4, "action": "Server validates JWT", "description": "Server verifies JWT signature and claims"},
+            {
+                "step": 2,
+                "action": "Receive JWT token",
+                "description": "Server returns signed JWT token",
+            },
+            {
+                "step": 3,
+                "action": "Include JWT in requests",
+                "description": "Send JWT in Authorization header",
+            },
+            {
+                "step": 4,
+                "action": "Server validates JWT",
+                "description": "Server verifies JWT signature and claims",
+            },
         ]
 
     elif mech_type == "OAuth":
@@ -878,22 +974,42 @@ def _generate_auth_steps(mechanism: Dict) -> List[Dict[str, Any]]:
                 "action": "Exchange code for token",
                 "description": "Application exchanges code for access token",
             },
-            {"step": 5, "action": "Use access token", "description": "Include access token in API requests"},
+            {
+                "step": 5,
+                "action": "Use access token",
+                "description": "Include access token in API requests",
+            },
         ]
 
     return steps
 
 
-def _test_advanced_auth_bypasses(target_url: str, results: Dict) -> List[Dict[str, Any]]:
+def _test_advanced_auth_bypasses(
+    target_url: str, results: Dict
+) -> List[Dict[str, Any]]:
     """Test advanced authentication bypass techniques"""
     bypass_results = []
 
     # Test 1: Direct endpoint access (forced browsing)
-    admin_endpoints = [ep for ep in results.get("auth_endpoints", []) if ep.get("type") == "Administrative"]
+    admin_endpoints = [
+        ep
+        for ep in results.get("auth_endpoints", [])
+        if ep.get("type") == "Administrative"
+    ]
 
     for endpoint in admin_endpoints[:3]:  # Test first 3 admin endpoints
         try:
-            cmd = ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", endpoint["full_url"]]
+            cmd = [
+                "curl",
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "--max-time",
+                "10",
+                endpoint["full_url"],
+            ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
 
             if result.returncode == 0:
@@ -1028,35 +1144,67 @@ def _generate_auth_recommendations(results: Dict) -> List[str]:
         recommendations.append(
             "CRITICAL: Authentication bypass vulnerabilities detected - implement proper access controls"
         )
-        recommendations.append("Review and strengthen authentication middleware and route protection")
+        recommendations.append(
+            "Review and strengthen authentication middleware and route protection"
+        )
 
     # Session management issues
     if session_info.get("security_analysis"):
-        recommendations.append("Implement secure session management with proper cookie flags")
+        recommendations.append(
+            "Implement secure session management with proper cookie flags"
+        )
         recommendations.append("Deploy HTTPS enforcement and secure cookie attributes")
 
     # JWT-specific recommendations
-    jwt_tokens = [token for token in results.get("tokens_discovered", []) if token.get("type") == "JWT"]
+    jwt_tokens = [
+        token
+        for token in results.get("tokens_discovered", [])
+        if token.get("type") == "JWT"
+    ]
     if jwt_tokens:
-        recommendations.append("Audit JWT implementation for algorithm confusion and key management")
-        recommendations.append("Implement proper JWT validation including signature verification")
+        recommendations.append(
+            "Audit JWT implementation for algorithm confusion and key management"
+        )
+        recommendations.append(
+            "Implement proper JWT validation including signature verification"
+        )
 
     # OAuth recommendations
-    oauth_mechanisms = [m for m in results.get("auth_mechanisms", []) if m["type"] == "OAuth"]
+    oauth_mechanisms = [
+        m for m in results.get("auth_mechanisms", []) if m["type"] == "OAuth"
+    ]
     if oauth_mechanisms:
-        recommendations.append("Review OAuth implementation for state parameter and redirect URI validation")
-        recommendations.append("Implement proper scope validation and token lifecycle management")
+        recommendations.append(
+            "Review OAuth implementation for state parameter and redirect URI validation"
+        )
+        recommendations.append(
+            "Implement proper scope validation and token lifecycle management"
+        )
 
     # Administrative access
-    admin_endpoints = [ep for ep in results.get("auth_endpoints", []) if ep.get("type") == "Administrative"]
+    admin_endpoints = [
+        ep
+        for ep in results.get("auth_endpoints", [])
+        if ep.get("type") == "Administrative"
+    ]
     if admin_endpoints:
-        recommendations.append("Implement multi-factor authentication for administrative interfaces")
-        recommendations.append("Add IP restrictions and additional monitoring for admin access")
+        recommendations.append(
+            "Implement multi-factor authentication for administrative interfaces"
+        )
+        recommendations.append(
+            "Add IP restrictions and additional monitoring for admin access"
+        )
 
     # General recommendations
-    recommendations.append("Implement comprehensive authentication logging and monitoring")
-    recommendations.append("Conduct regular penetration testing of authentication mechanisms")
+    recommendations.append(
+        "Implement comprehensive authentication logging and monitoring"
+    )
+    recommendations.append(
+        "Conduct regular penetration testing of authentication mechanisms"
+    )
     recommendations.append("Deploy rate limiting and account lockout protections")
-    recommendations.append("Review and update authentication libraries and frameworks regularly")
+    recommendations.append(
+        "Review and update authentication libraries and frameworks regularly"
+    )
 
     return recommendations

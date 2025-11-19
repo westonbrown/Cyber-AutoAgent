@@ -36,6 +36,7 @@ from modules.config.types import (
     EvaluationConfig,
     SwarmConfig,
     SDKConfig,
+    HITLConfig,
     OutputConfig,
     ServerConfig,
     MCPConnection,
@@ -63,6 +64,16 @@ litellm.respect_retry_after_header = True
 
 logger = get_logger("Config.Manager")
 
+LITELLM_EMBEDDING_DEFAULTS: Dict[str, Tuple[str, int]] = {
+    "openai": ("openai/text-embedding-3-small", 1536),
+    "azure": ("azure/text-embedding-3-small", 1536),
+    "gemini": ("models/text-embedding-004", 768),
+    "google": ("models/text-embedding-004", 768),
+    "mistral": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "sagemaker": ("multi-qa-MiniLM-L6-cos-v1", 384),
+    "xai": ("multi-qa-MiniLM-L6-cos-v1", 384),
+}
+DEFAULT_LITELLM_EMBEDDING: Tuple[str, int] = ("multi-qa-MiniLM-L6-cos-v1", 384)
 
 
 class ConfigManager:
@@ -354,6 +365,9 @@ class ConfigManager:
             enable_telemetry=self.getenv_bool("ENABLE_SDK_TELEMETRY", True),
         )
 
+        # Build HITL configuration (reads enabled from environment, others use code defaults)
+        hitl_config = HITLConfig()
+
         config = ServerConfig(
             server_type=provider,
             llm=defaults["llm"],
@@ -364,6 +378,7 @@ class ConfigManager:
             mcp=mcp_config,
             output=output_config,
             sdk=sdk_config,
+            hitl=hitl_config,
             host=host,
             region=defaults["region"],
         )
@@ -446,6 +461,11 @@ class ConfigManager:
             pass
         # Final fallback to safe default aligned with Bedrock memory/evaluation defaults
         return "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+
+    def get_hitl_config(self, server: str, **overrides) -> HITLConfig:
+        """Get HITL configuration for the specified server."""
+        server_config = self.get_server_config(server, **overrides)
+        return server_config.hitl
 
     def get_unified_output_path(
         self,
@@ -733,9 +753,13 @@ class ConfigManager:
     def validate_requirements(self, provider: str) -> None:
         """Validate that all requirements are met for the specified provider."""
         # Delegate to validation module
-        ollama_host = _get_ollama_host_from_env(self.env) if provider == "ollama" else None
+        ollama_host = (
+            _get_ollama_host_from_env(self.env) if provider == "ollama" else None
+        )
         region = self.get_default_region() if provider == "bedrock" else None
-        server_config = self.get_server_config(provider) if provider == "ollama" else None
+        server_config = (
+            self.get_server_config(provider) if provider == "ollama" else None
+        )
 
         validate_provider(provider, self.env, ollama_host, region, server_config)
 
@@ -900,7 +924,7 @@ class ConfigManager:
         if not (0 < buffer <= 1.0):
             logger.warning(
                 "Invalid buffer %.2f (must be between 0 and 1), using default 0.5",
-                buffer
+                buffer,
             )
             buffer = 0.5
 
@@ -914,7 +938,10 @@ class ConfigManager:
                 safe = int(limits.output * buffer)
                 logger.debug(
                     "Safe max_tokens from models.dev: model=%s, limit=%d, safe=%d (%.0f%%)",
-                    model_id, limits.output, safe, buffer * 100
+                    model_id,
+                    limits.output,
+                    safe,
+                    buffer * 100,
                 )
                 return safe
         except (ValueError, KeyError, AttributeError) as e:
@@ -922,13 +949,15 @@ class ConfigManager:
         except Exception as e:
             logger.error(
                 "Unexpected error in models.dev lookup for %s: %s",
-                model_id, e, exc_info=True
+                model_id,
+                e,
+                exc_info=True,
             )
 
         # Fallback to 4096 if model not found
         logger.warning(
             "Model not found in models.dev, using safe default: model=%s, safe=4096",
-            model_id
+            model_id,
         )
         return 4096
 
@@ -948,26 +977,33 @@ class ConfigManager:
             logger.info(
                 "Swarm config: model=%s, max_tokens=%d (source=env override)",
                 swarm_cfg.model_id,
-                swarm_cfg.max_tokens
+                swarm_cfg.max_tokens,
             )
         else:
             swarm_cfg.max_tokens = safe_max
             logger.info(
                 "Swarm config: model=%s, max_tokens=%d (source=models.dev safe default)",
                 swarm_cfg.model_id,
-                swarm_cfg.max_tokens
+                swarm_cfg.max_tokens,
             )
 
         return swarm_cfg
 
-    def _get_mcp_config(self, _server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]) -> MCPConfig:
+    def _get_mcp_config(
+        self, _server: str, defaults: Dict[str, Any], overrides: Dict[str, Any]
+    ) -> MCPConfig:
         """Get MCP configuration with validation."""
-        enabled = overrides.get("mcp_enabled") or os.getenv("CYBER_MCP_ENABLED", "false").lower() == "true"
+        enabled = (
+            overrides.get("mcp_enabled")
+            or os.getenv("CYBER_MCP_ENABLED", "false").lower() == "true"
+        )
 
         connections = []
 
         if enabled:
-            conns_json = overrides.get("mcp_conns") or os.getenv("CYBER_MCP_CONNECTIONS")
+            conns_json = overrides.get("mcp_conns") or os.getenv(
+                "CYBER_MCP_CONNECTIONS"
+            )
             if conns_json and conns_json.strip():
                 try:
                     conns = json.loads(conns_json)
@@ -978,53 +1014,81 @@ class ConfigManager:
                 for conn in conns:
                     mcp_id = conn.get("id")
                     if mcp_id is None or len(mcp_id) == 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS requires an id property")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS requires an id property"
+                        )
                     if mcp_id in map(lambda x: x.id, connections):
-                        raise ValueError("CYBER_MCP_CONNECTIONS id property must be unique")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS id property must be unique"
+                        )
 
                     mcp_transport = conn.get("transport")
                     if mcp_transport not in ["stdio", "sse", "streamable-http"]:
-                        raise ValueError(f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}")
+                        raise ValueError(
+                            f"CYBER_MCP_CONNECTIONS {mcp_id} does not have a valid transport: {mcp_transport}"
+                        )
 
                     mcp_command = conn.get("command") or None
                     if mcp_transport == "stdio":
                         if not mcp_command:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport requires the command property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS stdio transport requires the command property"
+                            )
                         if isinstance(mcp_command, str):
                             mcp_command = [str]
                         if not isinstance(mcp_command, list):
-                            raise ValueError("CYBER_MCP_CONNECTIONS command property is expected to be a list")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS command property is expected to be a list"
+                            )
                     else:
                         if mcp_command is not None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports do not use the command property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS network transports do not use the command property"
+                            )
 
                     mcp_server_url = conn.get("server_url") or None
                     if mcp_transport == "stdio":
                         if mcp_server_url:
-                            raise ValueError("CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS stdio transport does not use the server_url property"
+                            )
                     else:
                         if mcp_server_url is None:
-                            raise ValueError("CYBER_MCP_CONNECTIONS network transports require the server_url property")
+                            raise ValueError(
+                                "CYBER_MCP_CONNECTIONS network transports require the server_url property"
+                            )
 
                     mcp_headers = conn.get("headers")
                     if mcp_headers is not None and not isinstance(mcp_headers, dict):
-                        raise ValueError("CYBER_MCP_CONNECTIONS headers property is expected to be a dictionary")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS headers property is expected to be a dictionary"
+                        )
 
                     mcp_plugins = conn.get("plugins")
                     if mcp_plugins is not None and not isinstance(mcp_plugins, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS plugins property is expected to be a list")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS plugins property is expected to be a list"
+                        )
                     if not mcp_plugins or "*" in mcp_plugins:
                         mcp_plugins = ["*"]
 
                     mcp_timeout = conn.get("timeoutSeconds")
                     if mcp_timeout is not None and not isinstance(mcp_timeout, int):
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be an integer")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be an integer"
+                        )
                     if mcp_timeout is not None and mcp_timeout < 0:
-                        raise ValueError("CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer")
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS timeoutSeconds is expected to be a positive integer"
+                        )
 
                     mcp_allowed_tools = conn.get("allowedTools")
-                    if mcp_allowed_tools is not None and not isinstance(mcp_allowed_tools, list):
-                        raise ValueError("CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list")
+                    if mcp_allowed_tools is not None and not isinstance(
+                        mcp_allowed_tools, list
+                    ):
+                        raise ValueError(
+                            "CYBER_MCP_CONNECTIONS allowedTools property is expected to be a list"
+                        )
                     if not mcp_allowed_tools or "*" in mcp_allowed_tools:
                         mcp_allowed_tools = ["*"]
 

@@ -383,7 +383,8 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     file_handler.setFormatter(formatter)
 
     # Console handler - only show warnings and above unless verbose
-    console_handler = logging.StreamHandler(sys.__stdout__)  # Use original stdout
+    # Use current stdout (TeeOutput) so React UI can capture logs
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO if verbose else logging.WARNING)
     console_handler.setFormatter(formatter)
 
@@ -408,6 +409,14 @@ def setup_logging(log_file: str = "cyber_operations.log", verbose: bool = False)
     root_file_handler.setLevel(logging.INFO)
     root_file_handler.setFormatter(formatter)
     root_logger.addHandler(root_file_handler)
+
+    # In verbose mode, also send INFO logs to console for all modules
+    # Use current stdout (TeeOutput) so React UI can capture logs
+    if verbose:
+        root_console_handler = logging.StreamHandler(sys.stdout)
+        root_console_handler.setLevel(logging.INFO)
+        root_console_handler.setFormatter(formatter)
+        root_logger.addHandler(root_console_handler)
 
     # Suppress verbose AWS credential detection messages
     logging.getLogger("boto3").setLevel(logging.WARNING)

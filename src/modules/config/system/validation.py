@@ -108,7 +108,8 @@ def validate_ollama_requirements(
 
             # Require at least one required model to be available
             has_required = any(
-                any(req in model for model in available_models) for req in required_models
+                any(req in model for model in available_models)
+                for req in required_models
             )
 
             if not has_required:
@@ -151,7 +152,9 @@ def validate_bedrock_model_access(region: str) -> None:
         # Model-specific errors will be handled by strands-agents during actual usage
 
 
-def validate_aws_requirements(env_reader: EnvironmentReader, region: str = None) -> None:
+def validate_aws_requirements(
+    env_reader: EnvironmentReader, region: str = None
+) -> None:
     """Validate AWS requirements including Bedrock model access.
 
     Supports either standard AWS credentials (ACCESS_KEY/SECRET or PROFILE)
@@ -195,7 +198,9 @@ def validate_aws_requirements(env_reader: EnvironmentReader, region: str = None)
         validate_bedrock_model_access(region)
 
 
-def validate_litellm_requirements(env_reader: EnvironmentReader, model_id: str = "") -> None:
+def validate_litellm_requirements(
+    env_reader: EnvironmentReader, model_id: str = ""
+) -> None:
     """Validate LiteLLM requirements based on model provider prefix.
 
     LiteLLM handles most validation internally:

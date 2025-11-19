@@ -49,7 +49,7 @@ jobs:
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v --tb=short
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v --tb=short -m "not manual"
     
     - name: Display Results Summary
       if: always()

@@ -49,7 +49,7 @@ jobs:
       run: |
         export PATH="$HOME/.local/bin:$PATH"
         export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v
+        PYTHONPATH="${PWD}/src:${PYTHONPATH}" uv run pytest tests/ -v -m "not manual"
     
     - name: Check Pylint minimum score
       run: |

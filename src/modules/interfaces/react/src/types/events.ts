@@ -197,7 +197,17 @@ export enum EventType {
   AGENT_MESSAGE = 'agent_message',
   /** Security agent completed */
   AGENT_COMPLETE = 'agent_complete',
-  
+
+  // =============================================================================
+  // HITL (Human-in-the-Loop) EVENTS - User intervention and feedback
+  // =============================================================================
+  /** Tool execution paused for human review */
+  HITL_PAUSE_REQUESTED = 'hitl_pause_requested',
+  /** User feedback submitted for pending tool */
+  HITL_FEEDBACK_SUBMITTED = 'hitl_feedback_submitted',
+  /** Execution resumed after feedback processing */
+  HITL_RESUME = 'hitl_resume',
+
 }
 
 // =============================================================================
@@ -435,6 +445,26 @@ export interface AgentEvent extends BaseEvent {
   result?: any;
 }
 
+// HITL (Human-in-the-Loop) events
+export interface HITLEvent extends BaseEvent {
+  type: EventType.HITL_PAUSE_REQUESTED | EventType.HITL_FEEDBACK_SUBMITTED | EventType.HITL_RESUME;
+  /** Tool name being reviewed */
+  tool_name?: string;
+  /** Unique tool invocation ID */
+  tool_id?: string;
+  /** Tool parameters under review */
+  parameters?: Record<string, any>;
+  /** Confidence score (0-100) */
+  confidence?: number;
+  /** Reason for pause (e.g., "destructive_operation") */
+  reason?: string;
+  /** Feedback type (correction, suggestion, approval, rejection) */
+  feedback_type?: string;
+  /** Feedback content from user */
+  content?: string;
+  /** Timeout in seconds for pause duration */
+  timeout_seconds?: number;
+}
 
 // Python event system events
 export interface PythonSystemEvent extends BaseEvent {
@@ -509,6 +539,7 @@ export type StreamEvent =
   | SystemEvent
   | ConnectionEvent
   | AgentEvent
+  | HITLEvent
   | PythonSystemEvent
   | ReportContentEvent
   | TerminationReasonEvent
