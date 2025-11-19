@@ -46,8 +46,8 @@ from strands.types.exceptions import MaxTokensReachedException
 from modules.agents.cyber_autoagent import (
     AgentConfig,
     create_agent,
-    _ensure_prompt_within_budget,
 )
+from modules.handlers.conversation_budget import _ensure_prompt_within_budget
 from modules.config.system.environment import auto_setup, clean_operation_memory, setup_logging
 from modules.config.manager import get_config_manager
 from modules.handlers.base import StepLimitReached
