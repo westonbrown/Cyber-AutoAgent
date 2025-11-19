@@ -4,6 +4,7 @@ from modules.config.models.factory import (
     create_bedrock_model,
     create_ollama_model,
     create_litellm_model,
+    create_anthropic_oauth_model,
 )
 from modules.config.models.capabilities import (
     supports_reasoning_model,
@@ -20,6 +21,7 @@ __all__ = [
     "create_bedrock_model",
     "create_ollama_model",
     "create_litellm_model",
+    "create_anthropic_oauth_model",
     # Capabilities
     "supports_reasoning_model",
     "get_capabilities",

@@ -699,3 +699,51 @@ def create_litellm_model(
         model_id=config["model_id"],
         params=params,
     )
+
+
+def create_anthropic_oauth_model(
+    model_id: str,
+    provider: str = "anthropic_oauth",
+):
+    """Create Anthropic OAuth model instance.
+
+    Uses Claude Max unlimited quota via OAuth authentication.
+    Bills against Claude Max subscription instead of per-token API usage.
+
+    Args:
+        model_id: Anthropic model identifier (e.g., "claude-sonnet-4-20250514")
+        provider: Provider name (default: "anthropic_oauth")
+
+    Returns:
+        Configured AnthropicOAuthModel instance
+
+    Raises:
+        Exception: If model creation fails or OAuth token not found
+    """
+    from modules.models.anthropic_oauth_model import AnthropicOAuthModel
+
+    # Get centralized configuration
+    config_manager = _get_config_manager()
+
+    # Get server config for this provider
+    try:
+        server_config = config_manager.get_server_config(provider)
+        temperature = server_config.llm.temperature
+        max_tokens = server_config.llm.max_tokens
+    except Exception as e:
+        logger.warning(
+            "Could not get server config for %s, using defaults: %s",
+            provider,
+            e
+        )
+        temperature = 0.95
+        max_tokens = 8192
+
+    print_status(f"Using {model_id} with OAuth authentication", Colors.CYAN)
+
+    # Create and return OAuth model
+    return AnthropicOAuthModel(
+        model_id=model_id,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
