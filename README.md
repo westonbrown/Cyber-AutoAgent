@@ -24,13 +24,6 @@ Cyber-AutoAgent started as an experimental side project to explore autonomous of
 
 Due to time constraints with other commitments, I've made the decision to archive this repository rather than let it stagnate with sporadic updates.
 
-## What Happens Now?
-
-- ✅ **MIT License**: Feel free to fork, modify, and continue development
-- ✅ **All Code Available**: The codebase remains accessible for learning and reference
-- ❌ **No Active Support**: Issues and PRs have been closed
-- ❌ **No Future Updates**: No new features or bug fixes planned
-
 Thanks to everyone who contributed, tested, and supported this experiment. Keep pushing the boundaries of what's possible with agentic AI in cybersecurity. 
 
 <p>
