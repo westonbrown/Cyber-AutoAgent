@@ -16,10 +16,6 @@
 
 # ⚠️ PROJECT ARCHIVED
 
-**Status**: This project is no longer actively maintained as of November 2025.
-
-## Why Archive?
-
 Cyber-AutoAgent started as an experimental side project to explore autonomous offensive security agents and black box pentesting. After achieving 85% on the XBOW valdiation benchmark and building an engaged community, it became clear this work requires dedicated full-time focus to reach production-grade maturity.
 
 Due to time constraints with other commitments, I've made the decision to archive this repository rather than let it stagnate with sporadic updates.
